@@ -21,7 +21,7 @@ Port `4000` is for Quanta communication (GRPC) from the `quanta-proxy` to the no
 
 8) Verify that all `quanta-nodes` are up and running in healthy status.  Use this [SCRIPT](https://github.com/disney/quanta/tree/master/Docker#health-check).  The number printed to STDOUT should match your node count.
 
-![Architecture](docs/Quanta_Deployment_Architecture.png)
+![Architecture](../docs/Quanta_Deployment_Architecture.png)
 
 # Overview of Docker Images
 In normal production deployments, Docker images can be retrieved directly from Quay (containerregistry.disney.com) and pushed into the Cloud via TeamCity.  Then the desired orchestration services can host the images (i.e. AWS ECS or Kubernetes).

@@ -1,0 +1,31 @@
+# quanta-loader within a Docker Container
+
+#FROM amd64/alpine:latest
+#FROM golang:1.13.1-alpine
+FROM frolvlad/alpine-glibc
+
+LABEL version="1.0.0" \
+  maintainer="Guy Molinari" \
+  maintainer.email="guy.molinari@disney.com" \
+  description="Builds Generic Docker image for use in production deployment of Quanta Loader" \
+  repository="https://github.com/disney/quanta"
+
+# Update 
+RUN apk update
+RUN apk upgrade
+RUN apk add --no-cache --update alpine-sdk
+# clean apk cache
+RUN rm -rf /var/cache/apk/*
+
+COPY ./bin/quanta-loader /usr/bin/quanta-loader
+COPY ./Docker/loader_entrypoint.sh /usr/bin/entrypoint.sh
+
+RUN chmod 755 /usr/bin/quanta-loader
+RUN chmod 755 /usr/bin/entrypoint.sh
+
+VOLUME /config
+VOLUME /metadata
+
+ENTRYPOINT ["/usr/bin/entrypoint.sh"]
+
+

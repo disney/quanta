@@ -1,0 +1,23 @@
+# Binaries for programs and plugins
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary, build with `go test -c`
+*.test
+
+# Ignore dependences downloaded
+vendor/
+
+# Build & Test Output
+pkg/
+coverage/
+bin/
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+*_coverage.html
+
+# Automation
+.espnautomation/

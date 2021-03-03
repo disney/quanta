@@ -1,0 +1,170 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "io.grpc.disney.quanta";
+option java_outer_classname = "QuantaProto";
+
+package quanta;
+import "google/protobuf/empty.proto";
+import "google/protobuf/wrappers.proto";
+
+service ClusterAdmin {
+  rpc Status(google.protobuf.Empty) returns (StatusMessage) {}
+}
+
+service KVStore {
+  rpc Put(IndexKVPair) returns (google.protobuf.Empty) {}
+  rpc BatchPut(stream IndexKVPair) returns (google.protobuf.Empty) {}
+  rpc Lookup(IndexKVPair) returns (IndexKVPair) {}
+  rpc BatchLookup(stream IndexKVPair) returns (stream IndexKVPair) {}
+  rpc Items(google.protobuf.StringValue) returns (stream IndexKVPair) {}
+}
+
+service StringSearch {
+  rpc BatchIndex(stream google.protobuf.StringValue) returns (google.protobuf.Empty) {}
+  rpc Search(google.protobuf.StringValue) returns (stream google.protobuf.UInt64Value) {}
+}
+
+service BitmapIndex {
+  rpc Update(UpdateRequest) returns (google.protobuf.Empty) {}
+  rpc BatchMutate(stream IndexKVPair) returns (google.protobuf.Empty) {}
+  rpc BulkClear(BulkClearRequest) returns (google.protobuf.Empty) {}
+  rpc Query(BitmapQuery) returns (QueryResult) {}
+  rpc Join(JoinRequest) returns (JoinResponse) {}
+  rpc Projection(ProjectionRequest) returns (ProjectionResponse) {}
+  rpc CheckoutSequence(CheckoutSequenceRequest) returns (CheckoutSequenceResponse) {}
+}
+
+message Success {
+  bool ok = 1;
+}
+
+message StatusMessage {
+  string status = 1;
+}
+
+message IndexKVPair {
+  string 	indexPath = 1;
+  bytes  	key = 2;
+  repeated bytes value = 3;
+  int64 	time = 4;
+  bool      isClear = 5;
+}
+
+message BitmapQuery {
+  repeated QueryFragment query = 1;
+  int64    fromTime = 2;
+  int64    toTime = 3;
+}
+
+message QueryFragment {
+  string index = 1;
+  string field = 2;
+  uint64 rowID = 3;
+  int64 value = 4;
+  string id = 11;
+  repeated string childrenIds = 12;
+
+  enum OpType {
+	INTERSECT = 0;
+	UNION = 1;
+	DIFFERENCE = 2;
+    INNER_JOIN = 3;
+    OUTER_JOIN = 4;
+  }
+  OpType operation = 5;
+
+  enum BSIOp {
+    NA = 0;
+	LT = 1;
+	LE = 2;
+	EQ = 3;
+    GE = 4;
+    GT = 5;
+    RANGE = 6;
+    BATCH_EQ = 7;
+  }
+  BSIOp bsiOp = 6;
+  int64 begin = 7;
+  int64 end = 8;
+  string fk = 9;
+  repeated int64 values = 10;
+  float  samplePct = 13;
+  bool  nullCheck = 14;
+  bool  negate = 15;
+}
+
+message QueryResult {
+  bytes    unions = 1;
+  repeated bytes intersects = 2;
+  bytes    differences = 3;
+  repeated BitmapResult samples = 4;
+  float    samplePct = 5;
+  bool     sampleIsUnion = 6;
+  bytes    existences = 7;
+}
+
+message JoinRequest {
+  string   driverIndex = 1;
+  repeated string fkFields = 2;
+  int64    fromTime = 3;
+  int64    toTime = 4;
+  bytes    foundSet = 5;
+  repeated bytes filterSets = 6;
+}
+
+message JoinResponse {
+  repeated bytes results = 1;
+}
+
+message BulkClearRequest {
+  string  index = 1;
+  int64    fromTime = 2;
+  int64    toTime = 3;
+  bytes   foundSet = 4;
+}
+
+message UpdateRequest {
+  string 	index = 1;
+  string 	field = 2;
+  uint64    columnId = 3;
+  int64     rowIdOrValue = 4;
+  int64 	time = 5;
+}
+
+message ProjectionRequest {
+  int64    fromTime = 1;
+  int64    toTime = 2;
+  bytes    foundSet = 3;
+  string   index = 4;
+  repeated string fields = 5;
+}
+
+message BitmapResult {
+  string field = 1;
+  uint64 rowId = 2;
+  bytes  bitmap = 3;
+}
+
+message BSIResult {
+  string field = 1;
+  repeated bytes bitmaps = 2;
+}
+
+message ProjectionResponse {
+  repeated BitmapResult bitmapResults = 1;
+  repeated BSIResult bsiResults = 2;
+}
+
+message CheckoutSequenceRequest {
+  string   index = 1;
+  string   pkField = 2;
+  int64    time = 3;
+  uint32   reservationSize = 4;
+}
+
+message CheckoutSequenceResponse {
+  uint64   start = 3;
+  uint32   count = 4;
+}
+

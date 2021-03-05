@@ -1,5 +1,4 @@
 tableName: cities
-defaultPredicate: id > ''
 primaryKey: id
 attributes:
 - sourceName: /id

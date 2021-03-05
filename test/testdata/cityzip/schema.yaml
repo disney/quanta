@@ -1,5 +1,4 @@
 tableName: cityzip
-defaultPredicate: id > ''
 primaryKey: zip+id
 secondaryKeys: city+zip
 attributes:

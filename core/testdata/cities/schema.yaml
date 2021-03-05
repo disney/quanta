@@ -50,5 +50,5 @@ attributes:
   type: String
 - sourceName: /ranking
   fieldName: ranking
-  mappingStrategy: IntBSI
+  mappingStrategy: IntDirect
   type: Integer

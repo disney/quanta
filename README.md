@@ -33,7 +33,7 @@ A quick start guide can be found here (//TODO)
 * MySQL Workbench (coming soon!)
 
 # Authentication
-Authentication using OpenID connect (JWT tokens) is the currently supported mechanism for authentication.  This
+OpenID connect (JWT tokens) is the currently supported mechanism for authentication.  This
 is used to gate access to the quanta proxy service allowing access to the underlying database.  An external service
 such as AWS Cognito is required to manage user accounts and issue valid tokens.  User policies and governance are
 managed in this service layer.
@@ -92,7 +92,7 @@ Contributions are always welcome.  The process is straightforward:
 
 1. Create your feature branch off of the develop branch (git checkout -b my-new-feature)
 2. Write Tests!
-3. Make sure the codebase adhere to the Go coding standards by executing gofmt -s -w ./
+3. Make sure the codebase adhere to the Go coding standards by executing `gofmt -s -w ./` followed by `golint`
 4. Commit your changes (git commit -am 'Add some feature')
 5. Push to the branch (git push origin my-new-feature)
 6. Create new Pull Request.

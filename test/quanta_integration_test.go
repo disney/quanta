@@ -47,6 +47,7 @@ func (suite *QuantaTestSuite) SetupSuite() {
 
 	// load up vision test data (nested schema containing 3 separate tables)
 	// suite.loadData("cityzip", "./testdata/cityzip.parquet")
+	suite.loadData("cities", "./testdata/us_cities.parquet")
 	// suite.loadData("nba", "./testdata/nba.parquet")
 
 	// load up adobe conformed data
@@ -145,8 +146,8 @@ func (suite *QuantaTestSuite) TestSimpleQuery() {
 
 // Test projection with nested data source
 func (suite *QuantaTestSuite) TestSimpleProjection() {
-	// results, err := suite.runQuery("select app_bundle_id, app_name, browser_local_storage_flag from events")
-	results, err := suite.runQuery("select id, name, state_name, state from cities")
+	// results, err := suite.runQuery("select app_bundle_id, app_name, browser_local_storage_flag from events limit 100000")
+	results, err := suite.runQuery("select id, name, state_name, state from cities limit 100000")
 	assert.NoError(suite.T(), err)
 	suite.Equal(29488, len(results))
 }
@@ -193,7 +194,7 @@ func (suite *QuantaTestSuite) TestInvalidTableOnJoin() {
 // }
 
 func (suite *QuantaTestSuite) TestSelectStar() {
-	results, err := suite.runQuery("select * from cities where timezone != NULL")
+	results, err := suite.runQuery("select * from cities where timezone != NULL limit 100000")
 	assert.NoError(suite.T(), err)
 	suite.Equal(29488, len(results))
 }

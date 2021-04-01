@@ -148,6 +148,12 @@ func (m IntDirectMapper) MapValue(attr *Attribute, val interface{},
 	return
 }
 
+// MapValueReverse - Map a row ID back to original value (row ID value taken literally)
+func (m IntDirectMapper) MapValueReverse(attr *Attribute, id uint64, c *Connection) (result interface{}, err error) {
+    result = int64(id)
+    return
+}
+
 // StringToIntDirectMapper - Maps a string containing a number directly as a row ID.
 type StringToIntDirectMapper struct {
 	DefaultMapper

@@ -51,3 +51,18 @@ attributes:
   fieldName: ranking
   mappingStrategy: IntDirect
   type: Integer
+- sourceName: /region
+  fieldName: region_list
+  type: String
+  mappingStrategy: StringEnum
+  configuration:
+    delim: ","
+  desc: Comma separated list of city, county, state abbreviation and state name.
+- sourceName: /created_timestamp
+  fieldName: created_timestamp
+  mappingStrategy: SysMillisBSI
+  type: DateTime
+- sourceName: /created_date
+  fieldName: created_date
+  mappingStrategy: StringEnum
+  type: String

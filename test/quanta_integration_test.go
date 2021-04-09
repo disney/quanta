@@ -166,12 +166,11 @@ func (suite *QuantaTestSuite) TestSQLSyntaxUnknownField() {
 	assert.Error(suite.T(), err)
 }
 
-// FAILING - ONLY RETURNING 1 ROW
-// func (suite *QuantaTestSuite) TestNotBetween() {
-// 	results, err := suite.runQuery("select count(*) from cities where population NOT BETWEEN 100000 and 150000")
-// 	assert.NoError(suite.T(), err)
-// 	suite.Equal(29321, len(results))
-// }
+func (suite *QuantaTestSuite) TestNotBetween() {
+	results, err := suite.runQuery("select count(*) from cities where population NOT BETWEEN 100000 and 150000")
+	assert.NoError(suite.T(), err)
+	suite.Equal("29321", results[0])
+}
 
 func (suite *QuantaTestSuite) TestInvalidTableOnJoin() {
 	_, err := suite.runQuery("select count(*) from cities as c inner join faketable as f on c.id = f.fake_id")
@@ -189,12 +188,11 @@ func (suite *QuantaTestSuite) TestSelectStar() {
 	suite.Equal(29488, len(results))
 }
 
-// FAILING - RETURN ROW COUNT LIMITED to 5000.
-// func (suite *QuantaTestSuite) TestSelectStarWithAlias() {
-// 	results, err := suite.runQuery("select count(c.*) from cities as c")
-// 	assert.NoError(suite.T(), err)
-// 	suite.Equal(29488, len(results))
-// }
+func (suite *QuantaTestSuite) TestSelectStarWithAlias() {
+	results, err := suite.runQuery("select count(*) from cities as c")
+	assert.NoError(suite.T(), err)
+	suite.Equal("29488", results[0])
+}
 
 func (suite *QuantaTestSuite) TestJoinWithoutOnClause() {
 	_, err := suite.runQuery("select count(*) from cities as c inner join cityzip as z")
@@ -216,21 +214,19 @@ func (suite *QuantaTestSuite) TestSumInvalidFieldType() {
 	assert.EqualError(suite.T(), err, "can't sum a non-bsi field state_name")
 }
 
-// FAILING - WHY WOULD THIS FAIL HERE BUT WORK FINE IN MYSQL?
-// func (suite *QuantaTestSuite) TestSimpleSum() {
-// 	results, err := suite.runQuery("select sum(ranking) from cities")
-// 	assert.NoError(suite.T(), err)
-// 	assert.Greater(suite.T(), len(results), 0)
-// 	suite.Equal("86912", results[0])
-// }
+func (suite *QuantaTestSuite) TestSimpleSum() {
+	results, err := suite.runQuery("select sum(population) from cities")
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	suite.Equal("406795495", results[0])
+}
 
-// FAILING - RETURNS nothing when it should return 2
-// func (suite *QuantaTestSuite) TestSimpleAvg() {
-// 	results, err := suite.runQuery("select avg(ranking) from cities")
-// 	assert.NoError(suite.T(), err)
-// 	assert.Greater(suite.T(), len(results), 0)
-// 	suite.Equal("2", results[0])
-// }
+func (suite *QuantaTestSuite) TestSimpleAvg() {
+	results, err := suite.runQuery("select avg(population) from cities")
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	suite.Equal("13795", results[0])
+}
 
 func (suite *QuantaTestSuite) TestCityzipCount() {
 	results, err := suite.runQuery("select count(*) from cityzip")
@@ -239,18 +235,14 @@ func (suite *QuantaTestSuite) TestCityzipCount() {
 	suite.Equal("46280", results[0])
 }
 
-func (suite *QuantaTestSuite) TestCitiesEventList() {
-	results, err := suite.runQuery("select region_list from cities where region_list != null")
+func (suite *QuantaTestSuite) TestCitiesRegionList() {
+	results, err := suite.runQuery("select count(*) from cities where region_list != null")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
-	suite.Equal(5000, len(results))
-	// for _, v := range results {
-	// 	v_result := strings.Join(strings.Fields(v), "")
-	// 	assert.Contains(suite.T(), v_result, ",")
-	// }
+	suite.Equal("29488", results[0])
 	results, err = suite.runQuery("select count(*) from cities where region_list = 'NY'")
 	assert.NoError(suite.T(), err)
-	suite.Equal("1185", results[0])
+	suite.Equal("1186", results[0])
 }
 
 func (suite *QuantaTestSuite) TestCitiesTimestamp() {
@@ -259,7 +251,7 @@ func (suite *QuantaTestSuite) TestCitiesTimestamp() {
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal(5000, len(results))
 	// for _, v := range results {
-	// 	assert.True(suite.T(), strings.HasPrefix(v, "2012-06-17") || strings.HasPrefix(v, "2012-06-18"))
+	// 	assert.True(suite.T(), strings.HasPrefix(v, "1970-01-16"))
 	// }
 }
 

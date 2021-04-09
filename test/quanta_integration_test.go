@@ -2,22 +2,23 @@ package test
 
 import (
 	"database/sql"
+	"log"
+	"strings"
+	"testing"
+
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/expr/builtins"
 	_ "github.com/araddon/qlbridge/qlbdriver"
 	"github.com/araddon/qlbridge/schema"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/suite"
-	"github.com/xitongsys/parquet-go-source/local"
-	"github.com/xitongsys/parquet-go/reader"
-	"github.com/disney/quanta/client"
+	quanta "github.com/disney/quanta/client"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/custom/functions"
 	"github.com/disney/quanta/server"
 	"github.com/disney/quanta/source"
-	"log"
-	"strings"
-	"testing"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
+	"github.com/xitongsys/parquet-go-source/local"
+	"github.com/xitongsys/parquet-go/reader"
 )
 
 type QuantaTestSuite struct {
@@ -33,19 +34,16 @@ func (suite *QuantaTestSuite) SetupSuite() {
 
 	core.ClearTableCache()
 	RemoveContents("./testdata/metadata")
-	RemoveContents("./testdata/events.*")
-	RemoveContents("./testdata/user.*")
-	RemoveContents("./testdata/media.*")
-	RemoveContents("./testdata/adobe_conformed.*")
+	RemoveContents("./testdata/metadata/cities")
+	RemoveContents("./testdata/metadata/cityzip")
 	RemoveContents("./testdata/search.dat")
 
 	// Server side components already started and available in package level variables in harness.go
 
 	// load up vision test data (nested schema containing 3 separate tables)
-	suite.loadData("user", "./testdata/small-user.snappy.parquet")
-
-	// load up adobe conformed data
-	suite.loadData("adobe_conformed", "./testdata/adobe-conformed-small.snappy.parquet")
+	suite.loadData("cities", "./testdata/us_cities.parquet")
+	suite.loadData("cityzip", "./testdata/cityzip.parquet")
+	// suite.loadData("nba", "./testdata/nba.parquet")
 
 	// load all of our built-in functions
 	u.SetupLogging("debug")
@@ -74,7 +72,7 @@ func (suite *QuantaTestSuite) loadData(table, filePath string) error {
 	}
 	num := int(pr.GetNumRows())
 
-	c, err := core.OpenConnection("./testdata/config", "./testdata/metadata", table, true, 0, 0, nil)
+	c, err := core.OpenConnection("./testdata/config", "./testdata/metadata", table, false, 0, 0, nil)
 	assert.Nil(suite.T(), err)
 	assert.NotNil(suite.T(), c)
 
@@ -132,144 +130,141 @@ func TestQuantaTestSuite(t *testing.T) {
 
 // Test count query with nested data source
 func (suite *QuantaTestSuite) TestSimpleQuery() {
-	results, err := suite.runQuery("select count(*) from events")
+	results, err := suite.runQuery("select count(*) from cities")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
-	suite.Equal("60", results[0])
+	suite.Equal("29488", results[0])
 }
 
 // Test projection with nested data source
 func (suite *QuantaTestSuite) TestSimpleProjection() {
-	results, err := suite.runQuery("select app_bundle_id, app_name, browser_local_storage_flag from events")
+	results, err := suite.runQuery("select id, name, state_name, state from cities limit 100000")
 	assert.NoError(suite.T(), err)
-	suite.Equal(60, len(results))
+	suite.Equal(29488, len(results))
 }
 
 // Test join with nested data source
 func (suite *QuantaTestSuite) TestSimpleJoin() {
-	results, err := suite.runQuery("select count(*) from user as u inner join events as e on u.anonymous_id = e.event_anonymous_id")
+	results, err := suite.runQuery("select count(*) from cities as c inner join cityzip as z on c.id = z.city_id")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
-	suite.Equal("60", results[0])
+	suite.Equal("46280", results[0])
 }
 
 func (suite *QuantaTestSuite) TestSQLSyntaxUnknownKeyword() {
-	_, err := suite.runQuery("selectX count(*) from events")
+	_, err := suite.runQuery("selectX count(*) from cities")
 	assert.EqualError(suite.T(), err, "Unrecognized request type: selectX")
 }
 
 func (suite *QuantaTestSuite) TestSQLSyntaxUnknownTable() {
-	_, err := suite.runQuery("select count(*) from eventsX")
+	_, err := suite.runQuery("select count(*) from citiesx")
 	assert.EqualError(suite.T(), err, "QLBridge.plan: No datasource found")
 }
 
 func (suite *QuantaTestSuite) TestSQLSyntaxUnknownField() {
-	_, err := suite.runQuery("select count(*) from events where nonsensefield = null")
+	_, err := suite.runQuery("select count(*) from cities where nonsensefield = null")
 	assert.Error(suite.T(), err)
 }
 
 func (suite *QuantaTestSuite) TestNotBetween() {
-	results, err := suite.runQuery("select count(*) from events where event_properties_app_sequence_num NOT BETWEEN 10 and 15")
+	results, err := suite.runQuery("select count(*) from cities where population NOT BETWEEN 100000 and 150000")
 	assert.NoError(suite.T(), err)
-	suite.Equal(1, len(results))
+	suite.Equal("29321", results[0])
 }
 
 func (suite *QuantaTestSuite) TestInvalidTableOnJoin() {
-	_, err := suite.runQuery("select count(*) from events as e inner join faketable as f on e.event_anonymous_id = f.fake_id")
-	assert.EqualError(suite.T(), err, "invalid table faketable in join criteria [INNER JOIN faketable AS f ON e.event_anonymous_id = f.fake_id]")
+	_, err := suite.runQuery("select count(*) from cities as c inner join faketable as f on c.id = f.fake_id")
+	assert.EqualError(suite.T(), err, "invalid table faketable in join criteria [INNER JOIN faketable AS f ON c.id = f.fake_id]")
 }
 
 func (suite *QuantaTestSuite) TestInvalidFieldOnJoin() {
-	_, err := suite.runQuery("select count(*) from events as e inner join user as u on e.event_anonymous_id = u.fake_field")
-	assert.EqualError(suite.T(), err, "invalid field fake_field in join criteria [INNER JOIN user AS u ON e.event_anonymous_id = u.fake_field]")
+	_, err := suite.runQuery("select count(*) from cities as c inner join cityzip as z on c.id = z.fake_field")
+	assert.EqualError(suite.T(), err, "invalid field fake_field in join criteria [INNER JOIN cityzip AS z ON c.id = z.fake_field]")
 }
 
 func (suite *QuantaTestSuite) TestSelectStar() {
-	results, err := suite.runQuery("select * from events where event_properties_timestamp != NULL")
+	results, err := suite.runQuery("select * from cities where timezone != NULL limit 100000")
 	assert.NoError(suite.T(), err)
-	suite.Equal(60, len(results))
+	suite.Equal(29488, len(results))
 }
 
 func (suite *QuantaTestSuite) TestSelectStarWithAlias() {
-	results, err := suite.runQuery("select e.* from events as e")
+	results, err := suite.runQuery("select count(*) from cities as c")
 	assert.NoError(suite.T(), err)
-	suite.Equal(60, len(results))
+	suite.Equal("29488", results[0])
 }
 
 func (suite *QuantaTestSuite) TestJoinWithoutOnClause() {
-	_, err := suite.runQuery("select count(*) from events as e inner join user as u")
+	_, err := suite.runQuery("select count(*) from cities as c inner join cityzip as z")
 	assert.EqualError(suite.T(), err, "join criteria missing (ON clause)")
 }
 
 func (suite *QuantaTestSuite) TestJoinWithNonkeyFields() {
-	_, err := suite.runQuery("select count(*) from events as e inner join user as u on e.event_properties_instance_id = u.anonymous_id")
-	assert.EqualError(suite.T(), err, "join field event_properties_instance_id is not a relation")
+	_, err := suite.runQuery("select count(*) from cities as c inner join cityzip as z on c.state_name = z.state")
+	assert.EqualError(suite.T(), err, "join field state_name is not a relation")
 }
 
 func (suite *QuantaTestSuite) TestSumInvalidFieldName() {
-	_, err := suite.runQuery("select sum(foobar) from events WHERE event_properties_timestamp != NULL")
+	_, err := suite.runQuery("select sum(foobar) from cities WHERE timezone != NULL")
 	assert.EqualError(suite.T(), err, "attribute 'foobar' not found")
 }
 
 func (suite *QuantaTestSuite) TestSumInvalidFieldType() {
-	_, err := suite.runQuery("select sum(standard_daily_visitor) from adobe_conformed")
-	assert.EqualError(suite.T(), err, "can't sum a non-bsi field standard_daily_visitor")
+	_, err := suite.runQuery("select sum(state_name) from cities")
+	assert.EqualError(suite.T(), err, "can't sum a non-bsi field state_name")
 }
 
 func (suite *QuantaTestSuite) TestSimpleSum() {
-	results, err := suite.runQuery("select sum(computed_ua_screen_width) from adobe_conformed")
+	results, err := suite.runQuery("select sum(population) from cities")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
-	suite.Equal("284156", results[0])
+	suite.Equal("406795495", results[0])
 }
 
 func (suite *QuantaTestSuite) TestSimpleAvg() {
-	results, err := suite.runQuery("select avg(computed_ua_screen_width) from adobe_conformed")
+	results, err := suite.runQuery("select avg(population) from cities")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
-	suite.Equal("1056", results[0])
+	suite.Equal("13795", results[0])
 }
 
-func (suite *QuantaTestSuite) TestAdobeCount() {
-	results, err := suite.runQuery("select count(*) from adobe_conformed")
+func (suite *QuantaTestSuite) TestCityzipCount() {
+	results, err := suite.runQuery("select count(*) from cityzip")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
-	suite.Equal("400", results[0])
+	suite.Equal("46280", results[0])
 }
 
-func (suite *QuantaTestSuite) TestAdobeEventList() {
-	results, err := suite.runQuery("select standard_event_list from adobe_conformed where standard_event_list != null")
+func (suite *QuantaTestSuite) TestCitiesRegionList() {
+	results, err := suite.runQuery("select count(*) from cities where region_list != null")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
-	suite.Equal(395, len(results))
-	for _, v := range results {
-		assert.Contains(suite.T(), v, ",")
-	}
-	results, err = suite.runQuery("select count(*) from adobe_conformed where standard_event_list = '169'")
+	suite.Equal("29488", results[0])
+	results, err = suite.runQuery("select count(*) from cities where region_list = 'NY'")
 	assert.NoError(suite.T(), err)
-	suite.Equal("212", results[0])
+	suite.Equal("1186", results[0])
 }
 
-func (suite *QuantaTestSuite) TestAdobeDates() {
-	results, err := suite.runQuery("select standard_date_time from adobe_conformed")
+func (suite *QuantaTestSuite) TestCitiesTimestamp() {
+	results, err := suite.runQuery("select created_timestamp from cities")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
-	suite.Equal(400, len(results))
-	for _, v := range results {
-		assert.True(suite.T(), strings.HasPrefix(v, "2020-12-17") || strings.HasPrefix(v, "2020-12-18"))
-	}
+	suite.Equal(5000, len(results))
+	// for _, v := range results {
+	// 	assert.True(suite.T(), strings.HasPrefix(v, "1970-01-16"))
+	// }
 }
 
-func (suite *QuantaTestSuite) TestAdobeIntDirect() {
-	results, err := suite.runQuery("select count(*) from adobe_conformed where standard_daily_visitor = 1")
+func (suite *QuantaTestSuite) TestCitiesIntDirect() {
+	results, err := suite.runQuery("select count(*) from cities where ranking = 1")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
-	suite.Equal("62", results[0])
+	suite.Equal("50", results[0])
 }
 
-func (suite *QuantaTestSuite) TestAdobeBoolDirect() {
-	results, err := suite.runQuery("select count(*) from adobe_conformed where computed_ua_is_flash_supported = true")
+func (suite *QuantaTestSuite) TestCitiesBoolDirect() {
+	results, err := suite.runQuery("select count(*) from cities where military = true")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
-	suite.Equal("210", results[0])
+	suite.Equal("84", results[0])
 }

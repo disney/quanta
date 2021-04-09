@@ -2,10 +2,11 @@ package core
 
 import (
 	"database/sql/driver"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -14,8 +15,8 @@ var (
 )
 
 func setup() {
-	os.RemoveAll("./testdata/metadata/user360")
-	schema, _ = LoadSchema("./testdata", "./testdata/metadata", "user360", nil)
+	os.RemoveAll("./testdata/metadata/cities")
+	schema, _ = LoadSchema("./testdata", "./testdata/metadata", "cities", nil)
 	tbuf := make(map[string]*TableBuffer, 0)
 	tbuf[schema.Name] = &TableBuffer{Table: schema}
 	conn = &Connection{TableBuffers: tbuf}
@@ -37,7 +38,7 @@ func TestMapperFactory(t *testing.T) {
 
 	require.NotNil(t, schema)
 
-	attr, err1 := schema.GetAttribute("plays_fantasy")
+	attr, err1 := schema.GetAttribute("military")
 	assert.Nil(t, err1)
 	mapper, err := ResolveMapper(attr)
 	assert.Nil(t, err)
@@ -52,19 +53,19 @@ func TestBuiltinMappers(t *testing.T) {
 	require.NotNil(t, conn)
 
 	data := make([]driver.Value, 15)
-	data[0] = driver.Value(99)           // visits
-	data[1] = driver.Value(true)         // plays_fantasy
-	data[2] = driver.Value(false)        // has_notifications
-	data[3] = driver.Value("F")          // gender
-	data[4] = driver.Value(false)        // user_type
-	data[5] = driver.Value(true)         // has_autostart
-	data[6] = driver.Value(36)           // age
-	data[7] = driver.Value(false)        // has_favorites
-	data[8] = driver.Value(false)        // is_insider
-	data[9] = driver.Value("US")         // registered_country (country)
-	data[10] = driver.Value(false)       // is_league_manager
-	data[11] = driver.Value("auto")      // sort_type
-	data[12] = driver.Value("123456789") // registered_dma_id (dma_id)
+	data[0] = driver.Value("1840034016") // id
+	data[1] = driver.Value("John")       // Name
+	data[2] = driver.Value("Washington") // State_Name
+	data[3] = driver.Value("WA")         // State_ID
+	data[4] = driver.Value("King")       // County
+	data[5] = driver.Value(123.5)        // Lattitude
+	data[6] = driver.Value(365.5)        // Longitude
+	data[7] = driver.Value(10000)        // Population
+	data[8] = driver.Value(100)          // Density
+	data[9] = driver.Value(true)         // Military
+	data[10] = driver.Value("PST")       // Timezone
+	data[11] = driver.Value(99)          // Ranking
+	// data[12] = driver.Value("123456789") // registered_dma_id (dma_id)
 
 	values := make([]uint64, 15)
 
@@ -78,7 +79,7 @@ func TestBuiltinMappers(t *testing.T) {
 		assert.NotEqual(t, 0, data[v.Ordinal-1])
 	}
 
-	assert.Equal(t, 99, data[0])
-	assert.Equal(t, uint64(840), values[9])
+	assert.Equal(t, "1840034016", data[0])
+	assert.Equal(t, uint64(1), values[9])
 
 }

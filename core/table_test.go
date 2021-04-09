@@ -1,22 +1,23 @@
 package core
 
 import (
-	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLoadTable(t *testing.T) {
 
-	os.RemoveAll("./testdata/metadata/user360")
-	schema, err := LoadSchema("./testdata", "./testdata/metadata", "user360", nil)
+	os.RemoveAll("./testdata/metadata/cities")
+	schema, err := LoadSchema("./testdata", "./testdata/metadata", "cities", nil)
 	assert.Nil(t, err)
 	if assert.NotNil(t, schema) {
-		gender, err2 := schema.GetAttribute("gender")
+		state_name, err2 := schema.GetAttribute("state_name")
 		assert.Nil(t, err2)
-		if assert.NotNil(t, gender) {
-			assert.Equal(t, len(gender.Values), 3, "There should be 3 values")
-			assert.Equal(t, MapperTypeFromString(gender.MappingStrategy), StringEnum)
+		if assert.NotNil(t, state_name) {
+			assert.Equal(t, len(state_name.Values), 1, "There should be 1 value")
+			assert.Equal(t, MapperTypeFromString(state_name.MappingStrategy), StringEnum)
 		}
 
 	}
@@ -24,7 +25,7 @@ func TestLoadTable(t *testing.T) {
 
 func TestLoadTableWithPK(t *testing.T) {
 
-	os.RemoveAll("./testdata/metadata/guest_id")
-	_, err := LoadSchema("./testdata", "./testdata/metadata", "guest_id", nil)
+	os.RemoveAll("./testdata/metadata/cities")
+	_, err := LoadSchema("./testdata", "./testdata/metadata", "cities", nil)
 	assert.Nil(t, err)
 }

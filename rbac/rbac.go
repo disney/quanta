@@ -10,6 +10,7 @@ import (
 )
 
 const (
+    // UserRoles - Literal name for UserRole store (uses KVStore).
     UserRoles = "UserRoles"
 )
 
@@ -239,12 +240,14 @@ func (rt Role) MaxPermission() Permission {
 }
 
 
+// DbRole - Encapsulates User to Role mapping for specific database schemas
 type DbRole struct {
     Database         string              `yaml:"database"`
     Role             string              `yaml:"role"`
 }
 
 
+// User to Role mapping container
 type User struct {
     UserID           string              `yaml:"id"`
     IsSystemAdmin    bool                `yaml:"isSystemAdmin"`
@@ -303,13 +306,13 @@ func (user *User) setRole(role Role, database string) {
 
 func (user *User) save(store *quanta.KVStore) error {
 
-    if b, err := yaml.Marshal(&user); err != nil {
+    b, err := yaml.Marshal(&user)
+    if err != nil {
         return fmt.Errorf("Error in save(Marshal User for %s) [%v]", user.UserID, err)
-    } else {
-        if err := store.Put(UserRoles, user.UserID, string(b)); err != nil {
-            return fmt.Errorf("Error in save(Put new UserRole for %s) [%v]", user.UserID, err)
-        }
-        u.Debugf("Saved user [%s]", string(b))
     }
+    if err := store.Put(UserRoles, user.UserID, string(b)); err != nil {
+        return fmt.Errorf("Error in save(Put new UserRole for %s) [%v]", user.UserID, err)
+    }
+    u.Debugf("Saved user [%s]", string(b))
     return nil
 }

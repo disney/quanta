@@ -22,11 +22,11 @@ import (
 	mysql "github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/server"
 
-	"github.com/siddontang/go-mysql/test_util/test_keys"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/custom/functions"
 	"github.com/disney/quanta/sink"
 	"github.com/disney/quanta/source"
+	"github.com/siddontang/go-mysql/test_util/test_keys"
 )
 
 // Variables to identify the build
@@ -50,7 +50,7 @@ var (
 	password      *string
 	db            *sql.DB
 	reWhitespace  *regexp.Regexp
-	publicKeySet  *jwk.Set
+	publicKeySet  []*jwk.Set
 	authProvider  *AuthProvider
 )
 
@@ -89,14 +89,17 @@ func main() {
 	u.Infof("Connecting to Consul at: [%s] ...\n", consulAddr)
 
 	if publicKeyURL != nil {
-		u.Infof("Retrieving JWT public key from [%s]", *publicKeyURL)
-		keySet, err := jwk.Fetch(*publicKeyURL)
-		if err != nil {
-			log.Fatal(err)
+		publicKeySet = make([]*jwk.Set, 0)
+		urls := strings.Split(*publicKeyURL, ",")
+		for _, url := range urls {
+			u.Infof("Retrieving JWT public key from [%s]", url)
+			keySet, err := jwk.Fetch(url)
+			if err != nil {
+				log.Fatal(err)
+			}
+			publicKeySet = append(publicKeySet, keySet)
 		}
-		publicKeySet = keySet
 	}
-
 	// Start the token exchange service
 	u.Infof("Starting the token exchange service on port %d", *tokenservicePort)
 	authProvider = NewAuthProvider()

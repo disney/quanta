@@ -1,4 +1,5 @@
 package main
+
 //
 // Authenticator for quanta-proxy MySQL sessions.  Uses openID connect (JWT) bearer tokens than can be used
 // directly to connect to the quanta-proxy.  Alternatively JWT tokens can be exchanged for a temporary
@@ -52,12 +53,16 @@ func (m *AuthProvider) GetCredential(username string) (password string, found bo
 		return "", false, nil // session has expired
 	}
 
-	_, errx := m.Verify(username, publicKeySet)
-	if errx != nil {
-		m.userPool.Delete(username) // expire user if it exists
-		return "", false, errx
+	var errCheck error
+	for _, ks := range publicKeySet {
+		_, errx := m.Verify(username, ks)
+		if errx == nil {
+			return "", true, nil
+		}
+		errCheck = errx
 	}
-	return "", true, nil
+	m.userPool.Delete(username) // expire user if it exists
+	return "", false, errCheck
 }
 
 // CheckUsername - CredentialProvider.CheckUsername implementation.

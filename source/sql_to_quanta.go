@@ -1,4 +1,5 @@
 package source
+
 // SQLToQuanta query langage adapter/translator supports SQL query language.
 
 import (
@@ -21,8 +22,8 @@ import (
 	"github.com/araddon/qlbridge/value"
 	"github.com/araddon/qlbridge/vm"
 	"github.com/disney/quanta/core"
-	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/rbac"
+	"github.com/disney/quanta/shared"
 )
 
 var (
@@ -41,7 +42,7 @@ const (
 	servicePort  = "SERVICE_PORT"
 	basePath     = "BASE_PATH"
 	metadataPath = "METADATA_PATH"
-    userIDKey    = "@userid"
+	userIDKey    = "@userid"
 )
 
 // SQLToQuanta Convert a Sql Query to a Quanta query
@@ -166,23 +167,23 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 		session := datasource.NewContextSimpleNative(sessionMap)
 		p.Context().Session = session
 	} else {
-        for k, v := range sessionMap {
-            sk := SchemaInfoString{k: k}
-            p.Context().Session.Put(sk, nil, value.NewValue(v))
-        }
-    }
-    userID, ok := p.Context().Session.Get(userIDKey) 
-    if !ok {
-	    return nil, fmt.Errorf("User ID (%s) not set for session.", userIDKey)
-    }
-    authCtx, err2 := rbac.NewAuthContext(m.conn.KVStore, userID.ToString(), false)
-    if err2 != nil {
+		for k, v := range sessionMap {
+			sk := SchemaInfoString{k: k}
+			p.Context().Session.Put(sk, nil, value.NewValue(v))
+		}
+	}
+	userID, ok := p.Context().Session.Get(userIDKey)
+	if !ok {
+		return nil, fmt.Errorf("User ID (%s) not set for session", userIDKey)
+	}
+	authCtx, err2 := rbac.NewAuthContext(m.conn.KVStore, userID.ToString(), false)
+	if err2 != nil {
 		return nil, fmt.Errorf("RBAC error - %v", err2)
-    }
+	}
 	u.Debugf("RBAC AuthContext created, USER ID = %v", userID.ToString())
-    if ok, err2 := authCtx.IsAuthorized(rbac.ViewDatabase, m.schema.Name); !ok {
+	if ok, err2 := authCtx.IsAuthorized(rbac.ViewDatabase, m.schema.Name); !ok {
 		return nil, fmt.Errorf("ViewDatabase not authorized on schema %s - %v", m.schema.Name, err2)
-    }
+	}
 
 	m.TaskBase = exec.NewTaskBase(p.Context())
 
@@ -387,8 +388,8 @@ func (m *SQLToQuanta) walkFilterTri(node *expr.TriNode, q *shared.QueryFragment)
 			m.endDate = arg3val.ToString()
 			return nil, nil
 		}
-		fr, ft, err := m.ResolveField(nm) 
-        if !ft || err != nil {
+		fr, ft, err := m.ResolveField(nm)
+		if !ft || err != nil {
 			if ft {
 				err := fmt.Errorf("BETWEEN error %v", err)
 				u.Errorf(err.Error())
@@ -421,7 +422,7 @@ func (m *SQLToQuanta) walkFilterTri(node *expr.TriNode, q *shared.QueryFragment)
 			loc, _ := time.LoadLocation("Local")
 			if m.startDate == "" && tbuf.Table.TimeQuantumType != "" {
 				start, err := dateparse.ParseIn(arg2val.ToString(), loc)
-                if  err != nil {
+				if err != nil {
 					err := fmt.Errorf("cannot parse start value '%v' - %v", arg2val, err)
 					u.Errorf(err.Error())
 					return nil, err
@@ -430,7 +431,7 @@ func (m *SQLToQuanta) walkFilterTri(node *expr.TriNode, q *shared.QueryFragment)
 			}
 			if m.endDate == "" && tbuf.Table.TimeQuantumType != "" {
 				end, err := dateparse.ParseIn(arg3val.ToString(), loc)
-                if  err != nil {
+				if err != nil {
 					err := fmt.Errorf("cannot parse end value '%v' - %v", arg3val, err)
 					u.Errorf(err.Error())
 					return nil, err
@@ -621,7 +622,7 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 	case lex.TokenLike:
 		nm := lhval.ToString()
 		fr, ft, err := m.ResolveField(nm)
-        if  !ft || err != nil {
+		if !ft || err != nil {
 			if err != nil {
 				u.Warnf("!= error %v", err)
 				return nil, err
@@ -646,7 +647,7 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 		case value.SliceValue:
 			nm := lhval.ToString()
 			fr, ft, err := m.ResolveField(nm)
-            if !ft || err != nil {
+			if !ft || err != nil {
 				if err != nil {
 					u.Warnf("!= error %v", err)
 					return nil, err
@@ -716,7 +717,7 @@ func (m *SQLToQuanta) handleBSI(op string, lhval, rhval value.Value, q *shared.Q
 
 	nm := lhval.ToString()
 	fr, ft, err := m.ResolveField(nm)
-    if !ft || err != nil {
+	if !ft || err != nil {
 		if err != nil {
 			u.Warnf("!= error %v", err)
 			return err
@@ -747,7 +748,7 @@ func (m *SQLToQuanta) handleBSI(op string, lhval, rhval value.Value, q *shared.Q
 			loc, _ := time.LoadLocation("Local")
 			if tbuf.Table.TimeQuantumType != "" && (m.startDate == "" || m.endDate == "") {
 				ts, err := dateparse.ParseIn(rhval.ToString(), loc)
-                if err != nil {
+				if err != nil {
 					err := fmt.Errorf("cannot parse value '%v' - %v", rhval, err)
 					u.Errorf(err.Error())
 					return err
@@ -1690,8 +1691,10 @@ func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, err
 	return int(response.Results.GetCardinality()), nil
 }
 
+// SchemaInfoString implements schemaInfo Key()
 type SchemaInfoString struct {
-    k string
+	k string
 }
 
+// Key returns col key.
 func (m SchemaInfoString) Key() string { return m.k }

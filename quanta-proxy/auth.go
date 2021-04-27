@@ -21,7 +21,7 @@ var (
 
 // AuthProvider - CredentialProvider interface implementation
 type AuthProvider struct {
-    currentUserID    string
+	currentUserID string
 }
 
 // MySQLAccount - State for accounts.
@@ -40,7 +40,7 @@ func NewAuthProvider() *AuthProvider {
 func (m *AuthProvider) GetCredential(username string) (password string, found bool, err error) {
 
 	if len(username) <= 32 {
-		v, ok := userPool.Load(username)   // global singleton
+		v, ok := userPool.Load(username) // global singleton
 		if !ok {
 			return "", false, nil
 		}
@@ -56,12 +56,12 @@ func (m *AuthProvider) GetCredential(username string) (password string, found bo
 	for _, ks := range publicKeySet {
 		token, errx := m.Verify(username, ks)
 		if errx == nil {
-            claims := token.PrivateClaims()
-            // userClaimsKey is global
-            if user, ok := claims[userClaimsKey]; ok {
-                // If user id is in claims then this is a MyID session, set current UserID
-                m.currentUserID = user.(string)
-            }
+			claims := token.PrivateClaims()
+			// userClaimsKey is global
+			if user, ok := claims[userClaimsKey]; ok {
+				// If user id is in claims then this is a MyID session, set current UserID
+				m.currentUserID = user.(string)
+			}
 			return "", true, nil
 		}
 		errCheck = errx
@@ -85,16 +85,16 @@ func (m *AuthProvider) CheckUsername(username string) (bool, error) {
 // AddUser - Called by tokenservice to create new account.
 func (m *AuthProvider) AddUser(a MySQLAccount) {
 
-    // userPool is global singleton
+	// userPool is global singleton
 	userPool.Store(a.User, a)
 }
 
 // GetCurrentUserID - Called by ProxyHander to pass userID to active sql.Open session
 func (m *AuthProvider) GetCurrentUserID() (string, bool) {
-    if m.currentUserID != "" {
-        return m.currentUserID, true
-    }
-    return "", false
+	if m.currentUserID != "" {
+		return m.currentUserID, true
+	}
+	return "", false
 }
 
 // Verify a JWT

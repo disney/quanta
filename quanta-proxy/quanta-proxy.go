@@ -14,7 +14,7 @@ import (
 	"regexp"
 	"runtime/debug"
 	"strings"
-    "sync"
+	"sync"
 
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/expr/builtins"
@@ -51,9 +51,9 @@ var (
 	password      *string
 	reWhitespace  *regexp.Regexp
 	publicKeySet  []*jwk.Set
-    userPool      sync.Map
+	userPool      sync.Map
 	authProvider  *AuthProvider
-    userClaimsKey string
+	userClaimsKey string
 )
 
 func main() {
@@ -102,10 +102,10 @@ func main() {
 			publicKeySet = append(publicKeySet, keySet)
 		}
 	}
-    userClaimsKey = *userKey
+	userClaimsKey = *userKey
 	// Start the token exchange service
 	u.Infof("Starting the token exchange service on port %d", *tokenservicePort)
-	authProvider = NewAuthProvider()  // this instance is global used by tokenservice
+	authProvider = NewAuthProvider() // this instance is global used by tokenservice
 	StartTokenService(*tokenservicePort, authProvider)
 
 	// Match 2 or more whitespace chars inside string
@@ -145,7 +145,7 @@ func main() {
 func onConn(conn net.Conn) {
 	var tlsConf = server.NewServerTLSConfig(test_keys.CaPem, test_keys.CertPem, test_keys.KeyPem, tls.VerifyClientCertIfGiven)
 	svr := server.NewServer("8.0.12", mysql.DEFAULT_COLLATION_ID, mysql.AUTH_NATIVE_PASSWORD, test_keys.PubPem, tlsConf)
-    authProvider := NewAuthProvider()  // Per connection (session) instance
+	authProvider := NewAuthProvider() // Per connection (session) instance
 	sconn, err := server.NewCustomizedConn(conn, svr, authProvider, NewProxyHandler(authProvider))
 	if err != nil {
 		u.Errorf(err.Error())
@@ -167,39 +167,38 @@ func onConn(conn net.Conn) {
 
 // ProxyHandler - Handler type definition (lack of generics) for use via MySQL connection
 type ProxyHandler struct {
-    authProvider  *AuthProvider
-    db            *sql.DB
+	authProvider *AuthProvider
+	db           *sql.DB
 }
 
-
 // NewProxyHandler - Create a new proxy handler
-func NewProxyHandler(authProvider *AuthProvider) (*ProxyHandler) {
-    
-    h := &ProxyHandler{authProvider: authProvider}
-    var err error
+func NewProxyHandler(authProvider *AuthProvider) *ProxyHandler {
+
+	h := &ProxyHandler{authProvider: authProvider}
+	var err error
 	h.db, err = sql.Open("qlbridge", "quanta")
 	if err != nil {
 		panic(err.Error())
 	}
-    return h
+	return h
 }
 
-func (h *ProxyHandler) checkSessionUserID(enforce bool) (error) {
+func (h *ProxyHandler) checkSessionUserID(enforce bool) error {
 
-    if userID, ok := h.authProvider.GetCurrentUserID(); ok { 
-         setter := fmt.Sprintf("set @userid = '%s'", userID)
-         if _, err := h.db.Exec(setter); err != nil {
-             return err
-         }
-    } else if enforce {
-         return fmt.Errorf("User ID must be set,  run exec  'set @userid = <userID>'")
-    }
-    return nil
+	if userID, ok := h.authProvider.GetCurrentUserID(); ok {
+		setter := fmt.Sprintf("set @userid = '%s'", userID)
+		if _, err := h.db.Exec(setter); err != nil {
+			return err
+		}
+	} else if enforce {
+		return fmt.Errorf("User ID must be set,  run exec  'set @userid = <userID>'")
+	}
+	return nil
 }
 
 // UseDB - Set DB schema name
 func (h *ProxyHandler) UseDB(dbName string) error {
-    h.checkSessionUserID(true)
+	h.checkSessionUserID(true)
 	u.Debugf("UseDB handler called with '%s'\n", dbName)
 	return nil
 }
@@ -226,7 +225,7 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 
 	switch strings.ToLower(ss[0]) {
 	case "select", "describe", "show":
-        h.checkSessionUserID(true)
+		h.checkSessionUserID(true)
 
 		var r *mysql.Resultset
 		var err error
@@ -286,7 +285,7 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 		}
 		return &mysql.Result{0, 0, 0, r}, nil
 	case "insert", "delete", "update", "replace", "selectinto":
-        h.checkSessionUserID(true)
+		h.checkSessionUserID(true)
 		result, err := h.db.Exec(query)
 		if err != nil {
 			u.Errorf("could not execute stmt: %v", err)
@@ -304,13 +303,13 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 		}
 		return &mysql.Result{0, uint64(insertID), uint64(rowCount), nil}, nil
 	case "set":
-        h.checkSessionUserID(false)
+		h.checkSessionUserID(false)
 		_, err := h.db.Exec(query)
 		if err != nil {
 			u.Errorf("could not execute set: %v", err)
 			return nil, err
 		}
-        return &mysql.Result{0, uint64(0), uint64(0), nil}, nil
+		return &mysql.Result{0, uint64(0), uint64(0), nil}, nil
 	default:
 		return nil, fmt.Errorf("invalid query %s", query)
 	}
@@ -359,7 +358,7 @@ func (h *ProxyHandler) HandleStmtPrepare(sql string) (params int, columns int, c
 
 // HandleStmtClose - Handle Close
 func (h *ProxyHandler) HandleStmtClose(context interface{}) error {
-    h.db.Close()
+	h.db.Close()
 	return nil
 }
 

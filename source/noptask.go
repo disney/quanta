@@ -1,4 +1,5 @@
 package source
+
 // NopTask - Empty task to satisfy query processor.
 
 import (

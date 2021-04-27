@@ -1,4 +1,5 @@
 package source
+
 // QuantaSource - Implementation of the data source interfaces for query processor.
 
 import (
@@ -7,8 +8,8 @@ import (
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/schema"
 	"github.com/araddon/qlbridge/value"
-	"github.com/hashicorp/consul/api"
 	"github.com/disney/quanta/core"
+	"github.com/hashicorp/consul/api"
 	"io/ioutil"
 	"log"
 	"strings"

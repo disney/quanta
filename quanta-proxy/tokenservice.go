@@ -31,8 +31,8 @@ var (
 
 // TokenExchangeService - Token service state.
 type TokenExchangeService struct {
-	port          int
-	authProvider  *AuthProvider
+	port         int
+	authProvider *AuthProvider
 }
 
 // StartTokenService - Construct and initialize token service.
@@ -88,7 +88,7 @@ func (s *TokenExchangeService) CreateAccount(w http.ResponseWriter, r *http.Requ
 
 	var account MySQLAccount
 	claims := token.PrivateClaims()
-    // userClaimsKey is global and set when proxy starts
+	// userClaimsKey is global and set when proxy starts
 	if user, ok := claims[userClaimsKey]; ok {
 		account.User = user.(string)
 	} else {

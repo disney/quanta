@@ -1,4 +1,5 @@
 package source
+
 // QuantaJoinMerge task implementation.
 
 import (
@@ -305,7 +306,7 @@ func (m *JoinMerge) Run() error {
 			return err
 		}
 		con, err := m.makeBufferedConnection(m.driverTable)
-        if  err != nil {
+		if err != nil {
 			return err
 		}
 		defer con.CloseConnection()

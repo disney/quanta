@@ -15,6 +15,7 @@ import (
 	"github.com/disney/quanta/custom/functions"
 	"github.com/disney/quanta/server"
 	"github.com/disney/quanta/source"
+	"github.com/disney/quanta/rbac"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 	"github.com/xitongsys/parquet-go-source/local"
@@ -24,12 +25,12 @@ import (
 type QuantaTestSuite struct {
 	suite.Suite
 	endpoint *server.EndPoint
-	client   *quanta.BitmapIndex
+    store    *quanta.KVStore
 }
 
 func (suite *QuantaTestSuite) SetupSuite() {
 	var err error
-	suite.endpoint, suite.client, err = Setup() // harness setup
+	suite.endpoint, err = Setup() // harness setup
 	assert.NoError(suite.T(), err)
 
 	core.ClearTableCache()
@@ -54,6 +55,19 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	src, err2 := source.NewQuantaSource("./testdata/config", "./testdata/metadata", "", 0)
 	assert.NoError(suite.T(), err2)
 	schema.RegisterSourceAsSchema("quanta", src)
+
+    conn := quanta.NewDefaultConnection()
+    conn.ServicePort = 0
+    err = conn.Connect()
+    assert.NoError(suite.T(), err)
+
+    suite.store = quanta.NewKVStore(conn)
+    assert.NotNil(suite.T(), suite.store)
+
+    ctx, err := rbac.NewAuthContext(suite.store, "USER001", true)
+    assert.NoError(suite.T(), err)
+    err = ctx.GrantRole(rbac.DomainUser, "USER001", "quanta", true)
+    assert.NoError(suite.T(), err)
 }
 
 func (suite *QuantaTestSuite) loadData(table, filePath string) error {
@@ -96,6 +110,11 @@ func (suite *QuantaTestSuite) runQuery(q string) ([]string, error) {
 	if err != nil {
 		return []string{""}, err
 	}
+
+    // Set user id in session
+    setter := "set @userid = 'USER001'"
+	_, err = db.Exec(setter)
+	assert.NoError(suite.T(), err)
 
 	log.Printf("EXECUTING SQL: %v", q)
 	rows, err := db.Query(q)
@@ -267,4 +286,28 @@ func (suite *QuantaTestSuite) TestCitiesBoolDirect() {
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("84", results[0])
+}
+
+func (suite *QuantaTestSuite) TestUserID() {
+
+/*
+	db, err := sql.Open("qlbridge", "quanta")
+	defer db.Close()
+	assert.NoError(suite.T(), err)
+
+    q := "set @userid = 'USER001'"
+	log.Printf("EXECUTING SQL: %v", q)
+	_, err = db.Exec(q)
+	assert.NoError(suite.T(), err)
+	results, err := suite.runQuery("show tables")
+	assert.NoError(suite.T(), err)
+	for _, v := range results {
+        log.Printf("%v\n", v)
+    }
+*/
+	results, err := suite.runQuery("show variables")
+	assert.NoError(suite.T(), err)
+	for _, v := range results {
+        log.Printf("%v\n", v)
+    }
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/araddon/qlbridge/vm"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
+	"github.com/disney/quanta/rbac"
 )
 
 var (
@@ -40,6 +41,7 @@ const (
 	servicePort  = "SERVICE_PORT"
 	basePath     = "BASE_PATH"
 	metadataPath = "METADATA_PATH"
+    userIDKey    = "@userid"
 )
 
 // SQLToQuanta Convert a Sql Query to a Quanta query
@@ -163,16 +165,33 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	if p.Context().Session == nil {
 		session := datasource.NewContextSimpleNative(sessionMap)
 		p.Context().Session = session
-	}
+	} else {
+        for k, v := range sessionMap {
+            sk := SchemaInfoString{k: k}
+            p.Context().Session.Put(sk, nil, value.NewValue(v))
+        }
+    }
+    userID, ok := p.Context().Session.Get(userIDKey) 
+    if !ok {
+	    return nil, fmt.Errorf("User ID (%s) not set for session.", userIDKey)
+    }
+    authCtx, err2 := rbac.NewAuthContext(m.conn.KVStore, userID.ToString(), false)
+    if err2 != nil {
+		return nil, fmt.Errorf("RBAC error - %v", err2)
+    }
+	u.Debugf("RBAC AuthContext created, USER ID = %v", userID.ToString())
+    if ok, err2 := authCtx.IsAuthorized(rbac.ViewDatabase, m.schema.Name); !ok {
+		return nil, fmt.Errorf("ViewDatabase not authorized on schema %s - %v", m.schema.Name, err2)
+    }
 
 	m.TaskBase = exec.NewTaskBase(p.Context())
 
+	var err error
 	p.SourceExec = true
 	m.p = p
 	m.q = shared.NewBitmapQuery()
 	frag := m.q.NewQueryFragment()
 
-	var err error
 	m.p = p
 	req := p.Stmt.Source
 
@@ -1670,3 +1689,9 @@ func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, err
 
 	return int(response.Results.GetCardinality()), nil
 }
+
+type SchemaInfoString struct {
+    k string
+}
+
+func (m SchemaInfoString) Key() string { return m.k }

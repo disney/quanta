@@ -33,13 +33,12 @@ var (
 type TokenExchangeService struct {
 	port          int
 	authProvider  *AuthProvider
-	userClaimsKey string
 }
 
 // StartTokenService - Construct and initialize token service.
-func StartTokenService(port int, userKey string, authProvider *AuthProvider) {
+func StartTokenService(port int, authProvider *AuthProvider) {
 
-	ts := &TokenExchangeService{port: port, authProvider: authProvider, userClaimsKey: userKey}
+	ts := &TokenExchangeService{port: port, authProvider: authProvider}
 	http.HandleFunc("/", ts.HandleRequest)
 
 	go func() {
@@ -89,7 +88,8 @@ func (s *TokenExchangeService) CreateAccount(w http.ResponseWriter, r *http.Requ
 
 	var account MySQLAccount
 	claims := token.PrivateClaims()
-	if user, ok := claims[s.userClaimsKey]; ok {
+    // userClaimsKey is global and set when proxy starts
+	if user, ok := claims[userClaimsKey]; ok {
 		account.User = user.(string)
 	} else {
 		ErrorResponse(&w, 400, "Server error", "Server error", fmt.Errorf("cannot obtain username from token"))

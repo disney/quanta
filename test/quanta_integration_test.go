@@ -288,26 +288,3 @@ func (suite *QuantaTestSuite) TestCitiesBoolDirect() {
 	suite.Equal("84", results[0])
 }
 
-func (suite *QuantaTestSuite) TestUserID() {
-
-/*
-	db, err := sql.Open("qlbridge", "quanta")
-	defer db.Close()
-	assert.NoError(suite.T(), err)
-
-    q := "set @userid = 'USER001'"
-	log.Printf("EXECUTING SQL: %v", q)
-	_, err = db.Exec(q)
-	assert.NoError(suite.T(), err)
-	results, err := suite.runQuery("show tables")
-	assert.NoError(suite.T(), err)
-	for _, v := range results {
-        log.Printf("%v\n", v)
-    }
-*/
-	results, err := suite.runQuery("show variables")
-	assert.NoError(suite.T(), err)
-	for _, v := range results {
-        log.Printf("%v\n", v)
-    }
-}

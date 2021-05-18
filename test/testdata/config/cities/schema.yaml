@@ -9,6 +9,7 @@ attributes:
   fieldName: name
   mappingStrategy: StringHashBSI
   type: String
+  searchable: true
 - sourceName: /state_name
   fieldName: state_name
   mappingStrategy: StringEnum

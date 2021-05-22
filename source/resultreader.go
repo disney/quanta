@@ -154,6 +154,10 @@ func (m *ResultReader) Run() error {
 		dataMap["toTime"] = toTime.UnixNano()
 		dataMap["table"] = m.sql.tbl.Name
 		dataMap["isDriver"] = m.conn.IsDriverForTables(allTables)
+        dataMap["isDefaultWhere"] = false
+        if m.sql.defaultWhere {
+            dataMap["isDefaultWhere"] = true
+        }
 		msg := datasource.NewContextSimpleNative(dataMap)
 		outCh <- msg
 		return nil

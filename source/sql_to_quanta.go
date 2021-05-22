@@ -72,6 +72,7 @@ type SQLToQuanta struct {
 	s              *QuantaSource
 	conn           *core.Connection
 	q              *shared.BitmapQuery
+    defaultWhere   bool
 	needsPolyFill  bool // polyfill?
 }
 
@@ -250,6 +251,7 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 		predicate := fmt.Sprintf("%s != NULL", pka[0].FieldName)
 		defaultWhere, _ := expr.ParseExpression(predicate)
 		req.Where = rel.NewSqlWhere(defaultWhere)
+        m.defaultWhere = true
 	}
 
 	if req.Where != nil {

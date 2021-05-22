@@ -164,14 +164,22 @@ func (suite *QuantaTestSuite) TestSimpleProjection() {
 
 // Test inner join with nested data source
 func (suite *QuantaTestSuite) TestInnerJoin() {
-	results, err := suite.runQuery("select count(*) from cities as c inner join cityzip as z on c.id = z.city_id")
+	results, err := suite.runQuery("select count(*) from cityzip as z inner join cities as c on c.id = z.city_id")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("46280", results[0])
 }
 
 // Test outer join
-func (suite *QuantaTestSuite) TestOuterJoin() {
+func (suite *QuantaTestSuite) TestOuterJoinWithPredicate() {
+	results, err := suite.runQuery("select count(*) from cityzip as z outer join cities as c on c.id = z.city_id where z.city = 'Oceanside'")
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	suite.Equal("10", results[0])
+}
+
+// Test outer join no predicate
+func (suite *QuantaTestSuite) TestOuterJoinNoPredicate() {
 	results, err := suite.runQuery("select count(*) from cities as c outer join cityzip as z on c.id = z.city_id")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)

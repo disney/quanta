@@ -275,43 +275,40 @@ func (suite *QuantaTestSuite) TestAvgInvalidFieldType() {
 	assert.EqualError(suite.T(), err, "can't average a non-bsi field state_name")
 }
 
-//// ***** MIN and MAX aren't dev complete yet
-//// UNCOMMENT these once min and max are completed.
-// func (suite *QuantaTestSuite) TestSimpleMin() {
-// 	results, err := suite.runQuery("select min(population) from cities")
-// 	assert.NoError(suite.T(), err)
-// 	assert.Greater(suite.T(), len(results), 0)
-// 	suite.Equal("2530", results[0])
-// }
+func (suite *QuantaTestSuite) TestSimpleMin() {
+	results, err := suite.runQuery("select min(population) from cities where name = 'Oceanside'")
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	//suite.Equal("2530", results[0])
+	suite.Equal("352", results[0])
+}
 
-// func (suite *QuantaTestSuite) TestMinInvalidFieldName() {
-// 	_, err := suite.runQuery("select min(foobar) from cities WHERE timezone != NULL")
-// 	assert.EqualError(suite.T(), err, "attribute 'foobar' not found")
-// }
+func (suite *QuantaTestSuite) TestMinInvalidFieldName() {
+	_, err := suite.runQuery("select min(foobar) from cities WHERE timezone != NULL")
+	assert.EqualError(suite.T(), err, "attribute 'foobar' not found")
+}
 
-// func (suite *QuantaTestSuite) TestMinInvalidFieldType() {
-// 	results, err := suite.runQuery("select min(state_name) from cities")
-// 	assert.EqualError(suite.T(), err, "can't min a non-bsi field state_name")
-// 	suite.Equal(52, len(results))
-// }
+func (suite *QuantaTestSuite) TestMinInvalidFieldType() {
+	_, err := suite.runQuery("select min(state_name) from cities")
+	assert.EqualError(suite.T(), err, "can't find the minimum of a non-bsi field state_name")
+}
 
-// func (suite *QuantaTestSuite) TestSimpleMax() {
-// 	results, err := suite.runQuery("select max(population) from cities")
-// 	assert.NoError(suite.T(), err)
-// 	assert.Greater(suite.T(), len(results), 0)
-// 	suite.Equal("18713220", results[0])
-// }
+func (suite *QuantaTestSuite) TestSimpleMax() {
+	results, err := suite.runQuery("select max(population) from cities")
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	suite.Equal("18713220", results[0])
+}
 
-// func (suite *QuantaTestSuite) TestMaxInvalidFieldName() {
-// 	_, err := suite.runQuery("select max(foobar) from cities WHERE timezone != NULL")
-// 	assert.EqualError(suite.T(), err, "attribute 'foobar' not found")
-// }
+func (suite *QuantaTestSuite) TestMaxInvalidFieldName() {
+	_, err := suite.runQuery("select max(foobar) from cities WHERE timezone != NULL")
+	assert.EqualError(suite.T(), err, "attribute 'foobar' not found")
+}
 
-// func (suite *QuantaTestSuite) TestMaxInvalidFieldType() {
-// 	results, err := suite.runQuery("select max(state_name) from cities")
-// 	assert.EqualError(suite.T(), err, "can't max a non-bsi field state_name")
-// 	suite.Equal(52, len(results))
-// }
+func (suite *QuantaTestSuite) TestMaxInvalidFieldType() {
+	_, err := suite.runQuery("select max(state_name) from cities")
+	assert.EqualError(suite.T(), err, "can't find the maximum of a non-bsi field state_name")
+}
 
 // END AGGREGATES
 

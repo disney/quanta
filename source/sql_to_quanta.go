@@ -970,6 +970,12 @@ func (m *SQLToQuanta) walkAggFunc(node *expr.FuncNode, q *shared.QueryFragment) 
 		if !bsi && m.isAvg {
 			return fmt.Errorf("can't average a non-bsi field %s", m.aggField)
 		}
+		if !bsi && m.isMin {
+			return fmt.Errorf("can't find the minimum of a non-bsi field %s", m.aggField)
+		}
+		if !bsi && m.isMax {
+			return fmt.Errorf("can't find the maximum of a non-bsi field %s", m.aggField)
+		}
 		return nil
 		/*
 		   case "terms":

@@ -718,3 +718,51 @@ func (p *Projector) Sum(table, field string) (sum int64, count uint64, err error
 	sum, count = r.Sum(r.GetExistenceBitmap())
 	return
 }
+
+// Min - Min aggregate.
+func (p *Projector) Min(table, field string) (min int64, err error) {
+    return p.minMax(true, table, field)
+}
+
+// Max - Max aggregate.
+func (p *Projector) Max(table, field string) (max int64, err error) {
+    return p.minMax(false, table, field)
+}
+
+
+func (p *Projector) minMax(isMin bool, table, field string) (minmax int64, err error) {
+
+	bsiResults, bitmapResults, errx := p.retrieveBitmapResults(p.foundSets, p.projAttributes)
+	if errx != nil {
+		err = errx
+		return
+	}
+
+	r, ok := bsiResults[table][field]
+	if !ok {
+		if _, ok2 := bitmapResults[table][field]; ok2 {
+			err = fmt.Errorf("Cannot aggregate non-BSI field '%s'", field)
+			return
+		}
+		err = fmt.Errorf("Cannot locate results for field '%s'", field)
+		return
+	}
+	var attr *Attribute
+	for _, v := range p.projAttributes {
+		if v.FieldName == field {
+			attr = v
+			break
+		}
+	}
+	if attr == nil { // Should never be nil
+		err = fmt.Errorf("Cannot locate attribute for field '%s'", field)
+		return
+	}
+
+    if isMin {
+	    minmax = r.MinMax(0, roaring64.MIN, r.GetExistenceBitmap())
+    } else {
+	    minmax = r.MinMax(0, roaring64.MAX, r.GetExistenceBitmap())
+    }
+	return
+}

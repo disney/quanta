@@ -1,4 +1,5 @@
 package main
+
 //
 // Authenticator for quanta-proxy MySQL sessions.  Uses openID connect (JWT) bearer tokens than can be used
 // directly to connect to the quanta-proxy.  Alternatively JWT tokens can be exchanged for a temporary
@@ -10,7 +11,6 @@ import (
 	"github.com/lestrrat-go/jwx/jwk"
 	"github.com/lestrrat-go/jwx/jwt"
 	"github.com/siddontang/go-mysql/server"
-	"sync"
 	"time"
 )
 
@@ -21,7 +21,7 @@ var (
 
 // AuthProvider - CredentialProvider interface implementation
 type AuthProvider struct {
-	userPool sync.Map
+	currentUserID string
 }
 
 // MySQLAccount - State for accounts.
@@ -40,7 +40,7 @@ func NewAuthProvider() *AuthProvider {
 func (m *AuthProvider) GetCredential(username string) (password string, found bool, err error) {
 
 	if len(username) <= 32 {
-		v, ok := m.userPool.Load(username)
+		v, ok := userPool.Load(username) // global singleton
 		if !ok {
 			return "", false, nil
 		}
@@ -52,12 +52,22 @@ func (m *AuthProvider) GetCredential(username string) (password string, found bo
 		return "", false, nil // session has expired
 	}
 
-	_, errx := m.Verify(username, publicKeySet)
-	if errx != nil {
-		m.userPool.Delete(username) // expire user if it exists
-		return "", false, errx
+	var errCheck error
+	for _, ks := range publicKeySet {
+		token, errx := m.Verify(username, ks)
+		if errx == nil {
+			claims := token.PrivateClaims()
+			// userClaimsKey is global
+			if user, ok := claims[userClaimsKey]; ok {
+				// If user id is in claims then this is a MyID session, set current UserID
+				m.currentUserID = user.(string)
+			}
+			return "", true, nil
+		}
+		errCheck = errx
 	}
-	return "", true, nil
+	userPool.Delete(username) // expire user if it exists (global singleton)
+	return "", false, errCheck
 }
 
 // CheckUsername - CredentialProvider.CheckUsername implementation.
@@ -68,13 +78,23 @@ func (m *AuthProvider) CheckUsername(username string) (bool, error) {
 	}
 
 	// Verify user name exists
-	_, ok := m.userPool.Load(username)
+	_, ok := userPool.Load(username) // global singleton
 	return ok, nil
 }
 
 // AddUser - Called by tokenservice to create new account.
 func (m *AuthProvider) AddUser(a MySQLAccount) {
-	m.userPool.Store(a.User, a)
+
+	// userPool is global singleton
+	userPool.Store(a.User, a)
+}
+
+// GetCurrentUserID - Called by ProxyHander to pass userID to active sql.Open session
+func (m *AuthProvider) GetCurrentUserID() (string, bool) {
+	if m.currentUserID != "" {
+		return m.currentUserID, true
+	}
+	return "", false
 }
 
 // Verify a JWT

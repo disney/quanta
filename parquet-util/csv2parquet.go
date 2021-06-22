@@ -5,18 +5,26 @@ package main
 
 import (
 	"bufio"
+    "context"
 	"encoding/csv"
 	_ "fmt"
 	"io"
 	"log"
+    "net/url"
 	"os"
 	"os/signal"
+    "path"
 	"strings"
 	"syscall"
 
+    "github.com/aws/aws-sdk-go/aws"
+    "github.com/aws/aws-sdk-go/aws/session"
+    "github.com/aws/aws-sdk-go/service/s3"
 	"github.com/xitongsys/parquet-go-source/local"
+    pqs3 "github.com/xitongsys/parquet-go-source/s3"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/writer"
+	"github.com/xitongsys/parquet-go/source"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -26,7 +34,8 @@ func main() {
 	output := app.Arg("output", "Output parquet file path.").Required().String()
 	definition := app.Arg("definition", "Definition file path.").Required().String()
 	noHeader := app.Flag("no-header", "If true, file does not contain header line.").Bool()
-	padLines := app.Flag("pad-lines", "If true, append empty fields to matchg header length.").Bool()
+	padLines := app.Flag("pad-lines", "If true, append empty fields to match header length.").Bool()
+    region := app.Flag("aws-region", "AWS region of bitmap server host(s)").Default("us-east-1").String()
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -67,11 +76,38 @@ func main() {
 	}
 
 	//write
-	fw, err := local.NewLocalFileWriter(*output)
-	if err != nil {
-		log.Println("Can't open output file", err)
+    outUrl, err := url.Parse(*output)
+    if err != nil {
+		log.Println("Can't parse output path", err)
 		os.Exit(0)
-	}
+    }
+    var fw source.ParquetFile
+    if outUrl.Scheme == "s3" {
+        // Initialize S3 client
+        sess, err := session.NewSession(&aws.Config{
+            Region: aws.String(*region)},
+        )
+    
+        if err != nil {
+            log.Printf("Creating S3 session: %v", err)
+            os.Exit(0)
+        }
+    
+        // Create S3 service client
+        log.Printf("Opening Output S3 path s3://%s/%s", outUrl.Host, path.Base(outUrl.Path))
+        s3svc := s3.New(sess)
+        fw, err = pqs3.NewS3FileWriterWithClient(context.Background(), s3svc, outUrl.Host,
+            *aws.String(path.Base(outUrl.Path)), nil)
+        if err != nil {
+            log.Fatal(err)
+        }
+    } else {
+    	fw, err = local.NewLocalFileWriter(*output)
+    	if err != nil {
+    		log.Println("Can't open output file", err)
+    		os.Exit(0)
+    	}
+    }
 	pw, err := writer.NewCSVWriter(md, fw, 4)
 	if err != nil {
 		log.Println("Can't create csv writer", err)
@@ -93,13 +129,45 @@ func main() {
 	pw.RowGroupSize = 128 * 1024 * 1024 //128M
 	pw.CompressionType = parquet.CompressionCodec_SNAPPY
 
-	csvFile, err := os.Open(*input)
-	if err != nil {
-		log.Println("Can't open input file", err)
-		os.Exit(1)
-	}
-	defer csvFile.Close()
-	reader := csv.NewReader(bufio.NewReader(csvFile))
+
+    var reader *csv.Reader
+    inUrl, err := url.Parse(*input)
+    if err != nil {
+		log.Println("Can't parse input path", err)
+		os.Exit(0)
+    }
+    if inUrl.Scheme == "s3" {
+        // Initialize S3 client
+        insess, err := session.NewSession(&aws.Config{
+            Region: aws.String(*region)},
+        )
+    
+        if err != nil {
+            log.Printf("Creating S3 session for input: %v", err)
+            os.Exit(0)
+        }
+    
+        // Create S3 service client
+        log.Printf("Opening Input S3 path s3://%s/%s", inUrl.Host, path.Base(inUrl.Path))
+        ins3svc := s3.New(insess)
+        result, err := ins3svc.GetObject(&s3.GetObjectInput{
+            Bucket: aws.String(inUrl.Host),
+            Key:    aws.String(path.Base(inUrl.Path)),
+        }) 
+        if err != nil {
+            log.Fatal(err)
+        }
+	    reader = csv.NewReader(bufio.NewReader(result.Body))
+    } else {
+	    csvFile, err := os.Open(*input)
+	    if err != nil {
+		    log.Println("Can't open input file", err)
+		    os.Exit(1)
+	    }
+	    defer csvFile.Close()
+	    reader = csv.NewReader(bufio.NewReader(csvFile))
+    }
+
 	reader.FieldsPerRecord = -1
 
 	// array of indices into record buffer

@@ -15,6 +15,7 @@ import (
 	"github.com/disney/quanta/custom/functions"
 	"github.com/disney/quanta/server"
 	"github.com/disney/quanta/source"
+	"github.com/disney/quanta/rbac"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 	"github.com/xitongsys/parquet-go-source/local"
@@ -24,12 +25,12 @@ import (
 type QuantaTestSuite struct {
 	suite.Suite
 	endpoint *server.EndPoint
-	client   *quanta.BitmapIndex
+    store    *quanta.KVStore
 }
 
 func (suite *QuantaTestSuite) SetupSuite() {
 	var err error
-	suite.endpoint, suite.client, err = Setup() // harness setup
+	suite.endpoint, err = Setup() // harness setup
 	assert.NoError(suite.T(), err)
 
 	core.ClearTableCache()
@@ -54,6 +55,19 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	src, err2 := source.NewQuantaSource("./testdata/config", "./testdata/metadata", "", 0)
 	assert.NoError(suite.T(), err2)
 	schema.RegisterSourceAsSchema("quanta", src)
+
+    conn := quanta.NewDefaultConnection()
+    conn.ServicePort = 0
+    err = conn.Connect()
+    assert.NoError(suite.T(), err)
+
+    suite.store = quanta.NewKVStore(conn)
+    assert.NotNil(suite.T(), suite.store)
+
+    ctx, err := rbac.NewAuthContext(suite.store, "USER001", true)
+    assert.NoError(suite.T(), err)
+    err = ctx.GrantRole(rbac.DomainUser, "USER001", "quanta", true)
+    assert.NoError(suite.T(), err)
 }
 
 func (suite *QuantaTestSuite) loadData(table, filePath string) error {
@@ -96,6 +110,11 @@ func (suite *QuantaTestSuite) runQuery(q string) ([]string, error) {
 	if err != nil {
 		return []string{""}, err
 	}
+
+    // Set user id in session
+    setter := "set @userid = 'USER001'"
+	_, err = db.Exec(setter)
+	assert.NoError(suite.T(), err)
 
 	log.Printf("EXECUTING SQL: %v", q)
 	rows, err := db.Query(q)
@@ -145,14 +164,22 @@ func (suite *QuantaTestSuite) TestSimpleProjection() {
 
 // Test inner join with nested data source
 func (suite *QuantaTestSuite) TestInnerJoin() {
-	results, err := suite.runQuery("select count(*) from cities as c inner join cityzip as z on c.id = z.city_id")
+	results, err := suite.runQuery("select count(*) from cityzip as z inner join cities as c on c.id = z.city_id")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("46280", results[0])
 }
 
 // Test outer join
-func (suite *QuantaTestSuite) TestOuterJoin() {
+func (suite *QuantaTestSuite) TestOuterJoinWithPredicate() {
+	results, err := suite.runQuery("select count(*) from cityzip as z outer join cities as c on c.id = z.city_id where z.city = 'Oceanside'")
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	suite.Equal("10", results[0])
+}
+
+// Test outer join no predicate
+func (suite *QuantaTestSuite) TestOuterJoinNoPredicate() {
 	results, err := suite.runQuery("select count(*) from cities as c outer join cityzip as z on c.id = z.city_id")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
@@ -354,7 +381,7 @@ func (suite *QuantaTestSuite) TestCitiesDistinctStatement() {
 
 // AND conditional statement
 func (suite *QuantaTestSuite) TestCitiesAndWhereStatement() {
-	results, err := suite.runQuery("select id, state_name, state from cities where state_name = 'New York' and state = 'NY'")
+	results, err := suite.runQuery("select id, state_name, state from cities where state_name = 'New York State' and state = 'NY'")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal(1186, len(results))
@@ -362,7 +389,7 @@ func (suite *QuantaTestSuite) TestCitiesAndWhereStatement() {
 
 // OR conditional statement
 func (suite *QuantaTestSuite) TestCitiesOrWhereStatement() {
-	results, err := suite.runQuery("select id, state_name, state from cities where state_name = 'New York' or state = 'NY'")
+	results, err := suite.runQuery("select id, state_name, state from cities where state_name = 'New York State' or state = 'NY'")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal(1186, len(results))
@@ -370,7 +397,7 @@ func (suite *QuantaTestSuite) TestCitiesOrWhereStatement() {
 
 // AND / OR conditional statement
 func (suite *QuantaTestSuite) TestCitiesAndOrWhereStatement() {
-	results, err := suite.runQuery("select id, state_name, state from cities where state_name = 'New York' or state = 'NY' and ranking = 3")
+	results, err := suite.runQuery("select id, state_name, state from cities where state_name = 'New York State' or state = 'NY' and ranking = 3")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal(1051, len(results))
@@ -393,12 +420,13 @@ func (suite *QuantaTestSuite) TestCitiesNotINStatement() {
 }
 
 // SELECT INTO AWS-S3
-func (suite *QuantaTestSuite) TestCitiesSelectInfoS3tatement() {
-	results, err := suite.runQuery("select distinct prop_swid as swid, standard_ip as ip_address into 's3://guys-test/output.csv' from adobe_cricinfo where prop_swid != null and (standard_geo_country = 'ind' or evar_geo_country_code = 'ind' or prop_geo_country_code = 'ind') with delimiter = ',';")
-	assert.NoError(suite.T(), err)
-	assert.Greater(suite.T(), len(results), 0)
-	suite.Equal(1, len(results))
-}
+// Need to find a way to test S3 Integrations
+//func (suite *QuantaTestSuite) TestCitiesSelectInfoS3tatement() {
+//	results, err := suite.runQuery("select distinct prop_swid as swid, standard_ip as ip_address into 's3://guys-test/output.csv' from adobe_cricinfo where prop_swid != null and (standard_geo_country = 'ind' or evar_geo_country_code = 'ind' or prop_geo_country_code = 'ind') with delimiter = ',';")
+//	assert.NoError(suite.T(), err)
+//	assert.Greater(suite.T(), len(results), 0)
+//	suite.Equal(1, len(results))
+//}
 
 // VIEWS - NOT YET IMPLEMENTED
 

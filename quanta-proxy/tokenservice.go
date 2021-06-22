@@ -1,4 +1,5 @@
 package main
+
 //
 // TokenExchangeService is responsible for redeeming a JWT token and returning the user name and a
 // temporary password that has an expiration timestamp obtained from the token.  It's primary purpose
@@ -7,6 +8,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/lestrrat-go/jwx/jwt"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -29,15 +31,14 @@ var (
 
 // TokenExchangeService - Token service state.
 type TokenExchangeService struct {
-	port          int
-	authProvider  *AuthProvider
-    userClaimsKey string
+	port         int
+	authProvider *AuthProvider
 }
 
 // StartTokenService - Construct and initialize token service.
-func StartTokenService(port int, userKey string, authProvider *AuthProvider) {
+func StartTokenService(port int, authProvider *AuthProvider) {
 
-	ts := &TokenExchangeService{port: port, authProvider: authProvider, userClaimsKey: userKey}
+	ts := &TokenExchangeService{port: port, authProvider: authProvider}
 	http.HandleFunc("/", ts.HandleRequest)
 
 	go func() {
@@ -71,15 +72,24 @@ func (s *TokenExchangeService) CreateAccount(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	defer r.Body.Close()
-	token, err := s.authProvider.Verify(string(buf), publicKeySet)
-	if err != nil {
-		ErrorResponse(&w, 401, "Access Denied", "Access Denied", err)
+
+	var token jwt.Token
+	var errx error
+	for _, ks := range publicKeySet {
+		token, errx = s.authProvider.Verify(string(buf), ks)
+		if errx == nil {
+			break
+		}
+	}
+	if errx != nil {
+		ErrorResponse(&w, 401, "Access Denied", "Access Denied", errx)
 		return
 	}
 
 	var account MySQLAccount
 	claims := token.PrivateClaims()
-	if user, ok := claims[s.userClaimsKey]; ok {
+	// userClaimsKey is global and set when proxy starts
+	if user, ok := claims[userClaimsKey]; ok {
 		account.User = user.(string)
 	} else {
 		ErrorResponse(&w, 400, "Server error", "Server error", fmt.Errorf("cannot obtain username from token"))

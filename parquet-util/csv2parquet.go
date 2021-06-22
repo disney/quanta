@@ -30,12 +30,12 @@ import (
 
 func main() {
 	app := kingpin.New(os.Args[0], "Convert CSV files to Parquet format.").DefaultEnvars()
-	input := app.Arg("input", "Input CSV file path.").Required().String()
-	output := app.Arg("output", "Output parquet file path.").Required().String()
+	input := app.Arg("input", "Input CSV file path. (local or S3://)").Required().String()
+	output := app.Arg("output", "Output parquet file path. (local or S3://)").Required().String()
 	definition := app.Arg("definition", "Definition file path.").Required().String()
 	noHeader := app.Flag("no-header", "If true, file does not contain header line.").Bool()
 	padLines := app.Flag("pad-lines", "If true, append empty fields to match header length.").Bool()
-    region := app.Flag("aws-region", "AWS region of bitmap server host(s)").Default("us-east-1").String()
+    region := app.Flag("aws-region", "AWS region of S3 buckets.").Default("us-east-1").String()
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 

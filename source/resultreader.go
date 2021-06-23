@@ -166,7 +166,7 @@ func (m *ResultReader) Run() error {
 		return nil
 	}
 
-	if m.sql.isSum || m.sql.isAvg {
+	if m.sql.isSum || m.sql.isAvg || m.sql.isMin || m.sql.isMax {
 		projFields := []string{fmt.Sprintf("%s.%s", m.sql.tbl.Name, m.sql.aggField)}
 		foundSet := make(map[string]*roaring64.Bitmap)
 		foundSet[m.sql.tbl.Name] = m.response.Results
@@ -175,17 +175,31 @@ func (m *ResultReader) Run() error {
 		if errx != nil {
 			return errx
 		}
-		var sum int64
-		var count uint64
-		sum, count, errx = proj.Sum(m.sql.tbl.Name, m.sql.aggField)
-		if errx != nil {
-			return errx
-		}
 		vals := make([]driver.Value, 1)
-		vals[0] = fmt.Sprintf("%d", sum)
-		if m.sql.isAvg && count != 0 {
-			vals[0] = fmt.Sprintf("%d", sum/int64(count))
+        if m.sql.isSum || m.sql.isAvg {
+			var sum int64
+			var count uint64
+			sum, count, errx = proj.Sum(m.sql.tbl.Name, m.sql.aggField)
+			if errx != nil {
+				return errx
+			}
+			vals[0] = fmt.Sprintf("%d", sum)
+			if m.sql.isAvg && count != 0 {
+				vals[0] = fmt.Sprintf("%d", sum/int64(count))
+			}
 		}
+        if m.sql.isMin || m.sql.isMax {
+			var minmax int64
+            if m.sql.isMin {
+				minmax, errx = proj.Min(m.sql.tbl.Name, m.sql.aggField)
+            } else {
+				minmax, errx = proj.Max(m.sql.tbl.Name, m.sql.aggField)
+            }
+			if errx != nil {
+				return errx
+			}
+			vals[0] = fmt.Sprintf("%d", minmax)
+        }
 		m.Vals = append(m.Vals, vals)
 		//u.Debugf("was a select sum(*) query %d", ct)
 		msg := datasource.NewSqlDriverMessageMap(uint64(1), vals, colNames)

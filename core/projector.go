@@ -753,6 +753,5 @@ func (p *Projector) getAggregateResult(table, field string) (result *roaring64.B
 		err = fmt.Errorf("Cannot locate attribute for field '%s'", field)
 		return
 	}
-
 	return
 }

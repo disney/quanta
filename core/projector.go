@@ -1,4 +1,5 @@
 package core
+
 // Projection functions including join projection handling.
 
 import (
@@ -27,7 +28,7 @@ type Projector struct {
 	resultIterator roaring64.ManyIntIterable64
 	stateGuard     sync.Mutex
 	fkBSI          map[string]*roaring64.BSI
-	Prefetch       bool                            // Set to true to prefetch all bitmap related data for export.
+	Prefetch       bool                                      // Set to true to prefetch all bitmap related data for export.
 	bsiResults     map[string]map[string]*roaring64.BSI      // Prefetched BSIs
 	bitmapResults  map[string]map[string]*BitmapFieldResults // Prefetched Bitmaps
 }
@@ -102,7 +103,7 @@ func NewProjection(s *Connection, foundSets map[string]*roaring64.Bitmap, joinNa
 		rs := make(map[string]*roaring64.Bitmap)
 		rs[p.driverTable] = p.foundSets[p.driverTable]
 		bsir, _, err := p.retrieveBitmapResults(rs, p.joinAttributes)
-        if err != nil {
+		if err != nil {
 			return nil, err
 		}
 		p.fkBSI = bsir[p.driverTable]
@@ -193,7 +194,7 @@ func (p *Projector) retrieveBitmapResults(foundSets map[string]*roaring64.Bitmap
 
 	for k, v := range foundSets {
 		bsir, bitr, err := p.connection.Client.Projection(k, fieldNames[k], p.fromTime, p.toTime, v)
-        if err != nil {
+		if err != nil {
 			return nil, nil, err
 		}
 		for field, r := range bitr {
@@ -238,7 +239,7 @@ func (p *Projector) nextSets(columnIDs []uint64) (map[string]map[string]*roaring
 	allAttr = append(allAttr, p.projAttributes...)
 	allAttr = append(allAttr, p.joinAttributes...)
 	bsir, bitr, err := p.retrieveBitmapResults(rs, allAttr)
-    if err != nil {
+	if err != nil {
 		return nil, nil, err
 	}
 	bsiResults[p.driverTable] = bsir[p.driverTable]
@@ -267,7 +268,7 @@ func (p *Projector) nextSets(columnIDs []uint64) (map[string]map[string]*roaring
 		}
 		rs[k] = newSet
 		bsir, bitr, err := p.retrieveBitmapResults(rs, p.projAttributes)
-        if err != nil {
+		if err != nil {
 			return nil, nil, err
 		}
 		bsiResults[k] = bsir[k]
@@ -329,7 +330,7 @@ func (p *Projector) Next(count int) (columnIDs []uint64, rows [][]driver.Value, 
 
 	for _, v := range columnIDs {
 		row, e := p.getRow(v, strMap, bsir, bitr)
-        if  e != nil {
+		if e != nil {
 			err = e
 			return
 		}
@@ -688,49 +689,42 @@ func (p *Projector) Rank(table, field string, count int) (rows [][]driver.Value,
 // Sum - Sum aggregate.
 func (p *Projector) Sum(table, field string) (sum int64, count uint64, err error) {
 
-	bsiResults, bitmapResults, errx := p.retrieveBitmapResults(p.foundSets, p.projAttributes)
+	r, errx := p.getAggregateResult(table, field)
 	if errx != nil {
 		err = errx
 		return
 	}
-
-	r, ok := bsiResults[table][field]
-	if !ok {
-		if _, ok2 := bitmapResults[table][field]; ok2 {
-			err = fmt.Errorf("Cannot aggregate non-BSI field '%s'", field)
-			return
-		}
-		err = fmt.Errorf("Cannot locate results for field '%s'", field)
-		return
-	}
-	var attr *Attribute
-	for _, v := range p.projAttributes {
-		if v.FieldName == field {
-			attr = v
-			break
-		}
-	}
-	if attr == nil { // Should never be nil
-		err = fmt.Errorf("Cannot locate attribute for field '%s'", field)
-		return
-	}
-
 	sum, count = r.Sum(r.GetExistenceBitmap())
 	return
 }
 
 // Min - Min aggregate.
 func (p *Projector) Min(table, field string) (min int64, err error) {
-    return p.minMax(true, table, field)
+	return p.minMax(true, table, field)
 }
 
 // Max - Max aggregate.
 func (p *Projector) Max(table, field string) (max int64, err error) {
-    return p.minMax(false, table, field)
+	return p.minMax(false, table, field)
 }
 
-
 func (p *Projector) minMax(isMin bool, table, field string) (minmax int64, err error) {
+
+	r, errx := p.getAggregateResult(table, field)
+	if errx != nil {
+		err = errx
+		return
+	}
+
+	if isMin {
+		minmax = r.MinMax(0, roaring64.MIN, r.GetExistenceBitmap())
+	} else {
+		minmax = r.MinMax(0, roaring64.MAX, r.GetExistenceBitmap())
+	}
+	return
+}
+
+func (p *Projector) getAggregateResult(table, field string) (result *roaring64.BSI, err error) {
 
 	bsiResults, bitmapResults, errx := p.retrieveBitmapResults(p.foundSets, p.projAttributes)
 	if errx != nil {
@@ -738,7 +732,8 @@ func (p *Projector) minMax(isMin bool, table, field string) (minmax int64, err e
 		return
 	}
 
-	r, ok := bsiResults[table][field]
+	var ok bool
+	result, ok = bsiResults[table][field]
 	if !ok {
 		if _, ok2 := bitmapResults[table][field]; ok2 {
 			err = fmt.Errorf("Cannot aggregate non-BSI field '%s'", field)
@@ -759,10 +754,5 @@ func (p *Projector) minMax(isMin bool, table, field string) (minmax int64, err e
 		return
 	}
 
-    if isMin {
-	    minmax = r.MinMax(0, roaring64.MIN, r.GetExistenceBitmap())
-    } else {
-	    minmax = r.MinMax(0, roaring64.MAX, r.GetExistenceBitmap())
-    }
 	return
 }

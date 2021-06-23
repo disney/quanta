@@ -13,9 +13,9 @@ import (
 	quanta "github.com/disney/quanta/client"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/custom/functions"
+	"github.com/disney/quanta/rbac"
 	"github.com/disney/quanta/server"
 	"github.com/disney/quanta/source"
-	"github.com/disney/quanta/rbac"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 	"github.com/xitongsys/parquet-go-source/local"
@@ -25,7 +25,7 @@ import (
 type QuantaTestSuite struct {
 	suite.Suite
 	endpoint *server.EndPoint
-    store    *quanta.KVStore
+	store    *quanta.KVStore
 }
 
 func (suite *QuantaTestSuite) SetupSuite() {
@@ -56,18 +56,18 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err2)
 	schema.RegisterSourceAsSchema("quanta", src)
 
-    conn := quanta.NewDefaultConnection()
-    conn.ServicePort = 0
-    err = conn.Connect()
-    assert.NoError(suite.T(), err)
+	conn := quanta.NewDefaultConnection()
+	conn.ServicePort = 0
+	err = conn.Connect()
+	assert.NoError(suite.T(), err)
 
-    suite.store = quanta.NewKVStore(conn)
-    assert.NotNil(suite.T(), suite.store)
+	suite.store = quanta.NewKVStore(conn)
+	assert.NotNil(suite.T(), suite.store)
 
-    ctx, err := rbac.NewAuthContext(suite.store, "USER001", true)
-    assert.NoError(suite.T(), err)
-    err = ctx.GrantRole(rbac.DomainUser, "USER001", "quanta", true)
-    assert.NoError(suite.T(), err)
+	ctx, err := rbac.NewAuthContext(suite.store, "USER001", true)
+	assert.NoError(suite.T(), err)
+	err = ctx.GrantRole(rbac.DomainUser, "USER001", "quanta", true)
+	assert.NoError(suite.T(), err)
 }
 
 func (suite *QuantaTestSuite) loadData(table, filePath string) error {
@@ -111,8 +111,8 @@ func (suite *QuantaTestSuite) runQuery(q string) ([]string, error) {
 		return []string{""}, err
 	}
 
-    // Set user id in session
-    setter := "set @userid = 'USER001'"
+	// Set user id in session
+	setter := "set @userid = 'USER001'"
 	_, err = db.Exec(setter)
 	assert.NoError(suite.T(), err)
 
@@ -201,6 +201,13 @@ func (suite *QuantaTestSuite) TestSQLSyntaxUnknownField() {
 	assert.Error(suite.T(), err)
 }
 
+func (suite *QuantaTestSuite) TestBetweenWithNegative() {
+	results, err := suite.runQuery("select count(*) from cities where latitude BETWEEN 41.0056 AND 44.9733 AND longitude BETWEEN '-111.0344' AND '-104.0692'")
+
+	assert.NoError(suite.T(), err)
+	suite.Equal("202", results[0]) // Count of all cities in WY
+}
+
 func (suite *QuantaTestSuite) TestNotBetween() {
 	results, err := suite.runQuery("select count(*) from cities where population NOT BETWEEN 100000 and 150000")
 	assert.NoError(suite.T(), err)
@@ -275,43 +282,47 @@ func (suite *QuantaTestSuite) TestAvgInvalidFieldType() {
 	assert.EqualError(suite.T(), err, "can't average a non-bsi field state_name")
 }
 
-//// ***** MIN and MAX aren't dev complete yet
-//// UNCOMMENT these once min and max are completed.
-// func (suite *QuantaTestSuite) TestSimpleMin() {
-// 	results, err := suite.runQuery("select min(population) from cities")
-// 	assert.NoError(suite.T(), err)
-// 	assert.Greater(suite.T(), len(results), 0)
-// 	suite.Equal("2530", results[0])
-// }
+func (suite *QuantaTestSuite) TestSimpleMin() {
+	results, err := suite.runQuery("select min(population) from cities where name = 'Oceanside'")
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	//suite.Equal("2530", results[0])
+	suite.Equal("       352", results[0])
+}
 
-// func (suite *QuantaTestSuite) TestMinInvalidFieldName() {
-// 	_, err := suite.runQuery("select min(foobar) from cities WHERE timezone != NULL")
-// 	assert.EqualError(suite.T(), err, "attribute 'foobar' not found")
-// }
+func (suite *QuantaTestSuite) TestNegativeMin() {
+	results, err := suite.runQuery("select min(longitude) from cities where state = 'WY'")
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	suite.Equal(" -111.0344", results[0])
+}
 
-// func (suite *QuantaTestSuite) TestMinInvalidFieldType() {
-// 	results, err := suite.runQuery("select min(state_name) from cities")
-// 	assert.EqualError(suite.T(), err, "can't min a non-bsi field state_name")
-// 	suite.Equal(52, len(results))
-// }
+func (suite *QuantaTestSuite) TestMinInvalidFieldName() {
+	_, err := suite.runQuery("select min(foobar) from cities WHERE timezone != NULL")
+	assert.EqualError(suite.T(), err, "attribute 'foobar' not found")
+}
 
-// func (suite *QuantaTestSuite) TestSimpleMax() {
-// 	results, err := suite.runQuery("select max(population) from cities")
-// 	assert.NoError(suite.T(), err)
-// 	assert.Greater(suite.T(), len(results), 0)
-// 	suite.Equal("18713220", results[0])
-// }
+func (suite *QuantaTestSuite) TestMinInvalidFieldType() {
+	_, err := suite.runQuery("select min(state_name) from cities")
+	assert.EqualError(suite.T(), err, "can't find the minimum of a non-bsi field state_name")
+}
 
-// func (suite *QuantaTestSuite) TestMaxInvalidFieldName() {
-// 	_, err := suite.runQuery("select max(foobar) from cities WHERE timezone != NULL")
-// 	assert.EqualError(suite.T(), err, "attribute 'foobar' not found")
-// }
+func (suite *QuantaTestSuite) TestSimpleMax() {
+	results, err := suite.runQuery("select max(population) from cities")
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	suite.Equal("  18713220", results[0])
+}
 
-// func (suite *QuantaTestSuite) TestMaxInvalidFieldType() {
-// 	results, err := suite.runQuery("select max(state_name) from cities")
-// 	assert.EqualError(suite.T(), err, "can't max a non-bsi field state_name")
-// 	suite.Equal(52, len(results))
-// }
+func (suite *QuantaTestSuite) TestMaxInvalidFieldName() {
+	_, err := suite.runQuery("select max(foobar) from cities WHERE timezone != NULL")
+	assert.EqualError(suite.T(), err, "attribute 'foobar' not found")
+}
+
+func (suite *QuantaTestSuite) TestMaxInvalidFieldType() {
+	_, err := suite.runQuery("select max(state_name) from cities")
+	assert.EqualError(suite.T(), err, "can't find the maximum of a non-bsi field state_name")
+}
 
 // END AGGREGATES
 

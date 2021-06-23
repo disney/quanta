@@ -201,6 +201,12 @@ func (suite *QuantaTestSuite) TestSQLSyntaxUnknownField() {
 	assert.Error(suite.T(), err)
 }
 
+func (suite *QuantaTestSuite) TestBetweenWithNegative() {
+	results, err := suite.runQuery("select count(*) from cities where latitude BETWEEN 41.0260 AND 44.9725 AND longitude BETWEEN '-110.9755' AND '-104.0582'")
+	assert.NoError(suite.T(), err)
+	suite.Equal("188", results[0])
+}
+
 func (suite *QuantaTestSuite) TestNotBetween() {
 	results, err := suite.runQuery("select count(*) from cities where population NOT BETWEEN 100000 and 150000")
 	assert.NoError(suite.T(), err)

@@ -41,7 +41,6 @@ const (
 // Main strct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
 	SchemaDir     string
-	MetadataDir   string
 	Index         string
 	BufferSize    uint
 	BucketPath    string
@@ -78,7 +77,6 @@ func main() {
 
 	bucketName := app.Arg("bucket-path", "AWS S3 Bucket Name/Path (patterns ok) to read from via the data loader.").Required().String()
 	schemaDir := app.Arg("schema-dir", "Directory path for config/schema files.").Required().String()
-	metadataDir := app.Arg("metadata-dir", "Directory path to store metadata files.").Required().String()
 	index := app.Arg("index", "Table name (root name if nested schema)").Required().String()
 	port := app.Arg("port", "Port number for service").Default("4000").Int32()
 	region := app.Flag("aws-region", "AWS region of bitmap server host(s)").Default("us-east-1").String()
@@ -99,7 +97,6 @@ func main() {
 	main.BufferSize = uint(*bufSize)
 	main.AWSRegion = *region
 	main.SchemaDir = *schemaDir
-	main.MetadataDir = *metadataDir
 	main.Port = int(*port)
 	main.IsDistributed = *isDistributed
 	main.IsNested = *isNested
@@ -109,7 +106,6 @@ func main() {
 	log.Printf("Buffer size %d.\n", main.BufferSize)
 	log.Printf("AWS region %s\n", main.AWSRegion)
 	log.Printf("Base path for schema [%s].\n", main.SchemaDir)
-	log.Printf("Base path for metadata [%s].\n", main.MetadataDir)
 	log.Printf("Service port %d.\n", main.Port)
 	if main.IsDistributed {
 		log.Printf("Distributed Mode.  Consul agent at [%s]\n", main.ConsulAddr)
@@ -149,7 +145,7 @@ func main() {
 	if !*dryRun {
 		for i := 0; i < threads; i++ {
 			eg.Go(func() error {
-				conn, err := core.OpenConnection(main.SchemaDir, main.MetadataDir, main.Index, main.IsNested,
+				conn, err := core.OpenConnection(main.SchemaDir, main.Index, main.IsNested,
 					main.BufferSize, main.Port, main.ConsulClient)
 				if err != nil {
 					return err
@@ -316,7 +312,7 @@ func (m *Main) Init() error {
 	}
 
 	// Call OpenConnection once here just verify the schema config
-	conn, err := core.OpenConnection(m.SchemaDir, m.MetadataDir, m.Index, m.IsNested, m.BufferSize,
+	conn, err := core.OpenConnection(m.SchemaDir, m.Index, m.IsNested, m.BufferSize,
 		m.Port, m.ConsulClient)
 	if err != nil {
 		log.Fatal("Error opening table ", err)

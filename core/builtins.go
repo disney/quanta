@@ -499,6 +499,8 @@ func (m SysSecBSIMapper) MapValue(attr *Attribute, val interface{},
 		result = uint64(val.(time.Time).Unix())
 	case int64:
 		result = uint64(val.(int64))
+	case int32:
+		result = uint64(val.(int32))
 	default:
 		err = fmt.Errorf("%s: No handling for type '%T'", m.String(), val)
 	}

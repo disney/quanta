@@ -2,10 +2,8 @@ package core
 // Table metadata management functions.
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"github.com/akrylysov/pogreb"
 	"github.com/araddon/qlbridge/value"
 	"github.com/hashicorp/consul/api"
 	"gopkg.in/yaml.v2"
@@ -14,8 +12,10 @@ import (
 	"os"
 	"os/signal"
 	"plugin"
+    "reflect"
 	"strings"
 	"sync"
+	"github.com/disney/quanta/client"
 )
 
 // Table - Table structure.
@@ -32,7 +32,7 @@ type Table struct {
 	lock             *api.Lock             `yaml:"-"`
 	localLock        sync.RWMutex          `yaml:"-"`
 	basePath         string                `yaml:"-"`
-	metadataPath     string                `yaml:"-"`
+	kvStore          *quanta.KVStore       `yaml:"-"`
 }
 
 // Attribute - Field structure.
@@ -175,7 +175,7 @@ var (
 )
 
 // LoadSchema - Load a new Table object from configuration.
-func LoadSchema(path, metadataPath, name string, consulClient *api.Client) (*Table, error) {
+func LoadSchema(path string, kvStore *quanta.KVStore, name string, consulClient *api.Client) (*Table, error) {
 
 	tableCacheLock.Lock()
 	defer tableCacheLock.Unlock()
@@ -195,7 +195,7 @@ func LoadSchema(path, metadataPath, name string, consulClient *api.Client) (*Tab
 
 	table.ConsulClient = consulClient
 	table.basePath = path
-	table.metadataPath = metadataPath
+	table.kvStore = kvStore
 
 	table.attributeNameMap = make(map[string]*Attribute)
 	if err := table.Lock(); err != nil {
@@ -264,8 +264,9 @@ func LoadSchema(path, metadataPath, name string, consulClient *api.Client) (*Tab
 			// check to see if there are values in the API call (if applicable)
 			//if x, ok := fieldMap[table.Name + "_" + v.FieldName]; ok {
 
-			// if there are values in schema.yaml then override metadata values in global cache
-			if f, ok := fieldMap[v.FieldName]; ok && len(table.Attributes[j].Values) > 0 {
+            lookupName := table.Name + ":" + v.FieldName
+			// if there are values in schema.yaml then override string enum values in global cache
+			if f, ok := fieldMap[lookupName]; ok && len(table.Attributes[j].Values) > 0 {
 				// Pull it in
 				values := make([]FieldValue, 0)
 				for _, x := range table.Attributes[j].Values {
@@ -275,8 +276,8 @@ func LoadSchema(path, metadataPath, name string, consulClient *api.Client) (*Tab
 				f.Values = values
 			}
 
-			// Dont allow metadata values to override local cache
-			if x, ok := fieldMap[v.FieldName]; ok && len(table.Attributes[j].Values) == 0 {
+			// Dont allow string enum values to override local cache
+			if x, ok := fieldMap[lookupName]; ok && len(table.Attributes[j].Values) == 0 {
 				var values []Value = make([]Value, 0)
 				for _, z := range x.Values {
 					if z.Mapping == "" {
@@ -408,24 +409,37 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 	var v uint64
 	var ok bool
 	a.Parent.localLock.RLock()
+    if a.valueMap == nil {
+    	a.valueMap = make(map[interface{}]uint64, 0)
+   	}
+    if a.reverseMap == nil {
+    	a.reverseMap = make(map[uint64]interface{}, 0)
+   	}
 	if v, ok = a.valueMap[value]; !ok {
 		/* If the value does not exist in the valueMap local cache  we will add it and then
-		 *  Call the metadata service to add it.
+		 *  Call the string enum service to add it.
 		 */
 
 		a.Parent.localLock.RUnlock()
-		if err := a.Parent.Lock(); err != nil {
-			return 0, err
-		}
-		defer a.Parent.Unlock()
+        a.Parent.localLock.Lock()
+		defer a.Parent.localLock.Unlock()
+
+        if a.Parent.kvStore == nil {
+			return 0, fmt.Errorf("KVStore is not initialized.")
+        }
 
 		// OK, value not anywhere to be found, invoke service to add.
-		val, err := a.Parent.AddFieldValue(a.FieldName, value)
+        rowId, err := a.Parent.kvStore.PutStringEnum(a.Parent.Name + ":" + a.FieldName, value.(string))
         if err != nil {
 			return 0, err
 		}
-		v = val
-		log.Printf("Updated metadata for field = %s, value = %v, ID = %v", a.FieldName, value, v)
+
+    	a.Values = append(a.Values, Value{Value: value, RowID: rowId})
+    	a.valueMap[value] = rowId
+    	a.reverseMap[rowId] = value
+
+		v = rowId
+		log.Printf("Added enum for field = %s, value = %v, ID = %v", a.FieldName, value, v)
 	} else {
 		a.Parent.localLock.RUnlock()
 	}
@@ -536,98 +550,39 @@ type FieldValue struct {
 	Mapping string `json:mapping`
 }
 
-//
-// AddFieldValue - Add a new field value.
-// NOTE: Must be called inside a mutex/concurrency guard.
-//
-//
-func (t *Table) AddFieldValue(fieldName string, value interface{}) (rowID uint64, err error) {
 
-	db, errx := pogreb.Open(t.metadataPath+SEP+t.Name, nil)
-	if errx != nil {
-		err = fmt.Errorf("ERROR: Cannot open metadata for table %s. [%v]", t.Name, errx)
-		return
-	}
-	defer db.Close()
-
-	attr, errx := t.GetAttribute(fieldName)
-	if errx != nil {
-		err = errx
-		return
-	}
-
-	// Iterate over Values to find maximum rowID
-	for _, fv := range attr.Values {
-		if fv.RowID > rowID {
-			rowID = fv.RowID
-		}
-		if fv.Value == value.(string) {
-			// Should never get here
-			rowID = fv.RowID
-			err = fmt.Errorf("ERROR: FieldValue %s already exists in metadata for table %s, field %s",
-				fv.Value, t.Name, fieldName)
-			return
-		}
-	}
-	rowID++
-
-	attr.Values = append(attr.Values, Value{Value: value, RowID: rowID})
-	if attr.valueMap == nil {
-		attr.valueMap = make(map[interface{}]uint64, 0)
-	}
-	if attr.reverseMap == nil {
-		attr.reverseMap = make(map[uint64]interface{}, 0)
-	}
-	attr.valueMap[value] = rowID
-	attr.reverseMap[rowID] = value
-
-	key := fmt.Sprintf("%s%s%v", fieldName, fDelim, value)
-	v := make([]byte, 8)
-	binary.LittleEndian.PutUint64(v, rowID)
-	if err2 := db.Put([]byte(key), v); err != nil {
-		err = err2
-		rowID = 0
-	}
-
-	//attr.Values = append(attr.Values, Value{Value: value.(string), RowID: rowID, Desc: value.(string)})
-	return
-}
-
-// LoadFieldValues from metadata repository.
+// LoadFieldValues from string enum repository.
 func (t *Table) LoadFieldValues() (fieldMap map[string]*Field, err error) {
+
+    if t.kvStore == nil {
+        return nil, nil
+    }
 
 	var attributeFieldMap map[string]*Field = make(map[string]*Field)
 
-	tableDir := t.metadataPath + SEP + t.Name
-	os.MkdirAll(tableDir, 0755)
-	db, errx := pogreb.Open(tableDir, nil)
-	if errx != nil {
-		return nil, fmt.Errorf("ERROR: Cannot open metadata for table %s. [%v]", t.Name, errx)
-	}
-	defer db.Close()
-
-	it := db.Items()
-	for {
-		fullKey, val, err := it.Next()
-		if err != nil {
-			if err != pogreb.ErrIterationDone {
-				return nil, err
-			}
-			break
-		}
-		s := strings.SplitN(string(fullKey), fDelim, 2)
-		v := binary.LittleEndian.Uint64(val)
-
-		if f, ok := attributeFieldMap[s[0]]; !ok {
-			f := &Field{Name: s[0], Label: s[0]}
-			attributeFieldMap[s[0]] = f
-			f.Values = make([]FieldValue, 0)
-			f.Values = append(f.Values, FieldValue{Label: s[1], Mapping: s[1], Value: v})
-		} else {
-			f.Values = append(f.Values, FieldValue{Label: s[1], Mapping: s[1], Value: v})
-		}
-
-	}
+    for _, attr := range t.Attributes {
+       if attr.MappingStrategy != "StringEnum" {
+           continue
+       }
+       lookupName := t.Name + ":" + attr.FieldName
+       x, err := t.kvStore.Items(lookupName, reflect.Uint64, reflect.String)
+       if err != nil {
+		    return nil, fmt.Errorf("ERROR: Cannot open enum for table %s, field %s. [%v]", t.Name, 
+                attr.FieldName,  err)
+       }
+       for kk, vv := range x {
+           k := kk.(string)
+           v := vv.(uint64)
+           if f, ok := attributeFieldMap[lookupName]; !ok {
+               f := &Field{Name: attr.FieldName, Label: attr.FieldName}
+               attributeFieldMap[attr.FieldName] = f
+               f.Values = make([]FieldValue, 0)
+               f.Values = append(f.Values, FieldValue{Label: k, Mapping: k, Value: v})
+           } else {
+               f.Values = append(f.Values, FieldValue{Label: k, Mapping: k, Value: v})
+           }
+       }
+    }
 
 	return attributeFieldMap, nil
 }

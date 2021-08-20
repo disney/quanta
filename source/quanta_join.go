@@ -355,12 +355,8 @@ func (m *JoinMerge) makeBufferedConnection(driverTable string) (*core.Connection
 	if !ok {
 		return nil, fmt.Errorf("cannot obtain base path from session")
 	}
-	metadataPath, ok := m.Ctx.Session.Get(metadataPath)
-	if !ok {
-		return nil, fmt.Errorf("cannot obtain metadata path from session")
-	}
-	return core.OpenConnection(basePath.ToString(), metadataPath.ToString(), driverTable, false,
-		0, int(port.Value().(int64)), nil)
+    return core.OpenConnection(basePath.ToString(), driverTable, false,
+        0, int(port.Value().(int64)), nil)
 }
 
 func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitmap,

@@ -30,7 +30,6 @@ const (
 // Main strct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
 	SchemaDir     string
-	MetadataDir   string
 	Index         string
 	BufferSize    uint
 	totalBytes    int64
@@ -62,7 +61,6 @@ func main() {
 	app.Version("Version: " + Version + "\nBuild: " + Build)
 
 	schemaDir := app.Arg("schema-dir-name", "Directory path for config/schema files.").Required().String()
-	metadataDir := app.Arg("metadata-dir-name", "Directory path for metadata files.").Required().String()
 	index := app.Arg("index", "Table name (root name if nested schema)").Required().String()
 	broker := app.Arg("broker", "Kafka broker host").Required().String()
 	group := app.Arg("group", "Kafka group").Required().String()
@@ -81,7 +79,6 @@ func main() {
 	main.Index = *index
 	main.BufferSize = uint(*bufSize)
 	main.SchemaDir = *schemaDir
-	main.MetadataDir = *metadataDir
 	main.Port = int(*port)
 	main.IsDistributed = *isDistributed
 	main.ConsulAddr = *consul
@@ -92,7 +89,6 @@ func main() {
 	log.Printf("Index name %v.", main.Index)
 	log.Printf("Buffer size %d.", main.BufferSize)
 	log.Printf("Base path for schema [%s].", main.SchemaDir)
-	log.Printf("Base path for metadata [%s].", main.MetadataDir)
 	log.Printf("Service port %d.", main.Port)
 	if main.IsDistributed {
 		log.Printf("Distributed Mode.  Consul agent at [%s]\n", main.ConsulAddr)
@@ -130,7 +126,7 @@ func main() {
 	for n := 0; n < runtime.NumCPU(); n++ {
 		go func(i int) {
 			var err error
-			main.conns[i], err = core.OpenConnection(main.SchemaDir, main.MetadataDir, main.Index, true,
+			main.conns[i], err = core.OpenConnection(main.SchemaDir, main.Index, true,
 				main.BufferSize, main.Port, main.ConsulClient)
 			if err != nil {
 				log.Fatalf("Error opening connection %v", err)

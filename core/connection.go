@@ -33,7 +33,6 @@ const (
 // Connection - State for session (non-threadsafe)
 type Connection struct {
 	BasePath     string // path to schema directory
-	MetadataPath string // path to metadata directory
 	Client       *quanta.BitmapIndex
 	StringIndex  *quanta.StringSearch
 	KVStore      *quanta.KVStore
@@ -84,18 +83,28 @@ func NewTableBuffer(table *Table) (*TableBuffer, error) {
 // OpenConnection - Creates a connected session to the underlying core.
 // (This is intentionally not thread-safe for maximum throughput.)
 //
-func OpenConnection(path, metadataPath, name string, nested bool, bufSize uint, port int,
+func OpenConnection(path, name string, nested bool, bufSize uint, port int,
 	consul *api.Client) (*Connection, error) {
 
 	if name == "" {
 		return nil, fmt.Errorf("table name is nil")
 	}
+
+	conn := quanta.NewDefaultConnection()
+	conn.ServicePort = port
+	conn.Quorum = 3
+	if err := conn.Connect(); err != nil {
+		log.Fatal(err)
+	}
+
+	kvStore := quanta.NewKVStore(conn)
+
 	tableBuffers := make(map[string]*TableBuffer, 0)
-	tab, err := LoadSchema(path, metadataPath, name, consul)
+	tab, err := LoadSchema(path, kvStore, name, consul)
 	if err != nil {
 		return nil, err
 	} else if nested {
-		if err = recurseAndLoadSchema(path, metadataPath, tableBuffers, tab); err != nil {
+		if err = recurseAndLoadSchema(path, kvStore, tableBuffers, tab); err != nil {
 			return nil, fmt.Errorf("Error loading child tables %v", err)
 		}
 	} else {
@@ -103,7 +112,7 @@ func OpenConnection(path, metadataPath, name string, nested bool, bufSize uint, 
 		for _, v := range tab.Attributes {
 			if v.MappingStrategy == "ParentRelation" && v.ForeignKey != "" {
 				fkTable, _, _ := v.GetFKSpec()
-				parent, err2 := LoadSchema(path, metadataPath, fkTable, consul)
+				parent, err2 := LoadSchema(path, kvStore, fkTable, consul)
                 if err != nil {
 					return nil, fmt.Errorf("Error loading parent schema - %v", err2)
 				}
@@ -121,19 +130,12 @@ func OpenConnection(path, metadataPath, name string, nested bool, bufSize uint, 
 	} else {
 		return nil, fmt.Errorf("OpenConnection error - %v", err)
 	}
-	s := &Connection{BasePath: path, MetadataPath: metadataPath, TableBuffers: tableBuffers, Nested: nested}
-
-	conn := quanta.NewDefaultConnection()
-	conn.ServicePort = port
-	conn.Quorum = 3
-	if err := conn.Connect(); err != nil {
-		log.Fatal(err)
-	}
-
+	s := &Connection{BasePath: path, TableBuffers: tableBuffers, Nested: nested}
 	s.StringIndex = quanta.NewStringSearch(conn, 1000)
-	s.KVStore = quanta.NewKVStore(conn)
+	s.KVStore = kvStore
 	s.Client = quanta.NewBitmapIndex(conn, 3000000)
 	s.Client.KVStore = s.KVStore
+
 	return s, nil
 }
 
@@ -142,16 +144,16 @@ func (s *Connection) SetDateFilter(filter *time.Time) {
 	s.DateFilter = filter
 }
 
-func recurseAndLoadSchema(basePath, metadataPath string, tableBuffers map[string]*TableBuffer, curTable *Table) error {
+func recurseAndLoadSchema(basePath string, kvStore *quanta.KVStore, tableBuffers map[string]*TableBuffer, curTable *Table) error {
 
 	for _, v := range curTable.Attributes {
 		_, ok := tableBuffers[v.ChildTable]
 		if v.ChildTable != "" && !ok {
-			table, err := LoadSchema(basePath, metadataPath, v.ChildTable, curTable.ConsulClient)
+			table, err := LoadSchema(basePath, kvStore, v.ChildTable, curTable.ConsulClient)
 			if err != nil {
 				return err
 			}
-			err = recurseAndLoadSchema(basePath, metadataPath, tableBuffers, table)
+			err = recurseAndLoadSchema(basePath, kvStore, tableBuffers, table)
 			if err != nil {
 				return fmt.Errorf("while loading %s, %v", table.Name, err)
 			}
@@ -185,7 +187,7 @@ func (s *Connection) PutRow(name string, row *reader.ParquetReader) error {
 }
 
 func (s *Connection) recursivePutRow(name string, row *reader.ParquetReader, pqTablePath string,
-	isChild bool) error {
+	    isChild bool) error {
 
 	tbuf, ok := s.TableBuffers[name]
 	if !ok {

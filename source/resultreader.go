@@ -10,6 +10,7 @@ import (
 	"github.com/araddon/qlbridge/rel"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
+	"math"
 	"time"
 )
 
@@ -154,6 +155,10 @@ func (m *ResultReader) Run() error {
 		dataMap["toTime"] = toTime.UnixNano()
 		dataMap["table"] = m.sql.tbl.Name
 		dataMap["isDriver"] = m.conn.IsDriverForTables(allTables)
+		dataMap["isDefaultWhere"] = false
+		if m.sql.defaultWhere {
+			dataMap["isDefaultWhere"] = true
+		}
 		msg := datasource.NewContextSimpleNative(dataMap)
 		outCh <- msg
 		return nil
@@ -162,7 +167,7 @@ func (m *ResultReader) Run() error {
 		return nil
 	}
 
-	if m.sql.isSum || m.sql.isAvg {
+	if m.sql.isSum || m.sql.isAvg || m.sql.isMin || m.sql.isMax {
 		projFields := []string{fmt.Sprintf("%s.%s", m.sql.tbl.Name, m.sql.aggField)}
 		foundSet := make(map[string]*roaring64.Bitmap)
 		foundSet[m.sql.tbl.Name] = m.response.Results
@@ -171,16 +176,41 @@ func (m *ResultReader) Run() error {
 		if errx != nil {
 			return errx
 		}
-		var sum int64
-		var count uint64
-		sum, count, errx = proj.Sum(m.sql.tbl.Name, m.sql.aggField)
-		if errx != nil {
-			return errx
-		}
 		vals := make([]driver.Value, 1)
-		vals[0] = fmt.Sprintf("%d", sum)
-		if m.sql.isAvg && count != 0 {
-			vals[0] = fmt.Sprintf("%d", sum/int64(count))
+        if m.sql.isSum || m.sql.isAvg {
+			var sum int64
+			var count uint64
+			sum, count, errx = proj.Sum(m.sql.tbl.Name, m.sql.aggField)
+			if errx != nil {
+				return errx
+			}
+			vals[0] = fmt.Sprintf("%d", sum)
+			if m.sql.isAvg && count != 0 {
+				vals[0] = fmt.Sprintf("%d", sum/int64(count))
+			}
+		}
+		if m.sql.isMin || m.sql.isMax {
+			var minmax int64
+			if m.sql.isMin {
+				minmax, errx = proj.Min(m.sql.tbl.Name, m.sql.aggField)
+			} else {
+				minmax, errx = proj.Max(m.sql.tbl.Name, m.sql.aggField)
+			}
+			if errx != nil {
+				return errx
+			}
+			table := m.sql.conn.TableBuffers[m.sql.tbl.Name].Table
+			field, err := table.GetAttribute(m.sql.aggField)
+			if err != nil {
+				return err
+			}
+			switch core.TypeFromString(field.Type) {
+			case core.Integer:
+				vals[0] = fmt.Sprintf("%10d", minmax)
+			case core.Float:
+				f := fmt.Sprintf("%%10.%df", field.Scale)
+				vals[0] = fmt.Sprintf(f, float64(minmax)/math.Pow10(field.Scale))
+			}
 		}
 		m.Vals = append(m.Vals, vals)
 		//u.Debugf("was a select sum(*) query %d", ct)

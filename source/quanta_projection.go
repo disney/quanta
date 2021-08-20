@@ -1,4 +1,5 @@
 package source
+
 // Projection handling task for query processor.
 
 import (

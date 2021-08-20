@@ -1,4 +1,5 @@
 package source
+
 // QuantaJoinMerge task implementation.
 
 import (
@@ -75,8 +76,8 @@ func (m *JoinMerge) Run() error {
 	var rresult *roaring64.Bitmap
 	foundSets := make(map[string]*roaring64.Bitmap)
 	var foundSetLock sync.Mutex
-	var rtable string
-	var ltable string
+	var rtable, ltable string
+	var lisdefaultedpredicate, risdefaultedpredicate bool
 	var fromTime, toTime int64
 	orig := m.Ctx.Stmt.(*rel.SqlSelect)
 	limit := orig.Limit
@@ -114,6 +115,12 @@ func (m *JoinMerge) Run() error {
 						isDriver := x.Value().(bool)
 						if isDriver {
 							m.driverTable = ltable
+						}
+					}
+					if x, ok := mt.Get("isDefaultWhere"); ok {
+						isDefaultWhere := x.Value().(bool)
+						if isDefaultWhere {
+							lisdefaultedpredicate = true
 						}
 					}
 					if x, ok := mt.Get("results"); ok {
@@ -203,6 +210,12 @@ func (m *JoinMerge) Run() error {
 							m.driverTable = rtable
 						}
 					}
+					if x, ok := mt.Get("isDefaultWhere"); ok {
+						isDefaultWhere := x.Value().(bool)
+						if isDefaultWhere {
+							risdefaultedpredicate = true
+						}
+					}
 				default:
 					fatalErr = fmt.Errorf("right msg input should receive ContextSimple but got %T", msg)
 					u.Errorf("%v - unrecognized msg %T", fatalErr, msg)
@@ -277,7 +290,9 @@ func (m *JoinMerge) Run() error {
 				return err
 			}
 			ct, _ := rs.Sum(rs.GetExistenceBitmap())
-			if isOuter {
+            // This test is necessary only if the foreign key can contain NULL values (which is the point of OUTER joins)
+            // A corner case can exist if there are no predicates in which case there are cancelling AndNot operations
+			if isOuter && (!lisdefaultedpredicate || !risdefaultedpredicate) {
 				driverSet := foundSets[m.driverTable]
 				diff := roaring64.AndNot(driverSet, rs.GetExistenceBitmap()).GetCardinality()
 				ct = int64(diff)
@@ -305,7 +320,7 @@ func (m *JoinMerge) Run() error {
 			return err
 		}
 		con, err := m.makeBufferedConnection(m.driverTable)
-        if  err != nil {
+		if err != nil {
 			return err
 		}
 		defer con.CloseConnection()

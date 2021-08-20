@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"runtime/debug"
 	"strings"
+	"sync"
 
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/expr/builtins"
@@ -22,11 +23,11 @@ import (
 	mysql "github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/server"
 
-	"github.com/siddontang/go-mysql/test_util/test_keys"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/custom/functions"
 	"github.com/disney/quanta/sink"
 	"github.com/disney/quanta/source"
+	"github.com/siddontang/go-mysql/test_util/test_keys"
 )
 
 // Variables to identify the build
@@ -48,10 +49,11 @@ var (
 	dataDir       *string
 	username      *string
 	password      *string
-	db            *sql.DB
 	reWhitespace  *regexp.Regexp
-	publicKeySet  *jwk.Set
+	publicKeySet  []*jwk.Set
+	userPool      sync.Map
 	authProvider  *AuthProvider
+	userClaimsKey string
 )
 
 func main() {
@@ -67,7 +69,7 @@ func main() {
 	metadataDir := app.Arg("metadata-dir", "Base directory containing metadata files").Default("/home/data/metadata").String()
 	publicKeyURL := app.Arg("public-key-url", "URL for JWT public key.").String()
 	tokenservicePort := app.Arg("tokenservice-port", "Token exchance service port").Default("4001").Int()
-	userClaimsKey := app.Flag("user-key", "Key used to get user id from JWT claims").Default("username").String()
+	userKey := app.Flag("user-key", "Key used to get user id from JWT claims").Default("username").String()
 	username = app.Flag("username", "User account name for MySQL DB").Default("root").String()
 	password = app.Flag("password", "Password for account for MySQL DB (just press enter for now when logging in on mysql console)").Default("").String()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
@@ -89,18 +91,22 @@ func main() {
 	u.Infof("Connecting to Consul at: [%s] ...\n", consulAddr)
 
 	if publicKeyURL != nil {
-		u.Infof("Retrieving JWT public key from [%s]", *publicKeyURL)
-		keySet, err := jwk.Fetch(*publicKeyURL)
-		if err != nil {
-			log.Fatal(err)
+		publicKeySet = make([]*jwk.Set, 0)
+		urls := strings.Split(*publicKeyURL, ",")
+		for _, url := range urls {
+			u.Infof("Retrieving JWT public key from [%s]", url)
+			keySet, err := jwk.Fetch(url)
+			if err != nil {
+				log.Fatal(err)
+			}
+			publicKeySet = append(publicKeySet, keySet)
 		}
-		publicKeySet = keySet
 	}
-
+	userClaimsKey = *userKey
 	// Start the token exchange service
 	u.Infof("Starting the token exchange service on port %d", *tokenservicePort)
-	authProvider = NewAuthProvider()
-	StartTokenService(*tokenservicePort, *userClaimsKey, authProvider)
+	authProvider = NewAuthProvider() // this instance is global used by tokenservice
+	StartTokenService(*tokenservicePort, authProvider)
 
 	// Match 2 or more whitespace chars inside string
 	reWhitespace = regexp.MustCompile(`[\s\p{Zs}]{2,}`)
@@ -118,12 +124,6 @@ func main() {
 		log.Println(err)
 	}
 	schema.RegisterSourceAsSchema("quanta", src)
-
-	db, err = sql.Open("qlbridge", "quanta")
-	if err != nil {
-		panic(err.Error())
-	}
-	defer db.Close()
 
 	// Start server endpoint
 	l, err := net.Listen("tcp", *proxyHostPort)
@@ -143,14 +143,10 @@ func main() {
 }
 
 func onConn(conn net.Conn) {
-	// Create a connection with user root and an empty passowrd
-	// We only an empty handler to handle command too
-	//sconn, _ := server.NewConn(conn, *username, *password, &ProxyHandler{})
-	//svr := server.NewServer("8.0.12", mysql.DEFAULT_COLLATION_ID, mysql.AUTH_CACHING_SHA2_PASSWORD, test_keys.PubPem, tlsConf)
 	var tlsConf = server.NewServerTLSConfig(test_keys.CaPem, test_keys.CertPem, test_keys.KeyPem, tls.VerifyClientCertIfGiven)
 	svr := server.NewServer("8.0.12", mysql.DEFAULT_COLLATION_ID, mysql.AUTH_NATIVE_PASSWORD, test_keys.PubPem, tlsConf)
-
-	sconn, err := server.NewCustomizedConn(conn, svr, authProvider, &ProxyHandler{})
+	authProvider := NewAuthProvider() // Per connection (session) instance
+	sconn, err := server.NewCustomizedConn(conn, svr, authProvider, NewProxyHandler(authProvider))
 	if err != nil {
 		u.Errorf(err.Error())
 		return
@@ -171,10 +167,38 @@ func onConn(conn net.Conn) {
 
 // ProxyHandler - Handler type definition (lack of generics) for use via MySQL connection
 type ProxyHandler struct {
+	authProvider *AuthProvider
+	db           *sql.DB
+}
+
+// NewProxyHandler - Create a new proxy handler
+func NewProxyHandler(authProvider *AuthProvider) *ProxyHandler {
+
+	h := &ProxyHandler{authProvider: authProvider}
+	var err error
+	h.db, err = sql.Open("qlbridge", "quanta")
+	if err != nil {
+		panic(err.Error())
+	}
+	return h
+}
+
+func (h *ProxyHandler) checkSessionUserID(enforce bool) error {
+
+	if userID, ok := h.authProvider.GetCurrentUserID(); ok {
+		setter := fmt.Sprintf("set @userid = '%s'", userID)
+		if _, err := h.db.Exec(setter); err != nil {
+			return err
+		}
+	} else if enforce {
+		return fmt.Errorf("User ID must be set,  run exec  'set @userid = <userID>'")
+	}
+	return nil
 }
 
 // UseDB - Set DB schema name
 func (h *ProxyHandler) UseDB(dbName string) error {
+	h.checkSessionUserID(true)
 	u.Debugf("UseDB handler called with '%s'\n", dbName)
 	return nil
 }
@@ -201,6 +225,7 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 
 	switch strings.ToLower(ss[0]) {
 	case "select", "describe", "show":
+		h.checkSessionUserID(true)
 
 		var r *mysql.Resultset
 		var err error
@@ -227,7 +252,7 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 		}
 
 		u.Debugf("running query [%v]\n", query)
-		rows, err2 := db.Query(query)
+		rows, err2 := h.db.Query(query)
 		if err2 != nil {
 			u.Errorf("could not execute query: %v", err2)
 			return nil, err2
@@ -260,7 +285,8 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 		}
 		return &mysql.Result{0, 0, 0, r}, nil
 	case "insert", "delete", "update", "replace", "selectinto":
-		result, err := db.Exec(query)
+		h.checkSessionUserID(true)
+		result, err := h.db.Exec(query)
 		if err != nil {
 			u.Errorf("could not execute stmt: %v", err)
 			return nil, err
@@ -277,7 +303,8 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 		}
 		return &mysql.Result{0, uint64(insertID), uint64(rowCount), nil}, nil
 	case "set":
-		_, err := db.Exec(query)
+		h.checkSessionUserID(false)
+		_, err := h.db.Exec(query)
 		if err != nil {
 			u.Errorf("could not execute set: %v", err)
 			return nil, err
@@ -331,6 +358,7 @@ func (h *ProxyHandler) HandleStmtPrepare(sql string) (params int, columns int, c
 
 // HandleStmtClose - Handle Close
 func (h *ProxyHandler) HandleStmtClose(context interface{}) error {
+	h.db.Close()
 	return nil
 }
 

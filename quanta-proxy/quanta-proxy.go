@@ -66,7 +66,6 @@ func main() {
 	proxyHostPort = app.Flag("proxy-host-port", "Host:port mapping of MySQL Proxy server").Default("0.0.0.0:4000").String()
 	quantaPort := app.Flag("quanta-port", "Port number for Quanta service").Default("4000").Int()
 	schemaDir := app.Arg("schema-dir", "Base directory containing schema files").Default("/home/data/schema").String()
-	metadataDir := app.Arg("metadata-dir", "Base directory containing metadata files").Default("/home/data/metadata").String()
 	publicKeyURL := app.Arg("public-key-url", "URL for JWT public key.").String()
 	tokenservicePort := app.Arg("tokenservice-port", "Token exchance service port").Default("4001").Int()
 	userKey := app.Flag("user-key", "Key used to get user id from JWT claims").Default("username").String()
@@ -86,7 +85,6 @@ func main() {
 	}
 
 	u.Infof("SCHEMADIR=%s\n", *schemaDir)
-	u.Infof("METADATADIR=%s\n", *metadataDir)
 	consulAddr := *consul
 	u.Infof("Connecting to Consul at: [%s] ...\n", consulAddr)
 
@@ -119,7 +117,7 @@ func main() {
 	var err error
 	var src *source.QuantaSource
 
-	src, err = source.NewQuantaSource(*schemaDir, *metadataDir, consulAddr, *quantaPort)
+	src, err = source.NewQuantaSource(*schemaDir, consulAddr, *quantaPort)
 	if err != nil {
 		log.Println(err)
 	}

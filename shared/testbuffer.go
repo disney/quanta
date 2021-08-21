@@ -1,4 +1,5 @@
 package shared
+
 // Shared buffer for in-memory stack testing
 
 import (
@@ -12,8 +13,8 @@ var (
 	GRPCRecvBufsize = 1024 * 1024 * 1024 * 3
 	//GRPCSendBufsize = 1024*1024*64
 	GRPCSendBufsize = 1024 * 1024 * 1024 * 3
-    // TestListener endpoint
-	TestListener      *bufconn.Listener
+	// TestListener endpoint
+	TestListener *bufconn.Listener
 )
 
 func init() {

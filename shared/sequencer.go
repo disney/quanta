@@ -1,4 +1,5 @@
 package shared
+
 // Sequence generator for creating new column IDs
 
 // Sequencer state

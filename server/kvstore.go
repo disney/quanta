@@ -5,9 +5,11 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/akrylysov/pogreb"
+	pb "github.com/disney/quanta/grpc"
+	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
-	pb "github.com/disney/quanta/grpc"
+	"golang.org/x/sync/singleflight"
 	"io"
 	"log"
 	"os"
@@ -21,6 +23,7 @@ type KVStore struct {
 	*EndPoint
 	storeCache     map[string]*pogreb.DB
 	storeCacheLock sync.RWMutex
+	enumGuard      singleflight.Group
 }
 
 // NewKVStore - Construct server side state.
@@ -259,4 +262,57 @@ func (m *KVStore) Items(index *wrappers.StringValue, stream pb.KVStore_ItemsServ
 		}
 	}
 	return nil
+}
+
+// PutStringEnum - Insert a new enumeration value and return the new enumeration key (integer sequence).
+func (m *KVStore) PutStringEnum(ctx context.Context, se *pb.StringEnum) (*wrappers.UInt64Value, error) {
+
+	if se == nil {
+		return &wrappers.UInt64Value{}, fmt.Errorf("StringEnum  must not be nil")
+	}
+	if se.Value == "" || len(se.Value) == 0 {
+		return &wrappers.UInt64Value{}, fmt.Errorf("Value must be specified")
+	}
+	if se.IndexPath == "" {
+		return &wrappers.UInt64Value{}, fmt.Errorf("Index must be specified")
+	}
+	db, err := m.getStore(se.IndexPath)
+	if err != nil {
+		return &wrappers.UInt64Value{}, err
+	}
+
+	// Guard against multiple requests updating the same enumeration group.
+	v, err, _ := m.enumGuard.Do(se.IndexPath, func() (interface{}, error) {
+
+		var greatestRowID uint64
+		eMap := make(map[string]uint64)
+
+		it := db.Items()
+		for {
+			key, v, err := it.Next()
+			if err != nil {
+				if err != pogreb.ErrIterationDone {
+					return 0, err
+				}
+				break
+			}
+			r := binary.LittleEndian.Uint64(v)
+			if r > greatestRowID {
+				greatestRowID = r
+			}
+			eMap[string(key)] = r
+		}
+
+		if rowID, found := eMap[se.Value]; found {
+			return rowID, nil
+		}
+		greatestRowID++
+
+		return greatestRowID, db.Put(shared.ToBytes(se.Value), shared.ToBytes(greatestRowID))
+	})
+
+	if err != nil {
+		return &wrappers.UInt64Value{}, err
+	}
+	return &wrappers.UInt64Value{Value: v.(uint64)}, nil
 }

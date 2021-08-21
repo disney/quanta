@@ -1,4 +1,5 @@
 package server
+
 //
 // This code manages the abstractions necessary for a server node.  This includes code
 // to register node membership with Consul.  It is the "base class" containg common node level

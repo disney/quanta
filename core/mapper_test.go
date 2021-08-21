@@ -15,8 +15,7 @@ var (
 )
 
 func setup() {
-	os.RemoveAll("./testdata/metadata/cities")
-	schema, _ = LoadSchema("./testdata", "./testdata/metadata", "cities", nil)
+	schema, _ = LoadSchema("./testdata", nil, "cities", nil)
 	tbuf := make(map[string]*TableBuffer, 0)
 	tbuf[schema.Name] = &TableBuffer{Table: schema}
 	conn = &Connection{TableBuffers: tbuf}
@@ -71,6 +70,9 @@ func TestBuiltinMappers(t *testing.T) {
 
 	for _, v := range schema.Attributes {
 		if v.Type == "NotExist" || v.Type == "NotDefined" || v.Type == "JSON" {
+			continue
+		}
+		if v.MappingStrategy == "StringEnum" {
 			continue
 		}
 		value, err := v.MapValue(data[v.Ordinal-1], nil)

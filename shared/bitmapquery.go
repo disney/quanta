@@ -1,4 +1,5 @@
 package shared
+
 //
 // BitmapQuery is a container and API for the construction of
 // bitmap server queries.  This code contains common functions
@@ -8,16 +9,16 @@ package shared
 import (
 	"fmt"
 	"github.com/RoaringBitmap/roaring/roaring64"
-	"github.com/pborman/uuid"
 	pb "github.com/disney/quanta/grpc"
+	"github.com/pborman/uuid"
 	"time"
 )
 
 const (
-    // YMDHTimeFmt - Time format for YMDH
+	// YMDHTimeFmt - Time format for YMDH
 	YMDHTimeFmt = "2006-01-02T15"
-    // YMDTimeFmt - Time format for YMD
-	YMDTimeFmt  = "2006-01-02"
+	// YMDTimeFmt - Time format for YMD
+	YMDTimeFmt = "2006-01-02"
 )
 
 // QueryFragment - Atomic query predicate elements
@@ -67,7 +68,7 @@ type BitmapQueryResponse struct {
 }
 
 //
-// IntermediateResult - Container for query results returned from individual server nodes. 
+// IntermediateResult - Container for query results returned from individual server nodes.
 // Aggregated results are stored in this structure for further processing on the client.
 //
 type IntermediateResult struct {
@@ -706,7 +707,7 @@ func FromProto(q *pb.BitmapQuery, dataMap map[string]*roaring64.Bitmap) *BitmapQ
 }
 
 //
-// GroupQueryFragmentsByIndex - Break up a query and group all of the predicate fragments by index.  
+// GroupQueryFragmentsByIndex - Break up a query and group all of the predicate fragments by index.
 // This function returns a map of the predicates keyed by index name.
 //
 func (q *BitmapQuery) GroupQueryFragmentsByIndex() map[string]*pb.BitmapQuery {

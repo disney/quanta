@@ -1,4 +1,5 @@
 package server
+
 //
 // This file contains the bitmap I/O and low level persistance functions for the bitmap server.
 //
@@ -24,7 +25,7 @@ func (m *BitmapIndex) saveCompleteBitmap(bm *StandardBitmap, indexName, fieldNam
 	}
 
 	fd, err := m.openCompleteFile(indexName, fieldName, rowID, ts, bm.TQType)
-    if err == nil {
+	if err == nil {
 		if _, err := fd[0].Write(data); err != nil {
 			return err
 		}

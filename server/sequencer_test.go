@@ -1,8 +1,8 @@
 package server
 
 import (
-	"github.com/stretchr/testify/assert"
 	"github.com/disney/quanta/shared"
+	"github.com/stretchr/testify/assert"
 	"testing"
 )
 

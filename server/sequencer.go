@@ -1,4 +1,5 @@
 package server
+
 // Sequence generator creating column IDs
 
 import (

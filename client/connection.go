@@ -1,4 +1,5 @@
 package quanta
+
 //
 // The Conn struct and related functions represents an abstraction layer for connections
 // between a client and server nodes in a cluster.  This includes managing group membership
@@ -11,11 +12,11 @@ package quanta
 import (
 	"context"
 	"fmt"
+	pb "github.com/disney/quanta/grpc"
+	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/hashicorp/consul/api"
 	"github.com/stvp/rendezvous"
-	pb "github.com/disney/quanta/grpc"
-	"github.com/disney/quanta/shared"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/testdata"
@@ -25,7 +26,7 @@ import (
 )
 
 var (
-    // Deadline - gRPC calls should complete within 500 seconds.
+	// Deadline - gRPC calls should complete within 500 seconds.
 	Deadline time.Duration = time.Duration(500) * time.Second
 )
 

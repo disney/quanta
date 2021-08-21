@@ -177,7 +177,7 @@ func (m *ResultReader) Run() error {
 			return errx
 		}
 		vals := make([]driver.Value, 1)
-        if m.sql.isSum || m.sql.isAvg {
+		if m.sql.isSum || m.sql.isAvg {
 			var sum int64
 			var count uint64
 			sum, count, errx = proj.Sum(m.sql.tbl.Name, m.sql.aggField)

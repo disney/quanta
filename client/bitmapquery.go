@@ -1,4 +1,5 @@
 package quanta
+
 //
 // Query interface API.
 //
@@ -16,7 +17,7 @@ import (
 
 //
 // Main processing flow for bitmap queries.  Returns a bitmap.  Processing is parallelized.
-// 
+//
 func (c *BitmapIndex) query(query *pb.BitmapQuery) (*roaring64.Bitmap, error) {
 
 	c.Conn.nodeMapLock.RLock()
@@ -68,7 +69,7 @@ func (c *BitmapIndex) query(query *pb.BitmapQuery) (*roaring64.Bitmap, error) {
 		q := v
 		eg.Go(func() error {
 			ir, err := c.queryGroup(i, q)
-            if err != nil {
+			if err != nil {
 				return err
 			}
 			resultChan <- ir
@@ -195,7 +196,7 @@ func (c *BitmapIndex) queryGroup(index string, query *pb.BitmapQuery) (*shared.I
 		clientIndex := i
 		eg.Go(func() error {
 			qr, err := c.queryClient(client, query, clientIndex)
-            if err != nil {
+			if err != nil {
 				return err
 			}
 			resultChan <- qr
@@ -318,14 +319,14 @@ func (c *BitmapIndex) queryClient(client pb.BitmapIndexClient, q *pb.BitmapQuery
 	defer cancel()
 
 	result, err := client.Query(ctx, q)
-    if err != nil {
+	if err != nil {
 		return nil, fmt.Errorf("%v.Query(_) = _, %v, node = %s", client, err,
 			c.Conn.clientConn[clientIndex].Target())
 	}
 	return result, nil
 }
 
-// BitmapQueryResponse - Contains query results 
+// BitmapQueryResponse - Contains query results
 type BitmapQueryResponse struct {
 	Success      bool
 	ErrorMessage string
@@ -353,7 +354,7 @@ func (c *BitmapIndex) Query(query *shared.BitmapQuery) (*shared.BitmapQueryRespo
 func (c *BitmapIndex) ResultsQuery(query *pb.BitmapQuery, limit uint64) ([]uint64, error) {
 
 	result, err := c.query(query)
-    if err != nil {
+	if err != nil {
 		return []uint64{}, err
 	}
 	if result.GetCardinality() > limit {
@@ -400,7 +401,7 @@ func (c *BitmapIndex) Join(driverIndex string, fklist []string, fromTime, toTime
 		clientIndex := i
 		eg.Go(func() error {
 			jr, err := c.joinClient(client, req, clientIndex)
-            if err != nil {
+			if err != nil {
 				return err
 			}
 			resultChan <- jr
@@ -442,7 +443,7 @@ func (c *BitmapIndex) joinClient(client pb.BitmapIndexClient, req *pb.JoinReques
 	defer cancel()
 
 	result, err := client.Join(ctx, req)
-    if err != nil {
+	if err != nil {
 		return nil, fmt.Errorf("%v.Join(_) = _, %v, node = %s", client, err,
 			c.Conn.clientConn[clientIndex].Target())
 	}
@@ -475,7 +476,7 @@ func (c *BitmapIndex) Projection(index string, fields []string, fromTime, toTime
 		clientIndex := i
 		eg.Go(func() error {
 			pr, err := c.projectionClient(client, req, clientIndex)
-            if err != nil {
+			if err != nil {
 				return err
 			}
 			resultChan <- pr
@@ -543,7 +544,7 @@ func (c *BitmapIndex) projectionClient(client pb.BitmapIndexClient, req *pb.Proj
 	defer cancel()
 
 	result, err := client.Projection(ctx, req)
-    if err != nil {
+	if err != nil {
 		return nil, fmt.Errorf("%v.Projection(_) = _, %v, node = %s", client, err,
 			c.Conn.clientConn[clientIndex].Target())
 	}

@@ -1,4 +1,5 @@
 package quanta
+
 // Simple KV store wrapper around the pogreb library.   Network enablement via gRPC with
 // consistent hashing for scale.  The primary purpose of this is to create a backing store
 // for Pym strings.   Also, indexing of high cardinality attributes where fine grained
@@ -7,9 +8,10 @@ package quanta
 import (
 	"context"
 	"fmt"
-	"github.com/golang/protobuf/ptypes/wrappers"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
+	"github.com/golang/protobuf/ptypes/wrappers"
+	"golang.org/x/sync/errgroup"
 	"io"
 	"reflect"
 )
@@ -35,7 +37,7 @@ func (c *KVStore) Put(index string, k interface{}, v interface{}) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
-	replicaClients := c.selectNodes(k)
+	replicaClients := c.selectNodes(k, false)
 	if len(replicaClients) == 0 {
 		return fmt.Errorf("%v.Put(_) = _, %v: ", c.client, " no available nodes!")
 	}
@@ -134,7 +136,7 @@ func (c *KVStore) Lookup(index string, key interface{}, valueType reflect.Kind) 
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
-	replicaClients := c.selectNodes(key)
+	replicaClients := c.selectNodes(key, false)
 	if len(replicaClients) == 0 {
 		return nil, fmt.Errorf("%v.Lookup(_) = _, %v: ", c.client, " no available nodes!")
 	}
@@ -302,13 +304,54 @@ func (c *KVStore) items(client pb.KVStoreClient, index string, keyType,
 	return batch, nil
 }
 
-// Resolve the node location(s) of a single key.
-func (c *KVStore) selectNodes(key interface{}) []pb.KVStoreClient {
+// PutStringEnum - Put a new enum value
+func (c *KVStore) PutStringEnum(index, value string) (uint64, error) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	defer cancel()
+	replicaClients := c.selectNodes(index, true)
+	if len(replicaClients) == 0 {
+		return 0, fmt.Errorf("%v.PutStringEnum(_) = _, %v: ", c.client, " no available nodes!")
+	}
+
+	// Perform PutStringEnum server call on first node in list (primary)
+	// If the value already exists it will silently return the existing rowID
+	rowID, err := replicaClients[0].PutStringEnum(ctx, &pb.StringEnum{IndexPath: index, Value: value})
+	if err != nil {
+		return 0, fmt.Errorf("%v.PutStringEnum(_) = _, %v: ", c.client, err)
+	}
+
+	// Parallel iterate over remaining client list and perform Put operation (replication)
+	var eg errgroup.Group
+	for _, client := range replicaClients[1:] {
+		c := client
+		eg.Go(func() error {
+			_, err := c.Put(ctx, &pb.IndexKVPair{IndexPath: index, Key: shared.ToBytes(value),
+				Value: [][]byte{shared.ToBytes(rowID.Value)}})
+			if err != nil {
+				return fmt.Errorf("%v.Put(_) = _, %v: ", c, err)
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return 0, err
+	}
+	return rowID.Value, nil
+}
+
+// Resolve the node location(s) of a single key. If 'all' == true than all nodes are selected.
+func (c *KVStore) selectNodes(key interface{}, all bool) []pb.KVStoreClient {
 
 	c.Conn.nodeMapLock.RLock()
 	defer c.Conn.nodeMapLock.RUnlock()
 
-	nodeKeys := c.Conn.hashTable.GetN(c.Conn.Replicas, shared.ToString(key))
+	replicas := c.Conn.Replicas
+	if all && len(c.Conn.nodes) > 0 {
+		replicas = len(c.Conn.nodes)
+	}
+
+	nodeKeys := c.Conn.hashTable.GetN(replicas, shared.ToString(key))
 	selected := make([]pb.KVStoreClient, len(nodeKeys))
 
 	for i, v := range nodeKeys {

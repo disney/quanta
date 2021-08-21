@@ -65,5 +65,5 @@ attributes:
   type: DateTime
 - sourceName: /created_date
   fieldName: created_date
-  mappingStrategy: StringEnum
-  type: String
+  mappingStrategy: SysSecBSI
+  type: Integer

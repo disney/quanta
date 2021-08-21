@@ -1,15 +1,16 @@
 package quanta
+
 //
-// Distributed high cardinality string indexing and search API.  Used by Quanta 'LIKE' 
+// Distributed high cardinality string indexing and search API.  Used by Quanta 'LIKE'
 // operator in SQL queries.
 //
 
 import (
 	"context"
 	"fmt"
-	"github.com/golang/protobuf/ptypes/wrappers"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
+	"github.com/golang/protobuf/ptypes/wrappers"
 	"io"
 	"sync"
 	"time"

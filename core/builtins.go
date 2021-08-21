@@ -1,4 +1,5 @@
 package core
+
 //
 // This file defines all of the built in mapping functions.
 //
@@ -12,7 +13,6 @@ import (
 	"strings"
 	"time"
 )
-
 
 // StringHashBSIMapper - High cardinality string mapping.
 type StringHashBSIMapper struct {
@@ -76,7 +76,7 @@ func (m BoolDirectMapper) MapValue(attr *Attribute, val interface{},
 		}
 	case string:
 		v, e := strconv.ParseBool(strings.TrimSpace(val.(string)))
-        if e != nil {
+		if e != nil {
 			err = e
 			result = uint64(0)
 			return
@@ -129,7 +129,7 @@ func (m IntDirectMapper) MapValue(attr *Attribute, val interface{},
 		result = uint64(val.(int))
 	case string:
 		v, e := strconv.ParseInt(strings.TrimSpace(val.(string)), 10, 64)
-        if e != nil {
+		if e != nil {
 			err = e
 			result = uint64(0)
 			return
@@ -150,8 +150,8 @@ func (m IntDirectMapper) MapValue(attr *Attribute, val interface{},
 
 // MapValueReverse - Map a row ID back to original value (row ID value taken literally)
 func (m IntDirectMapper) MapValueReverse(attr *Attribute, id uint64, c *Connection) (result interface{}, err error) {
-    result = int64(id)
-    return
+	result = int64(id)
+	return
 }
 
 // StringToIntDirectMapper - Maps a string containing a number directly as a row ID.
@@ -248,7 +248,7 @@ func (m IntBSIMapper) MapValue(attr *Attribute, val interface{},
 		result = uint64(val.(uint))
 	case string:
 		v, e := strconv.ParseInt(strings.TrimSpace(val.(string)), 10, 64)
-        if e != nil {
+		if e != nil {
 			err = e
 			result = uint64(0)
 			return
@@ -333,7 +333,6 @@ func (m StringEnumMapper) GetMultiDelimiter() string {
 	return m.delim
 }
 
-
 // BoolRegexMapper - Maps a string pattern to a boolean value.
 type BoolRegexMapper struct {
 	DefaultMapper
@@ -346,7 +345,7 @@ func NewBoolRegexMapper(conf map[string]string) (Mapper, error) {
 	if conf != nil {
 		if pattern, ok := conf["regex"]; ok {
 			r, err := regexp.Compile(pattern)
-            if err == nil {
+			if err == nil {
 				return BoolRegexMapper{DefaultMapper: DefaultMapper{BoolRegex}, regex: r}, nil
 			}
 			return nil, err
@@ -499,6 +498,8 @@ func (m SysSecBSIMapper) MapValue(attr *Attribute, val interface{},
 		result = uint64(val.(time.Time).Unix())
 	case int64:
 		result = uint64(val.(int64))
+	case int32:
+		result = uint64(val.(int32))
 	default:
 		err = fmt.Errorf("%s: No handling for type '%T'", m.String(), val)
 	}

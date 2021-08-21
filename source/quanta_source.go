@@ -40,13 +40,12 @@ type QuantaSource struct {
 	//result         *pcli.QueryResult
 	lastResultPos int
 	baseDir       string
-	metadataDir   string
 	servicePort   int
 	consulClient  *api.Client
 }
 
 // NewQuantaSource - Construct a QuantaSource.
-func NewQuantaSource(baseDir, metadataDir, consulAddr string, servicePort int) (*QuantaSource, error) {
+func NewQuantaSource(baseDir, consulAddr string, servicePort int) (*QuantaSource, error) {
 
 	m := &QuantaSource{}
 	m.servicePort = servicePort
@@ -59,9 +58,7 @@ func NewQuantaSource(baseDir, metadataDir, consulAddr string, servicePort int) (
 	}
 
 	m.baseDir = baseDir
-	m.metadataDir = metadataDir
 	log.Printf("Constructing QuantaSource at baseDir '%s'", baseDir)
-	log.Printf("Metadata located at '%s'", metadataDir)
 
 	// name is a string and cols is an []string
 	m.exit = make(chan bool, 1)
@@ -98,7 +95,7 @@ func (m *QuantaSource) Open(tableName string) (schema.Conn, error) {
 		return nil, fmt.Errorf("Could not find '%v'.'%v' schema)", m.Schema.Name, tableName)
 	}
 
-	conn, err := core.OpenConnection(m.baseDir, m.metadataDir, tableName, false, 0, m.servicePort, m.consulClient)
+	conn, err := core.OpenConnection(m.baseDir, tableName, false, 0, m.servicePort, m.consulClient)
 	if err != nil {
 		return nil, err
 	}
@@ -109,11 +106,23 @@ func (m *QuantaSource) Open(tableName string) (schema.Conn, error) {
 // Table by name
 func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 
-	ts, err := core.LoadSchema(m.baseDir, m.metadataDir, table, m.consulClient)
+	conn, err := core.OpenConnection(m.baseDir, table, false, 0, m.servicePort, m.consulClient)
 	if err != nil {
-		log.Printf("Error '%v' loading schema for table %s.", err, table)
+		log.Printf("Error '%v' opening connection for table %s.", err, table)
 		return nil, err
 	}
+	tb, found := conn.TableBuffers[table]
+	if !found {
+		return nil, fmt.Errorf("cannot find table buffer for %s", table)
+	}
+	ts := tb.Table
+	/*
+		ts, err := core.LoadSchema(m.baseDir, nil, table, m.consulClient)
+		if err != nil {
+			log.Printf("Error '%v' loading schema for table %s.", err, table)
+			return nil, err
+		}
+	*/
 	pkMap := make(map[string]*core.Attribute)
 	pka, _ := ts.GetPrimaryKeyInfo()
 	for _, v := range pka {

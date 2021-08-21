@@ -34,16 +34,16 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err)
 
 	core.ClearTableCache()
-	RemoveContents("./testdata/metadata")
-	RemoveContents("./testdata/metadata/cities")
-	RemoveContents("./testdata/metadata/cityzip")
+	RemoveContents("./testdata/cities*")
+	RemoveContents("./testdata/cityzip*")
 	RemoveContents("./testdata/search.dat")
+	RemoveContents("./testdata/UserRole")
 
 	// Server side components already started and available in package level variables in harness.go
 
 	// load up vision test data (nested schema containing 3 separate tables)
 	suite.loadData("cities", "./testdata/us_cities.parquet")
-	suite.loadData("cityzip", "./testdata/cityzip.parquet")
+	suite.loadData("cityzip", "./testdata/us_cityzip.parquet")
 	// suite.loadData("nba", "./testdata/nba.parquet")
 
 	// load all of our built-in functions
@@ -52,7 +52,7 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	functions.LoadAll() // Custom functions
 
 	// Simulate the mySQL proxy endpoint for golang dbdriver connection clients.
-	src, err2 := source.NewQuantaSource("./testdata/config", "./testdata/metadata", "", 0)
+	src, err2 := source.NewQuantaSource("./testdata/config", "", 0)
 	assert.NoError(suite.T(), err2)
 	schema.RegisterSourceAsSchema("quanta", src)
 
@@ -86,7 +86,7 @@ func (suite *QuantaTestSuite) loadData(table, filePath string) error {
 	}
 	num := int(pr.GetNumRows())
 
-	c, err := core.OpenConnection("./testdata/config", "./testdata/metadata", table, false, 0, 0, nil)
+	c, err := core.OpenConnection("./testdata/config", table, false, 0, 0, nil)
 	assert.Nil(suite.T(), err)
 	assert.NotNil(suite.T(), c)
 

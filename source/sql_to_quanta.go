@@ -153,7 +153,6 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	sessionMap := make(map[string]interface{})
 	sessionMap[servicePort] = m.s.servicePort
 	sessionMap[basePath] = m.conn.BasePath
-	sessionMap[metadataPath] = m.conn.MetadataPath
 	sessionMap[exec.GROUPBY_MAKER] = func(ctx *plan.Context, p *plan.GroupBy) exec.TaskRunner {
 		return NewNopTask(ctx)
 	}

@@ -1,4 +1,5 @@
 package core
+
 // Mapper interfaces
 
 import (
@@ -31,7 +32,7 @@ var (
 )
 
 const (
-	undefined         = MapperType(iota)
+	undefined = MapperType(iota)
 	// BoolDirect - RowID false = 1, true = 2
 	BoolDirect
 
@@ -305,7 +306,7 @@ func ResolveMapper(attr *Attribute) (mapper Mapper, err error) {
 		return nil, fmt.Errorf("DelegationTarget is nil for '%s'", attr.FieldName)
 	} else if attr.MappingStrategy == "Delegated" && attr.DelegationTarget != "" {
 		target, err2 := attr.Parent.GetAttribute(attr.DelegationTarget)
-        if err2 != nil {
+		if err2 != nil {
 			return nil, fmt.Errorf("DelegationTarget not found/specified for '%s' - %v",
 				attr.FieldName, err2)
 		}

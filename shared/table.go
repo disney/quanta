@@ -1,4 +1,5 @@
 package shared
+
 // Server side implementation of table.  TODO, merge this with core.Table to eliminate duplication.
 
 import (

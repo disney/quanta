@@ -3,11 +3,11 @@ package core
 import (
 	"fmt"
 	"github.com/araddon/dateparse"
+	"github.com/disney/quanta/client"
+	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	"github.com/json-iterator/go"
 	"github.com/xitongsys/parquet-go/reader"
-	"github.com/disney/quanta/client"
-	"github.com/disney/quanta/shared"
 	"log"
 	"math"
 	"reflect"
@@ -25,9 +25,9 @@ var (
 
 const (
 	reservationSize = 1000
-	ifDelim          = "."
-	primaryKey       = "P"
-	secondaryKey     = "S"
+	ifDelim         = "."
+	primaryKey      = "P"
+	secondaryKey    = "S"
 )
 
 // Connection - State for session (non-threadsafe)
@@ -113,7 +113,7 @@ func OpenConnection(path, name string, nested bool, bufSize uint, port int,
 			if v.MappingStrategy == "ParentRelation" && v.ForeignKey != "" {
 				fkTable, _, _ := v.GetFKSpec()
 				parent, err2 := LoadSchema(path, kvStore, fkTable, consul)
-                if err != nil {
+				if err != nil {
 					return nil, fmt.Errorf("Error loading parent schema - %v", err2)
 				}
 				if tb, err := NewTableBuffer(parent); err == nil {
@@ -187,7 +187,7 @@ func (s *Connection) PutRow(name string, row *reader.ParquetReader) error {
 }
 
 func (s *Connection) recursivePutRow(name string, row *reader.ParquetReader, pqTablePath string,
-	    isChild bool) error {
+	isChild bool) error {
 
 	tbuf, ok := s.TableBuffers[name]
 	if !ok {
@@ -320,7 +320,7 @@ func (s *Connection) readParquetColumn(row *reader.ParquetReader, pqTablePath st
 			continue
 		}
 		vals, _, _, err := row.ReadColumnByPath(pqColPath, 1)
-        if err != nil {
+		if err != nil {
 			return nil, nil, fmt.Errorf("Parquet reader error for %s [%v]", pqColPath, err)
 		}
 		s.BytesRead += int(unsafe.Sizeof(vals))

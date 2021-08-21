@@ -1,4 +1,5 @@
 package server
+
 //
 // This file contains the main processing flows for the bitmap server.
 //
@@ -9,9 +10,9 @@ import (
 	"fmt"
 	"github.com/Jeffail/tunny"
 	"github.com/RoaringBitmap/roaring/roaring64"
-	"github.com/golang/protobuf/ptypes/empty"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
+	"github.com/golang/protobuf/ptypes/empty"
 	"io"
 	"log"
 	"math"

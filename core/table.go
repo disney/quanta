@@ -1,10 +1,12 @@
 package core
+
 // Table metadata management functions.
 
 import (
 	"encoding/json"
 	"fmt"
 	"github.com/araddon/qlbridge/value"
+	"github.com/disney/quanta/client"
 	"github.com/hashicorp/consul/api"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
@@ -12,10 +14,9 @@ import (
 	"os"
 	"os/signal"
 	"plugin"
-    "reflect"
+	"reflect"
 	"strings"
 	"sync"
-	"github.com/disney/quanta/client"
 )
 
 // Table - Table structure.
@@ -164,7 +165,7 @@ func ValueTypeFromString(vt string) value.ValueType {
 }
 
 const (
-    // SEP - Path Separator
+	// SEP - Path Separator
 	SEP    = string(os.PathSeparator)
 	fDelim = ":"
 )
@@ -262,9 +263,7 @@ func LoadSchema(path string, kvStore *quanta.KVStore, name string, consulClient 
 		if v.FieldName != "" {
 
 			// check to see if there are values in the API call (if applicable)
-			//if x, ok := fieldMap[table.Name + "_" + v.FieldName]; ok {
-
-            lookupName := table.Name + ":" + v.FieldName
+			lookupName := table.Name + ":" + v.FieldName
 			// if there are values in schema.yaml then override string enum values in global cache
 			if f, ok := fieldMap[lookupName]; ok && len(table.Attributes[j].Values) > 0 {
 				// Pull it in
@@ -320,9 +319,9 @@ func LoadSchema(path string, kvStore *quanta.KVStore, name string, consulClient 
 		if v.SourceName == "" || v.SourceName != v.FieldName {
 			table.attributeNameMap[v.FieldName] = &table.Attributes[j]
 		}
+		table.Attributes[j].valueMap = make(map[interface{}]uint64)
+		table.Attributes[j].reverseMap = make(map[uint64]interface{})
 		if len(table.Attributes[j].Values) > 0 {
-			table.Attributes[j].valueMap = make(map[interface{}]uint64)
-			table.Attributes[j].reverseMap = make(map[uint64]interface{})
 			for _, x := range table.Attributes[j].Values {
 				table.Attributes[j].valueMap[x.Value] = x.RowID
 				table.Attributes[j].reverseMap[x.RowID] = x.Value
@@ -409,36 +408,30 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 	var v uint64
 	var ok bool
 	a.Parent.localLock.RLock()
-    if a.valueMap == nil {
-    	a.valueMap = make(map[interface{}]uint64, 0)
-   	}
-    if a.reverseMap == nil {
-    	a.reverseMap = make(map[uint64]interface{}, 0)
-   	}
 	if v, ok = a.valueMap[value]; !ok {
 		/* If the value does not exist in the valueMap local cache  we will add it and then
 		 *  Call the string enum service to add it.
 		 */
 
 		a.Parent.localLock.RUnlock()
-        a.Parent.localLock.Lock()
+		a.Parent.localLock.Lock()
 		defer a.Parent.localLock.Unlock()
 
-        if a.Parent.kvStore == nil {
-			return 0, fmt.Errorf("KVStore is not initialized.")
-        }
+		if a.Parent.kvStore == nil {
+			return 0, fmt.Errorf("kvStore is not initialized")
+		}
 
 		// OK, value not anywhere to be found, invoke service to add.
-        rowId, err := a.Parent.kvStore.PutStringEnum(a.Parent.Name + ":" + a.FieldName, value.(string))
-        if err != nil {
+		rowID, err := a.Parent.kvStore.PutStringEnum(a.Parent.Name+":"+a.FieldName, value.(string))
+		if err != nil {
 			return 0, err
 		}
 
-    	a.Values = append(a.Values, Value{Value: value, RowID: rowId})
-    	a.valueMap[value] = rowId
-    	a.reverseMap[rowId] = value
+		a.Values = append(a.Values, Value{Value: value, RowID: rowID})
+		a.valueMap[value] = rowID
+		a.reverseMap[rowID] = value
 
-		v = rowId
+		v = rowID
 		log.Printf("Added enum for field = %s, value = %v, ID = %v", a.FieldName, value, v)
 	} else {
 		a.Parent.localLock.RUnlock()
@@ -550,39 +543,38 @@ type FieldValue struct {
 	Mapping string `json:mapping`
 }
 
-
 // LoadFieldValues from string enum repository.
 func (t *Table) LoadFieldValues() (fieldMap map[string]*Field, err error) {
 
-    if t.kvStore == nil {
-        return nil, nil
-    }
+	if t.kvStore == nil {
+		return nil, nil
+	}
 
 	var attributeFieldMap map[string]*Field = make(map[string]*Field)
 
-    for _, attr := range t.Attributes {
-       if attr.MappingStrategy != "StringEnum" {
-           continue
-       }
-       lookupName := t.Name + ":" + attr.FieldName
-       x, err := t.kvStore.Items(lookupName, reflect.Uint64, reflect.String)
-       if err != nil {
-		    return nil, fmt.Errorf("ERROR: Cannot open enum for table %s, field %s. [%v]", t.Name, 
-                attr.FieldName,  err)
-       }
-       for kk, vv := range x {
-           k := kk.(string)
-           v := vv.(uint64)
-           if f, ok := attributeFieldMap[lookupName]; !ok {
-               f := &Field{Name: attr.FieldName, Label: attr.FieldName}
-               attributeFieldMap[attr.FieldName] = f
-               f.Values = make([]FieldValue, 0)
-               f.Values = append(f.Values, FieldValue{Label: k, Mapping: k, Value: v})
-           } else {
-               f.Values = append(f.Values, FieldValue{Label: k, Mapping: k, Value: v})
-           }
-       }
-    }
+	for _, attr := range t.Attributes {
+		if attr.MappingStrategy != "StringEnum" {
+			continue
+		}
+		lookupName := t.Name + ":" + attr.FieldName
+		x, err := t.kvStore.Items(lookupName, reflect.String, reflect.Uint64)
+		if err != nil {
+			return nil, fmt.Errorf("ERROR: Cannot open enum for table %s, field %s. [%v]", t.Name,
+				attr.FieldName, err)
+		}
+		for kk, vv := range x {
+			k := kk.(string)
+			v := vv.(uint64)
+			if f, ok := attributeFieldMap[lookupName]; !ok {
+				f := &Field{Name: attr.FieldName, Label: attr.FieldName}
+				attributeFieldMap[lookupName] = f
+				f.Values = make([]FieldValue, 0)
+				f.Values = append(f.Values, FieldValue{Label: k, Mapping: k, Value: v})
+			} else {
+				f.Values = append(f.Values, FieldValue{Label: k, Mapping: k, Value: v})
+			}
+		}
+	}
 
 	return attributeFieldMap, nil
 }

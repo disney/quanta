@@ -5,11 +5,11 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/akrylysov/pogreb"
-	"github.com/golang/protobuf/ptypes/empty"
-	"github.com/golang/protobuf/ptypes/wrappers"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
-    "golang.org/x/sync/singleflight"
+	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/golang/protobuf/ptypes/wrappers"
+	"golang.org/x/sync/singleflight"
 	"io"
 	"log"
 	"os"
@@ -23,7 +23,7 @@ type KVStore struct {
 	*EndPoint
 	storeCache     map[string]*pogreb.DB
 	storeCacheLock sync.RWMutex
-    enumGuard      singleflight.Group
+	enumGuard      singleflight.Group
 }
 
 // NewKVStore - Construct server side state.
@@ -264,7 +264,6 @@ func (m *KVStore) Items(index *wrappers.StringValue, stream pb.KVStore_ItemsServ
 	return nil
 }
 
-
 // PutStringEnum - Insert a new enumeration value and return the new enumeration key (integer sequence).
 func (m *KVStore) PutStringEnum(ctx context.Context, se *pb.StringEnum) (*wrappers.UInt64Value, error) {
 
@@ -282,34 +281,34 @@ func (m *KVStore) PutStringEnum(ctx context.Context, se *pb.StringEnum) (*wrappe
 		return &wrappers.UInt64Value{}, err
 	}
 
-    // Guard against multiple requests updating the same enumeration group.
+	// Guard against multiple requests updating the same enumeration group.
 	v, err, _ := m.enumGuard.Do(se.IndexPath, func() (interface{}, error) {
-		
-        var greatestRowId uint64
-        eMap := make(map[string]uint64)
 
-        it := db.Items()
-        for {
-            key, v, err := it.Next()
-            if err != nil {
-                if err != pogreb.ErrIterationDone {
-                    return 0, err
-                }
-                break
-            }
-            r := binary.LittleEndian.Uint64(v)
-            if r > greatestRowId {
-                greatestRowId = r
-            }
-            eMap[string(key)] = r
-        }
-    
-        if rowId, found := eMap[se.Value]; found {
-       	    return rowId, nil
-        }
-        greatestRowId++
-    
-        return greatestRowId, db.Put(shared.ToBytes(se.Value), shared.ToBytes(greatestRowId))
+		var greatestRowID uint64
+		eMap := make(map[string]uint64)
+
+		it := db.Items()
+		for {
+			key, v, err := it.Next()
+			if err != nil {
+				if err != pogreb.ErrIterationDone {
+					return 0, err
+				}
+				break
+			}
+			r := binary.LittleEndian.Uint64(v)
+			if r > greatestRowID {
+				greatestRowID = r
+			}
+			eMap[string(key)] = r
+		}
+
+		if rowID, found := eMap[se.Value]; found {
+			return rowID, nil
+		}
+		greatestRowID++
+
+		return greatestRowID, db.Put(shared.ToBytes(se.Value), shared.ToBytes(greatestRowID))
 	})
 
 	if err != nil {
@@ -317,4 +316,3 @@ func (m *KVStore) PutStringEnum(ctx context.Context, se *pb.StringEnum) (*wrappe
 	}
 	return &wrappers.UInt64Value{Value: v.(uint64)}, nil
 }
-

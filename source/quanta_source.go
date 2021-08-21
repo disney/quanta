@@ -1,4 +1,5 @@
 package source
+
 // QuantaSource - Implementation of the data source interfaces for query processor.
 
 import (
@@ -7,8 +8,8 @@ import (
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/schema"
 	"github.com/araddon/qlbridge/value"
-	"github.com/hashicorp/consul/api"
 	"github.com/disney/quanta/core"
+	"github.com/hashicorp/consul/api"
 	"io/ioutil"
 	"log"
 	"strings"
@@ -110,18 +111,18 @@ func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 		log.Printf("Error '%v' opening connection for table %s.", err, table)
 		return nil, err
 	}
-    tb, found := conn.TableBuffers[table]
-    if !found {
-		return nil, fmt.Errorf("Error cannot find table buffer for %s.", table)
-    }
-    ts := tb.Table
-/*
-	ts, err := core.LoadSchema(m.baseDir, nil, table, m.consulClient)
-	if err != nil {
-		log.Printf("Error '%v' loading schema for table %s.", err, table)
-		return nil, err
+	tb, found := conn.TableBuffers[table]
+	if !found {
+		return nil, fmt.Errorf("cannot find table buffer for %s", table)
 	}
-*/
+	ts := tb.Table
+	/*
+		ts, err := core.LoadSchema(m.baseDir, nil, table, m.consulClient)
+		if err != nil {
+			log.Printf("Error '%v' loading schema for table %s.", err, table)
+			return nil, err
+		}
+	*/
 	pkMap := make(map[string]*core.Attribute)
 	pka, _ := ts.GetPrimaryKeyInfo()
 	for _, v := range pka {

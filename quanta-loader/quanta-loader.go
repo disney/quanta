@@ -8,11 +8,11 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	pqs3 "github.com/xitongsys/parquet-go-source/s3"
 	"github.com/xitongsys/parquet-go/reader"
-	"github.com/disney/quanta/core"
-	"github.com/disney/quanta/shared"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
@@ -40,26 +40,25 @@ const (
 
 // Main strct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
-	SchemaDir     string
-	Index         string
-	BufferSize    uint
-	BucketPath    string
-	Bucket        string
-	Prefix        string
-	Pattern       string
-	AWSRegion     string
-	S3svc         *s3.S3
-	S3files       []*s3.Object
-	totalBytes    int64
-	bytesLock     sync.RWMutex
-	totalRecs     *Counter
-	Port          int
-	IsDistributed bool
-	IsNested      bool
-	ConsulAddr    string
-	ConsulClient  *api.Client
-	DateFilter    *time.Time
-	lock          *api.Lock
+	SchemaDir    string
+	Index        string
+	BufferSize   uint
+	BucketPath   string
+	Bucket       string
+	Prefix       string
+	Pattern      string
+	AWSRegion    string
+	S3svc        *s3.S3
+	S3files      []*s3.Object
+	totalBytes   int64
+	bytesLock    sync.RWMutex
+	totalRecs    *Counter
+	Port         int
+	IsNested     bool
+	ConsulAddr   string
+	ConsulClient *api.Client
+	DateFilter   *time.Time
+	lock         *api.Lock
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -83,7 +82,6 @@ func main() {
 	bufSize := app.Flag("buf-size", "Import buffer size").Default("1000000").Int32()
 	dryRun := app.Flag("dry-run", "Perform a dry run and exit (just print selected file names).").Bool()
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
-	isDistributed := app.Flag("distributed", "Distributed mode.").Bool()
 	isNested := app.Flag("nested", "Input data is a nested schema. The <index> parameter is root.").Bool()
 	dateFilter := app.Flag("date-filter", "If provided, all rows must be within this time partition.").String()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
@@ -98,7 +96,6 @@ func main() {
 	main.AWSRegion = *region
 	main.SchemaDir = *schemaDir
 	main.Port = int(*port)
-	main.IsDistributed = *isDistributed
 	main.IsNested = *isNested
 	main.ConsulAddr = *consul
 
@@ -107,11 +104,7 @@ func main() {
 	log.Printf("AWS region %s\n", main.AWSRegion)
 	log.Printf("Base path for schema [%s].\n", main.SchemaDir)
 	log.Printf("Service port %d.\n", main.Port)
-	if main.IsDistributed {
-		log.Printf("Distributed Mode.  Consul agent at [%s]\n", main.ConsulAddr)
-	} else {
-		log.Println("Singleton loader instance mode.")
-	}
+	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
 	if main.IsNested {
 		log.Printf("Nested Mode.  Input data is a nested schema, Index <%s> should be the root.", main.Index)
 	}
@@ -304,11 +297,9 @@ func (m *Main) Init() error {
 
 	var err error
 
-	if m.IsDistributed {
-		m.ConsulClient, err = api.NewClient(&api.Config{Address: m.ConsulAddr})
-		if err != nil {
-			return err
-		}
+	m.ConsulClient, err = api.NewClient(&api.Config{Address: m.ConsulAddr})
+	if err != nil {
+		return err
 	}
 
 	// Call OpenConnection once here just verify the schema config

@@ -1,4 +1,5 @@
 package shared
+
 // Utility functions for shared package
 
 import (

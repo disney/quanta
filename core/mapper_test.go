@@ -2,7 +2,7 @@ package core
 
 import (
 	"database/sql/driver"
-    "os"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -72,9 +72,9 @@ func TestBuiltinMappers(t *testing.T) {
 		if v.Type == "NotExist" || v.Type == "NotDefined" || v.Type == "JSON" {
 			continue
 		}
-        if v.MappingStrategy == "StringEnum" {
-            continue
-        }
+		if v.MappingStrategy == "StringEnum" {
+			continue
+		}
 		value, err := v.MapValue(data[v.Ordinal-1], nil)
 		assert.Nil(t, err)
 		values[v.Ordinal-1] = value

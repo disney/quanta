@@ -1,8 +1,9 @@
 package quanta
+
 //
 // Client side bitmap functions and API wrappers for bulk loading functions such as SetBit and
 // SetValue for bitmap and BSI fields respectively.
-// 
+//
 
 import (
 	"context"
@@ -18,7 +19,7 @@ import (
 
 const (
 	timeFmt = "2006-01-02T15"
-	ifDelim  = "."
+	ifDelim = "."
 )
 
 //
@@ -34,7 +35,7 @@ const (
 // batchCount - Current count of batch entries.
 // batchStringCount - Current count of batch strings.
 // batchMutex - Concurrency guard for batch state mutations.
-// 
+//
 type BitmapIndex struct {
 	*Conn
 	KVStore             *KVStore
@@ -291,7 +292,7 @@ func (c *BitmapIndex) SetValue(index, field string, columnID uint64, value int64
 }
 
 //
-// BatchMutate - Send a batch of standard bitmap mutations to the server cluster for processing.  
+// BatchMutate - Send a batch of standard bitmap mutations to the server cluster for processing.
 // Does this by calling batchMutate in parallel for optimal throughput.
 //
 func (c *BitmapIndex) BatchMutate(batch map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap,
@@ -361,10 +362,10 @@ func (c *BitmapIndex) batchMutate(clear bool, client pb.BitmapIndexClient,
 }
 
 //
-// splitBitmapBatch - For a given batch of standard bitmap mutations, separate them into 
+// splitBitmapBatch - For a given batch of standard bitmap mutations, separate them into
 // sub-batches based upon a consistently hashed shard key so that they can be send to their
 // respective nodes.  For standard bitmaps, this shard key consists of [index/field/rowid/timestamp].
-// 
+//
 func (c *BitmapIndex) splitBitmapBatch(batch map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap,
 	replicas int) []map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap {
 
@@ -410,7 +411,7 @@ func (c *BitmapIndex) splitBitmapBatch(batch map[string]map[string]map[uint64]ma
 //
 // BatchSetValue - Send a batch of BSI mutations to the server cluster for processing.  Does this by calling
 // batchSetValue in parallel for optimal throughput.
-// 
+//
 func (c *BitmapIndex) BatchSetValue(batch map[string]map[string]map[int64]*roaring64.BSI) error {
 
 	batches := c.splitBSIBatch(batch, c.Conn.Replicas)
@@ -481,7 +482,7 @@ func (c *BitmapIndex) batchSetValue(client pb.BitmapIndexClient,
 // a consistently hashed shard key so that they can be send to their respective nodes.
 // For BSI fields, this shard key consists of [index/field/timestamp].  All BSI slices
 // for a given field are co-located.
-// 
+//
 func (c *BitmapIndex) splitBSIBatch(batch map[string]map[string]map[int64]*roaring64.BSI,
 	replicas int) []map[string]map[string]map[int64]*roaring64.BSI {
 
@@ -521,7 +522,7 @@ func (c *BitmapIndex) splitBSIBatch(batch map[string]map[string]map[int64]*roari
 
 //
 // BulkClear - Send a resultset bitmap to all nodes and perform bulk clear operation.
-// 
+//
 func (c *BitmapIndex) BulkClear(index, fromTime, toTime string,
 	foundSet *roaring64.Bitmap) error {
 
@@ -579,7 +580,7 @@ func (c *BitmapIndex) clearClient(client pb.BitmapIndexClient, req *pb.BulkClear
 
 //
 // CheckoutSequence - Request a sequence generator from owning server node.
-// 
+//
 func (c *BitmapIndex) CheckoutSequence(indexName, pkField string, ts time.Time,
 	reservationSize int) (*shared.Sequencer, error) {
 

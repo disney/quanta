@@ -1,4 +1,5 @@
 package server
+
 //
 // This file contains the Query API and all server side query related functions.
 // It is important to note that while most of the bulk processing of a query happens
@@ -478,12 +479,11 @@ func (m *BitmapIndex) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRe
 	log.Printf("inner join transpose elapsed time %v", elapsed)
 
 	data, err := jr.MarshalBinary()
-    if  err != nil {
+	if err != nil {
 		return nil, err
 	}
 	return &pb.JoinResponse{Results: data}, nil
 }
-
 
 //
 // Projection - Retrieve bitmaps to be included in a result set projection.

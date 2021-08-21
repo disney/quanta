@@ -1,4 +1,5 @@
 package server
+
 //
 // This code manages server side connection listening endpoint.
 //
@@ -6,10 +7,10 @@ package server
 import (
 	"context"
 	"fmt"
-	"github.com/golang/protobuf/ptypes/empty"
-	"github.com/hashicorp/consul/api"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
+	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/hashicorp/consul/api"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -84,7 +85,7 @@ func (m *EndPoint) Start() error {
 
 	if m.Port > 0 {
 		lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", m.BindAddr, m.Port))
-        if  err != nil {
+		if err != nil {
 			return err
 		}
 		m.server.Serve(lis)

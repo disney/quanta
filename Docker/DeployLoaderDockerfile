@@ -24,7 +24,6 @@ RUN chmod 755 /usr/bin/quanta-loader
 RUN chmod 755 /usr/bin/entrypoint.sh
 
 VOLUME /config
-VOLUME /metadata
 
 ENTRYPOINT ["/usr/bin/entrypoint.sh"]
 

@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/hashicorp/consul/api"
 	"github.com/disney/quanta/core"
+	"github.com/hashicorp/consul/api"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"gopkg.in/confluentinc/confluent-kafka-go.v1/kafka"
 	"log"
@@ -29,22 +29,21 @@ const (
 
 // Main strct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
-	SchemaDir     string
-	Index         string
-	BufferSize    uint
-	totalBytes    int64
-	bytesLock     sync.RWMutex
-	totalRecs     *Counter
-	Port          int
-	IsDistributed bool
-	ConsulAddr    string
-	ConsulClient  *api.Client
-	lock          *api.Lock
-	conns         []*core.Connection
-	KafkaBroker   string
-	KafkaGroup    string
-	KafkaTopics   []string
-	consumer      *kafka.Consumer
+	SchemaDir    string
+	Index        string
+	BufferSize   uint
+	totalBytes   int64
+	bytesLock    sync.RWMutex
+	totalRecs    *Counter
+	Port         int
+	ConsulAddr   string
+	ConsulClient *api.Client
+	lock         *api.Lock
+	conns        []*core.Connection
+	KafkaBroker  string
+	KafkaGroup   string
+	KafkaTopics  []string
+	consumer     *kafka.Consumer
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -68,7 +67,6 @@ func main() {
 	port := app.Arg("port", "Port number for service").Default("4000").Int32()
 	bufSize := app.Flag("buf-size", "Buffer size").Default("1000000").Int32()
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
-	isDistributed := app.Flag("distributed", "Distributed mode.").Bool()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 
 	core.InitLogging("WARN", *environment, "Kafka-Consumer", Version, "Quanta")
@@ -80,7 +78,6 @@ func main() {
 	main.BufferSize = uint(*bufSize)
 	main.SchemaDir = *schemaDir
 	main.Port = int(*port)
-	main.IsDistributed = *isDistributed
 	main.ConsulAddr = *consul
 	main.KafkaBroker = *broker
 	main.KafkaGroup = *group
@@ -90,11 +87,7 @@ func main() {
 	log.Printf("Buffer size %d.", main.BufferSize)
 	log.Printf("Base path for schema [%s].", main.SchemaDir)
 	log.Printf("Service port %d.", main.Port)
-	if main.IsDistributed {
-		log.Printf("Distributed Mode.  Consul agent at [%s]\n", main.ConsulAddr)
-	} else {
-		log.Println("Singleton loader instance mode.")
-	}
+	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
 	log.Printf("Kafka broker host %s.", main.KafkaBroker)
 	log.Printf("Kafka group %s.", main.KafkaGroup)
 	log.Printf("Kafka topics %v.", main.KafkaTopics)
@@ -170,11 +163,9 @@ func (m *Main) Init() error {
 
 	var err error
 
-	if m.IsDistributed {
-		m.ConsulClient, err = api.NewClient(&api.Config{Address: m.ConsulAddr})
-		if err != nil {
-			return err
-		}
+	m.ConsulClient, err = api.NewClient(&api.Config{Address: m.ConsulAddr})
+	if err != nil {
+		return err
 	}
 
 	m.consumer, err = kafka.NewConsumer(&kafka.ConfigMap{

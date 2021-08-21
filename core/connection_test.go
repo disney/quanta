@@ -8,7 +8,7 @@ import (
 )
 
 func TestCreateConnection(t *testing.T) {
-	c, err := OpenConnection("./testdata","cities", false, 0, 0, nil)
+	c, err := OpenConnection("./testdata", "cities", false, 0, 0, nil)
 	assert.Nil(t, err)
 	assert.NotNil(t, c)
 	assert.NotNil(t, c.TableBuffers)

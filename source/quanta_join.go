@@ -290,8 +290,8 @@ func (m *JoinMerge) Run() error {
 				return err
 			}
 			ct, _ := rs.Sum(rs.GetExistenceBitmap())
-            // This test is necessary only if the foreign key can contain NULL values (which is the point of OUTER joins)
-            // A corner case can exist if there are no predicates in which case there are cancelling AndNot operations
+			// This test is necessary only if the foreign key can contain NULL values (which is the point of OUTER joins)
+			// A corner case can exist if there are no predicates in which case there are cancelling AndNot operations
 			if isOuter && (!lisdefaultedpredicate || !risdefaultedpredicate) {
 				driverSet := foundSets[m.driverTable]
 				diff := roaring64.AndNot(driverSet, rs.GetExistenceBitmap()).GetCardinality()
@@ -355,8 +355,8 @@ func (m *JoinMerge) makeBufferedConnection(driverTable string) (*core.Connection
 	if !ok {
 		return nil, fmt.Errorf("cannot obtain base path from session")
 	}
-    return core.OpenConnection(basePath.ToString(), driverTable, false,
-        0, int(port.Value().(int64)), nil)
+	return core.OpenConnection(basePath.ToString(), driverTable, false,
+		0, int(port.Value().(int64)), nil)
 }
 
 func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitmap,

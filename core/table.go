@@ -54,7 +54,7 @@ type Attribute struct {
 	MinValue         int                    `yaml:"minValue,omitempty"`
 	MaxValue         int                    `yaml:"maxValue,omitempty"`
 	CallTransform    bool                   `yaml:"callTransform,omitempty"`
-	HighCard         bool                   `yaml:"highCard"`
+	HighCard         bool                   `yaml:"highCard, omitempty"`
 	Required         bool                   `yaml:"required,omitempty"`
 	Searchable       bool                   `yaml:"searchable,omitempty"`
 	DefaultValue     string                 `yaml:"defaultValue,omitempty"`

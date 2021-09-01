@@ -18,6 +18,7 @@ import (
 type Table struct {
 	Name             string                `yaml:"tableName"`
 	PrimaryKey       string                `yaml:"primaryKey,omitempty"`
+	SecondaryKeys    string                `yaml:"secondaryKeys,omitempty"`
 	DefaultPredicate string                `yaml:"defaultPredicate,omitempty"`
 	UseColumnKey     bool                  `yaml:"useColumnKey,omitempty"`
 	TimeQuantumType  string                `yaml:"timeQuantumType,omitempty"`
@@ -30,8 +31,8 @@ type Table struct {
 // Attribute - Field structure.
 type Attribute struct {
 	Parent          *Table  `yaml:"-" json:"-"`
-	SourceName      string  `yaml:"sourceName"`
 	FieldName       string  `yaml:"fieldName"`
+	SourceName      string  `yaml:"sourceName"`
 	Type            string  `yaml:"type"`
 	ForeignKey      string  `yaml:"foreignKey,omitempty"`
 	MappingStrategy string  `yaml:"mappingStrategy"`
@@ -39,12 +40,12 @@ type Attribute struct {
 	Ordinal         int     `yaml:"-"`
 	Scale           int     `yaml:"scale,omitempty"`
 	Values          []Value `yaml:"values,omitempty"`
-	//MapperConfig     map[string]string `yaml:"configuration,omitempty"`
+	MapperConfig     map[string]string `yaml:"configuration,omitempty"`
 	Desc          string                `yaml:"desc,omitempty"`
 	MinValue      int                   `yaml:"minValue,omitempty"`
 	MaxValue      int                   `yaml:"maxValue,omitempty"`
 	CallTransform bool                  `yaml:"callTransform,omitempty"`
-	HighCard      bool                  `yaml:"highCard"`
+	HighCard      bool                  `yaml:"highCard,omitempty"`
 	SkipIndex     bool                  `yaml:"skipIndex,omitempty"`
 	Required      bool                  `yaml:"required,omitempty"`
 	Searchable    bool                  `yaml:"searchable,omitempty"`

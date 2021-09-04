@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/disney/quanta/shared"
 	"math"
 	"sort"
 	"strings"
@@ -500,18 +501,18 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 			if val, ok := rs.GetValue(cid); !ok {
 				row[i] = "NULL"
 			} else {
-				switch TypeFromString(v.Type) {
-				case Integer:
+				switch shared.TypeFromString(v.Type) {
+				case shared.Integer:
 					row[i] = fmt.Sprintf("%10d", val)
-				case Float:
+				case shared.Float:
 					f := fmt.Sprintf("%%10.%df", v.Scale)
 					row[i] = fmt.Sprintf(f, float64(val)/math.Pow10(v.Scale))
-				case Date, DateTime:
+				case shared.Date, shared.DateTime:
 					t := time.Unix(0, val*1000000).UTC()
 					if v.MappingStrategy == "SysMicroBSI" {
 						t = time.Unix(0, val*1000).UTC()
 					}
-					if TypeFromString(v.Type) == Date {
+					if shared.TypeFromString(v.Type) == shared.Date {
 						row[i] = t.Format("2006-01-02")
 					} else {
 						row[i] = t.Format("2006-01-02T15:04:05")

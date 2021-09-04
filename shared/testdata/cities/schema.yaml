@@ -1,69 +1,80 @@
 tableName: cities
 primaryKey: id
 attributes:
-- sourceName: /id
-  fieldName: id
+- fieldName: id
+  sourceName: /id
   mappingStrategy: StringHashBSI
   type: String
-- sourceName: /city
-  fieldName: name
+- fieldName: name
+  sourceName: /city
   mappingStrategy: StringHashBSI
   type: String
   searchable: true
-- sourceName: /state_name
-  fieldName: state_name
+- fieldName: state_name
+  sourceName: /state_name
   mappingStrategy: StringEnum
   type: String
-- sourceName: /state_id
-  fieldName: state
+- fieldName: state
+  sourceName: /state_id
   mappingStrategy: StringEnum
   type: String
-- sourceName: /county_name
-  fieldName: county
+- fieldName: county
+  sourceName: /county_name
   mappingStrategy: StringHashBSI
   type: String
-- sourceName: /lat
-  fieldName: latitude
+- fieldName: latitude
+  sourceName: /lat
   mappingStrategy: FloatScaleBSI
   type: Float
   scale: 4
-- sourceName: /lng
-  fieldName: longitude
+- fieldName: longitude
+  sourceName: /lng
   mappingStrategy: FloatScaleBSI
   type: Float
   scale: 4
-- sourceName: /population
-  fieldName: population
+- fieldName: population
+  sourceName: /population
   mappingStrategy: IntBSI
   type: Integer
-- sourceName: /density
-  fieldName: density
+- fieldName: density
+  sourceName: /density
   mappingStrategy: IntBSI
   type: Integer
-- sourceName: /military
-  fieldName: military
+- fieldName: military
+  sourceName: /military
   mappingStrategy: BoolDirect
   type: Boolean
-- sourceName: /timezone
-  fieldName: timezone
+- fieldName: timezone
+  sourceName: /timezone
   mappingStrategy: StringEnum
   type: String
-- sourceName: /ranking
-  fieldName: ranking
+- fieldName: ranking
+  sourceName: /ranking
   mappingStrategy: IntDirect
   type: Integer
-- sourceName: /region
-  fieldName: region_list
+- fieldName: region_list
+  sourceName: /region
   type: String
   mappingStrategy: StringEnum
   configuration:
     delim: ","
   desc: Comma separated list of city, county, state abbreviation and state name.
-- sourceName: /created_timestamp
-  fieldName: created_timestamp
+- fieldName: created_timestamp
+  sourceName: /created_timestamp
   mappingStrategy: SysMillisBSI
   type: DateTime
-- sourceName: /created_date
-  fieldName: created_date
+- fieldName: created_date
+  sourceName: /created_date
   mappingStrategy: SysSecBSI
   type: Integer
+- fieldName: gender
+  sourceName: /gender
+  mappingStrategy: StringEnum
+  type: String
+  values:
+    - value: M
+      rowID: 1
+    - value: F
+      rowID: 2
+      desc: Female
+    

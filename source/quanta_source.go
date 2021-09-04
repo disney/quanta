@@ -9,6 +9,7 @@ import (
 	"github.com/araddon/qlbridge/schema"
 	"github.com/araddon/qlbridge/value"
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	"io/ioutil"
 	"log"
@@ -138,7 +139,7 @@ func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 			return nil, fmt.Errorf("field name missing from schema definition")
 		}
 		cols = append(cols, v.FieldName)
-		f := schema.NewField(v.FieldName, core.ValueTypeFromString(v.Type),
+		f := schema.NewField(v.FieldName, shared.ValueTypeFromString(v.Type),
 			0, v.Required, v.DefaultValue, v.ForeignKey, "-", v.Desc)
 		f.Extra = v.MappingStrategy
 		if v.ForeignKey != "" {

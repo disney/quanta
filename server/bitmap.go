@@ -51,7 +51,7 @@ type BitmapIndex struct {
 	fragFileLock    sync.Mutex
 	setBitThreads   *CountTrigger
 	writeSignal     chan bool
-	tableCache      map[string]*shared.Table
+	tableCache      map[string]*shared.BasicTable
 }
 
 // NewBitmapIndex - Construct and initialize bitmap server state.
@@ -59,8 +59,12 @@ func NewBitmapIndex(endPoint *EndPoint, expireDays uint) *BitmapIndex {
 
 	e := &BitmapIndex{EndPoint: endPoint}
 	e.expireDays = expireDays
-	e.tableCache = make(map[string]*shared.Table)
+	e.tableCache = make(map[string]*shared.BasicTable)
 	configPath := endPoint.dataDir + sep + "config"
+	schemaPath := ""        // this is normally an empty string forcing schema to come from Consul
+	if endPoint.Port == 0 { // In-memory test harness
+		schemaPath = configPath // read schema from local config yaml
+	}
 
 	_ = filepath.Walk(configPath,
 		func(path string, info os.FileInfo, err error) error {
@@ -72,7 +76,7 @@ func NewBitmapIndex(endPoint *EndPoint, expireDays uint) *BitmapIndex {
 				if _, err := os.Stat(path + sep + "schema.yaml"); err != nil {
 					return nil
 				}
-				if table, err := shared.LoadSchema(configPath, index, endPoint.consul); err != nil {
+				if table, err := shared.LoadSchema(schemaPath, index, endPoint.consul); err != nil {
 					log.Fatalf("ERROR: Could not load schema for %s - %v", index, err)
 				} else {
 					e.tableCache[index] = table
@@ -247,7 +251,7 @@ func newBitmapFragment(index, field string, rowIDOrBits int64, ts time.Time, f [
 }
 
 // Lookup field metadata (time quantum, exclusivity)
-func (m *BitmapIndex) getFieldConfig(index, field string) (*shared.Attribute, error) {
+func (m *BitmapIndex) getFieldConfig(index, field string) (*shared.BasicAttribute, error) {
 
 	table := m.tableCache[index]
 	attr, err := table.GetAttribute(field)

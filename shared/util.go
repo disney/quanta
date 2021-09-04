@@ -57,7 +57,7 @@ func UnmarshalValue(kind reflect.Kind, buf []byte) interface{} {
 }
 
 // MarshalConsul - Marshal the contents of a Table struct to Consul
-func MarshalConsul(in *Table, consul *api.Client) error {
+func MarshalConsul(in *BasicTable, consul *api.Client) error {
 
 	table := *in
 	return putRecursive(reflect.TypeOf(table), reflect.ValueOf(table), consul, "schema/"+table.Name)
@@ -136,14 +136,11 @@ func putRecursive(typ reflect.Type, value reflect.Value, consul *api.Client, roo
 }
 
 // UnmarshalConsul - Populate the contents of the Table struct from Consul
-func UnmarshalConsul(consul *api.Client, name string) (Table, error) {
+func UnmarshalConsul(consul *api.Client, name string) (BasicTable, error) {
 
-	table := Table{Name: name}
+	table := BasicTable{Name: name}
 	ps := reflect.ValueOf(&table)
 	err := getRecursive(reflect.TypeOf(table), ps.Elem(), consul, "schema/"+name)
-	for i := range table.Attributes {
-		table.Attributes[i].Parent = &table
-	}
 	return table, err
 }
 
@@ -222,6 +219,10 @@ func getRecursive(typ reflect.Type, value reflect.Value, consul *api.Client, roo
 		case reflect.Int, reflect.Int64:
 			if x, err := strconv.ParseInt(string(kvPair.Value), 10, 64); err == nil {
 				value.Field(i).SetInt(x)
+			}
+		case reflect.Uint, reflect.Uint64:
+			if x, err := strconv.ParseInt(string(kvPair.Value), 10, 64); err == nil {
+				value.Field(i).SetUint(uint64(x))
 			}
 		case reflect.Bool:
 			value.Field(i).SetBool(false)

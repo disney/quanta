@@ -19,7 +19,7 @@ import (
 
 const (
 	timeFmt = "2006-01-02T15"
-	ifDelim = "."
+	ifDelim = "/"
 )
 
 //

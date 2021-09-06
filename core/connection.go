@@ -25,7 +25,7 @@ var (
 
 const (
 	reservationSize = 1000
-	ifDelim         = "."
+	ifDelim         = "/"
 	primaryKey      = "P"
 	secondaryKey    = "S"
 )

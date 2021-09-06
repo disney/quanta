@@ -1,4 +1,5 @@
 package sink
+
 // TableSink - Support for SELECT * INTO "<table>"
 
 import (
@@ -9,7 +10,7 @@ import (
 )
 
 type (
-    // TableSink - State for table implemention of Sink interface.
+	// TableSink - State for table implemention of Sink interface.
 	TableSink struct{}
 )
 

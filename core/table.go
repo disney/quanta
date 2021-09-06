@@ -128,7 +128,7 @@ func LoadTable(path string, kvStore *quanta.KVStore, name string, consulClient *
 		if v.FieldName != "" {
 
 			// check to see if there are values in the API call (if applicable)
-			lookupName := table.Name + ":" + v.FieldName
+			lookupName := table.Name + SEP + v.FieldName + ".StringEnum"
 			// if there are values in schema.yaml then override string enum values in global cache
 			if f, ok := fieldMap[lookupName]; ok && len(table.Attributes[j].Values) > 0 {
 				// Pull it in
@@ -302,7 +302,8 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 		}
 
 		// OK, value not anywhere to be found, invoke service to add.
-		rowID, err := a.Parent.kvStore.PutStringEnum(a.Parent.Name+":"+a.FieldName, value.(string))
+		rowID, err := a.Parent.kvStore.PutStringEnum(a.Parent.Name+SEP+a.FieldName+".StringEnum",
+			value.(string))
 		if err != nil {
 			return 0, err
 		}
@@ -409,7 +410,7 @@ func (t *Table) LoadFieldValues() (fieldMap map[string]*Field, err error) {
 		if attr.MappingStrategy != "StringEnum" {
 			continue
 		}
-		lookupName := t.Name + ":" + attr.FieldName
+		lookupName := t.Name + SEP + attr.FieldName + ".StringEnum"
 		x, err := t.kvStore.Items(lookupName, reflect.String, reflect.Uint64)
 		if err != nil {
 			return nil, fmt.Errorf("ERROR: Cannot open enum for table %s, field %s. [%v]", t.Name,

@@ -34,10 +34,7 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err)
 
 	core.ClearTableCache()
-	RemoveContents("./testdata/cities*")
-	RemoveContents("./testdata/cityzip*")
-	RemoveContents("./testdata/search.dat")
-	RemoveContents("./testdata/UserRole")
+	RemoveContents("./testdata/index")
 
 	// Server side components already started and available in package level variables in harness.go
 

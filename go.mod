@@ -4,8 +4,9 @@ go 1.14
 
 require (
 	github.com/Jeffail/tunny v0.0.0-20190930221602-f13eb662a36a
-	github.com/RoaringBitmap/roaring v0.8.0
+	github.com/RoaringBitmap/roaring v0.9.4
 	github.com/akrylysov/pogreb v0.9.1
+	github.com/alecthomas/kong v0.2.17
 	github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d // indirect
 	github.com/araddon/dateparse v0.0.0-20210207001429-0eec95c9db7e
 	github.com/araddon/gou v0.0.0-20190110011759-c797efecbb61

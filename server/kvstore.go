@@ -93,7 +93,7 @@ func (m *KVStore) getStore(index string) (db *pogreb.DB, err error) {
 
 	m.storeCacheLock.Lock()
 	defer m.storeCacheLock.Unlock()
-	db, err = pogreb.Open(m.EndPoint.dataDir+sep+index, nil)
+	db, err = pogreb.Open(m.EndPoint.dataDir+sep+"index"+sep+index, nil)
 	if err == nil {
 		m.storeCache[index] = db
 	} else {

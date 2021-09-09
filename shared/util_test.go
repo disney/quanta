@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func testConsul(t *testing.T) {
+func TestConsul(t *testing.T) {
 
 	// Create a test Consul server
 	srv, err := testutil.NewTestServerConfigT(t, nil)
@@ -22,7 +22,10 @@ func testConsul(t *testing.T) {
 	consulClient, errx := api.NewClient(conf)
 	assert.Nil(t, errx)
 
-	init, err := LoadSchema("./testdata", "cities", consulClient)
+	ok, _ := TableExists(consulClient, "cities")
+	assert.False(t, ok)
+
+	init, err := LoadSchema("./testdata/config2", "cities", consulClient)
 	errx1 := MarshalConsul(init, consulClient)
 	assert.Nil(t, errx1)
 
@@ -49,5 +52,63 @@ func testConsul(t *testing.T) {
 		if assert.NotNil(t, name) {
 			assert.True(t, name.IsBSI())
 		}
+
+		ok, _ := TableExists(consulClient, "cities")
+		assert.True(t, ok)
 	}
+}
+
+func TestConstraints(t *testing.T) {
+
+	// Create a test Consul server
+	srv, err := testutil.NewTestServerConfigT(t, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Stop()
+
+	conf := api.DefaultConfig()
+	conf.Address = srv.HTTPAddr
+	consulClient, err1 := api.NewClient(conf)
+	assert.Nil(t, err1)
+
+	cityzip, err2 := LoadSchema("./testdata/config", "cityzip", consulClient)
+	assert.Nil(t, err2)
+
+	cities, err3 := LoadSchema("./testdata/config", "cities", consulClient)
+	assert.Nil(t, err3)
+
+	// Simulate create table where parent of FK does not exist
+	ok, err := CheckParentRelation(consulClient, cityzip)
+	assert.Nil(t, err)
+	assert.False(t, ok)
+
+	// Ok, create parent and recheck
+	err = MarshalConsul(cities, consulClient)
+	ok, _ = TableExists(consulClient, "cities")
+	assert.True(t, ok)
+	ok, err = CheckParentRelation(consulClient, cityzip)
+	assert.Nil(t, err)
+	assert.True(t, ok)
+
+	// create child
+	err = MarshalConsul(cityzip, consulClient)
+	assert.Nil(t, err)
+	ok, _ = TableExists(consulClient, "cityzip")
+	assert.True(t, ok)
+
+	// Simulate drop parent table where child relation exists.
+	dependencies, errx := CheckChildRelation(consulClient, cities.Name)
+	assert.Nil(t, errx)
+	assert.Equal(t, 1, len(dependencies))
+	assert.Equal(t, "cityzip", dependencies[0]) // no go, dependecies
+
+	// Drop parent and re-check
+	err = DeleteTable(consulClient, "cityzip")
+	assert.Nil(t, err)
+	ok, _ = TableExists(consulClient, "cityzip")
+	assert.False(t, ok)
+	dependencies, errx = CheckChildRelation(consulClient, cities.Name)
+	assert.Nil(t, err)
+	assert.Equal(t, 0, len(dependencies))
 }

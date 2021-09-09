@@ -233,3 +233,113 @@ func getRecursive(typ reflect.Type, value reflect.Value, consul *api.Client, roo
 	}
 	return nil
 }
+
+// TableExists - Check for the existence of the table in Consul
+func TableExists(consul *api.Client, name string) (bool, error) {
+
+	if name == "" {
+		return false, fmt.Errorf("table name must not be empty")
+	}
+
+	path := fmt.Sprintf("schema/%s/primaryKey", name)
+	kvPair, _, err := consul.KV().Get(path, nil)
+	if err != nil {
+		return false, fmt.Errorf("TableExists: %v", err)
+	}
+	if kvPair == nil {
+		return false, nil
+	}
+	return true, nil
+}
+
+// DeleteTable - Delete the table data from Consul.
+func DeleteTable(consul *api.Client, name string) error {
+
+	if name == "" {
+		return fmt.Errorf("table name must not be empty")
+	}
+	path := fmt.Sprintf("schema/%s", name)
+	_, err := consul.KV().DeleteTree(path, nil)
+	if err != nil {
+		return fmt.Errorf("DeleteTable: %v", err)
+	}
+	return nil
+}
+
+// CheckParentRelation - Returns true if there are no foreign keys or the referenced tables exist.
+func CheckParentRelation(consul *api.Client, table *BasicTable) (bool, error) {
+
+	if table == nil {
+		return false, fmt.Errorf("table must not be nil")
+	}
+
+	ok := true
+	var err error
+	for _, v := range table.Attributes {
+		if v.ForeignKey != "" {
+			ok, err = TableExists(consul, v.ForeignKey)
+			if err != nil {
+				err = fmt.Errorf("CheckParentRelation error: %v", err)
+				ok = false
+			}
+			if !ok {
+				break
+			}
+		}
+	}
+	return ok, err
+}
+
+// GetTables - Return a list of deployed tables.
+func GetTables(consul *api.Client) ([]string, error) {
+
+	results := make([]string, 0)
+	keys := make(map[string]struct{}, 0)
+	pairs, _, err := consul.KV().List("schema", nil)
+	if err != nil {
+		return results, err
+	}
+	for _, v := range pairs {
+		s := strings.Split(v.Key, SEP)
+		keys[s[1]] = struct{}{}
+	}
+	for v := range keys {
+		results = append(results, v)
+	}
+	return results, nil
+}
+
+func getDeployedFKReferenceMap(consul *api.Client) (map[string][]string, error) {
+
+	results := make(map[string][]string)
+	pairs, _, err := consul.KV().List("schema", nil)
+	if err != nil {
+		return results, err
+	}
+	for _, v := range pairs {
+		if filepath.Base(v.Key) == "foreignKey" {
+			referencedTable := string(v.Value)
+			s := strings.Split(v.Key, SEP)
+			references := results[referencedTable]
+			if references == nil {
+				references = make([]string, 0)
+			}
+			references = append(references, s[1])
+			results[referencedTable] = references
+		}
+	}
+	return results, nil
+}
+
+// CheckChildRelation - Returns list of dependent references to this table.
+func CheckChildRelation(consul *api.Client, tableName string) ([]string, error) {
+
+	results, err := getDeployedFKReferenceMap(consul)
+	if err != nil {
+		return nil, err
+	}
+	if ret, ok := results[tableName]; ok {
+		return ret, err
+	}
+	return []string{}, nil
+}

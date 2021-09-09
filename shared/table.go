@@ -280,3 +280,142 @@ func (a *BasicAttribute) IsBSI() bool {
 		return false
 	}
 }
+
+// Compare - This table's structure to another table.
+func (t *BasicTable) Compare(other *BasicTable) (equal bool, warnings []string, err error) {
+
+	warnings = make([]string, 0)
+
+	if other == nil {
+		return false, warnings, fmt.Errorf("comparison table must not be nil")
+	}
+	if t.Name != other.Name {
+		return false, warnings, fmt.Errorf("table names differ existing = %s, new = %s", t.Name, other.Name)
+	}
+	if t.PrimaryKey != other.PrimaryKey {
+		return false, warnings,
+			fmt.Errorf("cannot alter PK existing = %s, other = %s", t.PrimaryKey, other.PrimaryKey)
+	}
+	if t.SecondaryKeys != other.SecondaryKeys {
+		return false, warnings, fmt.Errorf("cannot alter SKs existing = %s, new = %s", t.SecondaryKeys,
+			other.SecondaryKeys)
+	}
+	if t.TimeQuantumType != other.TimeQuantumType {
+		return false, warnings,
+			fmt.Errorf("Cannot alter time quantum existing = %s, new = %s", t.TimeQuantumType,
+				other.TimeQuantumType)
+	}
+	if t.DisableDedup != other.DisableDedup {
+		warnings = append(warnings, fmt.Sprintf("disable dedup setting changed existing = %v, new = %v",
+			t.DisableDedup, other.DisableDedup))
+	}
+
+	// Compare these attributes against other attributes - drops not allowed.
+	for _, v := range t.Attributes {
+		otherAttr, err := other.GetAttribute(v.FieldName)
+		if err != nil {
+			return false, warnings, fmt.Errorf("attribute %s cannot be dropped", v.FieldName)
+		}
+		attrEqual, attrWarnings, attrErr := v.Compare(otherAttr)
+		if attrErr != nil {
+			return false, warnings, attrErr
+		}
+		if attrEqual {
+			continue
+		}
+		warnings = append(warnings, attrWarnings...)
+	}
+
+	// Compare other attributes against these attributes - new adds allowed.
+	for _, v := range other.Attributes {
+		_, err := t.GetAttribute(v.FieldName)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("new attribute '%s', addition is allowable", v.FieldName))
+		}
+	}
+
+	if len(warnings) == 0 {
+		equal = true
+	}
+	return
+}
+
+// Compare - This attribute to another attribute.
+func (a *BasicAttribute) Compare(other *BasicAttribute) (equal bool, warnings []string, err error) {
+
+	warnings = make([]string, 0)
+
+	// Check for error conditions first
+	if a.Type != other.Type {
+		return false, warnings, fmt.Errorf("attribute '%s' types differ existing = %s, new = %s", a.FieldName,
+			a.Type, other.Type)
+	}
+	if a.ForeignKey != other.ForeignKey {
+		if other.ForeignKey == "" {
+			return false, warnings, fmt.Errorf("cannot drop foreign key constraint '%s' on attribute '%s'",
+				a.ForeignKey, a.FieldName)
+		}
+		return false, warnings, fmt.Errorf("cannot add foreign key constraint '%s' on attribute '%s'",
+			other.ForeignKey, a.FieldName)
+	}
+	if a.MappingStrategy != other.MappingStrategy {
+		return false, warnings,
+			fmt.Errorf("attribute '%s' mapping strategies differ existing = '%s', new = '%s'", a.FieldName,
+				a.MappingStrategy, other.MappingStrategy)
+	}
+	if a.Scale != other.Scale {
+		return false, warnings, fmt.Errorf("attribute '%s' scale differs existing = '%d', new = '%d'",
+			a.FieldName, a.Scale, other.Scale)
+	}
+	if a.MinValue != other.MinValue {
+		return false, warnings, fmt.Errorf("attribute '%s' min value differs existing = '%d', new = '%d'",
+			a.FieldName, a.MinValue, other.MinValue)
+	}
+	if a.MaxValue != other.MaxValue {
+		return false, warnings, fmt.Errorf("attribute '%s' max value differs existing = '%d', new = '%d'",
+			a.FieldName, a.MaxValue, other.MaxValue)
+	}
+	if a.Searchable != other.Searchable {
+		return false, warnings, fmt.Errorf("attribute '%s' searchability differs existing = '%v', new = '%v'",
+			a.FieldName, a.Searchable, other.Searchable)
+	}
+	if a.Required != other.Required {
+		return false, warnings, fmt.Errorf("attribute '%s' required differs existing = '%v', new = '%v'",
+			a.FieldName, a.Required, other.Required)
+	}
+	if a.Exclusive != other.Exclusive {
+		return false, warnings, fmt.Errorf("attribute '%s' exclusivity differs existing = '%v', new = '%v'",
+			a.FieldName, a.Exclusive, other.Exclusive)
+	}
+
+	// Warning level comparisons for alters that are allowed.
+	if a.SourceName != other.SourceName {
+		warnings = append(warnings, fmt.Sprintf("attribute '%s' source name changed existing = '%v', new = '%v'",
+			a.FieldName, a.SourceName, other.SourceName))
+	}
+	if a.Desc != other.Desc {
+		warnings = append(warnings, fmt.Sprintf("attribute '%s' description changed existing = '%v', new = '%v'",
+			a.FieldName, a.Desc, other.Desc))
+	}
+	if a.DefaultValue != other.DefaultValue {
+		warnings = append(warnings, fmt.Sprintf("attribute '%s' default val changed existing = '%v', new = '%v'",
+			a.FieldName, a.DefaultValue, other.DefaultValue))
+	}
+	if a.ChildTable != other.ChildTable {
+		warnings = append(warnings, fmt.Sprintf("attribute '%s' child changed existing = '%v', new = '%v'",
+			a.FieldName, a.ChildTable, other.ChildTable))
+	}
+	if len(a.Values) != len(other.Values) {
+		warnings = append(warnings, fmt.Sprintf("attribute '%s' enum count changed existing = '%v', new = '%v'",
+			a.FieldName, len(a.Values), len(other.Values)))
+	}
+	if len(a.MapperConfig) != len(other.MapperConfig) {
+		warnings = append(warnings, fmt.Sprintf("attribute '%s' mapper conf changed existing = '%v', new = '%v'",
+			a.FieldName, len(a.MapperConfig), len(other.MapperConfig)))
+	}
+
+	if len(warnings) == 0 {
+		equal = true
+	}
+	return
+}

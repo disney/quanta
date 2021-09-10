@@ -316,3 +316,25 @@ func (m *KVStore) PutStringEnum(ctx context.Context, se *pb.StringEnum) (*wrappe
 	}
 	return &wrappers.UInt64Value{Value: v.(uint64)}, nil
 }
+
+// DeleteIndicesWithPrefix - Close and delete all indices with a specific prefix
+func (m *KVStore) DeleteIndicesWithPrefix(ctx context.Context, 
+        prefix *wrappers.StringValue) (*empty.Empty, error) {
+
+	if prefix.Value == "" {
+		return &empty.Empty{}, fmt.Errorf("Index prefix must be specified")
+	}
+	m.storeCacheLock.Lock()
+	defer m.storeCacheLock.Unlock()
+	for k, v := range m.storeCache {
+        if strings.HasPrefix(k, prefix.Value) {
+		    log.Printf("Sync, close, and delete [%s]", k)
+		    v.Sync()
+		    v.Close()
+            if err := os.RemoveAll(m.EndPoint.dataDir+sep+"index"+sep+k); err != nil {
+	            return &empty.Empty{}, fmt.Errorf("DeleteIndicesWithPrefix error [%v]", err)
+            }
+        }
+	}
+	return &empty.Empty{}, nil
+}

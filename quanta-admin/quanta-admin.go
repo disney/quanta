@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/alecthomas/kong"
 	"github.com/disney/quanta/shared"
+	"github.com/disney/quanta/client"
 	"github.com/hashicorp/consul/api"
 	"log"
 )
@@ -18,6 +19,7 @@ var (
 // Context - Global command line variables
 type Context struct {
 	ConsulAddr string `help:"Consul agent address/port." default:"127.0.0.1:8500"`
+    Port       int    `help:"Port number for Quanta service." default:"4000"`
 }
 
 // StatusCmd - Status command
@@ -51,6 +53,7 @@ type TablesCmd struct {
 
 var cli struct {
 	ConsulAddr string      `default:"127.0.0.1:8500"`
+	Port       int         `default:"4000"`
 	Create     CreateCmd   `cmd help:"Create table."`
 	Drop       DropCmd     `cmd help:"Drop table."`
 	Truncate   TruncateCmd `cmd help:"Truncate table."`
@@ -62,7 +65,7 @@ var cli struct {
 func main() {
 
 	ctx := kong.Parse(&cli)
-	err := ctx.Run(&Context{ConsulAddr: cli.ConsulAddr})
+	err := ctx.Run(&Context{ConsulAddr: cli.ConsulAddr, Port: cli.Port})
 	ctx.FatalIfErrorf(err)
 }
 
@@ -93,7 +96,7 @@ func (c *CreateCmd) Run(ctx *Context) error {
 			return fmt.Errorf("cannot create table due to missing parent FK constraint dependency")
 		}
 
-		err = performCreate(consulClient, table)
+		err = performCreate(consulClient, table, ctx.Port)
 		if err != nil {
 			return fmt.Errorf("errors during performCreate: %v", err)
 		}
@@ -124,7 +127,7 @@ func (c *CreateCmd) Run(ctx *Context) error {
 		}
 		return fmt.Errorf("if you wish to deploy the changes then re-run with --confirm flag")
 	}
-	err = performCreate(consulClient, table)
+	err = performCreate(consulClient, table, ctx.Port)
 	if err != nil {
 		return fmt.Errorf("errors during performCreate: %v", err)
 	}
@@ -133,9 +136,17 @@ func (c *CreateCmd) Run(ctx *Context) error {
 	return nil
 }
 
-func performCreate(consul *api.Client, table *shared.BasicTable) error {
+func performCreate(consul *api.Client, table *shared.BasicTable, port int) error {
 
 	// TODO: Synchronously invoke backend table re-load inside distributed lock
+	log.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
+    conn := quanta.NewDefaultConnection()
+    conn.ServicePort = port
+    conn.Quorum = 3
+    if err := conn.Connect(); err != nil {
+        log.Fatal(err)
+    }
+    services := quanta.NewBitmapIndex(conn, 3000000)
 
 	err := shared.DeleteTable(consul, table.Name)
 	if err != nil {
@@ -160,7 +171,8 @@ func performCreate(consul *api.Client, table *shared.BasicTable) error {
 	if !ok {
 		return fmt.Errorf("differences detected with deployed table %v", table.Name)
 	}
-	return nil
+
+    return services.TableOperation(table.Name, "deploy")
 }
 
 // Run - Version command implementation
@@ -192,8 +204,10 @@ func (c *DropCmd) Run(ctx *Context) error {
 	}
 
 	// TODO: Obtain distributed lock
-	// TODO: Nuke the data
-
+    err = nukeData(consulClient, ctx.Port, c.Table, "drop")
+	if err != nil {
+		return err
+	}
 	err = shared.DeleteTable(consulClient, c.Table)
 	if err != nil {
 		return fmt.Errorf("DeleteTable error %v", err)
@@ -227,6 +241,29 @@ func checkForChildDependencies(consul *api.Client, tableName, operation string) 
 	return nil
 }
 
+func nukeData(consul *api.Client, port int, tableName, operation string) error {
+
+    log.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
+    conn := quanta.NewDefaultConnection()
+    conn.ServicePort = port
+    conn.Quorum = 3
+    if err := conn.Connect(); err != nil {
+        log.Fatal(err)
+    }
+    services := quanta.NewBitmapIndex(conn, 3000000)
+    kvStore := quanta.NewKVStore(conn)
+
+    err := services.TableOperation(tableName, operation)
+	if err != nil {
+		return fmt.Errorf("TableOperation error %v", err)
+	}
+    err = kvStore.DeleteIndicesWithPrefix(tableName)
+	if err != nil {
+		return fmt.Errorf("DeleteIndicesWithPrefix error %v", err)
+	}
+    return nil
+}
+
 // Run - Truncate command implementation
 func (c *TruncateCmd) Run(ctx *Context) error {
 
@@ -242,7 +279,10 @@ func (c *TruncateCmd) Run(ctx *Context) error {
 	}
 
 	// TODO: Obtain distributed lock
-	// TODO: Nuke the data only
+    err = nukeData(consulClient, ctx.Port, c.Table, "truncate")
+	if err != nil {
+		return err
+	}
 	// TODO: Release the lock
 
 	fmt.Printf("Successfully truncated table %s\n", c.Table)

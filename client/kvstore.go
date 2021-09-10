@@ -362,3 +362,33 @@ func (c *KVStore) selectNodes(key interface{}, all bool) []pb.KVStoreClient {
 
 	return selected
 }
+
+func (c *KVStore) DeleteIndicesWithPrefix(prefix string) error {
+
+    var eg errgroup.Group
+	replicaClients := c.selectNodes(prefix, true)
+	if len(replicaClients) == 0 {
+		return fmt.Errorf("no available nodes!")
+	}
+    for _, client := range replicaClients {
+        x := client
+        eg.Go(func() error {
+            return c.deleteIndicesWithPrefix(x, prefix)
+        })
+    }
+    if err := eg.Wait(); err != nil {
+        return err
+    }
+    return nil
+}
+
+func (c *KVStore) deleteIndicesWithPrefix(client pb.KVStoreClient, prefix string) error {
+
+    ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+    defer cancel()
+    _, err := client.DeleteIndicesWithPrefix(ctx, &wrappers.StringValue{Value: prefix})
+    if err != nil {
+        return fmt.Errorf("%v.DeleteIndicesWithPrefix(_) = _, %v: ", c, err)
+    }
+    return nil
+}

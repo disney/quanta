@@ -712,3 +712,54 @@ func (c *BitmapIndex) SetCID2String(index, field string, columnID, value interfa
 	}
 	return nil
 }
+
+// TableOperation - Handle TableOperations
+func (c *BitmapIndex) TableOperation(table, operation string) error {
+
+    var op pb.TableOperationRequest_OpType
+    switch operation {
+    case "deploy":
+        op = pb.TableOperationRequest_DEPLOY
+    case "drop":
+        op = pb.TableOperationRequest_DROP
+    case "truncate":
+        op = pb.TableOperationRequest_TRUNCATE
+    default:
+        return fmt.Errorf("unknown operation %v", operation)
+    }
+	req := &pb.TableOperationRequest{Table: table, Operation: op}
+
+	var eg errgroup.Group
+
+	// Send the same tableOperation request to each node.
+	for i, n := range c.client {
+		client := n
+		clientIndex := i
+		eg.Go(func() error {
+			if err := c.tableOperationClient(client, req, clientIndex); err != nil {
+				return err
+			}
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Send a tableOperation request to all nodes.
+func (c *BitmapIndex) tableOperationClient(client pb.BitmapIndexClient, req *pb.TableOperationRequest,
+	clientIndex int) error {
+
+	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	defer cancel()
+
+	if _, err := client.TableOperation(ctx, req); err != nil {
+		return fmt.Errorf("%v.TableOperation(_) = _, %v, node = %s", client, err,
+			c.Conn.clientConn[clientIndex].Target())
+	}
+	return nil
+}
+

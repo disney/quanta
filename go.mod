@@ -33,7 +33,6 @@ require (
 	github.com/mattn/go-colorable v0.1.7 // indirect
 	github.com/mb0/glob v0.0.0-20160210091149-1eb79d2de6c4 // indirect
 	github.com/mitchellh/mapstructure v1.3.3 // indirect
-	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/mssola/user_agent v0.5.2 // indirect
 	github.com/pborman/uuid v1.2.1
 	github.com/rlmcpherson/s3gof3r v0.5.0

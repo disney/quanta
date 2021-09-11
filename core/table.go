@@ -218,7 +218,7 @@ func LoadTable(path string, kvStore *quanta.KVStore, name string, consulClient *
 	return table, nil
 }
 
-// GetAttribute - Get a tables attribute by name.
+// GetAttribute - Get a table's attribute by name.
 func (t *Table) GetAttribute(name string) (*Attribute, error) {
 
 	if attr, ok := t.attributeNameMap[name]; ok {

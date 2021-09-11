@@ -869,7 +869,11 @@ func (m *SQLToQuanta) walkSelectList(q *shared.QueryFragment) error {
 				if col.Star || strings.HasSuffix(col.As, ".*") {
 					continue
 				}
-				_, _, err := m.ResolveField(curNode.String())
+				colName := curNode.String()
+				if _, r, isAliased := curNode.LeftRight(); isAliased {
+					colName = r
+				}
+				_, _, err := m.ResolveField(colName)
 				if err != nil {
 					return err
 				}

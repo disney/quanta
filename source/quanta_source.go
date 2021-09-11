@@ -9,6 +9,7 @@ import (
 	"github.com/araddon/qlbridge/schema"
 	"github.com/araddon/qlbridge/value"
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	"io/ioutil"
 	"log"
@@ -106,6 +107,7 @@ func (m *QuantaSource) Open(tableName string) (schema.Conn, error) {
 // Table by name
 func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 
+	core.ClearTableCache()
 	conn, err := core.OpenConnection(m.baseDir, table, false, 0, m.servicePort, m.consulClient)
 	if err != nil {
 		log.Printf("Error '%v' opening connection for table %s.", err, table)
@@ -116,13 +118,6 @@ func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 		return nil, fmt.Errorf("cannot find table buffer for %s", table)
 	}
 	ts := tb.Table
-	/*
-		ts, err := core.LoadSchema(m.baseDir, nil, table, m.consulClient)
-		if err != nil {
-			log.Printf("Error '%v' loading schema for table %s.", err, table)
-			return nil, err
-		}
-	*/
 	pkMap := make(map[string]*core.Attribute)
 	pka, _ := ts.GetPrimaryKeyInfo()
 	for _, v := range pka {
@@ -138,7 +133,7 @@ func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 			return nil, fmt.Errorf("field name missing from schema definition")
 		}
 		cols = append(cols, v.FieldName)
-		f := schema.NewField(v.FieldName, core.ValueTypeFromString(v.Type),
+		f := schema.NewField(v.FieldName, shared.ValueTypeFromString(v.Type),
 			0, v.Required, v.DefaultValue, v.ForeignKey, "-", v.Desc)
 		f.Extra = v.MappingStrategy
 		if v.ForeignKey != "" {

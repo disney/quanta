@@ -4,8 +4,9 @@ go 1.14
 
 require (
 	github.com/Jeffail/tunny v0.0.0-20190930221602-f13eb662a36a
-	github.com/RoaringBitmap/roaring v0.8.0
+	github.com/RoaringBitmap/roaring v0.9.4
 	github.com/akrylysov/pogreb v0.9.1
+	github.com/alecthomas/kong v0.2.17
 	github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d // indirect
 	github.com/araddon/dateparse v0.0.0-20210207001429-0eec95c9db7e
 	github.com/araddon/gou v0.0.0-20190110011759-c797efecbb61
@@ -20,6 +21,7 @@ require (
 	github.com/golang/protobuf v1.4.2
 	github.com/google/uuid v1.1.2 // indirect
 	github.com/hashicorp/consul/api v1.6.0
+	github.com/hashicorp/consul/sdk v0.6.0
 	github.com/hashicorp/go-hclog v0.14.1 // indirect
 	github.com/hashicorp/go-memdb v1.3.1 // indirect
 	github.com/hashicorp/serf v0.9.4 // indirect
@@ -31,7 +33,6 @@ require (
 	github.com/mattn/go-colorable v0.1.7 // indirect
 	github.com/mb0/glob v0.0.0-20160210091149-1eb79d2de6c4 // indirect
 	github.com/mitchellh/mapstructure v1.3.3 // indirect
-	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/mssola/user_agent v0.5.2 // indirect
 	github.com/pborman/uuid v1.2.1
 	github.com/rlmcpherson/s3gof3r v0.5.0

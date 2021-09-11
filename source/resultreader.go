@@ -204,10 +204,10 @@ func (m *ResultReader) Run() error {
 			if err != nil {
 				return err
 			}
-			switch core.TypeFromString(field.Type) {
-			case core.Integer:
+			switch shared.TypeFromString(field.Type) {
+			case shared.Integer:
 				vals[0] = fmt.Sprintf("%10d", minmax)
-			case core.Float:
+			case shared.Float:
 				f := fmt.Sprintf("%%10.%df", field.Scale)
 				vals[0] = fmt.Sprintf(f, float64(minmax)/math.Pow10(field.Scale))
 			}

@@ -362,3 +362,35 @@ func (c *KVStore) selectNodes(key interface{}, all bool) []pb.KVStoreClient {
 
 	return selected
 }
+
+// DeleteIndicesWithPrefix - Delete indices with a table prefix, optionally retain StringEnum data
+func (c *KVStore) DeleteIndicesWithPrefix(prefix string, retainEnums bool) error {
+
+	var eg errgroup.Group
+	replicaClients := c.selectNodes(prefix, true)
+	if len(replicaClients) == 0 {
+		return fmt.Errorf("no available nodes")
+	}
+	for _, client := range replicaClients {
+		x := client
+		eg.Go(func() error {
+			return c.deleteIndicesWithPrefix(x, prefix, retainEnums)
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *KVStore) deleteIndicesWithPrefix(client pb.KVStoreClient, prefix string, retainEnums bool) error {
+
+	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	defer cancel()
+	_, err := client.DeleteIndicesWithPrefix(ctx,
+		&pb.DeleteIndicesWithPrefixRequest{Prefix: prefix, RetainEnums: retainEnums})
+	if err != nil {
+		return fmt.Errorf("%v.DeleteIndicesWithPrefix(_) = _, %v: ", c, err)
+	}
+	return nil
+}

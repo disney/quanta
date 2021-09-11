@@ -319,6 +319,8 @@ func ResolveMapper(attr *Attribute) (mapper Mapper, err error) {
 				mapper, err = lookupMapper(name, attr.MapperConfig)
 			}
 		}
+	} else if attr.MappingStrategy == "ParentRelation" {
+		mapper, err = lookupMapper("IntBSI", attr.MapperConfig)
 	} else {
 		mapper, err = lookupMapper(attr.MappingStrategy, attr.MapperConfig)
 	}

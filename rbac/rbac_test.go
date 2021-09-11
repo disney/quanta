@@ -20,8 +20,7 @@ type RBACTestSuite struct {
 
 func (suite *RBACTestSuite) SetupSuite() {
 
-	os.RemoveAll("./testdata/metadata")
-	os.RemoveAll("./testdata/UserRoles")
+	os.RemoveAll("./testdata/index")
 	var err error
 	u.SetupLogging("debug")
 
@@ -48,8 +47,7 @@ func (suite *RBACTestSuite) SetupSuite() {
 
 func (suite *RBACTestSuite) TearDownSuite() {
 	suite.server.Shutdown()
-	os.RemoveAll("./testdata/metadata")
-	os.RemoveAll("./testdata/UserRoles")
+	os.RemoveAll("./testdata/index")
 }
 
 // In order for 'go test' to run this suite, we need to create

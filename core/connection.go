@@ -25,7 +25,7 @@ var (
 
 const (
 	reservationSize = 1000
-	ifDelim         = "."
+	ifDelim         = "/"
 	primaryKey      = "P"
 	secondaryKey    = "S"
 )
@@ -100,11 +100,11 @@ func OpenConnection(path, name string, nested bool, bufSize uint, port int,
 	kvStore := quanta.NewKVStore(conn)
 
 	tableBuffers := make(map[string]*TableBuffer, 0)
-	tab, err := LoadSchema(path, kvStore, name, consul)
+	tab, err := LoadTable(path, kvStore, name, consul)
 	if err != nil {
 		return nil, err
 	} else if nested {
-		if err = recurseAndLoadSchema(path, kvStore, tableBuffers, tab); err != nil {
+		if err = recurseAndLoadTable(path, kvStore, tableBuffers, tab); err != nil {
 			return nil, fmt.Errorf("Error loading child tables %v", err)
 		}
 	} else {
@@ -112,7 +112,7 @@ func OpenConnection(path, name string, nested bool, bufSize uint, port int,
 		for _, v := range tab.Attributes {
 			if v.MappingStrategy == "ParentRelation" && v.ForeignKey != "" {
 				fkTable, _, _ := v.GetFKSpec()
-				parent, err2 := LoadSchema(path, kvStore, fkTable, consul)
+				parent, err2 := LoadTable(path, kvStore, fkTable, consul)
 				if err != nil {
 					return nil, fmt.Errorf("Error loading parent schema - %v", err2)
 				}
@@ -144,23 +144,23 @@ func (s *Connection) SetDateFilter(filter *time.Time) {
 	s.DateFilter = filter
 }
 
-func recurseAndLoadSchema(basePath string, kvStore *quanta.KVStore, tableBuffers map[string]*TableBuffer, curTable *Table) error {
+func recurseAndLoadTable(basePath string, kvStore *quanta.KVStore, tableBuffers map[string]*TableBuffer, curTable *Table) error {
 
 	for _, v := range curTable.Attributes {
 		_, ok := tableBuffers[v.ChildTable]
 		if v.ChildTable != "" && !ok {
-			table, err := LoadSchema(basePath, kvStore, v.ChildTable, curTable.ConsulClient)
+			table, err := LoadTable(basePath, kvStore, v.ChildTable, curTable.ConsulClient)
 			if err != nil {
 				return err
 			}
-			err = recurseAndLoadSchema(basePath, kvStore, tableBuffers, table)
+			err = recurseAndLoadTable(basePath, kvStore, tableBuffers, table)
 			if err != nil {
 				return fmt.Errorf("while loading %s, %v", table.Name, err)
 			}
 			if tb, err := NewTableBuffer(table); err == nil {
 				tableBuffers[v.ChildTable] = tb
 			} else {
-				return fmt.Errorf("recurseAndLoadSchema error - %v", err)
+				return fmt.Errorf("recurseAndLoadTable error - %v", err)
 			}
 		}
 	}

@@ -34,10 +34,7 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err)
 
 	core.ClearTableCache()
-	RemoveContents("./testdata/cities*")
-	RemoveContents("./testdata/cityzip*")
-	RemoveContents("./testdata/search.dat")
-	RemoveContents("./testdata/UserRole")
+	RemoveContents("./testdata/index")
 
 	// Server side components already started and available in package level variables in harness.go
 
@@ -428,6 +425,13 @@ func (suite *QuantaTestSuite) TestCitiesNotINStatement() {
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("27334", results[0])
+}
+
+func (suite *QuantaTestSuite) TestZDropTables() {
+	err := suite.store.DeleteIndicesWithPrefix("cityzip", false)
+	assert.Nil(suite.T(), err)
+	err = suite.store.DeleteIndicesWithPrefix("cities", true)
+	assert.Nil(suite.T(), err)
 }
 
 // SELECT INTO AWS-S3

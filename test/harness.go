@@ -1,6 +1,4 @@
-/**
- * This code creates an in-memory "stack" and loads test data.
- */
+// Package test - This code creates an in-memory "stack" and loads test data.
 package test
 
 import (
@@ -10,7 +8,8 @@ import (
 	"github.com/disney/quanta/server"
 )
 
-func Setup() (*server.EndPoint,  error) {
+// Setup - Initialize test harness
+func Setup() (*server.EndPoint, error) {
 
 	endpoint, err := server.NewEndPoint("./testdata")
 	if err != nil {
@@ -37,6 +36,7 @@ func Setup() (*server.EndPoint,  error) {
 	return endpoint, nil
 }
 
+// RemoveContents - Remove local data files.
 func RemoveContents(path string) error {
 	files, err := filepath.Glob(path)
 	if err != nil {

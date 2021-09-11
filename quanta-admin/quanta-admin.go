@@ -4,8 +4,8 @@ package main
 import (
 	"fmt"
 	"github.com/alecthomas/kong"
-	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/client"
+	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	"log"
 )
@@ -19,7 +19,7 @@ var (
 // Context - Global command line variables
 type Context struct {
 	ConsulAddr string `help:"Consul agent address/port." default:"127.0.0.1:8500"`
-    Port       int    `help:"Port number for Quanta service." default:"4000"`
+	Port       int    `help:"Port number for Quanta service." default:"4000"`
 }
 
 // StatusCmd - Status command
@@ -44,7 +44,8 @@ type DropCmd struct {
 
 // TruncateCmd - Truncate command
 type TruncateCmd struct {
-	Table string `arg name:"table" help:"Table name."`
+	Table       string `arg name:"table" help:"Table name."`
+	RetainEnums bool   `help:"Retain enumeration data for StringEnum types."`
 }
 
 // TablesCmd - Show tables command
@@ -140,13 +141,13 @@ func performCreate(consul *api.Client, table *shared.BasicTable, port int) error
 
 	// TODO: Synchronously invoke backend table re-load inside distributed lock
 	log.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
-    conn := quanta.NewDefaultConnection()
-    conn.ServicePort = port
-    conn.Quorum = 3
-    if err := conn.Connect(); err != nil {
-        log.Fatal(err)
-    }
-    services := quanta.NewBitmapIndex(conn, 3000000)
+	conn := quanta.NewDefaultConnection()
+	conn.ServicePort = port
+	conn.Quorum = 3
+	if err := conn.Connect(); err != nil {
+		log.Fatal(err)
+	}
+	services := quanta.NewBitmapIndex(conn, 3000000)
 
 	err := shared.DeleteTable(consul, table.Name)
 	if err != nil {
@@ -172,7 +173,7 @@ func performCreate(consul *api.Client, table *shared.BasicTable, port int) error
 		return fmt.Errorf("differences detected with deployed table %v", table.Name)
 	}
 
-    return services.TableOperation(table.Name, "deploy")
+	return services.TableOperation(table.Name, "deploy")
 }
 
 // Run - Version command implementation
@@ -204,7 +205,7 @@ func (c *DropCmd) Run(ctx *Context) error {
 	}
 
 	// TODO: Obtain distributed lock
-    err = nukeData(consulClient, ctx.Port, c.Table, "drop")
+	err = nukeData(consulClient, ctx.Port, c.Table, "drop", false)
 	if err != nil {
 		return err
 	}
@@ -241,27 +242,27 @@ func checkForChildDependencies(consul *api.Client, tableName, operation string) 
 	return nil
 }
 
-func nukeData(consul *api.Client, port int, tableName, operation string) error {
+func nukeData(consul *api.Client, port int, tableName, operation string, retainEnums bool) error {
 
-    log.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
-    conn := quanta.NewDefaultConnection()
-    conn.ServicePort = port
-    conn.Quorum = 3
-    if err := conn.Connect(); err != nil {
-        log.Fatal(err)
-    }
-    services := quanta.NewBitmapIndex(conn, 3000000)
-    kvStore := quanta.NewKVStore(conn)
+	log.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
+	conn := quanta.NewDefaultConnection()
+	conn.ServicePort = port
+	conn.Quorum = 3
+	if err := conn.Connect(); err != nil {
+		log.Fatal(err)
+	}
+	services := quanta.NewBitmapIndex(conn, 3000000)
+	kvStore := quanta.NewKVStore(conn)
 
-    err := services.TableOperation(tableName, operation)
+	err := services.TableOperation(tableName, operation)
 	if err != nil {
 		return fmt.Errorf("TableOperation error %v", err)
 	}
-    err = kvStore.DeleteIndicesWithPrefix(tableName)
+	err = kvStore.DeleteIndicesWithPrefix(tableName, retainEnums)
 	if err != nil {
 		return fmt.Errorf("DeleteIndicesWithPrefix error %v", err)
 	}
-    return nil
+	return nil
 }
 
 // Run - Truncate command implementation
@@ -279,7 +280,7 @@ func (c *TruncateCmd) Run(ctx *Context) error {
 	}
 
 	// TODO: Obtain distributed lock
-    err = nukeData(consulClient, ctx.Port, c.Table, "truncate")
+	err = nukeData(consulClient, ctx.Port, c.Table, "truncate", c.RetainEnums)
 	if err != nil {
 		return err
 	}

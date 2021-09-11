@@ -716,17 +716,17 @@ func (c *BitmapIndex) SetCID2String(index, field string, columnID, value interfa
 // TableOperation - Handle TableOperations
 func (c *BitmapIndex) TableOperation(table, operation string) error {
 
-    var op pb.TableOperationRequest_OpType
-    switch operation {
-    case "deploy":
-        op = pb.TableOperationRequest_DEPLOY
-    case "drop":
-        op = pb.TableOperationRequest_DROP
-    case "truncate":
-        op = pb.TableOperationRequest_TRUNCATE
-    default:
-        return fmt.Errorf("unknown operation %v", operation)
-    }
+	var op pb.TableOperationRequest_OpType
+	switch operation {
+	case "deploy":
+		op = pb.TableOperationRequest_DEPLOY
+	case "drop":
+		op = pb.TableOperationRequest_DROP
+	case "truncate":
+		op = pb.TableOperationRequest_TRUNCATE
+	default:
+		return fmt.Errorf("unknown operation %v", operation)
+	}
 	req := &pb.TableOperationRequest{Table: table, Operation: op}
 
 	var eg errgroup.Group
@@ -762,4 +762,3 @@ func (c *BitmapIndex) tableOperationClient(client pb.BitmapIndexClient, req *pb.
 	}
 	return nil
 }
-

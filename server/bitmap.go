@@ -84,19 +84,19 @@ func NewBitmapIndex(endPoint *EndPoint, expireDays uint) *BitmapIndex {
 				}
 				return nil
 			})
-	} else {  // Normal (from Consul) initialization
-	    tables, err := shared.GetTables(endPoint.consul)
-	    if err != nil {
+	} else { // Normal (from Consul) initialization
+		tables, err := shared.GetTables(endPoint.consul)
+		if err != nil {
 			log.Fatalf("ERROR: Could not load table schema, GetTables error %v", err)
-	    }
-	    for _, table := range tables {
+		}
+		for _, table := range tables {
 			if t, err := shared.LoadSchema(schemaPath, table, endPoint.consul); err != nil {
 				log.Fatalf("ERROR: Could not load schema for %s - %v", table, err)
 			} else {
 				e.tableCache[table] = t
 				log.Printf("Table %s initialized.", table)
 			}
-	    }
+		}
 	}
 
 	pb.RegisterBitmapIndexServer(endPoint.server, e)
@@ -266,8 +266,8 @@ func newBitmapFragment(index, field string, rowIDOrBits int64, ts time.Time, f [
 // Lookup field metadata (time quantum, exclusivity)
 func (m *BitmapIndex) getFieldConfig(index, field string) (*shared.BasicAttribute, error) {
 
-    m.tableCacheLock.RLock()
-    defer m.tableCacheLock.RUnlock()
+	m.tableCacheLock.RLock()
+	defer m.tableCacheLock.RUnlock()
 	table := m.tableCache[index]
 	attr, err := table.GetAttribute(field)
 	if err != nil {
@@ -283,14 +283,14 @@ func (m *BitmapIndex) getFieldConfig(index, field string) (*shared.BasicAttribut
 // Check metadata - Is the field a BSI?
 func (m *BitmapIndex) isBSI(index, field string) bool {
 
-    m.tableCacheLock.RLock()
-    defer m.tableCacheLock.RUnlock()
+	m.tableCacheLock.RLock()
+	defer m.tableCacheLock.RUnlock()
 	table := m.tableCache[index]
 	attr, err := table.GetAttribute(field)
 	if err != nil {
 		log.Printf("isBSI ERROR: Non existent attribute %s for index %s was referenced.", field, index)
 	}
-    return attr.IsBSI()
+	return attr.IsBSI()
 }
 
 //
@@ -839,28 +839,28 @@ func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperation
 		return &empty.Empty{}, fmt.Errorf("table not specified for table operation")
 	}
 
-    switch req.Operation {
-    case pb.TableOperationRequest_DEPLOY:
-	    if table, err := shared.LoadSchema("", req.Table, m.EndPoint.consul); err != nil {
+	switch req.Operation {
+	case pb.TableOperationRequest_DEPLOY:
+		if table, err := shared.LoadSchema("", req.Table, m.EndPoint.consul); err != nil {
 			log.Fatalf("ERROR: Could not load schema for %s - %v", req.Table, err)
 		} else {
-            m.tableCacheLock.Lock()
-            defer m.tableCacheLock.Unlock()
-            m.tableCache[req.Table] = table
+			m.tableCacheLock.Lock()
+			defer m.tableCacheLock.Unlock()
+			m.tableCache[req.Table] = table
 			log.Printf("schema for %s re-loaded and initialized", req.Table)
-        }
-    case pb.TableOperationRequest_DROP:
-        m.tableCacheLock.Lock()
-        defer m.tableCacheLock.Unlock()
-        delete(m.tableCache, req.Table)
-        m.expireOrTruncate(0, true)
+		}
+	case pb.TableOperationRequest_DROP:
+		m.tableCacheLock.Lock()
+		defer m.tableCacheLock.Unlock()
+		delete(m.tableCache, req.Table)
+		m.expireOrTruncate(0, true)
 		log.Printf("Table %s dropped.", req.Table)
-    case pb.TableOperationRequest_TRUNCATE:
-        m.tableCacheLock.Lock()
-        defer m.tableCacheLock.Unlock()
-        m.expireOrTruncate(0, true)
+	case pb.TableOperationRequest_TRUNCATE:
+		m.tableCacheLock.Lock()
+		defer m.tableCacheLock.Unlock()
+		m.expireOrTruncate(0, true)
 		log.Printf("Table %s truncated.", req.Table)
-    default:
+	default:
 		return &empty.Empty{}, fmt.Errorf("unknown operation type for table operation request")
 	}
 

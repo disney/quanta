@@ -318,23 +318,27 @@ func (m *KVStore) PutStringEnum(ctx context.Context, se *pb.StringEnum) (*wrappe
 }
 
 // DeleteIndicesWithPrefix - Close and delete all indices with a specific prefix
-func (m *KVStore) DeleteIndicesWithPrefix(ctx context.Context, 
-        prefix *wrappers.StringValue) (*empty.Empty, error) {
+func (m *KVStore) DeleteIndicesWithPrefix(ctx context.Context,
+	req *pb.DeleteIndicesWithPrefixRequest) (*empty.Empty, error) {
 
-	if prefix.Value == "" {
+	if req.Prefix == "" {
 		return &empty.Empty{}, fmt.Errorf("Index prefix must be specified")
 	}
 	m.storeCacheLock.Lock()
 	defer m.storeCacheLock.Unlock()
 	for k, v := range m.storeCache {
-        if strings.HasPrefix(k, prefix.Value) {
-		    log.Printf("Sync, close, and delete [%s]", k)
-		    v.Sync()
-		    v.Close()
-            if err := os.RemoveAll(m.EndPoint.dataDir+sep+"index"+sep+k); err != nil {
-	            return &empty.Empty{}, fmt.Errorf("DeleteIndicesWithPrefix error [%v]", err)
-            }
-        }
+		if strings.HasPrefix(k, req.Prefix) {
+			v.Sync()
+			v.Close()
+			if req.RetainEnums && strings.HasSuffix(k, "StringEnum") {
+				log.Printf("Sync and close [%s]", k)
+				continue
+			}
+			if err := os.RemoveAll(m.EndPoint.dataDir + sep + "index" + sep + k); err != nil {
+				return &empty.Empty{}, fmt.Errorf("DeleteIndicesWithPrefix error [%v]", err)
+			}
+			log.Printf("Sync, close, and delete [%s]", k)
+		}
 	}
 	return &empty.Empty{}, nil
 }

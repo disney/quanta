@@ -427,6 +427,13 @@ func (suite *QuantaTestSuite) TestCitiesNotINStatement() {
 	suite.Equal("27334", results[0])
 }
 
+func (suite *QuantaTestSuite) TestZDropTables() {
+	err := suite.store.DeleteIndicesWithPrefix("cityzip", false)
+	assert.Nil(suite.T(), err)
+	err = suite.store.DeleteIndicesWithPrefix("cities", true)
+	assert.Nil(suite.T(), err)
+}
+
 // SELECT INTO AWS-S3
 // Need to find a way to test S3 Integrations
 //func (suite *QuantaTestSuite) TestCitiesSelectInfoS3tatement() {

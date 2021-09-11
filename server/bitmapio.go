@@ -77,11 +77,10 @@ func (m *BitmapIndex) archiveOrTruncateData(index, field string, rowIDOrBits int
 	newPath := m.generateFilePath(index, field, rowIDOrBits, ts, tqType, true)
 
 	if rowIDOrBits >= 0 {
-        if archive {
-		    return os.Rename(oldPath, newPath)
-        } else {
-		    return os.Remove(oldPath)
-        }
+		if archive {
+			return os.Rename(oldPath, newPath)
+		}
+		return os.Remove(oldPath)
 	}
 
 	return filepath.Walk(oldPath, func(path string, info os.FileInfo, err error) error {
@@ -91,11 +90,10 @@ func (m *BitmapIndex) archiveOrTruncateData(index, field string, rowIDOrBits int
 		if info.IsDir() {
 			return nil
 		}
-        if archive {
-		    return os.Rename(path, newPath+sep+info.Name())
-        } else {
-		    return os.Remove(path)
-        }
+		if archive {
+			return os.Rename(path, newPath+sep+info.Name())
+		}
+		return os.Remove(path)
 	})
 }
 

@@ -19,7 +19,7 @@ service KVStore {
   rpc BatchLookup(stream IndexKVPair) returns (stream IndexKVPair) {}
   rpc Items(google.protobuf.StringValue) returns (stream IndexKVPair) {}
   rpc PutStringEnum(StringEnum) returns (google.protobuf.UInt64Value) {}
-  rpc DeleteIndicesWithPrefix(google.protobuf.StringValue) returns (google.protobuf.Empty) {}
+  rpc DeleteIndicesWithPrefix(DeleteIndicesWithPrefixRequest) returns (google.protobuf.Empty) {}
 }
 
 service StringSearch {
@@ -184,5 +184,10 @@ message CheckoutSequenceRequest {
 message CheckoutSequenceResponse {
   uint64   start = 3;
   uint32   count = 4;
+}
+
+message DeleteIndicesWithPrefixRequest {
+  string   prefix = 1;
+  bool     retainEnums = 2;
 }
 

@@ -34,7 +34,7 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err)
 
 	core.ClearTableCache()
-	//RemoveContents("./testdata/index")
+	RemoveContents("./testdata/index")
 
 	// Server side components already started and available in package level variables in harness.go
 
@@ -439,7 +439,7 @@ func (suite *QuantaTestSuite) TestCitiesNotINStatement() {
 }
 
 func (suite *QuantaTestSuite) TestZDropTables() {
-	err := suite.store.DeleteIndicesWithPrefix("cityzip", true)
+	err := suite.store.DeleteIndicesWithPrefix("cityzip", false)
 	assert.Nil(suite.T(), err)
 	err = suite.store.DeleteIndicesWithPrefix("cities", true)
 	assert.Nil(suite.T(), err)

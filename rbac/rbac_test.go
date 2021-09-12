@@ -24,7 +24,7 @@ func (suite *RBACTestSuite) SetupSuite() {
 	var err error
 	u.SetupLogging("debug")
 
-	endpoint, err := server.NewEndPoint("./testdata")
+	endpoint, err := server.NewEndPoint("./testdata", nil)
 	assert.NoError(suite.T(), err)
 	assert.NotNil(suite.T(), endpoint)
 	endpoint.Port = 0 // Enable in memory instance

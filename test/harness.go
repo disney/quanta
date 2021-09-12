@@ -11,7 +11,7 @@ import (
 // Setup - Initialize test harness
 func Setup() (*server.EndPoint, error) {
 
-	endpoint, err := server.NewEndPoint("./testdata")
+	endpoint, err := server.NewEndPoint("./testdata", nil)
 	if err != nil {
 		return nil, err
 	}

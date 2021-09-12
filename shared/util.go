@@ -294,6 +294,12 @@ func CheckParentRelation(consul *api.Client, table *BasicTable) (bool, error) {
 func GetTables(consul *api.Client) ([]string, error) {
 
 	results := make([]string, 0)
+/*
+	kvPair, _, err := consul.KV().Get("schema", nil)
+	if err != nil || kvPair == nil {
+		return results, err
+	}
+*/
 	keys := make(map[string]struct{}, 0)
 	pairs, _, err := consul.KV().List("schema", nil)
 	if err != nil {

@@ -5,6 +5,7 @@ package main
 
 import (
 	"github.com/disney/quanta/server"
+	"github.com/hashicorp/consul/api"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
 	"os"
@@ -30,10 +31,18 @@ func main() {
 	tls := app.Flag("tls", "Connection uses TLS if true.").Bool()
 	certFile := app.Flag("cert-file", "TLS cert file path.").String()
 	keyFile := app.Flag("key-file", "TLS key file path.").String()
+	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
-	m, err := server.NewEndPoint(*dataDir)
+	log.Printf("Connecting to Consul at: [%s] ...\n", *consul)
+	consulClient, err := api.NewClient(&api.Config{Address: *consul})
+	if err != nil {
+		log.Printf("Is the consul agent running?")
+		log.Fatalf("[node: Cannot initialize endpoint config: error: %s", err)
+	}
+
+	m, err := server.NewEndPoint(*dataDir, consulClient)
 	if err != nil {
 		log.Printf("[node: Cannot initialize endpoint config: error: %s", err)
 	}

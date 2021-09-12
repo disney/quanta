@@ -29,10 +29,8 @@ const (
 // Errors encountered when making blocking GET requests to the Consul agent API
 // are logged using the log package.
 type Node struct {
-	// Consul
 	serviceName string
 	serviceID   string
-	consul      *api.Client
 
 	// health check endpoint
 	checkURL string
@@ -60,12 +58,6 @@ func Join(name string, e *EndPoint) (node *Node, err error) {
 		Service:     e,
 	}
 
-	node.consul, err = api.NewClient(api.DefaultConfig())
-	if err != nil {
-		return nil, fmt.Errorf("node: can't create Consul API client: %s", err)
-	}
-	e.consul = node.consul
-
 	go func() {
 		defer close(node.Stop)
 		node.Err <- node.Service.Start()
@@ -90,7 +82,7 @@ func Join(name string, e *EndPoint) (node *Node, err error) {
 
 func (n *Node) register() (err error) {
 
-	err = n.consul.Agent().ServiceRegister(&api.AgentServiceRegistration{
+	err = n.Service.consul.Agent().ServiceRegister(&api.AgentServiceRegistration{
 		Name: n.serviceName,
 		ID:   n.serviceID,
 		Check: &api.AgentServiceCheck{
@@ -127,7 +119,7 @@ func (n *Node) poll() {
 func (n *Node) update() (err error) {
 
 	opts := &api.QueryOptions{WaitIndex: n.waitIndex}
-	serviceEntries, meta, err := n.consul.Health().Service(n.serviceName, "", true, opts)
+	serviceEntries, meta, err := n.Service.consul.Health().Service(n.serviceName, "", true, opts)
 	if err != nil {
 		return err
 	}
@@ -150,7 +142,7 @@ func (n *Node) update() (err error) {
 // hash table.
 func (n *Node) Member(key string) bool {
 
-	if n.consul == nil {
+	if n.Service.consul == nil {
 		return true // for testing
 	}
 	return n.hashTable.Get(key) == n.serviceID
@@ -163,7 +155,7 @@ func (n *Node) Member(key string) bool {
 // require manual cleanup.
 func (n *Node) Leave() (err error) {
 	close(n.Stop) // stop polling for state
-	err = n.consul.Agent().ServiceDeregister(n.serviceID)
+	err = n.Service.consul.Agent().ServiceDeregister(n.serviceID)
 	//close(n.stop) FIXME: stop the server
 	return err
 }

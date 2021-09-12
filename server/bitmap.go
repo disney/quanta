@@ -61,9 +61,9 @@ func NewBitmapIndex(endPoint *EndPoint, expireDays uint) *BitmapIndex {
 	e := &BitmapIndex{EndPoint: endPoint}
 	e.expireDays = expireDays
 	e.tableCache = make(map[string]*shared.BasicTable)
-	configPath := endPoint.dataDir + sep + "config"
+	configPath := e.EndPoint.dataDir + sep + "config"
 	schemaPath := ""        // this is normally an empty string forcing schema to come from Consul
-	if endPoint.Port == 0 { // In-memory test harness
+	if e.EndPoint.Port == 0 { // In-memory test harness
 		schemaPath = configPath // read schema from local config yaml
 		_ = filepath.Walk(configPath,
 			func(path string, info os.FileInfo, err error) error {
@@ -75,7 +75,7 @@ func NewBitmapIndex(endPoint *EndPoint, expireDays uint) *BitmapIndex {
 					if _, err := os.Stat(path + sep + "schema.yaml"); err != nil {
 						return nil
 					}
-					if table, err := shared.LoadSchema(schemaPath, index, endPoint.consul); err != nil {
+					if table, err := shared.LoadSchema(schemaPath, index, nil); err != nil {
 						log.Fatalf("ERROR: Could not load schema for %s - %v", index, err)
 					} else {
 						e.tableCache[index] = table
@@ -85,12 +85,21 @@ func NewBitmapIndex(endPoint *EndPoint, expireDays uint) *BitmapIndex {
 				return nil
 			})
 	} else { // Normal (from Consul) initialization
-		tables, err := shared.GetTables(endPoint.consul)
+if e.EndPoint == nil {
+log.Printf("ENDPOINT IS NIL!!")
+}
+if e.EndPoint.consul == nil {
+log.Printf("CONSUL  IS NIL!!")
+}
+//if e.EndPoint.consulLock == nil {
+//log.Printf("CONSUL LOCK  IS NIL!!")
+//}
+		tables, err := shared.GetTables(e.EndPoint.consul)
 		if err != nil {
 			log.Fatalf("ERROR: Could not load table schema, GetTables error %v", err)
 		}
 		for _, table := range tables {
-			if t, err := shared.LoadSchema(schemaPath, table, endPoint.consul); err != nil {
+			if t, err := shared.LoadSchema(schemaPath, table, e.EndPoint.consul); err != nil {
 				log.Fatalf("ERROR: Could not load schema for %s - %v", table, err)
 			} else {
 				e.tableCache[table] = t
@@ -99,7 +108,7 @@ func NewBitmapIndex(endPoint *EndPoint, expireDays uint) *BitmapIndex {
 		}
 	}
 
-	pb.RegisterBitmapIndexServer(endPoint.server, e)
+	pb.RegisterBitmapIndexServer(e.EndPoint.server, e)
 	return e
 }
 

@@ -41,7 +41,7 @@ const (
 //
 type BitmapIndex struct {
 	*EndPoint
-	expireDays      uint
+	expireDays      int
 	bitmapCache     map[string]map[string]map[uint64]map[int64]*StandardBitmap
 	bitmapCacheLock sync.RWMutex
 	bsiCache        map[string]map[string]map[int64]*BSIBitmap
@@ -56,13 +56,13 @@ type BitmapIndex struct {
 }
 
 // NewBitmapIndex - Construct and initialize bitmap server state.
-func NewBitmapIndex(endPoint *EndPoint, expireDays uint) *BitmapIndex {
+func NewBitmapIndex(endPoint *EndPoint, expireDays int) *BitmapIndex {
 
 	e := &BitmapIndex{EndPoint: endPoint}
 	e.expireDays = expireDays
 	e.tableCache = make(map[string]*shared.BasicTable)
 	configPath := e.EndPoint.dataDir + sep + "config"
-	schemaPath := ""        // this is normally an empty string forcing schema to come from Consul
+	schemaPath := ""          // this is normally an empty string forcing schema to come from Consul
 	if e.EndPoint.Port == 0 { // In-memory test harness
 		schemaPath = configPath // read schema from local config yaml
 		_ = filepath.Walk(configPath,
@@ -85,15 +85,6 @@ func NewBitmapIndex(endPoint *EndPoint, expireDays uint) *BitmapIndex {
 				return nil
 			})
 	} else { // Normal (from Consul) initialization
-if e.EndPoint == nil {
-log.Printf("ENDPOINT IS NIL!!")
-}
-if e.EndPoint.consul == nil {
-log.Printf("CONSUL  IS NIL!!")
-}
-//if e.EndPoint.consulLock == nil {
-//log.Printf("CONSUL LOCK  IS NIL!!")
-//}
 		tables, err := shared.GetTables(e.EndPoint.consul)
 		if err != nil {
 			log.Fatalf("ERROR: Could not load table schema, GetTables error %v", err)
@@ -354,7 +345,7 @@ func (m *BitmapIndex) batchProcessLoop(threadID int) {
  *
  * Wake up on interval and run data expiration process.
  */
-func (m *BitmapIndex) expireProcessLoop(days uint) {
+func (m *BitmapIndex) expireProcessLoop(days int) {
 
 	select {
 	case <-time.After(time.Minute * 10):
@@ -546,7 +537,7 @@ func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 	}
 }
 
-func (m *BitmapIndex) expireOrTruncate(days uint, truncate bool) {
+func (m *BitmapIndex) expireOrTruncate(days int, truncate bool) {
 
 	m.bitmapCacheLock.Lock()
 	m.bsiCacheLock.Lock()
@@ -565,7 +556,8 @@ func (m *BitmapIndex) expireOrTruncate(days uint, truncate bool) {
 						} else {
 							delete(tm, ts)
 						}
-
+					} else if truncate {
+						delete(tm, ts)
 					}
 				}
 			}
@@ -582,6 +574,8 @@ func (m *BitmapIndex) expireOrTruncate(days uint, truncate bool) {
 					} else {
 						delete(tm, ts)
 					}
+				} else if truncate {
+					delete(tm, ts)
 				}
 			}
 		}
@@ -862,13 +856,23 @@ func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperation
 		m.tableCacheLock.Lock()
 		defer m.tableCacheLock.Unlock()
 		delete(m.tableCache, req.Table)
-		m.expireOrTruncate(0, true)
-		log.Printf("Table %s dropped.", req.Table)
+		m.expireOrTruncate(-1, true)
+		tableDir := m.dataDir + sep + "bitmap" + sep + req.Table
+		if err := os.RemoveAll(tableDir); err != nil {
+			log.Printf("error dropping table %s directory - %v", req.Table, err)
+		} else {
+			log.Printf("Table %s dropped.", req.Table)
+		}
 	case pb.TableOperationRequest_TRUNCATE:
 		m.tableCacheLock.Lock()
 		defer m.tableCacheLock.Unlock()
-		m.expireOrTruncate(0, true)
-		log.Printf("Table %s truncated.", req.Table)
+		m.expireOrTruncate(-1, true)
+		tableDir := m.dataDir + sep + "bitmap" + sep + req.Table
+		if err := os.RemoveAll(tableDir); err != nil {
+			log.Printf("error truncating table %s directory - %v", req.Table, err)
+		} else {
+			log.Printf("Table %s truncated.", req.Table)
+		}
 	default:
 		return &empty.Empty{}, fmt.Errorf("unknown operation type for table operation request")
 	}

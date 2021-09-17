@@ -18,7 +18,7 @@ require (
 	github.com/confluentinc/confluent-kafka-go v1.4.2 // indirect
 	github.com/glycerine/go-unsnap-stream v0.0.0-20190901134440-81cf024a9e0a // indirect
 	github.com/gogo/protobuf v1.3.1 // indirect
-	github.com/golang/protobuf v1.4.2
+	github.com/golang/protobuf v1.5.2
 	github.com/google/uuid v1.1.2 // indirect
 	github.com/hashicorp/consul/api v1.10.1
 	github.com/hashicorp/consul/sdk v0.8.0
@@ -49,7 +49,7 @@ require (
 	golang.org/x/text v0.3.3
 	google.golang.org/genproto v0.0.0-20200904004341-0bd0a958aa1d // indirect
 	google.golang.org/grpc v1.32.0
-	google.golang.org/protobuf v1.25.0 // indirect
+	google.golang.org/protobuf v1.27.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/confluentinc/confluent-kafka-go.v1 v1.4.2
 	gopkg.in/yaml.v2 v2.3.0

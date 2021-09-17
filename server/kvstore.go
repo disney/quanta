@@ -330,6 +330,7 @@ func (m *KVStore) DeleteIndicesWithPrefix(ctx context.Context,
 		if strings.HasPrefix(k, req.Prefix) {
 			v.Sync()
 			v.Close()
+			delete(m.storeCache, k)
 			if req.RetainEnums && strings.HasSuffix(k, "StringEnum") {
 				log.Printf("Sync and close [%s]", k)
 				continue
@@ -338,6 +339,11 @@ func (m *KVStore) DeleteIndicesWithPrefix(ctx context.Context,
 				return &empty.Empty{}, fmt.Errorf("DeleteIndicesWithPrefix error [%v]", err)
 			}
 			log.Printf("Sync, close, and delete [%s]", k)
+		}
+	}
+	if !req.RetainEnums {
+		if err := os.RemoveAll(m.EndPoint.dataDir + sep + "index" + sep + req.Prefix); err != nil {
+			return &empty.Empty{}, fmt.Errorf("DeleteIndicesWithPrefix error [%v]", err)
 		}
 	}
 	return &empty.Empty{}, nil

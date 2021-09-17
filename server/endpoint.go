@@ -49,7 +49,7 @@ func NewEndPoint(dataDir string, consul *api.Client) (*EndPoint, error) {
 	}
 
 	m.dataDir = dataDir
-    m.consul = consul
+	m.consul = consul
 
 	var opts []grpc.ServerOption
 	opts = append(opts, grpc.MaxRecvMsgSize(shared.GRPCRecvBufsize),

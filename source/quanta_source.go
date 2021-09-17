@@ -59,7 +59,9 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort int) (*QuantaSource
 	}
 
 	m.baseDir = baseDir
-	log.Printf("Constructing QuantaSource at baseDir '%s'", baseDir)
+	if m.baseDir != "" {
+		log.Printf("Constructing QuantaSource at baseDir '%s'", baseDir)
+	}
 
 	// name is a string and cols is an []string
 	m.exit = make(chan bool, 1)
@@ -107,7 +109,6 @@ func (m *QuantaSource) Open(tableName string) (schema.Conn, error) {
 // Table by name
 func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 
-	core.ClearTableCache()
 	conn, err := core.OpenConnection(m.baseDir, table, false, 0, m.servicePort, m.consulClient)
 	if err != nil {
 		log.Printf("Error '%v' opening connection for table %s.", err, table)
@@ -213,13 +214,19 @@ func (m *QuantaSource) Next() schema.Message {
 // ListTableNames - Return table name strings.
 func (m *QuantaSource) ListTableNames() []string {
 
+	if m.baseDir == "" {
+		tables, errx := shared.GetTables(m.consulClient)
+		if errx != nil {
+			return []string{}
+		}
+		return tables
+	}
+
+	list := make([]string, 0)
 	files, err := ioutil.ReadDir(m.baseDir)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	list := make([]string, 0)
-
 	for _, f := range files {
 		if f.IsDir() {
 			list = append(list, f.Name())

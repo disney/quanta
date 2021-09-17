@@ -46,6 +46,7 @@ type DropCmd struct {
 type TruncateCmd struct {
 	Table       string `arg name:"table" help:"Table name."`
 	RetainEnums bool   `help:"Retain enumeration data for StringEnum types."`
+    Force       bool   `help:"Force override of constraints."`
 }
 
 // TablesCmd - Show tables command
@@ -275,7 +276,7 @@ func (c *TruncateCmd) Run(ctx *Context) error {
 		return fmt.Errorf("Error connecting to consul %v", err)
 	}
 
-	if err = checkForChildDependencies(consulClient, c.Table, "truncate"); err != nil {
+	if err = checkForChildDependencies(consulClient, c.Table, "truncate"); err != nil && !c.Force {
 		return err
 	}
 

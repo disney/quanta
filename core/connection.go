@@ -649,6 +649,9 @@ func (s *Connection) Flush() {
 // CloseConnection - Close the session, flushing if necessary..
 func (s *Connection) CloseConnection() {
 
+	if s == nil {
+		return
+	}
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
 	if s.StringIndex != nil {
@@ -667,7 +670,7 @@ func (s *Connection) CloseConnection() {
 		if err := s.Client.Disconnect(); err != nil {
 			log.Println(err)
 		}
-		s.Client = nil
+		//s.Client = nil
 	}
 }
 

@@ -53,6 +53,7 @@ func LoadTable(path string, kvStore *quanta.KVStore, name string, consulClient *
 	tableCacheLock.Lock()
 	defer tableCacheLock.Unlock()
 	if t, ok := tableCache[name]; ok {
+		t.kvStore = kvStore
 		return t, nil
 	}
 
@@ -205,7 +206,7 @@ func LoadTable(path string, kvStore *quanta.KVStore, name string, consulClient *
 		pka, err := table.GetPrimaryKeyInfo()
 		if err != nil {
 			return nil,
-				fmt.Errorf("A primary key field was defined but it is not valid field name(s) [%s] - %v",
+				fmt.Errorf("A primary key field was defined but it does not contain valid field name(s) [%s] - %v",
 					table.PrimaryKey, err)
 		}
 		if table.TimeQuantumType != "" && (pka[0].Type != "Date" && pka[0].Type != "DateTime") {
@@ -299,6 +300,9 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 
 		if a.Parent.kvStore == nil {
 			return 0, fmt.Errorf("kvStore is not initialized")
+		}
+		if a.Parent.Name == "" {
+			panic("a.Parent.Name is empty")
 		}
 
 		// OK, value not anywhere to be found, invoke service to add.
@@ -402,6 +406,9 @@ func (t *Table) LoadFieldValues() (fieldMap map[string]*Field, err error) {
 
 	if t.kvStore == nil {
 		return nil, nil
+	}
+	if t.Name == "" {
+		panic("t.Name is nil")
 	}
 
 	var attributeFieldMap map[string]*Field = make(map[string]*Field)

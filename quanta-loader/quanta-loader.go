@@ -40,7 +40,6 @@ const (
 
 // Main strct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
-	SchemaDir    string
 	Index        string
 	BufferSize   uint
 	BucketPath   string
@@ -75,7 +74,6 @@ func main() {
 	app.Version("Version: " + Version + "\nBuild: " + Build)
 
 	bucketName := app.Arg("bucket-path", "AWS S3 Bucket Name/Path (patterns ok) to read from via the data loader.").Required().String()
-	schemaDir := app.Arg("schema-dir", "Directory path for config/schema files.").Required().String()
 	index := app.Arg("index", "Table name (root name if nested schema)").Required().String()
 	port := app.Arg("port", "Port number for service").Default("4000").Int32()
 	region := app.Flag("aws-region", "AWS region of bitmap server host(s)").Default("us-east-1").String()
@@ -94,7 +92,6 @@ func main() {
 	main.Index = *index
 	main.BufferSize = uint(*bufSize)
 	main.AWSRegion = *region
-	main.SchemaDir = *schemaDir
 	main.Port = int(*port)
 	main.IsNested = *isNested
 	main.ConsulAddr = *consul
@@ -102,7 +99,6 @@ func main() {
 	log.Printf("Index name %v.\n", main.Index)
 	log.Printf("Buffer size %d.\n", main.BufferSize)
 	log.Printf("AWS region %s\n", main.AWSRegion)
-	log.Printf("Base path for schema [%s].\n", main.SchemaDir)
 	log.Printf("Service port %d.\n", main.Port)
 	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
 	if main.IsNested {
@@ -133,12 +129,13 @@ func main() {
 	threads := runtime.NumCPU()
 	var eg errgroup.Group
 	fileChan := make(chan *s3.Object, threads)
+    closeLater := make([]*core.Connection, 0)
 	var ticker *time.Ticker
 	// Spin up worker threads
 	if !*dryRun {
 		for i := 0; i < threads; i++ {
 			eg.Go(func() error {
-				conn, err := core.OpenConnection(main.SchemaDir, main.Index, main.IsNested,
+				conn, err := core.OpenConnection("", main.Index, main.IsNested,
 					main.BufferSize, main.Port, main.ConsulClient)
 				if err != nil {
 					return err
@@ -149,7 +146,7 @@ func main() {
 				for file := range fileChan {
 					main.processRowsForFile(file, conn)
 				}
-				conn.CloseConnection()
+                closeLater = append(closeLater, conn)
 				return nil
 			})
 		}
@@ -193,6 +190,9 @@ func main() {
 		if err := eg.Wait(); err != nil {
 			log.Fatalf("Open error %v", err)
 		}
+        for _, cc := range closeLater {
+            cc.CloseConnection()
+        }
 		ticker.Stop()
 		log.Printf("Completed, Last Record: %d, Bytes: %s", main.totalRecs.Get(), core.Bytes(main.BytesProcessed()))
 		log.Printf("%d files processed.", selected)
@@ -289,6 +289,7 @@ func (m *Main) processRowsForFile(s3object *s3.Object, dbConn *core.Connection) 
 		}
 		m.AddBytes(dbConn.BytesRead)
 	}
+    dbConn.Flush()
 }
 
 // Init function initilizations loader.
@@ -301,17 +302,6 @@ func (m *Main) Init() error {
 	if err != nil {
 		return err
 	}
-
-	// Call OpenConnection once here just verify the schema config
-	conn, err := core.OpenConnection(m.SchemaDir, m.Index, m.IsNested, m.BufferSize,
-		m.Port, m.ConsulClient)
-	if err != nil {
-		log.Fatal("Error opening table ", err)
-	}
-	if err != nil {
-		log.Fatal("Error opening table ", err)
-	}
-	conn.CloseConnection()
 
 	// Initialize S3 client
 	sess, err := session.NewSession(&aws.Config{

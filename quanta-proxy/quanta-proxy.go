@@ -7,6 +7,7 @@ import (
 	"github.com/araddon/qlbridge/expr"
 	_ "github.com/araddon/qlbridge/qlbdriver"
 	"github.com/araddon/qlbridge/schema"
+	"github.com/araddon/qlbridge/lex"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
 	"net"
@@ -22,12 +23,14 @@ import (
 	"github.com/lestrrat-go/jwx/jwk"
 	mysql "github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/server"
+	"github.com/siddontang/go-mysql/test_util/test_keys"
+    "github.com/hashicorp/consul/api"
 
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/custom/functions"
 	"github.com/disney/quanta/sink"
 	"github.com/disney/quanta/source"
-	"github.com/siddontang/go-mysql/test_util/test_keys"
+	"github.com/disney/quanta/shared"
 )
 
 // Variables to identify the build
@@ -46,7 +49,6 @@ var (
 	logging       *string
 	environment   *string
 	proxyHostPort *string
-	dataDir       *string
 	username      *string
 	password      *string
 	reWhitespace  *regexp.Regexp
@@ -54,6 +56,7 @@ var (
 	userPool      sync.Map
 	authProvider  *AuthProvider
 	userClaimsKey string
+    needsRefresh  bool
 )
 
 func main() {
@@ -65,7 +68,6 @@ func main() {
 	environment = app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	proxyHostPort = app.Flag("proxy-host-port", "Host:port mapping of MySQL Proxy server").Default("0.0.0.0:4000").String()
 	quantaPort := app.Flag("quanta-port", "Port number for Quanta service").Default("4000").Int()
-	schemaDir := app.Arg("schema-dir", "Base directory containing schema files").Default("/home/data/schema").String()
 	publicKeyURL := app.Arg("public-key-url", "URL for JWT public key.").String()
 	tokenservicePort := app.Arg("tokenservice-port", "Token exchance service port").Default("4001").Int()
 	userKey := app.Flag("user-key", "Key used to get user id from JWT claims").Default("username").String()
@@ -84,9 +86,14 @@ func main() {
 		core.InitLogging(*logging, *environment, "Proxy", Version, "Quanta")
 	}
 
-	u.Infof("SCHEMADIR=%s\n", *schemaDir)
 	consulAddr := *consul
 	u.Infof("Connecting to Consul at: [%s] ...\n", consulAddr)
+    consulConfig := &api.Config{Address: consulAddr}
+    errx := shared.RegisterSchemaChangeListener(consulConfig, schemaChangeListener)
+    if errx != nil {
+        log.Fatal(errx)
+    }
+
 
 	if publicKeyURL != nil {
 		publicKeySet = make([]*jwk.Set, 0)
@@ -117,7 +124,7 @@ func main() {
 	var err error
 	var src *source.QuantaSource
 
-	src, err = source.NewQuantaSource(*schemaDir, consulAddr, *quantaPort)
+	src, err = source.NewQuantaSource("", consulAddr, *quantaPort)
 	if err != nil {
 		log.Println(err)
 	}
@@ -138,6 +145,17 @@ func main() {
 		go onConn(conn)
 	}
 
+}
+
+func schemaChangeListener(e shared.SchemaChangeEvent) {
+
+    core.ClearTableCache()
+    needsRefresh = true
+    switch e.Event {
+        case shared.Drop:
+            schema.DefaultRegistry().SchemaDrop("quanta", e.Table, lex.TokenTable)
+            u.Infof("Dropped table %s", e.Table)
+    }
 }
 
 func onConn(conn net.Conn) {
@@ -172,6 +190,7 @@ type ProxyHandler struct {
 // NewProxyHandler - Create a new proxy handler
 func NewProxyHandler(authProvider *AuthProvider) *ProxyHandler {
 
+
 	h := &ProxyHandler{authProvider: authProvider}
 	var err error
 	h.db, err = sql.Open("qlbridge", "quanta")
@@ -203,6 +222,17 @@ func (h *ProxyHandler) UseDB(dbName string) error {
 
 func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, error) {
 
+    if needsRefresh {
+        needsRefresh = false
+        var err error
+        h.db.Close()
+        schema.DefaultRegistry().SchemaRefresh("quanta")
+        h.db, err = sql.Open("qlbridge", "quanta")
+        if err != nil {
+            panic(err.Error())
+        }
+    }
+
 	// Ignore java driver handshake
 	if strings.Contains(strings.ToLower(query), "mysql-connector-java") {
 		r, err := generateJavaDriverHandshake(binary)
@@ -223,6 +253,7 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 
 	switch strings.ToLower(ss[0]) {
 	case "select", "describe", "show":
+
 		h.checkSessionUserID(true)
 
 		var r *mysql.Resultset

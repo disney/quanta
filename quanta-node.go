@@ -68,7 +68,7 @@ func main() {
 	}
 
 	start := time.Now()
-	bitmapIndex := server.NewBitmapIndex(m, uint(*expireDays))
+	bitmapIndex := server.NewBitmapIndex(m, int(*expireDays))
 	bitmapIndex.Init()
 	elapsed := time.Since(start)
 	log.Printf("Bitmap data server initialized in %v.", elapsed)

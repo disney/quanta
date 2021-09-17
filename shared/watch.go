@@ -19,13 +19,16 @@ const (
 	Drop
 )
 
+// SchemaChangeEvent - Container for event info.
 type SchemaChangeEvent struct {
 	Table string
 	Event EventType
 }
 
+// SchemaChangeListener - Listeners must implement.
 type SchemaChangeListener func(event SchemaChangeEvent)
 
+// RegisterSchemaChangeListener - Registration for event listeners.
 func RegisterSchemaChangeListener(conf *api.Config, cb SchemaChangeListener) error {
 
 	watchParams := make(map[string]interface{})

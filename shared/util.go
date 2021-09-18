@@ -126,6 +126,9 @@ func putRecursive(typ reflect.Type, value reflect.Value, consul *api.Client, roo
 		if value.Field(i).Kind() == reflect.Int64 {
 			fv = fmt.Sprintf("%d", fv.(int64))
 		}
+		if value.Field(i).Kind() == reflect.Uint64 {
+			fv = fmt.Sprintf("%d", fv.(uint64))
+		}
 		kvPair.Key = root + "/" + tagName
 		kvPair.Value = ToBytes(fv)
 		if _, err := consul.KV().Put(&kvPair, nil); err != nil {
@@ -223,6 +226,9 @@ func getRecursive(typ reflect.Type, value reflect.Value, consul *api.Client, roo
 		case reflect.Uint, reflect.Uint64:
 			if x, err := strconv.ParseInt(string(kvPair.Value), 10, 64); err == nil {
 				value.Field(i).SetUint(uint64(x))
+			} else {
+				valx := UnmarshalValue(value.Field(i).Kind(), kvPair.Value)
+				value.Field(i).SetUint(valx.(uint64))
 			}
 		case reflect.Bool:
 			value.Field(i).SetBool(false)

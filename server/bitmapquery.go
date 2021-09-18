@@ -221,46 +221,28 @@ func (m *BitmapIndex) timeRange(index, field string, rowID uint64, fromTime,
 			result = roaring64.ParOr(0, a...)
 		}
 		return result, nil
-	}
-	if tq == "YMD" {
-		for ; lookupTime.Before(toTime); lookupTime = lookupTime.AddDate(0, 0, 1) {
-			// Verify that the data shard is primary here, skip if not.
-			hashKey := fmt.Sprintf("%s/%s/%d/%s", index, field, rowID, lookupTime.Format(timeFmt))
-			if !m.Member(hashKey) {
-				continue
-			}
-			if bm, ok := m.bitmapCache[index][field][rowID][lookupTime.UnixNano()]; !ok {
-				continue
-			} else {
-				if foundSet != nil {
-					b := bm.Bits.Clone()
-					b.And(foundSet)
-					a = append(a, b)
-				} else {
-					a = append(a, bm.Bits)
+	} else {
+		if rm, ok := m.bitmapCache[index][field][rowID]; ok {
+			for ts, bitmap := range rm {
+				if ts < fromTime.UnixNano() || ts > toTime.UnixNano() {
+					continue
 				}
-				log.Printf("timeRange YMD selecting %s", hashKey)
-			}
-		}
-		result = roaring64.ParOr(0, a...)
-	}
-	if tq == "YMDH" {
-		for ; lookupTime.Before(toTime); lookupTime = lookupTime.Add(time.Hour) {
-			// Verify that the data shard is primary here, skip if not.
-			hashKey := fmt.Sprintf("%s/%s/%d/%s", index, field, rowID, lookupTime.Format(timeFmt))
-			if !m.Member(hashKey) {
-				continue
-			}
-			if bm, ok := m.bitmapCache[index][field][rowID][lookupTime.UnixNano()]; !ok {
-				//if _, ok := m.bitmapCache[index][field][rowID]; !ok {
-				//    err := fmt.Errorf("Cannot find value for YMDH [%s]", hashKey)
-				//    log.Println(err)
-				//    return nil, err
-				//}
-				continue
-			} else {
-				a = append(a, bm.Bits)
-				log.Printf("timeRange YMDH selecting %s", hashKey)
+				hashKey := fmt.Sprintf("%s/%s/%d/%s", index, field, rowID, time.Unix(0, ts).Format(timeFmt))
+				if !m.Member(hashKey) {
+					continue
+				}
+				if foundSet != nil {
+					b := bitmap.Bits.Clone()
+					b.And(foundSet)
+					if b.GetCardinality() == 0 {
+						continue
+					}
+					a = append(a, b)
+					log.Printf("timeRange YMD selecting %s", hashKey)
+				} else {
+					a = append(a, bitmap.Bits)
+					log.Printf("timeRange YMD selecting %s", hashKey)
+				}
 			}
 		}
 		result = roaring64.ParOr(0, a...)
@@ -314,44 +296,27 @@ func (m *BitmapIndex) timeRangeBSI(index, field string, fromTime, toTime time.Ti
 			result.BSI.ParOr(0, a...)
 		}
 		return result, nil
-	}
-	if tq == "YMD" {
-		for ; lookupTime.Before(toTime); lookupTime = lookupTime.AddDate(0, 0, 1) {
-			// Verify that the data shard is primary here, skip if not.
-			hashKey := fmt.Sprintf("%s/%s/%s", index, field, lookupTime.Format(timeFmt))
-			if !m.Member(hashKey) {
-				continue
-			}
-			if bm, ok := m.bsiCache[index][field][lookupTime.UnixNano()]; !ok {
-				continue
-			} else {
-				if foundSet != nil {
-					a = append(a, bm.BSI.NewBSIRetainSet(foundSet))
-				} else {
-					a = append(a, bm.BSI)
+	} else {
+		if tm, ok := m.bsiCache[index][field]; ok {
+			for ts, bsi := range tm {
+				if ts < fromTime.UnixNano() || ts > toTime.UnixNano() {
+					continue
 				}
-				log.Printf("timeRangeBSI YMD selecting %s", hashKey)
-			}
-		}
-		result.BSI.ParOr(0, a...)
-	}
-	if tq == "YMDH" {
-		for ; lookupTime.Before(toTime); lookupTime = lookupTime.Add(time.Hour) {
-			// Verify that the data shard is primary here, skip if not.
-			hashKey := fmt.Sprintf("%s/%s/%s", index, field, lookupTime.Format(timeFmt))
-			if !m.Member(hashKey) {
-				continue
-			}
-			if bm, ok := m.bsiCache[index][field][lookupTime.UnixNano()]; !ok {
-				//if _, ok := m.bitmapCache[index][field]; !ok {
-				//    err := fmt.Errorf("Cannot find value for YMDH [%s]", hashKey)
-				//    log.Println(err)
-				//    return nil, err
-				//}
-				continue
-			} else {
-				a = append(a, bm.BSI)
-				log.Printf("timeRangeBSI YMDH selecting %s", hashKey)
+				hashKey := fmt.Sprintf("%s/%s/%s", index, field, time.Unix(0, ts).Format(timeFmt))
+				if !m.Member(hashKey) {
+					continue
+				}
+				if foundSet != nil {
+					x := bsi.BSI.NewBSIRetainSet(foundSet)
+					if x.GetCardinality() == 0 {
+						continue
+					}
+					a = append(a, x)
+					log.Printf("timeRangeBSI YMD selecting %s", hashKey)
+				} else {
+					a = append(a, bsi.BSI)
+					log.Printf("timeRangeBSI YMD selecting %s", hashKey)
+				}
 			}
 		}
 		result.BSI.ParOr(0, a...)

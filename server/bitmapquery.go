@@ -220,7 +220,6 @@ func (m *BitmapIndex) timeRange(index, field string, rowID uint64, fromTime,
 			log.Printf("timeRange No Quantum selecting %s", hashKey)
 			result = roaring64.ParOr(0, a...)
 		}
-		return result, nil
 	} else {
 		if rm, ok := m.bitmapCache[index][field][rowID]; ok {
 			for ts, bitmap := range rm {
@@ -295,7 +294,6 @@ func (m *BitmapIndex) timeRangeBSI(index, field string, fromTime, toTime time.Ti
 			log.Printf("timeRangeBSI No Quantum selecting %s", hashKey)
 			result.BSI.ParOr(0, a...)
 		}
-		return result, nil
 	} else {
 		if tm, ok := m.bsiCache[index][field]; ok {
 			for ts, bsi := range tm {

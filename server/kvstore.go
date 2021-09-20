@@ -52,7 +52,7 @@ func (m *KVStore) Init() error {
 			if len(l) == 0 {
 				return nil
 			}
-			if l[len(l)-2] != "search.dat" {
+			if l[len(l)-2] != "search.dat" && l[len(l)-2] != "UserRoles" {
 				indexName := l[len(l)-3] + sep + l[len(l)-2]
 				dbList = append(dbList, indexName)
 			}

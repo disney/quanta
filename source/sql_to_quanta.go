@@ -1467,20 +1467,22 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 	// Begin critical section
 
 	// Generate columnId for insert.
-	var err error
-	if tbuf.CurrentColumnID == 0 {
-		if err = table.Lock(); err != nil {
-			//tbuf.CurrentColumnID, err = m.conn.AllocateColumnID(m.tbl.Name)
+	/*
+		var err error
+		if tbuf.CurrentColumnID == 0 {
+			if err = table.Lock(); err != nil {
+				//tbuf.CurrentColumnID, err = m.conn.AllocateColumnID(m.tbl.Name)
+			}
+			if err2 := table.Unlock(); err2 != nil {
+				u.Errorf("error during Unlock() - %v", err2)
+				return nil, err2
+			}
 		}
-		if err2 := table.Unlock(); err2 != nil {
-			u.Errorf("error during Unlock() - %v", err2)
-			return nil, err2
+		if err != nil {
+			u.Errorf("error allocating new column (row) ID - %v", err)
+			return nil, err
 		}
-	}
-	if err != nil {
-		u.Errorf("error allocating new column (row) ID - %v", err)
-		return nil, err
-	}
+	*/
 
 	/*
 	   for i, v := range curRow {

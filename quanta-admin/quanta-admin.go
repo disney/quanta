@@ -46,7 +46,7 @@ type DropCmd struct {
 type TruncateCmd struct {
 	Table       string `arg name:"table" help:"Table name."`
 	RetainEnums bool   `help:"Retain enumeration data for StringEnum types."`
-    Force       bool   `help:"Force override of constraints."`
+	Force       bool   `help:"Force override of constraints."`
 }
 
 // TablesCmd - Show tables command
@@ -140,7 +140,12 @@ func (c *CreateCmd) Run(ctx *Context) error {
 
 func performCreate(consul *api.Client, table *shared.BasicTable, port int) error {
 
-	// TODO: Synchronously invoke backend table re-load inside distributed lock
+	lock, errx := shared.Lock(consul, "admin-tool", "admin-tool")
+	if errx != nil {
+		return errx
+	}
+	defer shared.Unlock(consul, lock)
+
 	log.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
 	conn := quanta.NewDefaultConnection()
 	conn.ServicePort = port
@@ -156,6 +161,10 @@ func performCreate(consul *api.Client, table *shared.BasicTable, port int) error
 	}
 
 	// Go ahead and update Consul
+	err = shared.UpdateModTimeForTable(consul, table.Name)
+	if err != nil {
+		return fmt.Errorf("updateModTimeForTable  error %v", err)
+	}
 	err = shared.MarshalConsul(table, consul)
 	if err != nil {
 		return fmt.Errorf("Error marshalling table %v", err)
@@ -205,7 +214,11 @@ func (c *DropCmd) Run(ctx *Context) error {
 		return err
 	}
 
-	// TODO: Obtain distributed lock
+	lock, errx := shared.Lock(consulClient, "admin-tool", "admin-tool")
+	if errx != nil {
+		return errx
+	}
+	defer shared.Unlock(consulClient, lock)
 	err = nukeData(consulClient, ctx.Port, c.Table, "drop", false)
 	if err != nil {
 		return err
@@ -215,7 +228,6 @@ func (c *DropCmd) Run(ctx *Context) error {
 		return fmt.Errorf("DeleteTable error %v", err)
 	}
 
-	// TODO: Release the lock
 	fmt.Printf("Successfully dropped table %s\n", c.Table)
 	return nil
 }
@@ -280,12 +292,21 @@ func (c *TruncateCmd) Run(ctx *Context) error {
 		return err
 	}
 
-	// TODO: Obtain distributed lock
+	lock, errx := shared.Lock(consulClient, "admin-tool", "admin-tool")
+	if errx != nil {
+		return errx
+	}
+	defer shared.Unlock(consulClient, lock)
+
+	err = shared.UpdateModTimeForTable(consulClient, c.Table)
+	if err != nil {
+		return fmt.Errorf("updateModTimeForTable  error %v", err)
+	}
+
 	err = nukeData(consulClient, ctx.Port, c.Table, "truncate", c.RetainEnums)
 	if err != nil {
 		return err
 	}
-	// TODO: Release the lock
 
 	fmt.Printf("Successfully truncated table %s\n", c.Table)
 	return nil

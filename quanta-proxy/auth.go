@@ -39,40 +39,40 @@ func NewAuthProvider() *AuthProvider {
 // GetCredential - CredentialProvider.GetCredential implementation.
 func (m *AuthProvider) GetCredential(username string) (password string, found bool, err error) {
 
-		_ =time.Now()
-		m.currentUserID = username
-			return "", true, nil
-/*
-	if len(username) <= 32 {
-		v, ok := userPool.Load(username) // global singleton
-		if !ok {
-			return "", false, nil
-		}
-		account := v.(MySQLAccount)
-		expireTs := time.Unix(account.Expires, 0)
-		if expireTs.After(time.Now()) {
-			return account.Password, true, nil
-		}
-		return "", false, nil // session has expired
-	}
-
-	var errCheck error
-	for _, ks := range publicKeySet {
-		token, errx := m.Verify(username, ks)
-		if errx == nil {
-			claims := token.PrivateClaims()
-			// userClaimsKey is global
-			if user, ok := claims[userClaimsKey]; ok {
-				// If user id is in claims then this is a MyID session, set current UserID
-				m.currentUserID = user.(string)
+	_ = time.Now()
+	m.currentUserID = username
+	return "", true, nil
+	/*
+		if len(username) <= 32 {
+			v, ok := userPool.Load(username) // global singleton
+			if !ok {
+				return "", false, nil
 			}
-			return "", true, nil
+			account := v.(MySQLAccount)
+			expireTs := time.Unix(account.Expires, 0)
+			if expireTs.After(time.Now()) {
+				return account.Password, true, nil
+			}
+			return "", false, nil // session has expired
 		}
-		errCheck = errx
-	}
-	userPool.Delete(username) // expire user if it exists (global singleton)
-	return "", false, errCheck
-*/
+
+		var errCheck error
+		for _, ks := range publicKeySet {
+			token, errx := m.Verify(username, ks)
+			if errx == nil {
+				claims := token.PrivateClaims()
+				// userClaimsKey is global
+				if user, ok := claims[userClaimsKey]; ok {
+					// If user id is in claims then this is a MyID session, set current UserID
+					m.currentUserID = user.(string)
+				}
+				return "", true, nil
+			}
+			errCheck = errx
+		}
+		userPool.Delete(username) // expire user if it exists (global singleton)
+		return "", false, errCheck
+	*/
 }
 
 // CheckUsername - CredentialProvider.CheckUsername implementation.
@@ -85,7 +85,7 @@ func (m *AuthProvider) CheckUsername(username string) (bool, error) {
 	// Verify user name exists
 	//_, ok := userPool.Load(username) // global singleton
 	//return ok, nil
-    return true, nil
+	return true, nil
 }
 
 // AddUser - Called by tokenservice to create new account.

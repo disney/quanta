@@ -6,10 +6,13 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/hashicorp/consul/api"
+	"os"
+	"os/signal"
 	filepath "path"
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ToString - Interface type to string
@@ -300,12 +303,6 @@ func CheckParentRelation(consul *api.Client, table *BasicTable) (bool, error) {
 func GetTables(consul *api.Client) ([]string, error) {
 
 	results := make([]string, 0)
-	/*
-		kvPair, _, err := consul.KV().Get("schema", nil)
-		if err != nil || kvPair == nil {
-			return results, err
-		}
-	*/
 	keys := make(map[string]struct{}, 0)
 	pairs, _, err := consul.KV().List("schema", nil)
 	if err != nil {
@@ -319,6 +316,19 @@ func GetTables(consul *api.Client) ([]string, error) {
 		results = append(results, v)
 	}
 	return results, nil
+}
+
+// UpdateModTimeForTable - Updates the tables modificiation timestamp
+func UpdateModTimeForTable(consul *api.Client, tableName string) error {
+
+	current := time.Now().UTC().Format(time.RFC3339)
+	var kvPair api.KVPair
+	kvPair.Key = "schema" + SEP + tableName + SEP + "modificationTime"
+	kvPair.Value = ToBytes(current)
+	if _, err := consul.KV().Put(&kvPair, nil); err != nil {
+		return err
+	}
+	return nil
 }
 
 func getDeployedFKReferenceMap(consul *api.Client) (map[string][]string, error) {
@@ -354,4 +364,69 @@ func CheckChildRelation(consul *api.Client, tableName string) ([]string, error) 
 		return ret, err
 	}
 	return []string{}, nil
+}
+
+// Lock - Distributed lock
+func Lock(consul *api.Client, lockName, processName string) (*api.Lock, error) {
+
+	// If Consul client is not set then we are not running in distributed mode.  Use local mutex.
+	if consul == nil {
+		return nil, fmt.Errorf("lock: Consul client not set")
+	}
+
+	// create lock key
+	opts := &api.LockOptions{
+		Key:        lockName + "/1",
+		Value:      []byte("lock set by " + processName),
+		SessionTTL: "10s",
+		/*
+		   		SessionOpts: &api.SessionEntry{
+		     	Checks:   []string{"check1", "check2"},
+		     	Behavior: "release",
+		   		},
+		*/
+	}
+
+	lock, err := consul.LockOpts(opts)
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		for range c {
+			//log.Println("Interrupted...")
+			err = lock.Unlock()
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	// acquire lock
+	//log.Println("Acquiring lock ...")
+	stopCh := make(chan struct{})
+	lockCh, err := lock.Lock(stopCh)
+	if err != nil {
+		return lock, err
+	}
+	if lockCh == nil {
+		return nil, fmt.Errorf("lock already held")
+	}
+	return lock, nil
+}
+
+// Unlock - Unlock distributed lock
+func Unlock(consul *api.Client, lock *api.Lock) error {
+
+	if consul == nil {
+		return fmt.Errorf("unlock: Consul client not set")
+	}
+	var err error
+	if lock == nil {
+		return fmt.Errorf("lock value was nil (not set)")
+	}
+	err = lock.Unlock()
+	if err != nil {
+		return err
+	}
+	return nil
 }

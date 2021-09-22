@@ -215,8 +215,15 @@ func (m *QuantaSource) Next() schema.Message {
 func (m *QuantaSource) ListTableNames() []string {
 
 	if m.baseDir == "" {
+		lock, errx := shared.Lock(m.consulClient, "admin-tool", "admin-tool")
+		if errx != nil {
+			log.Printf("listTableNames: cannot obtain lock %v", errx)
+			return []string{}
+		}
+		defer shared.Unlock(m.consulClient, lock)
 		tables, errx := shared.GetTables(m.consulClient)
 		if errx != nil {
+			log.Printf("shared.getTables failed: %v", errx)
 			return []string{}
 		}
 		return tables

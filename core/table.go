@@ -11,7 +11,6 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"os/signal"
 	"plugin"
 	"reflect"
 	"strings"
@@ -23,7 +22,6 @@ type Table struct {
 	*shared.BasicTable
 	Attributes       []Attribute
 	attributeNameMap map[string]*Attribute
-	lock             *api.Lock
 	localLock        sync.RWMutex
 	kvStore          *quanta.KVStore
 }
@@ -70,11 +68,11 @@ func LoadTable(path string, kvStore *quanta.KVStore, name string, consulClient *
 	}
 
 	table.attributeNameMap = make(map[string]*Attribute)
-	if err := table.Lock(); err != nil {
+	lock, err := shared.Lock(consulClient, name, "LoadSchema")
+	if err != nil {
 		return nil, err
 	}
-
-	defer table.Unlock()
+	defer lock.Unlock()
 
 	var fieldMap map[string]*Field
 	var errx error
@@ -438,74 +436,6 @@ func (t *Table) LoadFieldValues() (fieldMap map[string]*Field, err error) {
 	}
 
 	return attributeFieldMap, nil
-}
-
-// Lock the table.
-func (t *Table) Lock() error {
-
-	var err error
-	// If Consul client is not set then we are not running in distributed mode.  Use local mutex.
-	if t.ConsulClient == nil {
-		t.localLock.Lock()
-		return nil
-	}
-
-	// create lock key
-	opts := &api.LockOptions{
-		Key:        t.Name + "/1",
-		Value:      []byte("set by loader"),
-		SessionTTL: "10s",
-		/*
-		   		SessionOpts: &api.SessionEntry{
-		     	Checks:   []string{"check1", "check2"},
-		     	Behavior: "release",
-		   		},
-		*/
-	}
-
-	t.lock, err = t.ConsulClient.LockOpts(opts)
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	go func() {
-		for range c {
-			//log.Println("Interrupted...")
-			err = t.lock.Unlock()
-			if err != nil {
-				return
-			}
-		}
-	}()
-
-	// acquire lock
-	//log.Println("Acquiring lock ...")
-	stopCh := make(chan struct{})
-	lockCh, err := t.lock.Lock(stopCh)
-	if err != nil {
-		return err
-	}
-	if lockCh == nil {
-		return fmt.Errorf("lock already held")
-	}
-	return nil
-}
-
-// Unlock the table.
-func (t *Table) Unlock() error {
-
-	var err error
-	if t.ConsulClient == nil {
-		t.localLock.Unlock()
-		return nil
-	}
-	if t.lock == nil {
-		return fmt.Errorf("lock value was nil (not set)")
-	}
-	err = t.lock.Unlock()
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 // ClearTableCache - Clear the table cache.

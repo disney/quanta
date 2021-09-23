@@ -56,7 +56,6 @@ var (
 	userPool      sync.Map
 	authProvider  *AuthProvider
 	userClaimsKey string
-	needsRefresh  bool
 )
 
 func main() {
@@ -156,8 +155,8 @@ func schemaChangeListener(e shared.SchemaChangeEvent) {
 	case shared.Modify:
 		u.Infof("Truncated table %s", e.Table)
 	case shared.Create:
+		schema.DefaultRegistry().SchemaRefresh("quanta")
 		u.Infof("Created table %s", e.Table)
-		needsRefresh = true
 	}
 }
 
@@ -223,17 +222,6 @@ func (h *ProxyHandler) UseDB(dbName string) error {
 }
 
 func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, error) {
-
-	if needsRefresh {
-		needsRefresh = false
-		var err error
-		h.db.Close()
-		schema.DefaultRegistry().SchemaRefresh("quanta")
-		h.db, err = sql.Open("qlbridge", "quanta")
-		if err != nil {
-			panic(err.Error())
-		}
-	}
 
 	// Ignore java driver handshake
 	if strings.Contains(strings.ToLower(query), "mysql-connector-java") {

@@ -68,11 +68,15 @@ func LoadTable(path string, kvStore *quanta.KVStore, name string, consulClient *
 	}
 
 	table.attributeNameMap = make(map[string]*Attribute)
+
+    // Refactor this
+/*
 	lock, err := shared.Lock(consulClient, name, "LoadSchema")
 	if err != nil {
 		return nil, err
 	}
 	defer lock.Unlock()
+*/
 
 	var fieldMap map[string]*Field
 	var errx error

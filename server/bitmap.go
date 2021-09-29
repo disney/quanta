@@ -582,6 +582,34 @@ func (m *BitmapIndex) expireOrTruncate(days int, truncate bool) {
 	}
 }
 
+func (m *BitmapIndex) truncateCaches(index string) {
+
+	m.bitmapCacheLock.Lock()
+	m.bsiCacheLock.Lock()
+	defer m.bitmapCacheLock.Unlock()
+	defer m.bsiCacheLock.Unlock()
+
+    fm, _ := m.bitmapCache[index]
+	if fm != nil {
+		for _, rm := range fm {
+			for _, tm := range rm {
+				for ts, _ := range tm {
+					delete(tm, ts)
+				}
+			}
+		}
+	}
+
+    xm, _ := m.bsiCache[index]
+	if xm != nil {
+		for _, tm := range xm {
+			for ts, _ := range tm {
+				delete(tm, ts)
+			}
+		}
+	}
+}
+
 // Iterate standard bitmap cache looking for potential writes (dirty data)
 func (m *BitmapIndex) checkPersistBitmapCache(forceSync bool) {
 
@@ -856,7 +884,7 @@ func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperation
 		m.tableCacheLock.Lock()
 		defer m.tableCacheLock.Unlock()
 		delete(m.tableCache, req.Table)
-		m.expireOrTruncate(-1, true)
+		m.truncateCaches(req.Table)
 		tableDir := m.dataDir + sep + "bitmap" + sep + req.Table
 		if err := os.RemoveAll(tableDir); err != nil {
 			log.Printf("error dropping table %s directory - %v", req.Table, err)
@@ -866,7 +894,7 @@ func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperation
 	case pb.TableOperationRequest_TRUNCATE:
 		m.tableCacheLock.Lock()
 		defer m.tableCacheLock.Unlock()
-		m.expireOrTruncate(-1, true)
+		m.truncateCaches(req.Table)
 		tableDir := m.dataDir + sep + "bitmap" + sep + req.Table
 		if err := os.RemoveAll(tableDir); err != nil {
 			log.Printf("error truncating table %s directory - %v", req.Table, err)

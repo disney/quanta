@@ -64,7 +64,7 @@ build: format vet
 	go build -o ${BIN_DIR}/${BIN_NODE} ${LDFLAGS} ${PKG_NODE}
 	go build -o ${BIN_DIR}/${BIN_LOADER} ${LDFLAGS} ${PKG_LOADER}
 	go build -o ${BIN_DIR}/${BIN_PROXY} ${LDFLAGS} ${PKG_PROXY}
-	go build -o ${BIN_DIR}/${BIN_KAFKA} ${LDFLAGS} ${PKG_KAFKA}
+	#go build -o ${BIN_DIR}/${BIN_KAFKA} ${LDFLAGS} ${PKG_KAFKA}
 	go build -o ${BIN_DIR}/${BIN_ADMIN} ${LDFLAGS} ${PKG_ADMIN}
 
 build_all: format vet

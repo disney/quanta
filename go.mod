@@ -20,12 +20,14 @@ require (
 	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/golang/protobuf v1.5.2
 	github.com/google/uuid v1.1.2 // indirect
+	github.com/hamba/avro v1.6.0 // indirect
+	github.com/harlow/kinesis-consumer v0.3.5 // indirect
 	github.com/hashicorp/consul/api v1.10.1
 	github.com/hashicorp/consul/sdk v0.8.0
 	github.com/hashicorp/go-hclog v0.14.1 // indirect
 	github.com/hashicorp/go-memdb v1.3.1 // indirect
 	github.com/jmoiron/sqlx v1.3.1 // indirect
-	github.com/json-iterator/go v1.1.10
+	github.com/json-iterator/go v1.1.12
 	github.com/leekchan/timeutil v0.0.0-20150802142658-28917288c48d // indirect
 	github.com/lestrrat-go/jwx v1.0.8
 	github.com/lytics/datemath v0.0.0-20180727225141-3ada1c10b5de // indirect

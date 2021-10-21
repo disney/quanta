@@ -2,12 +2,18 @@ package main
 
 import (
 	"context"
+	//"expvar"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
+	_ "github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/shared"
+	"github.com/hamba/avro"
+	"github.com/harlow/kinesis-consumer"
 	"github.com/hashicorp/consul/api"
 	"gopkg.in/alecthomas/kingpin.v2"
-    "github.com/hamba/avro"
-    "github.com/harlow/kinesis-consumer"
 	"log"
 	"os"
 	"os/signal"
@@ -31,6 +37,7 @@ const (
 // Main strct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
 	Stream       string
+	Region       string
 	Index        string
 	BufferSize   uint
 	totalBytes   int64
@@ -57,8 +64,9 @@ func main() {
 	app := kingpin.New(os.Args[0], "Quanta Kinesis data consumer").DefaultEnvars()
 	app.Version("Version: " + Version + "\nBuild: " + Build)
 
-    stream := app.Arg("stream", "Kinesis stream name.").Required().String()
+	stream := app.Arg("stream", "Kinesis stream name.").Required().String()
 	index := app.Arg("index", "Table name (root name if nested schema)").Required().String()
+	region := app.Arg("region", "AWS region").Default("us-east-1").String()
 	port := app.Arg("port", "Port number for service").Default("4000").Int32()
 	bufSize := app.Flag("buf-size", "Buffer size").Default("1000000").Int32()
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
@@ -70,37 +78,20 @@ func main() {
 
 	main := NewMain()
 	main.Stream = *stream
+	main.Region = *region
 	main.Index = *index
 	main.BufferSize = uint(*bufSize)
 	main.Port = int(*port)
 	main.ConsulAddr = *consul
 
 	log.Printf("Kinesis stream %v.", main.Stream)
+	log.Printf("Kinesis region %v.", main.Region)
 	log.Printf("Index name %v.", main.Index)
 	log.Printf("Buffer size %d.", main.BufferSize)
 	log.Printf("Service port %d.", main.Port)
 	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
 
-    schema, err := avro.Parse(`{
-        "type": "record",
-        "name": "spot",
-        "namespace": "reversebeacon.net",
-        "fields" : [
-            {"name": "callsign", "type": "string"},
-            {"name": "freq", "type": "double"},
-            {"name": "dx", "type": "string"},
-            {"name": "mode", "type": "string"},
-            {"name": "db", "type": "int"},
-            {"name": "speed", "type": "int"},
-            {"name": "tx_mode", "type": "string"},
-            {"name": "date", "type": "long"},
-            {"name": "de_pfx", "type": "string"},
-            {"name": "de_cont", "type": "string"},
-            {"name": "dx_pfx", "type": "string"},
-            {"name": "dx_cont", "type": "string"},
-            {"name": "band", "type": "string"}
-        ]
-    }`)
+	var err error
 
 	if err := main.Init(); err != nil {
 		log.Fatal(err)
@@ -134,14 +125,15 @@ func main() {
 			if err != nil {
 				log.Fatalf("Error opening connection %v", err)
 			}
+			tbuf := main.conns[i].TableBuffers[main.Index]
+			avroSchema := shared.ToAvroSchema(tbuf.Table.BasicTable)
 			for msg := range msgChan {
 				//err = main.conns[i].PutRowKafka(main.Index, msg)
-                out := make(map[string]interface{})
-				err = avro.Unmarshal(schema, msg.Data, &out)
+				out := make(map[string]interface{})
+				err = avro.Unmarshal(avroSchema, msg.Data, &out)
 				if err != nil {
 					log.Printf("ERROR %v", err)
 				}
-log.Printf("->%#v", out)
 				main.totalRecs.Add(1)
 				main.AddBytes(len(msg.Data))
 			}
@@ -152,7 +144,7 @@ log.Printf("->%#v", out)
 	// Main processing loop
 	go func() {
 		err = main.consumer.Scan(context.TODO(), func(r *consumer.Record) error {
-            msgChan <- r
+			msgChan <- r
 			return nil // continue scanning
 		})
 
@@ -179,13 +171,33 @@ func (m *Main) Init() error {
 		return err
 	}
 
-	m.consumer, err = consumer.New(m.Stream)
+	sess, errx := session.NewSession(&aws.Config{
+		Region: aws.String(m.Region),
+	})
+
+	if errx != nil {
+		return errx
+	}
+
+	kc := kinesis.New(sess)
+	streamName := aws.String(m.Stream)
+	_, err = kc.DescribeStream(&kinesis.DescribeStreamInput{StreamName: streamName})
 	if err != nil {
 		return err
 	}
 
-	log.Printf("Created consumer %v", m.consumer)
+	//var counter = expvar.NewMap("counters")
 
+	m.consumer, err = consumer.New(
+		m.Stream,
+		consumer.WithClient(kc),
+		//consumer.WithCounter(counter),
+	)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Created consumer. ")
 	return nil
 }
 

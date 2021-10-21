@@ -20,7 +20,7 @@ require (
 	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/golang/protobuf v1.5.2
 	github.com/google/uuid v1.1.2 // indirect
-	github.com/hamba/avro v1.6.0 // indirect
+	github.com/hamba/avro v1.6.0
 	github.com/harlow/kinesis-consumer v0.3.5 // indirect
 	github.com/hashicorp/consul/api v1.10.1
 	github.com/hashicorp/consul/sdk v0.8.0

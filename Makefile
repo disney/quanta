@@ -16,7 +16,7 @@ BIN_DIR=bin
 BIN_NODE=quanta-node
 BIN_LOADER=quanta-loader
 BIN_PROXY=quanta-proxy
-BIN_KAFKA=quanta-kafka-consumer
+BIN_KINESIS=quanta-kinesis-consumer
 BIN_ADMIN=quanta-admin
 COVERAGE_DIR=coverage
 COV_PROFILE=${COVERAGE_DIR}/test-coverage.txt
@@ -24,7 +24,7 @@ COV_HTML=${COVERAGE_DIR}/test-coverage.html
 PKG_NODE=github.com/disney/quanta
 PKG_LOADER=github.com/disney/quanta/${BIN_LOADER}
 PKG_PROXY=github.com/disney/quanta/${BIN_PROXY}
-PKG_KAFKA=github.com/disney/quanta/${BIN_KAFKA}
+PKG_KINESIS=github.com/disney/quanta/${BIN_KINESIS}
 PKG_ADMIN=github.com/disney/quanta/${BIN_ADMIN}
 #PLATFORMS=darwin linux 
 PLATFORMS=linux 
@@ -64,7 +64,7 @@ build: format vet
 	go build -o ${BIN_DIR}/${BIN_NODE} ${LDFLAGS} ${PKG_NODE}
 	go build -o ${BIN_DIR}/${BIN_LOADER} ${LDFLAGS} ${PKG_LOADER}
 	go build -o ${BIN_DIR}/${BIN_PROXY} ${LDFLAGS} ${PKG_PROXY}
-	go build -o ${BIN_DIR}/${BIN_KAFKA} ${LDFLAGS} ${PKG_KAFKA}
+	go build -o ${BIN_DIR}/${BIN_KINESIS} ${LDFLAGS} ${PKG_KINESIS}
 	go build -o ${BIN_DIR}/${BIN_ADMIN} ${LDFLAGS} ${PKG_ADMIN}
 
 build_all: format vet

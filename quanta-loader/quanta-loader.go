@@ -282,7 +282,7 @@ func (m *Main) processRowsForFile(s3object *s3.Object, dbConn *core.Connection) 
 	for i := 1; i <= num; i++ {
 		var err error
 		m.totalRecs.Add(1)
-		err = dbConn.PutRow(m.Index, pr)
+		err = dbConn.PutRow(m.Index, pr, 0)
 		if err != nil {
 			// TODO: Improve this by logging into work queue for re-processing
 			log.Println(err)

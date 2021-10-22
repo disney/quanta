@@ -88,7 +88,7 @@ func (suite *QuantaTestSuite) loadData(table, filePath string) error {
 	assert.NotNil(suite.T(), c)
 
 	for i := 1; i <= num; i++ {
-		err := c.PutRow(table, pr)
+		err := c.PutRow(table, pr, 0)
 		//if i % 10 == 0 {
 		//    log.Printf("Processing Row %d", i)
 		//}

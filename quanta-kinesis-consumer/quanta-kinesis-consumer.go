@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -128,9 +129,17 @@ func main() {
 			tbuf := main.conns[i].TableBuffers[main.Index]
 			avroSchema := shared.ToAvroSchema(tbuf.Table.BasicTable)
 			for msg := range msgChan {
-				//err = main.conns[i].PutRowKafka(main.Index, msg)
 				out := make(map[string]interface{})
 				err = avro.Unmarshal(avroSchema, msg.Data, &out)
+				if err != nil {
+					log.Printf("ERROR %v", err)
+				}
+				var colID int64
+				colID, err = strconv.ParseInt(*msg.SequenceNumber, 10, 64)
+				if err != nil {
+					log.Printf("ERROR %v", err)
+				}
+				err = main.conns[i].PutRow(main.Index, out, uint64(colID))
 				if err != nil {
 					log.Printf("ERROR %v", err)
 				}

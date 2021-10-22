@@ -31,15 +31,15 @@ const (
 
 // Connection - State for session (non-threadsafe)
 type Connection struct {
-	BasePath      string // path to schema directory
-	Client        *quanta.BitmapIndex
-	StringIndex   *quanta.StringSearch
-	KVStore       *quanta.KVStore
-	TableBuffers  map[string]*TableBuffer
-	Nested        bool
-	DateFilter    *time.Time // optional filter to only include records matching timestamp
-	BytesRead     int        // Bytes read for a row (record)
-	stateLock     sync.Mutex
+	BasePath     string // path to schema directory
+	Client       *quanta.BitmapIndex
+	StringIndex  *quanta.StringSearch
+	KVStore      *quanta.KVStore
+	TableBuffers map[string]*TableBuffer
+	Nested       bool
+	DateFilter   *time.Time // optional filter to only include records matching timestamp
+	BytesRead    int        // Bytes read for a row (record)
+	stateLock    sync.Mutex
 }
 
 // TableBuffer - State info for table.
@@ -178,29 +178,37 @@ func (s *Connection) IsDriverForTables(tables []string) bool {
 }
 
 // PutRow - Entry point.  Load a row of data from source (Parquet/Kinesis/Kafka)
-func (s *Connection) PutRow(name string, row interface{}) error {
+func (s *Connection) PutRow(name string, row interface{}, providedColID uint64) error {
 
 	s.ResetRowCache()
-    pqTablePath := "/"
-    if r, ok := row.(*reader.ParquetReader); ok {
+	pqTablePath := "/"
+	if r, ok := row.(*reader.ParquetReader); ok {
 		pqTablePath = fmt.Sprintf("%s.%s", r.SchemaHandler.GetRootExName(), name)
+	} else if r, ok := row.(map[string]interface{}); ok {
+		if tbuf, ok2 := s.TableBuffers[name]; ok2 {
+			tbuf.rowCache = r
+		} else {
+			return fmt.Errorf("cannot locate buffer for table %s", name)
+		}
+	} else {
+		return fmt.Errorf("cannot process row type %T", row)
 	}
-	return s.recursivePutRow(name, row, pqTablePath, false)
+	return s.recursivePutRow(name, row, pqTablePath, providedColID, false)
 }
 
-func (s *Connection) recursivePutRow(name string, row interface{}, pqTablePath string,
+func (s *Connection) recursivePutRow(name string, row interface{}, pqTablePath string, providedColID uint64,
 	isChild bool) error {
 
 	tbuf, ok := s.TableBuffers[name]
 	if !ok {
-		return fmt.Errorf("Table %s invalid or not opened. (recursivePutRow) %s", name, pqTablePath)
+		return fmt.Errorf("table %s invalid or not opened. (recursivePutRow) %s", name, pqTablePath)
 	}
 	recurse := len(s.TableBuffers) > 1
 	curTable := tbuf.Table
 
 	if curTable.PrimaryKey != "" {
 		// Here we force the primary key to be handled first for table so that columnID is established in tbuf
-		if hasValues, err := s.processPrimaryKey(tbuf, row, pqTablePath, isChild); err != nil {
+		if hasValues, err := s.processPrimaryKey(tbuf, row, pqTablePath, providedColID, isChild); err != nil {
 			return err
 		} else if !hasValues {
 			return nil // nothing to do, no values in child relation
@@ -223,8 +231,8 @@ func (s *Connection) recursivePutRow(name string, row interface{}, pqTablePath s
 		if recurse && v.MappingStrategy == "ChildRelation" && v.ChildTable != "" {
 			// Should we verify that it is a parquet repetition type if child relation?
 			pqChildPath := fmt.Sprintf("%s.%s", pqTablePath, v.SourceName)
-    		root := "/"
-    		if r, ok := row.(*reader.ParquetReader); ok {
+			root := "/"
+			if r, ok := row.(*reader.ParquetReader); ok {
 				root = r.SchemaHandler.GetRootExName()
 			}
 			if strings.HasPrefix(v.SourceName, "/") {
@@ -232,7 +240,7 @@ func (s *Connection) recursivePutRow(name string, row interface{}, pqTablePath s
 			} else if strings.HasPrefix(v.SourceName, "^") {
 				pqChildPath = fmt.Sprintf("%s.%s.list.element.%s", root, v.Parent.Name, v.SourceName[1:])
 			}
-			if err := s.recursivePutRow(v.ChildTable, row, pqChildPath, true); err != nil {
+			if err := s.recursivePutRow(v.ChildTable, row, pqChildPath, providedColID, true); err != nil {
 				return err
 			}
 		} else if v.MappingStrategy == "ParentRelation" && v.ForeignKey != "" {
@@ -307,8 +315,8 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 		if !isChild {
 			pqColPath = fmt.Sprintf("%s.%s", pqTablePath, source)
 		}
-    	root := "/"
-    	if r, ok := row.(*reader.ParquetReader); ok {
+		root := "/"
+		if r, ok := row.(*reader.ParquetReader); ok {
 			root = r.SchemaHandler.GetRootExName()
 		}
 		if strings.HasPrefix(source, "/") {
@@ -327,7 +335,7 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 			retVals[i] = val
 			continue
 		}
-    	if r, ok := row.(*reader.ParquetReader); ok {
+		if r, ok := row.(*reader.ParquetReader); ok {
 			vals, _, _, err := r.ReadColumnByPath(pqColPath, 1)
 			if err != nil {
 				return nil, nil, fmt.Errorf("Parquet reader error for %s [%v]", pqColPath, err)
@@ -349,9 +357,9 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 			retVals[i] = vals[0]
 			tbuf.rowCache[pqColPath] = vals[0]
 		} else {
-			return nil, nil, 
-				fmt.Errorf("for field [%s], source [%s] for on-parquet should have found cached data", 
-				v.FieldName, pqColPath)
+			return nil, nil,
+				fmt.Errorf("for field [%s], source [%s] for on-parquet should have found cached data",
+					v.FieldName, pqColPath)
 		}
 	}
 	return retVals, pqColPaths, nil
@@ -360,13 +368,13 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 //
 // Complete handling of primary key.
 //    1. Uniqueness check against value in KVStore
-//    2. ColumnID establishment for all fields in this row.
+//    2. ColumnID establishment for all fields in this row.  Generate if provided value = 0
 //    3. Value mapping.
 //
 // returns true if there are values to process.
 //
 func (s *Connection) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTablePath string,
-	isChild bool) (bool, error) {
+	providedColID uint64, isChild bool) (bool, error) {
 
 	if tbuf.Table.TimeQuantumType == "" {
 		tbuf.CurrentTimestamp = time.Unix(0, 0)
@@ -485,17 +493,21 @@ func (s *Connection) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTab
 		if found {
 			tbuf.CurrentColumnID = colID
 		} else {
-			// Generate new ColumnID
-			if tbuf.sequencer == nil || tbuf.sequencer.IsFullySubscribed() {
-				seq, err := s.Client.CheckoutSequence(tbuf.Table.Name, tbuf.PKAttributes[0].FieldName,
-					tbuf.CurrentTimestamp, reservationSize)
-				if err != nil {
-					return false, fmt.Errorf("Sequencer checkout error for %s.%s - %v]", tbuf.Table.Name,
-						tbuf.PKAttributes[0].FieldName, err)
+			if providedColID == 0 {
+				// Generate new ColumnID
+				if tbuf.sequencer == nil || tbuf.sequencer.IsFullySubscribed() {
+					seq, err := s.Client.CheckoutSequence(tbuf.Table.Name, tbuf.PKAttributes[0].FieldName,
+						tbuf.CurrentTimestamp, reservationSize)
+					if err != nil {
+						return false, fmt.Errorf("Sequencer checkout error for %s.%s - %v]", tbuf.Table.Name,
+							tbuf.PKAttributes[0].FieldName, err)
+					}
+					tbuf.sequencer = seq
 				}
-				tbuf.sequencer = seq
+				tbuf.CurrentColumnID, _ = tbuf.sequencer.Next()
+			} else {
+				tbuf.CurrentColumnID = providedColID
 			}
-			tbuf.CurrentColumnID, _ = tbuf.sequencer.Next()
 			// Add the PK via local cache batch operation
 			s.Client.SetKeyString(tbuf.Table.Name, tbuf.Table.PrimaryKey, primaryKey, pkLookupVal.String(),
 				tbuf.CurrentColumnID)
@@ -617,8 +629,8 @@ func (s *Connection) LookupKeyBatch(tbuf *TableBuffer, lookupVals map[interface{
 func (s *Connection) resolveFKLookupKey(v *Attribute, tbuf *TableBuffer, row interface{}) (string, error) {
 
 	var retVal strings.Builder
-  	root := "/"
-   	if r, ok := row.(*reader.ParquetReader); ok {
+	root := "/"
+	if r, ok := row.(*reader.ParquetReader); ok {
 		root = r.SchemaHandler.GetRootExName()
 	}
 	pqTablePath := fmt.Sprintf("%s.%s", root, tbuf.Table.Name)
@@ -717,7 +729,6 @@ func (s *Connection) MapValue(tableName, fieldName string, value interface{}, up
 	}
 	return attr.MapValue(value, nil) // Non load use case pass nil connection context
 }
-
 
 func resolveJSColumnPathForField(jsTablePath string, v *Attribute, isChild bool) (jsColPath string) {
 

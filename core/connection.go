@@ -316,10 +316,12 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 			pqColPath = fmt.Sprintf("%s.%s", pqTablePath, source)
 		}
 		root := "/"
+		isParquet := false
 		if r, ok := row.(*reader.ParquetReader); ok {
 			root = r.SchemaHandler.GetRootExName()
+			isParquet = true
 		}
-		if strings.HasPrefix(source, "/") {
+		if isParquet && strings.HasPrefix(source, "/") {
 			pqColPath = fmt.Sprintf("%s.%s", root, source[1:])
 		} else if strings.HasPrefix(source, "^") {
 			pqColPath = fmt.Sprintf("%s.%s.list.element.%s", root, v.Parent.Name, source[1:])
@@ -331,6 +333,9 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 			return nil, nil, fmt.Errorf("readColumn: table not open for %s", v.Parent.Name)
 		}
 		val, found := tbuf.rowCache[pqColPath]
+		if !found && !isParquet {
+			val, found = tbuf.rowCache[source[1:]]
+		}
 		if found {
 			retVals[i] = val
 			continue
@@ -358,7 +363,7 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 			tbuf.rowCache[pqColPath] = vals[0]
 		} else {
 			return nil, nil,
-				fmt.Errorf("for field [%s], source [%s] for on-parquet should have found cached data",
+				fmt.Errorf("for field [%s], source [%s] for non-parquet should have found cached data",
 					v.FieldName, pqColPath)
 		}
 	}

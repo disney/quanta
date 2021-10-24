@@ -18,7 +18,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -133,16 +132,14 @@ func main() {
 				err = avro.Unmarshal(avroSchema, msg.Data, &out)
 				if err != nil {
 					log.Printf("ERROR %v", err)
+					continue
 				}
-				var colID int64
-				colID, err = strconv.ParseInt(*msg.SequenceNumber, 10, 64)
+				err = main.conns[i].PutRow(main.Index, out, 0)
 				if err != nil {
-					log.Printf("ERROR %v", err)
+					log.Printf("ERROR in PutRow - %v", err)
+					continue
 				}
-				err = main.conns[i].PutRow(main.Index, out, uint64(colID))
-				if err != nil {
-					log.Printf("ERROR %v", err)
-				}
+				main.conns[i].Flush()
 				main.totalRecs.Add(1)
 				main.AddBytes(len(msg.Data))
 			}

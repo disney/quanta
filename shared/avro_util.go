@@ -28,8 +28,9 @@ func ToAvroSchema(table *BasicTable) avro.Schema {
 			field, _ = avro.NewField(name, avro.NewPrimitiveSchema(avro.Long,
 				avro.NewPrimitiveLogicalSchema(avro.Date)), nil)
 		case DateTime:
-			field, _ = avro.NewField(name, avro.NewPrimitiveSchema(avro.Long,
-				avro.NewPrimitiveLogicalSchema(avro.TimestampMillis)), nil)
+			field, _ = avro.NewField(name, avro.NewPrimitiveSchema(avro.Long, nil), nil)
+			//field, _ = avro.NewField(name, avro.NewPrimitiveSchema(avro.Long,
+			//	avro.NewPrimitiveLogicalSchema(avro.TimestampMillis)), nil)
 		case Boolean:
 			field, _ = avro.NewField(name, avro.NewPrimitiveSchema(avro.Boolean, nil), nil)
 		default:

@@ -428,7 +428,11 @@ func (m *SQLToQuanta) walkFilterTri(node *expr.TriNode, q *shared.QueryFragment)
 					u.Errorf(err.Error())
 					return nil, err
 				}
-				m.startDate = start.Format(shared.YMDHTimeFmt)
+				if tbuf.Table.TimeQuantumType == "YMDH" {
+					m.startDate = start.Format(shared.YMDHTimeFmt)
+				} else {
+					m.startDate = start.Format(shared.YMDTimeFmt)
+				}
 			}
 			if m.endDate == "" && tbuf.Table.TimeQuantumType != "" {
 				end, err := dateparse.ParseIn(arg3val.ToString(), loc)
@@ -438,7 +442,11 @@ func (m *SQLToQuanta) walkFilterTri(node *expr.TriNode, q *shared.QueryFragment)
 					return nil, err
 				}
 				end = end.AddDate(0, 0, 1)
-				m.endDate = end.Format(shared.YMDHTimeFmt)
+				if tbuf.Table.TimeQuantumType == "YMDH" {
+					m.endDate = end.Format(shared.YMDHTimeFmt)
+				} else {
+					m.endDate = end.Format(shared.YMDTimeFmt)
+				}
 			}
 		}
 
@@ -572,8 +580,14 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 		return nil, fmt.Errorf("could not evaluate left arg: %v", node.String())
 	}
 	if !rhok && !rhisnull {
-		u.Warnf("not ok: %v  l:%v  r:%v", node, lhval, rhval)
-		return nil, fmt.Errorf("could not evaluate: %v", node.String())
+		exprNode, _ := expr.ParseExpression(node.Args[1].String())
+		val, ok := vm.Eval(nil, exprNode)
+		if !ok {
+			u.Warnf("not ok: %v  l:%v  r:%v", node, lhval, rhval)
+			return nil, fmt.Errorf("could not evaluate: %v", node.String())
+		} else {
+			rhval = val
+		}
 	}
 	if isLident && isRident {
 		// comparison of left/right isn't possible with Quanta
@@ -1294,10 +1308,15 @@ func (m *SQLToQuanta) PatchWhere(ctx context.Context, where expr.Node, patch int
 		m.endDate = end.Format(shared.YMDHTimeFmt)
 	}
 	var fromTime, toTime time.Time
-	if from, err := time.Parse(shared.YMDHTimeFmt, m.startDate); err == nil {
+	table := m.conn.TableBuffers[m.tbl.Name].Table
+	var timeFmt = shared.YMDHTimeFmt
+	if table.TimeQuantumType == "YMD" {
+		timeFmt = shared.YMDTimeFmt
+	}
+	if from, err := time.Parse(timeFmt, m.startDate); err == nil {
 		fromTime = from
 	}
-	if to, err := time.Parse(shared.YMDHTimeFmt, m.endDate); err == nil {
+	if to, err := time.Parse(timeFmt, m.endDate); err == nil {
 		toTime = to
 	}
 

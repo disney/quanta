@@ -69,14 +69,14 @@ func LoadTable(path string, kvStore *quanta.KVStore, name string, consulClient *
 
 	table.attributeNameMap = make(map[string]*Attribute)
 
-    // Refactor this
-/*
-	lock, err := shared.Lock(consulClient, name, "LoadSchema")
-	if err != nil {
-		return nil, err
-	}
-	defer lock.Unlock()
-*/
+	// Refactor this
+	/*
+		lock, err := shared.Lock(consulClient, name, "LoadSchema")
+		if err != nil {
+			return nil, err
+		}
+		defer lock.Unlock()
+	*/
 
 	var fieldMap map[string]*Field
 	var errx error
@@ -332,7 +332,25 @@ func (a *Attribute) GetValueForID(id uint64) (interface{}, error) {
 	if v, ok := a.reverseMap[id]; ok {
 		return v, nil
 	}
-	return 0, fmt.Errorf("Attribute %s - Cannot locate value for rowID '%v'", a.SourceName, id)
+
+	if a.MappingStrategy != "StringEnum" {
+		return 0, fmt.Errorf("GetValueForID attribute %s is not a StringEnum", a.FieldName)
+	}
+	lookupName := a.Parent.Name + SEP + a.FieldName + ".StringEnum"
+	x, err := a.Parent.kvStore.Items(lookupName, reflect.String, reflect.Uint64)
+	if err != nil {
+		return nil, fmt.Errorf("ERROR: Cannot open enum for table %s, field %s. [%v]", a.Parent.Name,
+			a.FieldName, err)
+	}
+	for kk, vv := range x {
+		k := kk.(string)
+		v := vv.(uint64)
+		a.reverseMap[v] = k
+	}
+	if v, ok := a.reverseMap[id]; ok { // Try again
+		return v, nil
+	}
+	return 0, fmt.Errorf("Attribute %s - Cannot locate value for rowID '%v'", a.FieldName, id)
 }
 
 // Transform - Perform a tranformation of a value (optional)

@@ -1,13 +1,8 @@
 package core
 
 import (
+	"encoding/binary"
 	"fmt"
-	"github.com/araddon/dateparse"
-	"github.com/disney/quanta/client"
-	"github.com/disney/quanta/shared"
-	"github.com/hashicorp/consul/api"
-	"github.com/json-iterator/go"
-	"github.com/xitongsys/parquet-go/reader"
 	"log"
 	"reflect"
 	"regexp"
@@ -16,6 +11,12 @@ import (
 	"sync"
 	"time"
 	"unsafe"
+	"github.com/araddon/dateparse"
+	"github.com/disney/quanta/client"
+	"github.com/disney/quanta/shared"
+	"github.com/hashicorp/consul/api"
+	"github.com/json-iterator/go"
+	"github.com/xitongsys/parquet-go/reader"
 )
 
 var (
@@ -27,6 +28,8 @@ const (
 	ifDelim         = "/"
 	primaryKey      = "P"
 	secondaryKey    = "S"
+	julianDayOfEpoch int64 = 2440588
+	microsPerDay     int64 = 3600 * 24 * 1000 * 1000
 )
 
 // Connection - State for session (non-threadsafe)
@@ -357,6 +360,13 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 					if str == "" {
 						return nil, nil, fmt.Errorf("for field [%s], source [%s] is required", v.FieldName, pqColPath)
 					}
+				}
+			}
+			if v.Type == "DateTime" {
+				str, ok := vals[0].(string)
+				if ok && len(str) == 12 {  // Handle INT96
+				    ts := INT96ToTime(str)
+					vals[0] = ts.Format(time.RFC3339)
 				}
 			}
 			retVals[i] = vals[0]
@@ -789,4 +799,29 @@ func readColumnByPath(path string, line []byte) []interface{} {
 		return []interface{}{val.GetInterface()}
 	}
 	return []interface{}{val.GetInterface()}
+}
+
+
+func toJulianDay(t time.Time) (int32, int64) {
+	utc := t.UTC()
+	nanos := utc.UnixNano()
+	micros := nanos / time.Microsecond.Nanoseconds()
+
+	julianUs := micros + julianDayOfEpoch*microsPerDay
+	days := int32(julianUs / microsPerDay)
+	us := (julianUs % microsPerDay) * 1000
+	return days, us
+}
+
+func fromJulianDay(days int32, nanos int64) time.Time {
+	nanos = ((int64(days)-julianDayOfEpoch)*microsPerDay + nanos/1000) * 1000
+	sec, nsec := nanos/time.Second.Nanoseconds(), nanos%time.Second.Nanoseconds()
+	t := time.Unix(sec, nsec)
+	return t.UTC()
+}
+
+func INT96ToTime(int96 string) time.Time {
+	nanos := binary.LittleEndian.Uint64([]byte(int96[:8]))
+	days := binary.LittleEndian.Uint32([]byte(int96[8:]))
+	return fromJulianDay(int32(days), int64(nanos))
 }

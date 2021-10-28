@@ -46,6 +46,7 @@ type Main struct {
 	Port         int
 	ConsulAddr   string
 	ConsulClient *api.Client
+	ShardCount   int
 	lock         *api.Lock
 	conns        []*core.Connection
 	consumer     *consumer.Consumer
@@ -93,12 +94,11 @@ func main() {
 
 	var err error
 
-	if err := main.Init(); err != nil {
+	if main.ShardCount, err = main.Init(); err != nil {
 		log.Fatal(err)
 	}
 
 	msgChan := make(chan *consumer.Record, main.BufferSize)
-	main.conns = make([]*core.Connection, runtime.NumCPU())
 
 	var ticker *time.Ticker
 	ticker = main.printStats()
@@ -117,7 +117,14 @@ func main() {
 	}()
 
 	// Spin up workers
-	for n := 0; n < runtime.NumCPU(); n++ {
+    workers := runtime.NumCPU()
+    if workers > main.ShardCount {
+		workers = main.ShardCount
+	}
+	log.Printf("Spinning up %d worker threads.  CPUs = %d, Shard count = %d.", workers, runtime.NumCPU(),
+		main.ShardCount)
+	main.conns = make([]*core.Connection, workers)
+	for n := 0; n < workers; n++ {
 		go func(i int) {
 			var err error
 			main.conns[i], err = core.OpenConnection("", main.Index, true,
@@ -168,13 +175,13 @@ func exitErrorf(msg string, args ...interface{}) {
 
 // Init function initilizations loader.
 // Establishes session with bitmap server and Kinesis
-func (m *Main) Init() error {
+func (m *Main) Init() (int, error) {
 
 	var err error
 
 	m.ConsulClient, err = api.NewClient(&api.Config{Address: m.ConsulAddr})
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	sess, errx := session.NewSession(&aws.Config{
@@ -182,15 +189,17 @@ func (m *Main) Init() error {
 	})
 
 	if errx != nil {
-		return errx
+		return 0, errx
 	}
 
 	kc := kinesis.New(sess)
 	streamName := aws.String(m.Stream)
-	_, err = kc.DescribeStream(&kinesis.DescribeStreamInput{StreamName: streamName})
+	shout, err := kc.ListShards(&kinesis.ListShardsInput{StreamName: streamName})
 	if err != nil {
-		return err
+		return 0, err
 	}
+    shardCount := len(shout.Shards)
+
 
 	//var counter = expvar.NewMap("counters")
 
@@ -200,11 +209,11 @@ func (m *Main) Init() error {
 		//consumer.WithCounter(counter),
 	)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	log.Printf("Created consumer. ")
-	return nil
+	return shardCount, nil
 }
 
 // printStats outputs to Log current status of Kinesis consumer

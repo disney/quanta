@@ -15,6 +15,9 @@ func ToAvroSchema(table *BasicTable) avro.Schema {
 
 	fields := make([]*avro.Field, 0)
 	for _, v := range table.Attributes {
+		if v.SourceName == "" {
+			continue
+		}
 		name := reg.ReplaceAllString(v.SourceName, "")
 		var field *avro.Field
 		switch TypeFromString(v.Type) {

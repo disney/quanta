@@ -3,6 +3,12 @@ package core
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/araddon/dateparse"
+	"github.com/disney/quanta/client"
+	"github.com/disney/quanta/shared"
+	"github.com/hashicorp/consul/api"
+	"github.com/json-iterator/go"
+	"github.com/xitongsys/parquet-go/reader"
 	"log"
 	"reflect"
 	"regexp"
@@ -11,12 +17,6 @@ import (
 	"sync"
 	"time"
 	"unsafe"
-	"github.com/araddon/dateparse"
-	"github.com/disney/quanta/client"
-	"github.com/disney/quanta/shared"
-	"github.com/hashicorp/consul/api"
-	"github.com/json-iterator/go"
-	"github.com/xitongsys/parquet-go/reader"
 )
 
 var (
@@ -24,10 +24,10 @@ var (
 )
 
 const (
-	reservationSize = 1000
-	ifDelim         = "/"
-	primaryKey      = "P"
-	secondaryKey    = "S"
+	reservationSize        = 1000
+	ifDelim                = "/"
+	primaryKey             = "P"
+	secondaryKey           = "S"
 	julianDayOfEpoch int64 = 2440588
 	microsPerDay     int64 = 3600 * 24 * 1000 * 1000
 )
@@ -307,6 +307,12 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 	isChild bool) ([]interface{}, []string, error) {
 
 	if v.SourceName == "" {
+		if v.DefaultValue == "now()" && (v.Type == "Date" || v.Type == "DateTime") {
+			pqColPaths := []string{""}
+			retVals := make([]interface{}, 0)
+			retVals = append(retVals, fmt.Sprintf("%v", time.Now().UTC()))
+			return retVals, pqColPaths, nil
+		}
 		return nil, nil, fmt.Errorf("readColumn: attribute sourceName is empty for %s", v.FieldName)
 	}
 	// Compound foreighn keys are comprised of multiple source references separated by +
@@ -349,6 +355,16 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 				return nil, nil, fmt.Errorf("Parquet reader error for %s [%v]", pqColPath, err)
 			}
 			s.BytesRead += int(unsafe.Sizeof(vals))
+			if v.DefaultValue == "now()" && (v.Type == "Date" || v.Type == "DateTime") {
+				if len(vals) == 0 {
+					vals = append(vals, []string{""})
+				}
+				if str, ok := vals[0].(string); ok {
+					if str == "" {
+						vals[0] = fmt.Sprintf("%v", time.Now().UTC())
+					}
+				}
+			}
 			if len(vals) == 0 || (len(vals) == 1 && vals[0] == nil) {
 				if !v.Required {
 					return nil, nil, nil
@@ -364,8 +380,8 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 			}
 			if v.Type == "DateTime" {
 				str, ok := vals[0].(string)
-				if ok && len(str) == 12 {  // Handle INT96
-				    ts := INT96ToTime(str)
+				if ok && len(str) == 12 { // Handle INT96
+					ts := INT96ToTime(str)
 					vals[0] = ts.Format(time.RFC3339)
 				}
 			}
@@ -800,7 +816,6 @@ func readColumnByPath(path string, line []byte) []interface{} {
 	}
 	return []interface{}{val.GetInterface()}
 }
-
 
 func toJulianDay(t time.Time) (int32, int64) {
 	utc := t.UTC()

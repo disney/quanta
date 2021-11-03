@@ -377,7 +377,8 @@ func (m *BitmapIndex) updateBitmapCache(f *BitmapFragment) {
 		//Handle exclusive "updates"
 		m.clearAllRows(f.IndexName, f.FieldName, f.Time.UnixNano(), newBm.Bits)
 	}
-	if _, ok := m.bitmapCache[f.IndexName][f.FieldName][rowID][f.Time.UnixNano()]; !ok && f.IsUpdate {
+	if _, ok := m.bitmapCache[f.IndexName][f.FieldName][rowID][f.Time.UnixNano()]; !ok &&
+		f.IsUpdate && m.EndPoint.Port != 0 {
 		// Silently ignore attempts to update data not in local cache
 		m.bitmapCacheLock.Unlock()
 		return
@@ -537,6 +538,7 @@ func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 	}
 }
 
+// Truncate - Truncate the in-memory data cache for a given index
 func (m *BitmapIndex) Truncate(index string) {
 
 	m.bitmapCacheLock.Lock()

@@ -1,6 +1,7 @@
 package test
 
 import (
+"fmt"
 	"database/sql"
 	"log"
 	"strings"
@@ -136,6 +137,26 @@ func (suite *QuantaTestSuite) runQuery(q string) ([]string, []string, error) {
 	}
 	log.Println("")
 	return results, cols, nil
+}
+
+func (suite *QuantaTestSuite) runDML(q string) (error) {
+
+	// Connect using GoLang database/sql driver.
+	db, err := sql.Open("qlbridge", "quanta")
+	defer db.Close()
+	if err != nil {
+		return err
+	}
+
+	// Set user id in session
+	setter := "set @userid = 'USER001'"
+	_, err = db.Exec(setter)
+	assert.NoError(suite.T(), err)
+
+	log.Printf("EXECUTING DML: %v", q)
+	_, err = db.Exec(q)
+	assert.NoError(suite.T(), err)
+	return  nil
 }
 
 // In order for 'go test' to run this suite, we need to create
@@ -443,6 +464,48 @@ func (suite *QuantaTestSuite) TestZDropTables() {
 	assert.Nil(suite.T(), err)
 	err = suite.store.DeleteIndicesWithPrefix("cities", true)
 	assert.Nil(suite.T(), err)
+}
+
+func (suite *QuantaTestSuite) TestXDML1Insert() {
+	err := suite.runDML("insert into dmltest (name, age, gender) values ('Tom', 20, 'M')")
+	assert.Nil(suite.T(), err)
+	results, _, err2 := suite.runQuery("select count(*) from dmltest")
+	assert.NoError(suite.T(), err2)
+	suite.Equal("1", results[0])
+}
+
+func (suite *QuantaTestSuite) TestXDML2Update() {
+	results, _, err := suite.runQuery("select date, name, age, gender from dmltest")
+	assert.Nil(suite.T(), err)
+    values := strings.Split(results[0], ",")
+    qry := fmt.Sprintf("select count(*) from dmltest where date = '%s' and name = '%s'", values[0], values[1])
+	results, _, err2 := suite.runQuery(qry)
+	assert.NoError(suite.T(), err2)
+	suite.Equal("1", results[0])
+    upd := fmt.Sprintf("update dmltest set age = 21, gender = 'U' where date = '%s' and name = '%s'", values[0], values[1])
+	err = suite.runDML(upd)
+	assert.Nil(suite.T(), err)
+	results, _, err = suite.runQuery("select date, name, age, gender from dmltest")
+	assert.Nil(suite.T(), err)
+	suite.Equal(1, len(results))
+    values = strings.Split(results[0], ",")
+	suite.Equal(4, len(values))
+	suite.Equal("21", strings.TrimSpace(values[2]))
+	suite.Equal("U", strings.TrimSpace(values[3]))
+}
+
+func (suite *QuantaTestSuite) TestXDML3Delete() {
+	results, _, err := suite.runQuery("select date, name, age, gender from dmltest")
+	assert.Nil(suite.T(), err)
+	suite.Equal(1, len(results))
+    values := strings.Split(results[0], ",")
+    upd := fmt.Sprintf("delete from dmltest where date = '%s' and name = '%s'", values[0], values[1])
+	err = suite.runDML(upd)
+	assert.Nil(suite.T(), err)
+    qry := fmt.Sprintf("select count(*) from dmltest where date = '%s' and name = '%s'", values[0], values[1])
+	results, _, err2 := suite.runQuery(qry)
+	assert.NoError(suite.T(), err2)
+	suite.Equal("0", results[0])
 }
 
 // SELECT INTO AWS-S3

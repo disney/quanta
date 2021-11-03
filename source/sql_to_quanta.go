@@ -102,39 +102,6 @@ func (m *SQLToQuanta) ResolveField(name string) (field *core.Attribute, isBSI bo
 	return
 }
 
-// Returns a set/clear mutate query for an equals query against a field
-/*
-func (m *SQLToQuanta) Mutate(set bool, name string, v interface{},
-        c *core.Connection) (*pcli.PQLBaseQuery, error) {
-
-    if f, rangeType, isTimeSeries, err := m.Field(name); err == nil {
-        rowID, err := c.MapValue(name, v, false)
-        if err != nil {
-            return nil, err
-        }
-        if rangeType {
-            if set {
-                return f.SetIntValue(c.CurrentColumnID, int(rowID)), nil  // RowID is really the value
-            } else {
-                return f.SetIntValue(c.CurrentColumnID, 0), nil  // Is this correct?
-            }
-        } else {
-            if set {
-                if isTimeSeries {
-                     return f.SetTimestamp(uint64(rowID), c.CurrentColumnID, c.CurrentTimestamp), nil
-                } else {
-                     return f.Set(uint64(rowID), c.CurrentColumnID), nil
-                }
-            } else {
-                 return f.Clear(uint64(rowID), c.CurrentColumnID), nil
-            }
-        }
-    } else {
-        return nil, err
-    }
-}
-*/
-
 // WalkSourceSelect An interface implemented by this connection allowing the planner
 // to push down as much logic into this source as possible
 func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (plan.Task, error) {
@@ -585,9 +552,8 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 		if !ok {
 			u.Warnf("not ok: %v  l:%v  r:%v", node, lhval, rhval)
 			return nil, fmt.Errorf("could not evaluate: %v", node.String())
-		} else {
-			rhval = val
 		}
+		rhval = val
 	}
 	if isLident && isRident {
 		// comparison of left/right isn't possible with Quanta
@@ -617,6 +583,30 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 					}
 					if isBSI {
 						q.SetBSIPredicate(f.Parent.Name, f.FieldName, "EQ", int64(rowID))
+						tbuf, found := m.conn.TableBuffers[f.Parent.Name]
+						if !found {
+							err := fmt.Errorf("table %s not open", f.Parent.Name)
+							u.Errorf(err.Error())
+							return nil, err
+						}
+						if tbuf.PKAttributes[0].FieldName == f.FieldName {
+							loc, _ := time.LoadLocation("Local")
+							if tbuf.Table.TimeQuantumType != "" && (m.startDate == "" || m.endDate == "") {
+								ts, err := dateparse.ParseIn(rhval.ToString(), loc)
+								if err != nil {
+									err := fmt.Errorf("cannot parse value '%v' - %v", rhval, err)
+									u.Errorf(err.Error())
+									return nil, err
+								}
+								if m.startDate == "" {
+									m.startDate = ts.Format(shared.YMDHTimeFmt)
+								}
+								if m.endDate == "" {
+									end := ts.AddDate(0, 0, 1)
+									m.endDate = end.Format(shared.YMDHTimeFmt)
+								}
+							}
+						}
 					} else {
 						q.SetBitmapPredicate(f.Parent.Name, f.FieldName, rowID)
 					}
@@ -1281,7 +1271,6 @@ func (m *SQLToQuanta) CreateMutator(pc interface{}) (schema.ConnMutator, error) 
 // PatchWhere - Handle SQL updates
 func (m *SQLToQuanta) PatchWhere(ctx context.Context, where expr.Node, patch interface{}) (int64, error) {
 
-	// Just creating a dummy query that will be thrown away.  Just need start/end dates.
 	m.q = shared.NewBitmapQuery()
 	frag := m.q.NewQueryFragment()
 	m.startDate = ""
@@ -1307,17 +1296,18 @@ func (m *SQLToQuanta) PatchWhere(ctx context.Context, where expr.Node, patch int
 		end := time.Now().AddDate(0, 0, 1)
 		m.endDate = end.Format(shared.YMDHTimeFmt)
 	}
-	var fromTime, toTime time.Time
-	table := m.conn.TableBuffers[m.tbl.Name].Table
-	var timeFmt = shared.YMDHTimeFmt
-	if table.TimeQuantumType == "YMD" {
-		timeFmt = shared.YMDTimeFmt
+
+	m.q.FromTime = m.startDate
+	m.q.ToTime = m.endDate
+
+	response, err := m.conn.Client.Query(m.q)
+	if err != nil {
+		return 0, fmt.Errorf("Update query failed - %v", err)
 	}
-	if from, err := time.Parse(timeFmt, m.startDate); err == nil {
-		fromTime = from
-	}
-	if to, err := time.Parse(timeFmt, m.endDate); err == nil {
-		toTime = to
+
+	results := response.Results.ToArray()
+	if len(results) != 1 {
+		return 0, fmt.Errorf("expecting 1 result from update query but got %d", response.Count)
 	}
 
 	valueMap := make(map[string]*rel.ValueColumn)
@@ -1325,34 +1315,17 @@ func (m *SQLToQuanta) PatchWhere(ctx context.Context, where expr.Node, patch int
 		valueMap[k] = &rel.ValueColumn{Value: value.NewValue(v)}
 	}
 
-	switch n := where.(type) {
-	case *expr.BinaryNode:
-		if len(n.Args) != 2 {
-			u.Warnf("PATCH need more args? %#v", n.Args)
-			return 0, nil
-		}
-		in, ok := n.Args[0].(*expr.BinaryNode)
-		if ok {
-			key := datasource.KeyFromWhere(in)
-			if key != nil {
-				return m.updateRow(key, valueMap, fromTime, toTime)
-			}
-			u.Warnf("Cannot parse key from %v", n.Args[0])
-			return 0, nil
-		}
-		in, ok = n.Args[1].(*expr.BinaryNode)
-		if ok {
-			key := datasource.KeyFromWhere(in)
-			if key != nil {
-				return m.updateRow(key, valueMap, fromTime, toTime)
-			}
-		}
-		u.Warnf("Cannot parse key from %v", n.Args[1])
-		return 0, nil
-	default:
-		u.Warnf("not supported node type? %#v", n)
+	var timeFmt = shared.YMDHTimeFmt
+	var partition time.Time
+	table := m.conn.TableBuffers[m.tbl.Name].Table
+	if table.TimeQuantumType == "YMD" {
+		timeFmt = shared.YMDTimeFmt
 	}
-	return 0, nil
+	if from, err := time.Parse(timeFmt, m.startDate); err == nil {
+		partition = from
+	}
+
+	return m.updateRow(m.tbl.Name, results[0], valueMap, partition)
 }
 
 // Put Interface for inserts.  Updates are handled by PatchWhere
@@ -1382,6 +1355,8 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 
 	// Everything from here on is an INSERT
 	var row []driver.Value
+	var vMap map[string]interface{} = make(map[string]interface{})
+	var colID uint64 = 0
 	colNames := make(map[string]int, len(m.tbl.Fields))
 
 	for i, f := range m.tbl.Fields {
@@ -1409,6 +1384,7 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 						switch val := row[i].(type) {
 						case string, []byte, int, int64, bool, time.Time:
 							curRow[idx] = val
+							vMap[colName] = val
 						case []value.Value:
 							switch f.ValueType() {
 							case value.StringsType:
@@ -1445,28 +1421,17 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 					if a.Required && a.DefaultValue == "" {
 						return nil, fmt.Errorf("value not provided for required column %s", f.Name)
 					}
-					if a.DefaultValue == "" {
-						continue
-					}
-					if n, err := expr.ParseExpression(a.DefaultValue); err == nil {
-						if v, ok := vm.Eval(nil, n); ok {
-							curRow[j] = v.Value()
-						}
-					} else {
-						return nil,
-							fmt.Errorf("can evaluate defaultValue expression '%v' on column %s",
-								a.DefaultValue, f.Name)
-					}
+					// The actual default value will be populated inside PutRow()
 				} else {
 					// If attribute contains columnID then we won't have to allocate one.
 					if a.ColumnID {
 						switch val := curRow[j].(type) {
 						case uint64:
-							tbuf.CurrentColumnID = curRow[j].(uint64)
+							colID = curRow[j].(uint64)
 						case int64:
-							tbuf.CurrentColumnID = uint64(curRow[j].(int64))
+							colID = uint64(curRow[j].(int64))
 						case int:
-							tbuf.CurrentColumnID = uint64(curRow[j].(int))
+							colID = uint64(curRow[j].(int))
 						default:
 							return nil, fmt.Errorf("column %s contains invalid type %T for columnID",
 								f.Name, val)
@@ -1484,50 +1449,10 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 	}
 
 	// Begin critical section
-
-	// Generate columnId for insert.
-	/*
-		var err error
-		if tbuf.CurrentColumnID == 0 {
-			if err = table.Lock(); err != nil {
-				//tbuf.CurrentColumnID, err = m.conn.AllocateColumnID(m.tbl.Name)
-			}
-			if err2 := table.Unlock(); err2 != nil {
-				u.Errorf("error during Unlock() - %v", err2)
-				return nil, err2
-			}
-		}
-		if err != nil {
-			u.Errorf("error allocating new column (row) ID - %v", err)
-			return nil, err
-		}
-	*/
-
-	/*
-	   for i, v := range curRow {
-	       if a, err := table.GetAttribute(m.tbl.Fields[i].Name); err == nil {
-	           if !a.SkipIndex {
-	               if _, err = a.MapValue(table.Name, v, m.conn); err != nil {
-	                   return nil, fmt.Errorf("MapValue - Cannot set value %v on column %v - %v",
-	                       v,  m.tbl.Fields[i].Name, err)
-	               }
-	           }
-	           if err2 := m.conn.SetAttributeValueInRowBuf(a, v); err2 != nil {
-	               return nil,
-	                   fmt.Errorf("SetAttributeValueInRowBuf - Cannot set value %v on column %v - %v",
-	                   v, m.tbl.Fields[i].Name, err2)
-	           }
-	       } else {
-	           return nil, fmt.Errorf("cannot locate column %s\n", m.tbl.Fields[i].Name)
-	       }
-	   }
-
-	   if !table.NoBackingStore {
-	       if err = m.conn.PutRowBuf(table.Name); err != nil {
-	           return nil, err
-	       }
-	   }
-	*/
+	err := m.conn.PutRow(table.Name, vMap, colID)
+	if err != nil {
+		return nil, err
+	}
 
 	newKey := datasource.NewKeyCol("id", "fixme")
 	m.conn.Flush()
@@ -1536,133 +1461,30 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 	return newKey, nil
 }
 
-func (m *SQLToQuanta) updateRow(key schema.Key, updValueMap map[string]*rel.ValueColumn,
-	fromTime, toTime time.Time) (int64, error) {
+// Call Client.Update - TODO, This fuctionality should be merged with PutRow()
+func (m *SQLToQuanta) updateRow(table string, columnID uint64, updValueMap map[string]*rel.ValueColumn,
+	timePartition time.Time) (int64, error) {
 
-	/*
-	   var keyCol string
-	   var keyValue value.Value
-	   switch q := key.(type) {
-	       case datasource.KeyCol:
-	           keyCol = q.Name
-	           switch val := q.Val.(type) {
-	           case string, []byte, int, int64, bool, time.Time:
-	               keyValue = value.NewValue(val)
-	           case float64:
-	               keyValue = value.NewValue(int64(val))
-	           default:
-	               u.Warnf("unsupported conversion: %T  %v", val, val)
-	           }
-	       default:
-	           return 0, fmt.Errorf("this Key type %v is not supported", q)
-	   }
-
-	   // Begin critical section
-
-	   // Check to see if column ID can just be pulled from the key
-	   table := m.conn.TableBuffers[m.tbl.Name].Table
-	   var columnID uint64
-	   if attr, err := table.GetAttribute(keyCol); err != nil {
-	       return 0, err
-	   } else {
-	       if attr.ColumnID {
-	           switch val := keyValue.Value().(type) {
-	           case uint64:
-	               columnID = keyValue.Value().(uint64)
-	           case int64:
-	               columnID = uint64(keyValue.Value().(int64))
-	           case int:
-	               columnID = uint64(keyValue.Value().(int))
-	           default:
-	               return 0, fmt.Errorf("column %s contains invalid type %T for columnID",
-	                   keyCol, val)
-	           }
-	       } else {
-	           //TODO: Implement primary key processing with KV store to lookup column ID
-	       }
-
-	   }
-
-	   // OK got columnID, now retrieve row from backing store
-	   tbuf := m.conn.TableBuffers[m.tbl.Name]
-	   tbuf.CurrentColumnID = columnID
-	   var err error
-	   if !table.NoBackingStore {
-	       _, err = m.conn.GetRow(table.Name, columnID)
-	       if err != nil {
-	          return 0, fmt.Errorf("cannot get row from backing store for ColumnID %d - %v", columnID, err)
-	        }
-	   }
-
-	   // Iterate on 'SET' list creating Set/Clear/Value batch and update row buffer
-	   for _, a := range table.Attributes {
-	       vc, ok := updValueMap[a.FieldName]
-	       if !ok {
-	           continue
-	       }
-	       newV := vc.Value.Value()
-	       if newV != nil {
-	           if err = m.conn.SetAttributeValueInRowBuf(&a, newV); err != nil {
-	               return 0, fmt.Errorf("cannot set new value %v on column %v - %v", newV,
-	                   a.FieldName, err)
-	           }
-	       }
-	       if a.SkipIndex {
-	           continue
-	       }
-	       if err = m.Mutate(true, a.FieldName, newV, fromTime, toTime, m.conn); err != nil {
-	           return 0, fmt.Errorf("cannot set new value %v on column %v - %v", newV,
-	               a.FieldName, err)
-	       }
-	   }
-
-	   m.conn.Flush()
-
-	   // Update backing store if applicable
-	   if !table.NoBackingStore {
-	       if err = m.conn.PutRowBuf(table.Name); err != nil {
-	           return 0, fmt.Errorf("error putting row buffer during update - %v", err)
-	       }
-	   }
-	*/
-
-	return 1, nil
-
-	// End critical section
-}
-
-// Mutate - Handle mutation.
-func (m *SQLToQuanta) Mutate(set bool, name string, v interface{},
-	fromTime, toTime time.Time, c *core.Connection) error {
-
-	tbuf := m.conn.TableBuffers[m.tbl.Name]
-	table := tbuf.Table
-	a, err := table.GetAttribute(name)
-	if err != nil {
-		return err
+	tbuf, ok := m.conn.TableBuffers[table]
+	if !ok {
+		return 0, fmt.Errorf("table %s is not open for this session", table)
 	}
-	rowID, err := c.MapValue(table.Name, name, v, false)
-	if err != nil {
-		return err
-	}
-	tq := a.TimeQuantumType
-	if tq == "" && a.Parent.TimeQuantumType != "" {
-		tq = a.Parent.TimeQuantumType
-	}
-	yr, mn, da := fromTime.Date()
-	lookupTime := time.Date(yr, mn, da, 0, 0, 0, 0, time.UTC)
-	for lookupTime.Before(toTime) {
-		err = c.Client.Update(table.Name, name, tbuf.CurrentColumnID, int64(rowID), lookupTime)
+	for k, vc := range updValueMap {
+		a, err := tbuf.Table.GetAttribute(k)
 		if err != nil {
-			return err
+			return 0, fmt.Errorf("attribute %s.%s is not defined", table, k)
 		}
-		if tq == "YMD" || tq == "" {
-			lookupTime = lookupTime.AddDate(0, 0, 1)
-		} else if tq == "YMDH" {
-			lookupTime = lookupTime.Add(time.Hour)
+		rowID, err := a.MapValue(vc.Value.Value(), nil)
+		if err != nil {
+			return 0, err
+		}
+		err = m.conn.Client.Update(table, a.FieldName, columnID, int64(rowID), timePartition)
+		if err != nil {
+			return 0, err
 		}
 	}
-	return nil
+	m.conn.Flush()
+	return 1, nil
 }
 
 // PutMulti - Multiple put operation handler.

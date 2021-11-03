@@ -515,7 +515,14 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 					if shared.TypeFromString(v.Type) == shared.Date {
 						row[i] = t.Format("2006-01-02")
 					} else {
-						row[i] = t.Format("2006-01-02T15:04:05")
+						switch v.MappingStrategy {
+						case "SysSecBSI":
+							row[i] = t.Format(time.RFC3339)
+						case "SysMillisBSI":
+							row[i] = t.Format("2006-01-02T15:04:05.000Z")
+						default:
+							row[i] = t.Format(time.RFC3339Nano)
+						}
 					}
 				default:
 					row[i] = val

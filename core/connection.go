@@ -4,6 +4,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/araddon/dateparse"
+	"github.com/araddon/qlbridge/expr"
+	"github.com/araddon/qlbridge/value"
+	"github.com/araddon/qlbridge/vm"
 	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
@@ -307,10 +310,10 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 	isChild bool) ([]interface{}, []string, error) {
 
 	if v.SourceName == "" {
-		if v.DefaultValue == "now()" && (v.Type == "Date" || v.Type == "DateTime") {
-			pqColPaths := []string{""}
+		if v.DefaultValue != "" {
 			retVals := make([]interface{}, 0)
-			retVals = append(retVals, fmt.Sprintf("%v", time.Now().UTC()))
+			retVals = append(retVals, s.getDefaultValueForColumn(v))
+			pqColPaths := []string{""}
 			return retVals, pqColPaths, nil
 		}
 		return nil, nil, fmt.Errorf("readColumn: attribute sourceName is empty for %s", v.FieldName)
@@ -355,13 +358,13 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 				return nil, nil, fmt.Errorf("Parquet reader error for %s [%v]", pqColPath, err)
 			}
 			s.BytesRead += int(unsafe.Sizeof(vals))
-			if v.DefaultValue == "now()" && (v.Type == "Date" || v.Type == "DateTime") {
+			if v.DefaultValue != "" {
 				if len(vals) == 0 {
 					vals = append(vals, []string{""})
 				}
 				if str, ok := vals[0].(string); ok {
 					if str == "" {
-						vals[0] = fmt.Sprintf("%v", time.Now().UTC())
+						vals[0] = fmt.Sprintf("%v", s.getDefaultValueForColumn(v))
 					}
 				}
 			}
@@ -394,6 +397,18 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 		}
 	}
 	return retVals, pqColPaths, nil
+}
+
+// Get the defalue value for a column (can be an expression)
+func (s *Connection) getDefaultValueForColumn(a *Attribute) interface{} {
+
+	exprNode, _ := expr.ParseExpression(a.DefaultValue)
+	val, ok := vm.Eval(nil, exprNode)
+	if !ok {
+		// If can't be parsed and evaluated then use literally.  Is this ok?
+		val = value.NewValue(a.DefaultValue)
+	}
+	return fmt.Sprintf("%v", val.Value())
 }
 
 //
@@ -835,6 +850,7 @@ func fromJulianDay(days int32, nanos int64) time.Time {
 	return t.UTC()
 }
 
+// INT96ToTime - Handle parquet INT96 values.
 func INT96ToTime(int96 string) time.Time {
 	nanos := binary.LittleEndian.Uint64([]byte(int96[:8]))
 	days := binary.LittleEndian.Uint32([]byte(int96[8:]))

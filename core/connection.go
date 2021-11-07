@@ -45,6 +45,7 @@ type Connection struct {
 	Nested       bool
 	DateFilter   *time.Time // optional filter to only include records matching timestamp
 	BytesRead    int        // Bytes read for a row (record)
+	CreatedAt    time.Time
 	stateLock    sync.Mutex
 }
 
@@ -140,6 +141,7 @@ func OpenConnection(path, name string, nested bool, bufSize uint, port int,
 	s.KVStore = kvStore
 	s.Client = quanta.NewBitmapIndex(conn, 3000000)
 	s.Client.KVStore = s.KVStore
+	s.CreatedAt = time.Now().UTC()
 
 	return s, nil
 }

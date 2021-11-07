@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -112,6 +113,11 @@ func (m *QuantaSource) BorrowConnection(tableName string) *core.Connection {
 	cp := m.getPoolByTableName(tableName)
 	select {
 	case r := <-cp.pool:
+		if m.Since(time.Until(r.CreatedAt)) {
+			u.Debugf("pooled connection is stale after schema change, refreshing.")
+			r.CloseConnection()
+			r = m.NewConnection(tableName)
+		}
 		return r
 	default:
 		conn := m.NewConnection(tableName)

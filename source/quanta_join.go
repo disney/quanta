@@ -26,6 +26,8 @@ var (
 	_ exec.TaskRunner = (*JoinMerge)(nil)
 )
 
+// TODO: General cleanup.   Pass QuantaSource in so that core.Connection pooling is implemented.
+
 // JoinMerge - Scans 2 source tasks for rows, calls server side join transpose
 type JoinMerge struct {
 	*exec.TaskBase

@@ -1456,6 +1456,7 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 
 	newKey := datasource.NewKeyCol("id", "fixme")
 	m.conn.Flush()
+	m.s.ReturnConnection(table.Name, m.conn)
 
 	// End critical section
 	return newKey, nil
@@ -1463,6 +1464,7 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 
 // Call Client.Update - TODO, This fuctionality should be merged with PutRow()
 func (m *SQLToQuanta) updateRow(table string, columnID uint64, updValueMap map[string]*rel.ValueColumn,
+
 	timePartition time.Time) (int64, error) {
 
 	tbuf, ok := m.conn.TableBuffers[table]
@@ -1484,6 +1486,7 @@ func (m *SQLToQuanta) updateRow(table string, columnID uint64, updValueMap map[s
 		}
 	}
 	m.conn.Flush()
+	m.s.ReturnConnection(m.tbl.Name, m.conn)
 	return 1, nil
 }
 
@@ -1502,6 +1505,7 @@ func (m *SQLToQuanta) Delete(key driver.Value) (int, error) {
 //  - For where columns we can query
 //  - for others we might have to do a select -> delete
 func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, error) {
+
 	u.Debugf("In delete?  %v   %T", where, p)
 	pd, ok := p.(*plan.Delete)
 	if !ok {
@@ -1541,6 +1545,8 @@ func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, err
 	if err != nil {
 		return 0, err
 	}
+	m.conn.Flush()
+	m.s.ReturnConnection(m.q.GetRootIndex(), m.conn)
 
 	return int(response.Results.GetCardinality()), nil
 }

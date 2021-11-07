@@ -506,11 +506,13 @@ func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 	}
 
 	m.bsiCacheLock.Lock()
+/*
 	if _, ok := m.bsiCache[f.IndexName][f.FieldName][f.Time.UnixNano()]; !ok && f.IsUpdate {
 		// Silently ignore update attempts against values not already in cache.
 		m.bsiCacheLock.Unlock()
 		return
 	}
+*/
 	if _, ok := m.bsiCache[f.IndexName]; !ok {
 		m.bsiCache[f.IndexName] = make(map[string]map[int64]*BSIBitmap)
 	}

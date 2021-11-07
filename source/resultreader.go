@@ -60,7 +60,8 @@ func NewResultReader(conn *core.Connection, req *SQLToQuanta, q *shared.BitmapQu
 
 // Close the result reader.
 func (m *ResultReader) Close() error {
-	m.conn.CloseConnection()
+
+	m.sql.s.ReturnConnection(m.sql.tbl.Name, m.conn)
 	return nil
 }
 

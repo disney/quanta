@@ -116,11 +116,11 @@ func (m *QuantaSource) BorrowConnection(tableName string) *core.Connection {
 		if m.Since(time.Until(r.CreatedAt)) {
 			u.Debugf("pooled connection is stale after schema change, refreshing.")
 			r.CloseConnection()
-			r = m.NewConnection(tableName)
+			r = m.newConnection(tableName)
 		}
 		return r
 	default:
-		conn := m.NewConnection(tableName)
+		conn := m.newConnection(tableName)
 		if conn == nil {
 			panic("borrowConnection cannot open new connection")
 		}
@@ -139,7 +139,7 @@ func (m *QuantaSource) ReturnConnection(tableName string, conn *core.Connection)
 	return
 }
 
-func (m *QuantaSource) NewConnection(tableName string) *core.Connection {
+func (m *QuantaSource) newConnection(tableName string) *core.Connection {
 
 	conn, err := core.OpenConnection(m.baseDir, tableName, false, 0, m.servicePort, m.consulClient)
 	if err != nil {
@@ -170,7 +170,7 @@ func (m *QuantaSource) Open(tableName string) (schema.Conn, error) {
 
 	conn := m.BorrowConnection(tableName)
 	if conn == nil {
-		return nil, fmt.Errorf("Error opening connection for table %s.", tableName)
+		return nil, fmt.Errorf("error opening connection for table %s", tableName)
 	}
 
 	return NewSQLToQuanta(m, tbl, conn), nil
@@ -181,7 +181,7 @@ func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 
 	conn := m.BorrowConnection(table)
 	if conn == nil {
-		return nil, fmt.Errorf("Error opening connection for table %s.", table)
+		return nil, fmt.Errorf("error opening connection for table %s", table)
 	}
 	tb, found := conn.TableBuffers[table]
 	if !found {

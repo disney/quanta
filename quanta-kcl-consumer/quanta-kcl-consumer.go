@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	_ "github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -9,6 +10,7 @@ import (
 	"github.com/disney/quanta/shared"
 	"github.com/hamba/avro"
 	"github.com/hashicorp/consul/api"
+	"github.com/google/uuid"
 	cfg "github.com/vmware/vmware-go-kcl/clientlibrary/config"
 	kc "github.com/vmware/vmware-go-kcl/clientlibrary/interfaces"
 	"github.com/vmware/vmware-go-kcl/clientlibrary/metrics"
@@ -20,6 +22,7 @@ import (
 	"os/signal"
 	"runtime"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -33,8 +36,7 @@ var (
 // Exit Codes
 const (
 	Success       = 0
-	appName       = "quanta"
-	workerID      = "test-worker"
+	appName       = "Quanta"
 	consumerName  = "enhanced-fan-out-consumer"
 	metricsSystem = "cloudwatch"
 )
@@ -52,6 +54,7 @@ type Main struct {
 	ConsulAddr   string
 	ConsulClient *api.Client
 	ShardCount   int
+	WorkerID     string
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -59,6 +62,11 @@ func NewMain() *Main {
 	m := &Main{
 		totalRecs: &Counter{},
 	}
+	name, err := os.Hostname()
+	if err != nil {
+		panic(err)
+	}
+	m.WorkerID = fmt.Sprintf("%s:%s", name, uuid.New().String())
 	return m
 }
 
@@ -75,7 +83,7 @@ func main() {
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 
-	core.InitLogging("WARN", *environment, "Kinesis-Consumer", Version, "Quanta")
+	core.InitLogging("WARN", *environment, "Kinesis-Consumer", Version, appName)
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -93,10 +101,11 @@ func main() {
 	log.Printf("Buffer size %d.", main.BufferSize)
 	log.Printf("Service port %d.", main.Port)
 	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
+	log.Printf("KCL Worker ID %s\n", main.WorkerID)
 
-	var err error
 
-	if main.ShardCount, err = main.Init(); err != nil {
+	worker, err := main.Init()
+	if err != nil {
 		log.Fatal(err)
 	}
 
@@ -104,31 +113,33 @@ func main() {
 	ticker = main.printStats()
 
 	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
+	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		for range c {
 			log.Printf("Interrupted,  Bytes processed: %s, Records: %v", core.Bytes(main.BytesProcessed()),
 				main.totalRecs.Get())
 			ticker.Stop()
+    		worker.Shutdown()
 			os.Exit(0)
 		}
 	}()
 
 	<-c
+    worker.Shutdown()
 }
 
 // Init function initilizations loader.
 // Establishes session with bitmap server and Kinesis
-func (m *Main) Init() (int, error) {
+func (m *Main) Init() (*wk.Worker, error) {
 
 	var err error
 
 	m.ConsulClient, err = api.NewClient(&api.Config{Address: m.ConsulAddr})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	kclConfig := cfg.NewKinesisClientLibConfig(appName, m.Stream, m.Region, workerID).
+	kclConfig := cfg.NewKinesisClientLibConfig(appName, m.Stream, m.Region, m.WorkerID).
 		WithInitialPositionInStream(cfg.LATEST).
 		WithLeaseStealing(true).
 		WithMaxRecords(100).
@@ -145,21 +156,21 @@ func (m *Main) Init() (int, error) {
 	})
 
 	if errx != nil {
-		return 0, errx
+		return nil, errx
 	}
 	kc := kinesis.New(sess)
 	streamName := aws.String(m.Stream)
 	shout, err := kc.ListShards(&kinesis.ListShardsInput{StreamName: streamName})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	shardCount := len(shout.Shards)
+	m.ShardCount = len(shout.Shards)
 
 	worker := wk.NewWorker(recordProcessorFactory(m), kclConfig)
 	worker.Start()
 
 	log.Printf("Created worker. ")
-	return shardCount, nil
+	return worker, nil
 }
 
 func getMetricsConfig(kclConfig *cfg.KinesisClientLibConfiguration, service string) metrics.MonitoringService {
@@ -303,8 +314,8 @@ func (p *quantaRecordProcessor) ProcessRecords(input *kc.ProcessRecordsInput) {
 	// because de-aggregated records share the same sequence number.
 	lastRecordSequenceNumber := input.Records[len(input.Records)-1].SequenceNumber
 	// Calculate the time taken from polling records and delivering to record processor for a batch.
-	diff := input.CacheExitTime.Sub(*input.CacheEntryTime)
-	log.Printf("Checkpoint progress at: %v,  MillisBehindLatest = %v, KCLProcessTime = %v", lastRecordSequenceNumber, input.MillisBehindLatest, diff)
+	//diff := input.CacheExitTime.Sub(*input.CacheEntryTime)
+	//log.Printf("Checkpoint progress at: %v,  MillisBehindLatest = %v, KCLProcessTime = %v", lastRecordSequenceNumber, input.MillisBehindLatest, diff)
 	input.Checkpointer.Checkpoint(lastRecordSequenceNumber)
 	p.Connection.Flush()
 }

@@ -18,6 +18,7 @@ require (
 	github.com/confluentinc/confluent-kafka-go v1.4.2 // indirect
 	github.com/glycerine/go-unsnap-stream v0.0.0-20190901134440-81cf024a9e0a // indirect
 	github.com/golang/protobuf v1.5.2
+	github.com/google/uuid v1.3.0
 	github.com/hamba/avro v1.6.0
 	github.com/harlow/kinesis-consumer v0.3.5
 	github.com/hashicorp/consul/api v1.10.1
@@ -41,7 +42,7 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/stvp/rendezvous v0.0.0-20151118195501-67b5f26b3e18
 	github.com/tinylib/msgp v1.1.2 // indirect
-	github.com/vmware/vmware-go-kcl v1.5.0 // indirect
+	github.com/vmware/vmware-go-kcl v1.5.0
 	github.com/willf/bitset v1.1.11 // indirect
 	github.com/xitongsys/parquet-go v1.5.5-0.20201031234703-4d9f11317375
 	//github.com/xitongsys/parquet-go v1.6.1

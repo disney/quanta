@@ -318,7 +318,8 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 			pqColPaths := []string{""}
 			return retVals, pqColPaths, nil
 		}
-		return nil, nil, fmt.Errorf("readColumn: attribute sourceName is empty for %s", v.FieldName)
+		//return nil, nil, fmt.Errorf("readColumn: attribute sourceName is empty for %s", v.FieldName)
+		return nil, []string{""}, nil
 	}
 	// Compound foreighn keys are comprised of multiple source references separated by +
 	sources := strings.Split(v.SourceName, "+")

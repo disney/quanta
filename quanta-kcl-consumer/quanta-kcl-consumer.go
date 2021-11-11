@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/araddon/qlbridge/expr/builtins"
 	"github.com/aws/aws-sdk-go/aws"
 	_ "github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -86,6 +87,7 @@ func main() {
 	core.InitLogging("WARN", *environment, "Kinesis-Consumer", Version, appName)
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
+	builtins.LoadAllBuiltins()
 
 	main := NewMain()
 	main.Stream = *stream
@@ -139,7 +141,7 @@ func (m *Main) Init() (*wk.Worker, error) {
 		return nil, err
 	}
 
-	kclConfig := cfg.NewKinesisClientLibConfig(appName, m.Stream, m.Region, m.WorkerID).
+	kclConfig := cfg.NewKinesisClientLibConfig(m.Index, m.Stream, m.Region, m.WorkerID).
 		WithInitialPositionInStream(cfg.LATEST).
 		WithLeaseStealing(true).
 		WithMaxRecords(100).

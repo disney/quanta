@@ -4,6 +4,7 @@ import (
 	"context"
 	//"expvar"
 	"fmt"
+	"github.com/araddon/qlbridge/expr/builtins"
 	"github.com/aws/aws-sdk-go/aws"
 	_ "github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -74,6 +75,8 @@ func main() {
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 
 	core.InitLogging("WARN", *environment, "Kinesis-Consumer", Version, "Quanta")
+
+    builtins.LoadAllBuiltins()
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 

@@ -1,0 +1,30 @@
+# quanta-producer within a Docker Container
+
+#FROM amd64/alpine:latest
+#FROM golang:1.13.1-alpine
+FROM frolvlad/alpine-glibc
+
+LABEL version="1.0.0" \
+  maintainer="Guy Molinari" \
+  maintainer.email="molinariguy@gmail.com" \
+  description="Builds Generic Docker image for use in production deployment of Quanta S3 Producer" \
+  repository="https://github.com/disney/quanta"
+
+# Update 
+RUN apk update
+RUN apk upgrade
+RUN apk add --no-cache --update alpine-sdk
+# clean apk cache
+RUN rm -rf /var/cache/apk/*
+
+COPY ./bin/quanta-s3-kinesis-producer /usr/bin/quanta-s3-kinesis-producer
+COPY ./Docker/producer_entrypoint.sh /usr/bin/entrypoint.sh
+
+RUN chmod 755 /usr/bin/quanta-s3-kinesis-producer
+RUN chmod 755 /usr/bin/entrypoint.sh
+
+#VOLUME /config
+
+ENTRYPOINT ["/usr/bin/entrypoint.sh"]
+
+

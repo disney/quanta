@@ -38,10 +38,15 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	RemoveContents("./testdata/index")
 
 	// Server side components already started and available in package level variables in harness.go
+	conn := quanta.NewDefaultConnection()
+	conn.ServicePort = 0
+	err = conn.Connect(nil)     // no consul
+	assert.NoError(suite.T(), err)
+
 
 	// load up vision test data (nested schema containing 3 separate tables)
-	suite.loadData("cities", "./testdata/us_cities.parquet")
-	suite.loadData("cityzip", "./testdata/us_cityzip.parquet")
+	suite.loadData("cities", "./testdata/us_cities.parquet", conn)
+	suite.loadData("cityzip", "./testdata/us_cityzip.parquet", conn)
 	// suite.loadData("nba", "./testdata/nba.parquet")
 
 	// load all of our built-in functions
@@ -54,11 +59,6 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err2)
 	schema.RegisterSourceAsSchema("quanta", src)
 
-	conn := quanta.NewDefaultConnection()
-	conn.ServicePort = 0
-	err = conn.Connect()
-	assert.NoError(suite.T(), err)
-
 	suite.store = quanta.NewKVStore(conn)
 	assert.NotNil(suite.T(), suite.store)
 
@@ -68,7 +68,7 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err)
 }
 
-func (suite *QuantaTestSuite) loadData(table, filePath string) error {
+func (suite *QuantaTestSuite) loadData(table, filePath string, conn *quanta.Conn) error {
 
 	fr, err := local.NewLocalFileReader(filePath)
 	assert.Nil(suite.T(), err)
@@ -83,20 +83,16 @@ func (suite *QuantaTestSuite) loadData(table, filePath string) error {
 		return err
 	}
 	num := int(pr.GetNumRows())
-
-	c, err := core.OpenConnection("./testdata/config", table, false, 0, 0, nil)
+	c, err := core.OpenSession("./testdata/config", table, false, conn)
 	assert.Nil(suite.T(), err)
 	assert.NotNil(suite.T(), c)
 
 	for i := 1; i <= num; i++ {
 		err := c.PutRow(table, pr, 0)
-		//if i % 10 == 0 {
-		//    log.Printf("Processing Row %d", i)
-		//}
 		assert.Nil(suite.T(), err)
 	}
 	c.Flush()
-	c.CloseConnection()
+	c.CloseSession()
 	return nil
 }
 

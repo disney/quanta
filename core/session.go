@@ -9,7 +9,7 @@ import (
 	"github.com/araddon/qlbridge/vm"
 	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/shared"
-	"github.com/hashicorp/consul/api"
+	_ "github.com/hashicorp/consul/api"
 	"github.com/json-iterator/go"
 	"github.com/xitongsys/parquet-go/reader"
 	"log"
@@ -35,8 +35,8 @@ const (
 	microsPerDay     int64 = 3600 * 24 * 1000 * 1000
 )
 
-// Connection - State for session (non-threadsafe)
-type Connection struct {
+// Session - State for session (non-threadsafe)
+type Session struct {
 	BasePath     string // path to schema directory
 	Client       *quanta.BitmapIndex
 	StringIndex  *quanta.StringSearch
@@ -86,23 +86,16 @@ func NewTableBuffer(table *Table) (*TableBuffer, error) {
 }
 
 //
-// OpenConnection - Creates a connected session to the underlying core.
+// OpenSession - Creates a connected session to the underlying core.
 // (This is intentionally not thread-safe for maximum throughput.)
 //
-func OpenConnection(path, name string, nested bool, bufSize uint, port int,
-	consul *api.Client) (*Connection, error) {
+func OpenSession(path, name string, nested bool, conn *quanta.Conn) (*Session, error) {
 
 	if name == "" {
 		return nil, fmt.Errorf("table name is nil")
 	}
 
-	conn := quanta.NewDefaultConnection()
-	conn.ServicePort = port
-	conn.Quorum = 3
-	if err := conn.Connect(); err != nil {
-		log.Fatal(err)
-	}
-
+	consul := conn.Consul
 	kvStore := quanta.NewKVStore(conn)
 
 	tableBuffers := make(map[string]*TableBuffer, 0)
@@ -125,7 +118,7 @@ func OpenConnection(path, name string, nested bool, bufSize uint, port int,
 				if tb, err := NewTableBuffer(parent); err == nil {
 					tableBuffers[fkTable] = tb
 				} else {
-					return nil, fmt.Errorf("OpenConnection error - %v", err)
+					return nil, fmt.Errorf("OpenSession error - %v", err)
 				}
 			}
 		}
@@ -134,9 +127,9 @@ func OpenConnection(path, name string, nested bool, bufSize uint, port int,
 	if tb, err := NewTableBuffer(tab); err == nil {
 		tableBuffers[name] = tb
 	} else {
-		return nil, fmt.Errorf("OpenConnection error - %v", err)
+		return nil, fmt.Errorf("OpenSession error - %v", err)
 	}
-	s := &Connection{BasePath: path, TableBuffers: tableBuffers, Nested: nested}
+	s := &Session{BasePath: path, TableBuffers: tableBuffers, Nested: nested}
 	s.StringIndex = quanta.NewStringSearch(conn, 1000)
 	s.KVStore = kvStore
 	s.Client = quanta.NewBitmapIndex(conn, 3000000)
@@ -147,7 +140,7 @@ func OpenConnection(path, name string, nested bool, bufSize uint, port int,
 }
 
 // SetDateFilter - Filter by date
-func (s *Connection) SetDateFilter(filter *time.Time) {
+func (s *Session) SetDateFilter(filter *time.Time) {
 	s.DateFilter = filter
 }
 
@@ -175,7 +168,7 @@ func recurseAndLoadTable(basePath string, kvStore *quanta.KVStore, tableBuffers 
 }
 
 // IsDriverForTables - Is this the driver table?
-func (s *Connection) IsDriverForTables(tables []string) bool {
+func (s *Session) IsDriverForTables(tables []string) bool {
 
 	for _, v := range tables {
 		if _, ok := s.TableBuffers[v]; !ok {
@@ -186,7 +179,7 @@ func (s *Connection) IsDriverForTables(tables []string) bool {
 }
 
 // PutRow - Entry point.  Load a row of data from source (Parquet/Kinesis/Kafka)
-func (s *Connection) PutRow(name string, row interface{}, providedColID uint64) error {
+func (s *Session) PutRow(name string, row interface{}, providedColID uint64) error {
 
 	s.ResetRowCache()
 	pqTablePath := "/"
@@ -204,7 +197,7 @@ func (s *Connection) PutRow(name string, row interface{}, providedColID uint64) 
 	return s.recursivePutRow(name, row, pqTablePath, providedColID, false)
 }
 
-func (s *Connection) recursivePutRow(name string, row interface{}, pqTablePath string, providedColID uint64,
+func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath string, providedColID uint64,
 	isChild bool) error {
 
 	tbuf, ok := s.TableBuffers[name]
@@ -308,7 +301,7 @@ func (s *Connection) recursivePutRow(name string, row interface{}, pqTablePath s
 }
 
 // This function ensures that each parquet column is read once and only once for each row
-func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribute,
+func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 	isChild bool) ([]interface{}, []string, error) {
 
 	if v.SourceName == "" {
@@ -321,20 +314,23 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 		//return nil, nil, fmt.Errorf("readColumn: attribute sourceName is empty for %s", v.FieldName)
 		return nil, []string{""}, nil
 	}
-	// Compound foreighn keys are comprised of multiple source references separated by +
+	// Compound foreign keys are comprised of multiple source references separated by +
 	sources := strings.Split(v.SourceName, "+")
 	pqColPaths := make([]string, len(sources))
 	retVals := make([]interface{}, len(sources))
 	for i, source := range sources {
-		pqColPath := fmt.Sprintf("%s.list.element.%s", pqTablePath, source)
-		if !isChild {
-			pqColPath = fmt.Sprintf("%s.%s", pqTablePath, source)
-		}
 		root := "/"
 		isParquet := false
+		pqColPath := source
 		if r, ok := row.(*reader.ParquetReader); ok {
 			root = r.SchemaHandler.GetRootExName()
 			isParquet = true
+		}
+		if isParquet {
+			pqColPath = fmt.Sprintf("%s.list.element.%s", pqTablePath, source)
+			if !isChild {
+				pqColPath = fmt.Sprintf("%s.%s", pqTablePath, source)
+			}
 		}
 		if isParquet && strings.HasPrefix(source, "/") {
 			pqColPath = fmt.Sprintf("%s.%s", root, source[1:])
@@ -351,9 +347,17 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 		if !found && !isParquet {
 			val, found = tbuf.rowCache[source[1:]]
 		}
-		if found {
+		if !isParquet {
+			if (found && v.Required && val == nil) || (!found && v.Required) {
+				return nil, nil, fmt.Errorf("field %s - %s is required", v.FieldName, source)
+			}
 			retVals[i] = val
 			continue
+		} else {
+			if found {
+				retVals[i] = val
+				continue
+			}
 		}
 		if r, ok := row.(*reader.ParquetReader); ok {
 			vals, _, _, err := r.ReadColumnByPath(pqColPath, 1)
@@ -403,7 +407,7 @@ func (s *Connection) readColumn(row interface{}, pqTablePath string, v *Attribut
 }
 
 // Get the defalue value for a column (can be an expression)
-func (s *Connection) getDefaultValueForColumn(a *Attribute) interface{} {
+func (s *Session) getDefaultValueForColumn(a *Attribute) interface{} {
 
 	exprNode, _ := expr.ParseExpression(a.DefaultValue)
 	val, ok := vm.Eval(nil, exprNode)
@@ -422,7 +426,7 @@ func (s *Connection) getDefaultValueForColumn(a *Attribute) interface{} {
 //
 // returns true if there are values to process.
 //
-func (s *Connection) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTablePath string,
+func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTablePath string,
 	providedColID uint64, isChild bool) (bool, error) {
 
 	if tbuf.Table.TimeQuantumType == "" {
@@ -563,7 +567,7 @@ func (s *Connection) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTab
 		}
 	} else {
 		if tbuf.Table.DisableDedup {
-			log.Printf("WARN: PK %s found in cache but dedup is disabled.  PK mapping error?", pkLookupVal.String())
+			//log.Printf("WARN: PK %s found in cache but dedup is disabled.  PK mapping error?", pkLookupVal.String())
 		}
 		tbuf.CurrentColumnID = lColID
 	}
@@ -571,6 +575,9 @@ func (s *Connection) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTab
 	// Map the value(s) and update table
 	//log.Printf("PK = %s [%v]", pk.FieldName, cval)
 	for i, v := range tbuf.CurrentPKValue {
+		if v == nil {
+			return false, fmt.Errorf("PK mapping error %s - nil value", pqColPaths[i])
+		}
 		if _, err := tbuf.PKAttributes[i].MapValue(v, s); err != nil {
 			return false, fmt.Errorf("PK mapping error %s - %v", pqColPaths[i], err)
 		}
@@ -580,7 +587,7 @@ func (s *Connection) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTab
 }
 
 // Handle Secondary Keys.  Create the index in backing store
-func (s *Connection) processAlternateKeys(tbuf *TableBuffer, row interface{}, pqTablePath string,
+func (s *Session) processAlternateKeys(tbuf *TableBuffer, row interface{}, pqTablePath string,
 	isChild bool) error {
 
 	pqColPaths := make([]string, len(tbuf.SKMap))
@@ -642,7 +649,7 @@ func (s *Connection) processAlternateKeys(tbuf *TableBuffer, row interface{}, pq
 	return nil
 }
 
-func (s *Connection) lookupColumnID(tbuf *TableBuffer, lookupVal, fkFieldSpec string) (uint64, bool, error) {
+func (s *Session) lookupColumnID(tbuf *TableBuffer, lookupVal, fkFieldSpec string) (uint64, bool, error) {
 
 	kvIndex := fmt.Sprintf("%s%s%s.PK", tbuf.Table.Name, ifDelim, tbuf.Table.PrimaryKey)
 	if fkFieldSpec != "" {
@@ -660,7 +667,7 @@ func (s *Connection) lookupColumnID(tbuf *TableBuffer, lookupVal, fkFieldSpec st
 }
 
 // LookupKeyBatch - Process a batch of keys.
-func (s *Connection) LookupKeyBatch(tbuf *TableBuffer, lookupVals map[interface{}]interface{},
+func (s *Session) LookupKeyBatch(tbuf *TableBuffer, lookupVals map[interface{}]interface{},
 	fkFieldSpec string) (map[interface{}]interface{}, error) {
 
 	kvIndex := fmt.Sprintf("%s%s%s.PK", tbuf.Table.Name, ifDelim, tbuf.Table.PrimaryKey)
@@ -675,7 +682,7 @@ func (s *Connection) LookupKeyBatch(tbuf *TableBuffer, lookupVals map[interface{
 	return lookupVals, nil
 }
 
-func (s *Connection) resolveFKLookupKey(v *Attribute, tbuf *TableBuffer, row interface{}) (string, error) {
+func (s *Session) resolveFKLookupKey(v *Attribute, tbuf *TableBuffer, row interface{}) (string, error) {
 
 	var retVal strings.Builder
 	root := "/"
@@ -700,7 +707,7 @@ func (s *Connection) resolveFKLookupKey(v *Attribute, tbuf *TableBuffer, row int
 }
 
 // ResetRowCache - Clear cache.
-func (s *Connection) ResetRowCache() {
+func (s *Session) ResetRowCache() {
 	for _, v := range s.TableBuffers {
 		v.rowCache = make(map[string]interface{})
 	}
@@ -708,7 +715,7 @@ func (s *Connection) ResetRowCache() {
 }
 
 // Flush - Flush data to backend.
-func (s *Connection) Flush() {
+func (s *Session) Flush() {
 
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
@@ -724,8 +731,8 @@ func (s *Connection) Flush() {
 	}
 }
 
-// CloseConnection - Close the session, flushing if necessary..
-func (s *Connection) CloseConnection() {
+// CloseSession - Close the session, flushing if necessary..
+func (s *Session) CloseSession() {
 
 	if s == nil {
 		return
@@ -745,15 +752,12 @@ func (s *Connection) CloseConnection() {
 		if err := s.Client.Flush(); err != nil {
 			log.Println(err)
 		}
-		if err := s.Client.Disconnect(); err != nil {
-			log.Println(err)
-		}
 		//s.Client = nil
 	}
 }
 
 // MapValue - Convenience function for Mapper interface.
-func (s *Connection) MapValue(tableName, fieldName string, value interface{}, update bool) (val uint64, err error) {
+func (s *Session) MapValue(tableName, fieldName string, value interface{}, update bool) (val uint64, err error) {
 
 	tbuf, ok := s.TableBuffers[tableName]
 	if !ok {

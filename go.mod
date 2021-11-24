@@ -14,6 +14,7 @@ require (
 	github.com/armon/go-metrics v0.3.4 // indirect
 	github.com/aviddiviner/go-murmur v0.0.0-20150519214947-b9740d71e571
 	github.com/aws/aws-sdk-go v1.41.7
+	github.com/aws/aws-sdk-go-v2/service/kinesis v1.9.0
 	github.com/bbalet/stopwords v1.0.0
 	github.com/confluentinc/confluent-kafka-go v1.4.2 // indirect
 	github.com/glycerine/go-unsnap-stream v0.0.0-20190901134440-81cf024a9e0a // indirect

@@ -70,14 +70,14 @@ type SQLToQuanta struct {
 	startDate      string
 	endDate        string
 	s              *QuantaSource
-	conn           *core.Connection
+	conn           *core.Session
 	q              *shared.BitmapQuery
 	defaultWhere   bool
 	needsPolyFill  bool // polyfill?
 }
 
 // NewSQLToQuanta - Construct a new SQLToQuanta query translator.
-func NewSQLToQuanta(s *QuantaSource, t *schema.Table, conn *core.Connection) *SQLToQuanta {
+func NewSQLToQuanta(s *QuantaSource, t *schema.Table, conn *core.Session) *SQLToQuanta {
 	m := &SQLToQuanta{
 		tbl:    t,
 		schema: t.Schema,
@@ -118,7 +118,7 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	// Create a session if one doesn't exist and add the join strategy indicator
 	// Add indicators to create no-op tasks for where clauses and groupby
 	sessionMap := make(map[string]interface{})
-	sessionMap[servicePort] = m.s.servicePort
+	sessionMap[servicePort] = m.s.sessionPool.AppHost.ServicePort
 	sessionMap[basePath] = m.conn.BasePath
 	sessionMap[exec.GROUPBY_MAKER] = func(ctx *plan.Context, p *plan.GroupBy) exec.TaskRunner {
 		return NewNopTask(ctx)
@@ -1456,7 +1456,7 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 
 	newKey := datasource.NewKeyCol("id", "fixme")
 	m.conn.Flush()
-	m.s.ReturnConnection(table.Name, m.conn)
+	m.s.sessionPool.Return(table.Name, m.conn)
 
 	// End critical section
 	return newKey, nil
@@ -1486,7 +1486,7 @@ func (m *SQLToQuanta) updateRow(table string, columnID uint64, updValueMap map[s
 		}
 	}
 	m.conn.Flush()
-	m.s.ReturnConnection(m.tbl.Name, m.conn)
+	m.s.sessionPool.Return(m.tbl.Name, m.conn)
 	return 1, nil
 }
 
@@ -1546,7 +1546,7 @@ func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, err
 		return 0, err
 	}
 	m.conn.Flush()
-	m.s.ReturnConnection(m.q.GetRootIndex(), m.conn)
+	m.s.sessionPool.Return(m.q.GetRootIndex(), m.conn)
 
 	return int(response.Results.GetCardinality()), nil
 }

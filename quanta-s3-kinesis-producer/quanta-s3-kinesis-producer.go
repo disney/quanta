@@ -22,7 +22,7 @@ import (
 	"os/signal"
 	"path"
 	"reflect"
-	"runtime"
+	_ "runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -70,7 +70,7 @@ type Main struct {
 // NewMain allocates a new pointer to Main struct with empty record counter
 func NewMain() *Main {
 	m := &Main{
-		totalRecs: &Counter{},
+		totalRecs:  &Counter{},
 		failedRecs: &Counter{},
 	}
 	return m
@@ -121,7 +121,8 @@ func main() {
 
 	log.Printf("S3 bucket %s contains %d files for processing.", main.BucketPath, len(main.S3files))
 
-	threads := runtime.NumCPU()
+	//threads := runtime.NumCPU()
+	threads := len(main.S3files)
 	var eg errgroup.Group
 	fileChan := make(chan *s3.Object, threads)
 	var ticker *time.Ticker
@@ -275,15 +276,15 @@ func (m *Main) processRowsForFile(s3object *s3.Object) {
 		}
 
 		putBatch = append(putBatch, &kinesis.PutRecordsRequestEntry{
-			Data:			outData,
-			PartitionKey:	aws.String(partitionKey),
+			Data:         outData,
+			PartitionKey: aws.String(partitionKey),
 		})
 
-		if i % m.BatchSize == 0 {
+		if i%m.BatchSize == 0 {
 			// put data to stream
 			putOutput, err := m.outClient.PutRecords(&kinesis.PutRecordsInput{
-				Records:      putBatch,
-				StreamName:   aws.String(m.Stream),
+				Records:    putBatch,
+				StreamName: aws.String(m.Stream),
 			})
 			if err != nil {
 				log.Println(err)
@@ -293,14 +294,13 @@ func (m *Main) processRowsForFile(s3object *s3.Object) {
 			putBatch = make([]*kinesis.PutRecordsRequestEntry, 0)
 		}
 
-
 		m.totalRecs.Add(1)
 		m.AddBytes(len(outData))
 	}
 	if len(putBatch) > 0 {
 		putOutput, err := m.outClient.PutRecords(&kinesis.PutRecordsInput{
-			Records:      putBatch,
-			StreamName:   aws.String(m.Stream),
+			Records:    putBatch,
+			StreamName: aws.String(m.Stream),
 		})
 		if err != nil {
 			log.Println(err)
@@ -429,13 +429,17 @@ func (m *Main) GetRow(pr *reader.ParquetReader) (map[string]interface{}, string,
 			return nil, "", fmt.Errorf("field %s is empty", pqColPath)
 		}
 		cval := vals[0]
+		if cval == nil {
+			continue
+		}
 		outMap[source] = cval
 		if v.FieldName != m.partitionCol.FieldName {
 			continue
 		}
 		// Must be partition col
 		var ts time.Time
-		tFormat := shared.YMDTimeFmt
+		//tFormat := shared.YMDTimeFmt
+		tFormat := time.RFC3339
 		if m.Table.TimeQuantumType == "YMDH" {
 			tFormat = shared.YMDHTimeFmt
 		}
@@ -448,7 +452,7 @@ func (m *Main) GetRow(pr *reader.ParquetReader) (map[string]interface{}, string,
 				return nil, "", fmt.Errorf("Date parse error for PK field %s - value %s - %v",
 					pqColPath, strVal, err)
 			}
-			outMap[source] = ts.UnixNano() / 1000000   // TODO FIX ME
+			outMap[source] = ts.UnixNano() / 1000000 // TODO FIX ME
 		case reflect.Int64:
 			orig := cval.(int64)
 			if v.MappingStrategy == "SysMillisBSI" || v.MappingStrategy == "SysMicroBSI" {
@@ -459,6 +463,9 @@ func (m *Main) GetRow(pr *reader.ParquetReader) (map[string]interface{}, string,
 			}
 		}
 		partitionKey = ts.UTC().Format(tFormat)
+	}
+	if partitionKey == "" {
+		return nil, "", fmt.Errorf("no PK timestamp for row")
 	}
 	return outMap, partitionKey, nil
 }

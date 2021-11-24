@@ -26,7 +26,7 @@ var (
 	_ exec.TaskRunner = (*JoinMerge)(nil)
 )
 
-// TODO: General cleanup.   Pass QuantaSource in so that core.Connection pooling is implemented.
+// TODO: General cleanup.   Pass QuantaSource in so that core.Session pooling is implemented.
 
 // JoinMerge - Scans 2 source tasks for rows, calls server side join transpose
 type JoinMerge struct {
@@ -325,7 +325,7 @@ func (m *JoinMerge) Run() error {
 		if err != nil {
 			return err
 		}
-		defer con.CloseConnection()
+		defer con.CloseSession()
 		// driver table found set may have been reduced by join results
 		proj, err2 := core.NewProjection(con, foundSets, joinFields, projFields, m.driverTable,
 			fromTime, toTime, joinTypes)
@@ -347,7 +347,7 @@ func (m *JoinMerge) Run() error {
 	return nil
 }
 
-func (m *JoinMerge) makeBufferedConnection(driverTable string) (*core.Connection, error) {
+func (m *JoinMerge) makeBufferedConnection(driverTable string) (*core.Session, error) {
 
 	port, ok := m.Ctx.Session.Get(servicePort)
 	if !ok {
@@ -357,8 +357,13 @@ func (m *JoinMerge) makeBufferedConnection(driverTable string) (*core.Connection
 	if !ok {
 		return nil, fmt.Errorf("cannot obtain base path from session")
 	}
-	return core.OpenConnection(basePath.ToString(), driverTable, false,
-		0, int(port.Value().(int64)), nil)
+    clientConn := quanta.NewDefaultConnection()
+	clientConn.ServicePort = int(port.Value().(int64))
+    clientConn.Quorum = 3
+    if err := clientConn.Connect(nil); err != nil {
+		return nil, fmt.Errorf("error opening quanta connection - %v", err)
+    }
+	return core.OpenSession(basePath.ToString(), driverTable, false, clientConn)
 }
 
 func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitmap,
@@ -370,7 +375,7 @@ func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitma
 		return nil, false, fmt.Errorf("cannot obtain service port from session")
 	}
 	conn.ServicePort = int(port.Value().(int64))
-	if err := conn.Connect(); err != nil {
+	if err := conn.Connect(nil); err != nil {
 		u.Errorf("%v", err)
 		return nil, false, err
 	}

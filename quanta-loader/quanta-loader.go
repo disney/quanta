@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	pqs3 "github.com/xitongsys/parquet-go-source/s3"
@@ -58,6 +59,7 @@ type Main struct {
 	ConsulClient *api.Client
 	DateFilter   *time.Time
 	lock         *api.Lock
+	apiHost		 *quanta.Conn
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -129,14 +131,13 @@ func main() {
 	threads := runtime.NumCPU()
 	var eg errgroup.Group
 	fileChan := make(chan *s3.Object, threads)
-    closeLater := make([]*core.Connection, 0)
+    closeLater := make([]*core.Session, 0)
 	var ticker *time.Ticker
 	// Spin up worker threads
 	if !*dryRun {
 		for i := 0; i < threads; i++ {
 			eg.Go(func() error {
-				conn, err := core.OpenConnection("", main.Index, main.IsNested,
-					main.BufferSize, main.Port, main.ConsulClient)
+				conn, err := core.OpenSession("", main.Index, main.IsNested, main.apiHost)
 				if err != nil {
 					return err
 				}
@@ -191,7 +192,7 @@ func main() {
 			log.Fatalf("Open error %v", err)
 		}
         for _, cc := range closeLater {
-            cc.CloseConnection()
+            cc.CloseSession()
         }
 		ticker.Stop()
 		log.Printf("Completed, Last Record: %d, Bytes: %s", main.totalRecs.Get(), core.Bytes(main.BytesProcessed()))
@@ -262,7 +263,7 @@ func (m *Main) LoadBucketContents() {
 	m.S3files = ret
 }
 
-func (m *Main) processRowsForFile(s3object *s3.Object, dbConn *core.Connection) {
+func (m *Main) processRowsForFile(s3object *s3.Object, dbConn *core.Session) {
 
 	pf, err1 := pqs3.NewS3FileReaderWithClient(context.Background(), m.S3svc, m.Bucket,
 		*aws.String(*s3object.Key))
@@ -296,12 +297,17 @@ func (m *Main) processRowsForFile(s3object *s3.Object, dbConn *core.Connection) 
 // Establishes session with bitmap server and AWS S3 client
 func (m *Main) Init() error {
 
-	var err error
-
-	m.ConsulClient, err = api.NewClient(&api.Config{Address: m.ConsulAddr})
+	consul, err := api.NewClient(&api.Config{Address: m.ConsulAddr})
 	if err != nil {
 		return err
 	}
+
+    m.apiHost = quanta.NewDefaultConnection()
+    m.apiHost.ServicePort = m.Port
+    m.apiHost.Quorum = 3
+    if err = m.apiHost.Connect(consul); err != nil {
+        log.Fatal(err)
+    }
 
 	// Initialize S3 client
 	sess, err := session.NewSession(&aws.Config{

@@ -26,7 +26,7 @@ func NewStringHashBSIMapper(conf map[string]string) (Mapper, error) {
 
 // MapValue - Map a string value to an int64
 func (m StringHashBSIMapper) MapValue(attr *Attribute, val interface{},
-	c *Connection) (result uint64, err error) {
+	c *Session) (result uint64, err error) {
 
 	var strVal string
 	switch val.(type) {
@@ -66,7 +66,7 @@ func NewBoolDirectMapper(conf map[string]string) (Mapper, error) {
 
 // MapValue - Map boolean values true/false to rowid = 0 false rowid = 1 true
 func (m BoolDirectMapper) MapValue(attr *Attribute, val interface{},
-	c *Connection) (result uint64, err error) {
+	c *Session) (result uint64, err error) {
 
 	result = uint64(0)
 	switch val.(type) {
@@ -94,7 +94,7 @@ func (m BoolDirectMapper) MapValue(attr *Attribute, val interface{},
 }
 
 // MapValueReverse - Map a row ID back to original value (true/false)
-func (m BoolDirectMapper) MapValueReverse(attr *Attribute, id uint64, c *Connection) (result interface{}, err error) {
+func (m BoolDirectMapper) MapValueReverse(attr *Attribute, id uint64, c *Session) (result interface{}, err error) {
 	result = false
 	if id == 1 {
 		result = true
@@ -114,7 +114,7 @@ func NewIntDirectMapper(conf map[string]string) (Mapper, error) {
 
 // MapValue - Map a value to a row ID.
 func (m IntDirectMapper) MapValue(attr *Attribute, val interface{},
-	c *Connection) (result uint64, err error) {
+	c *Session) (result uint64, err error) {
 
 	switch val.(type) {
 	case uint64:
@@ -149,7 +149,7 @@ func (m IntDirectMapper) MapValue(attr *Attribute, val interface{},
 }
 
 // MapValueReverse - Map a row ID back to original value (row ID value taken literally)
-func (m IntDirectMapper) MapValueReverse(attr *Attribute, id uint64, c *Connection) (result interface{}, err error) {
+func (m IntDirectMapper) MapValueReverse(attr *Attribute, id uint64, c *Session) (result interface{}, err error) {
 	result = int64(id)
 	return
 }
@@ -166,7 +166,7 @@ func NewStringToIntDirectMapper(conf map[string]string) (Mapper, error) {
 
 // MapValue - Map a value to a row ID.
 func (m StringToIntDirectMapper) MapValue(attr *Attribute, val interface{},
-	c *Connection) (result uint64, err error) {
+	c *Session) (result uint64, err error) {
 
 	var v int64
 	v, err = strconv.ParseInt(strings.TrimSpace(val.(string)), 10, 64)
@@ -193,7 +193,7 @@ func NewFloatScaleBSIMapper(conf map[string]string) (Mapper, error) {
 
 // MapValue - Map a value to an int64.
 func (m FloatScaleBSIMapper) MapValue(attr *Attribute, val interface{},
-	c *Connection) (result uint64, err error) {
+	c *Session) (result uint64, err error) {
 
 	var floatVal float64
 	switch val.(type) {
@@ -231,7 +231,7 @@ func NewIntBSIMapper(conf map[string]string) (Mapper, error) {
 
 // MapValue - Map a value to an int64.
 func (m IntBSIMapper) MapValue(attr *Attribute, val interface{},
-	c *Connection) (result uint64, err error) {
+	c *Session) (result uint64, err error) {
 
 	switch val.(type) {
 	case int64:
@@ -282,7 +282,7 @@ func NewStringEnumMapper(conf map[string]string) (Mapper, error) {
 
 // MapValue - Map a value to a row id.
 func (m StringEnumMapper) MapValue(attr *Attribute, val interface{},
-	c *Connection) (result uint64, err error) {
+	c *Session) (result uint64, err error) {
 
 	var multi []string
 	switch val.(type) {
@@ -323,7 +323,7 @@ func (m StringEnumMapper) MapValue(attr *Attribute, val interface{},
 }
 
 // MapValueReverse - Return the original value given a row id.
-func (m StringEnumMapper) MapValueReverse(attr *Attribute, id uint64, c *Connection) (result interface{}, err error) {
+func (m StringEnumMapper) MapValueReverse(attr *Attribute, id uint64, c *Session) (result interface{}, err error) {
 	result, err = attr.GetValueForID(id)
 	return
 }
@@ -356,7 +356,7 @@ func NewBoolRegexMapper(conf map[string]string) (Mapper, error) {
 
 // MapValue - Map a value to a row id.
 func (m BoolRegexMapper) MapValue(attr *Attribute, val interface{},
-	c *Connection) (result uint64, err error) {
+	c *Session) (result uint64, err error) {
 
 	switch val.(type) {
 	case bool:
@@ -375,7 +375,7 @@ func (m BoolRegexMapper) MapValue(attr *Attribute, val interface{},
 }
 
 // Transform - Perform a transformation on a value.
-func (m BoolRegexMapper) Transform(attr *Attribute, val interface{}, c *Connection) (newVal interface{}, err error) {
+func (m BoolRegexMapper) Transform(attr *Attribute, val interface{}, c *Session) (newVal interface{}, err error) {
 
 	var value string
 	switch val.(type) {
@@ -401,7 +401,7 @@ func NewSysMillisBSIMapper(conf map[string]string) (Mapper, error) {
 
 // MapValue - Maps a value to an int64
 func (m SysMillisBSIMapper) MapValue(attr *Attribute, val interface{},
-	c *Connection) (result uint64, err error) {
+	c *Session) (result uint64, err error) {
 
 	switch val.(type) {
 	case string:
@@ -441,7 +441,7 @@ func NewSysMicroBSIMapper(conf map[string]string) (Mapper, error) {
 
 // MapValue - Maps a value to an int64.
 func (m SysMicroBSIMapper) MapValue(attr *Attribute, val interface{},
-	c *Connection) (result uint64, err error) {
+	c *Session) (result uint64, err error) {
 
 	switch val.(type) {
 	case string:
@@ -481,7 +481,7 @@ func NewSysSecBSIMapper(conf map[string]string) (Mapper, error) {
 
 // MapValue - Maps a value to an int64.
 func (m SysSecBSIMapper) MapValue(attr *Attribute, val interface{},
-	c *Connection) (result uint64, err error) {
+	c *Session) (result uint64, err error) {
 
 	switch val.(type) {
 	case string:
@@ -521,7 +521,7 @@ func NewIntToBoolDirectMapper(conf map[string]string) (Mapper, error) {
 
 // MapValue - Map a value to a row id.
 func (m IntToBoolDirectMapper) MapValue(attr *Attribute, val interface{},
-	c *Connection) (result uint64, err error) {
+	c *Session) (result uint64, err error) {
 
 	switch val.(type) {
 	case int:
@@ -550,7 +550,7 @@ func (m IntToBoolDirectMapper) MapValue(attr *Attribute, val interface{},
 }
 
 // Transform - Perform a transformation on a value.
-func (m IntToBoolDirectMapper) Transform(attr *Attribute, val interface{}, c *Connection) (newVal interface{}, err error) {
+func (m IntToBoolDirectMapper) Transform(attr *Attribute, val interface{}, c *Session) (newVal interface{}, err error) {
 
 	switch val.(type) {
 	case int:

@@ -8,15 +8,13 @@ import (
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/schema"
 	"github.com/araddon/qlbridge/value"
+	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	"io/ioutil"
 	"log"
-	"runtime"
 	"strings"
-	"sync"
-	"time"
 )
 
 const (
@@ -44,24 +42,30 @@ type QuantaSource struct {
 	//result         *pcli.QueryResult
 	lastResultPos int
 	baseDir       string
-	servicePort   int
-	consulClient  *api.Client
-	connPoolMap   map[string]*ConnectionPool
-	connPoolLock  sync.Mutex
+    sessionPool   *core.SessionPool
 }
 
 // NewQuantaSource - Construct a QuantaSource.
 func NewQuantaSource(baseDir, consulAddr string, servicePort int) (*QuantaSource, error) {
 
 	m := &QuantaSource{}
-	m.servicePort = servicePort
 	var err error
+	var consulClient *api.Client 
 	if consulAddr != "" {
-		m.consulClient, err = api.NewClient(&api.Config{Address: consulAddr})
+		consulClient, err = api.NewClient(&api.Config{Address: consulAddr})
 		if err != nil {
 			return m, err
 		}
 	}
+
+    clientConn := quanta.NewDefaultConnection()
+    clientConn.ServicePort = servicePort
+    clientConn.Quorum = 3
+    if err := clientConn.Connect(consulClient); err != nil {
+        log.Fatal(err)
+    }
+
+    m.sessionPool = core.NewSessionPool(clientConn, m.Schema, baseDir)
 
 	m.baseDir = baseDir
 	if m.baseDir != "" {
@@ -76,7 +80,6 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort int) (*QuantaSource
 
 // Init initilize this db
 func (m *QuantaSource) Init() {
-	m.connPoolMap = make(map[string]*ConnectionPool)
 }
 
 // Setup this db with parent schema.
@@ -84,69 +87,6 @@ func (m *QuantaSource) Setup(ss *schema.Schema) error {
 
 	m.Schema = ss
 	return nil
-}
-
-// ConnectionPool - Pool of Quanta connections
-type ConnectionPool struct {
-	pool chan *core.Connection
-}
-
-func newConnectionPool() *ConnectionPool {
-	return &ConnectionPool{pool: make(chan *core.Connection, runtime.NumCPU())}
-}
-
-func (m *QuantaSource) getPoolByTableName(tableName string) *ConnectionPool {
-	m.connPoolLock.Lock()
-	var cp *ConnectionPool
-	var found bool
-	if cp, found = m.connPoolMap[tableName]; !found {
-		cp = newConnectionPool()
-		m.connPoolMap[tableName] = cp
-	}
-	m.connPoolLock.Unlock()
-	return cp
-}
-
-// BorrowConnection - get a pooled connection.
-func (m *QuantaSource) BorrowConnection(tableName string) *core.Connection {
-
-	cp := m.getPoolByTableName(tableName)
-	select {
-	case r := <-cp.pool:
-		if m.Since(time.Until(r.CreatedAt)) {
-			u.Debugf("pooled connection is stale after schema change, refreshing.")
-			r.CloseConnection()
-			r = m.newConnection(tableName)
-		}
-		return r
-	default:
-		conn := m.newConnection(tableName)
-		if conn == nil {
-			panic("borrowConnection cannot open new connection")
-		}
-		return conn
-	}
-}
-
-// ReturnConnection - return a connection to the pool.
-func (m *QuantaSource) ReturnConnection(tableName string, conn *core.Connection) {
-
-	cp := m.getPoolByTableName(tableName)
-	select {
-	case cp.pool <- conn:
-	default:
-	}
-	return
-}
-
-func (m *QuantaSource) newConnection(tableName string) *core.Connection {
-
-	conn, err := core.OpenConnection(m.baseDir, tableName, false, 0, m.servicePort, m.consulClient)
-	if err != nil {
-		u.Errorf("error opening quanta connection - %v", err)
-		return nil
-	}
-	return conn
 }
 
 // Open a Conn for this source @table name
@@ -168,20 +108,19 @@ func (m *QuantaSource) Open(tableName string) (schema.Conn, error) {
 		return nil, fmt.Errorf("Could not find '%v'.'%v' schema)", m.Schema.Name, tableName)
 	}
 
-	conn := m.BorrowConnection(tableName)
-	if conn == nil {
-		return nil, fmt.Errorf("error opening connection for table %s", tableName)
-	}
-
+    conn, err := m.sessionPool.Borrow(tableName)
+    if err != nil {
+        return nil, fmt.Errorf("Error opening Quanta session %v", err)
+    }
 	return NewSQLToQuanta(m, tbl, conn), nil
 }
 
 // Table by name
 func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 
-	conn := m.BorrowConnection(table)
-	if conn == nil {
-		return nil, fmt.Errorf("error opening connection for table %s", table)
+	conn, err := m.sessionPool.Borrow(table)
+	if err != nil {
+		return nil, fmt.Errorf("error opening connection for table %s - %v", table, err)
 	}
 	tb, found := conn.TableBuffers[table]
 	if !found {
@@ -233,7 +172,7 @@ func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 		rows = append(rows, m.AsRow(v))
 	}
 	tbl.SetRows(rows)
-	m.ReturnConnection(table, conn)
+	m.sessionPool.Return(table, conn)
 	return tbl, nil
 }
 
@@ -257,14 +196,7 @@ func (m *QuantaSource) AsRow(f *schema.Field) []driver.Value {
 // Close this source
 func (m *QuantaSource) Close() error {
 
-	m.connPoolLock.Lock()
-	for _, v := range m.connPoolMap {
-		close(v.pool)
-		for x := range v.pool {
-			x.CloseConnection()
-		}
-	}
-	m.connPoolLock.Unlock()
+	m.sessionPool.Shutdown()
 	defer func() { recover() }()
 	close(m.exit)
 	return nil
@@ -294,13 +226,13 @@ func (m *QuantaSource) Next() schema.Message {
 func (m *QuantaSource) ListTableNames() []string {
 
 	if m.baseDir == "" {
-		lock, errx := shared.Lock(m.consulClient, "admin-tool", "admin-tool")
+		lock, errx := shared.Lock(m.sessionPool.AppHost.Consul, "admin-tool", "admin-tool")
 		if errx != nil {
 			log.Printf("listTableNames: cannot obtain lock %v", errx)
 			return []string{}
 		}
-		defer shared.Unlock(m.consulClient, lock)
-		tables, errx := shared.GetTables(m.consulClient)
+		defer shared.Unlock(m.sessionPool.AppHost.Consul, lock)
+		tables, errx := shared.GetTables(m.sessionPool.AppHost.Consul)
 		if errx != nil {
 			log.Printf("shared.getTables failed: %v", errx)
 			return []string{}

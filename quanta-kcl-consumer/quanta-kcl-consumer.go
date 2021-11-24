@@ -2,21 +2,24 @@ package main
 
 import (
 	"fmt"
+	"github.com/araddon/dateparse"
 	"github.com/araddon/qlbridge/expr/builtins"
 	"github.com/aws/aws-sdk-go/aws"
 	_ "github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/kinesis"
+	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
+	"github.com/google/uuid"
 	"github.com/hamba/avro"
 	"github.com/hashicorp/consul/api"
-	"github.com/google/uuid"
 	cfg "github.com/vmware/vmware-go-kcl/clientlibrary/config"
 	kc "github.com/vmware/vmware-go-kcl/clientlibrary/interfaces"
 	"github.com/vmware/vmware-go-kcl/clientlibrary/metrics"
 	"github.com/vmware/vmware-go-kcl/clientlibrary/metrics/cloudwatch"
 	wk "github.com/vmware/vmware-go-kcl/clientlibrary/worker"
+	//"golang.org/x/sync/errgroup"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
 	"os"
@@ -36,38 +39,55 @@ var (
 
 // Exit Codes
 const (
-	Success       = 0
-	appName       = "Quanta"
-	consumerName  = "enhanced-fan-out-consumer"
-	metricsSystem = "cloudwatch"
+	Success              = 0
+	appName              = "Quanta"
+	consumerName         = "enhanced-fan-out-consumer"
+	metricsSystem        = "cloudwatch"
+	partitionChannelSize = 500000
 )
 
 // Main strct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
-	Stream       string
-	Region       string
-	Index        string
-	BufferSize   uint
-	totalBytes   int64
-	bytesLock    sync.RWMutex
-	totalRecs    *Counter
-	Port         int
-	ConsulAddr   string
-	ConsulClient *api.Client
-	ShardCount   int
-	WorkerID     string
+	Stream          string
+	Region          string
+	Index           string
+	BufferSize      uint
+	totalBytes      int64
+	bytesLock       sync.RWMutex
+	totalRecs       *Counter
+	processedRecs   *Counter
+	Port            int
+	ConsulAddr      string
+	ConsulClient    *api.Client
+	ShardCount      int
+	WorkerID        string
+	InitialPos      cfg.InitialPositionInStream
+	sessions        *Counter
+	Table           *shared.BasicTable
+	Schema          avro.Schema
+	partitionMap    sync.Map
+	partitionLock   sync.Mutex
+	timeLocation    *time.Location
+	clientConn      *quanta.Conn
+	partitionNotify chan string
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
 func NewMain() *Main {
 	m := &Main{
-		totalRecs: &Counter{},
+		totalRecs:     &Counter{},
+		processedRecs: &Counter{},
+		sessions:      &Counter{},
+		partitionMap:  sync.Map{},
 	}
 	name, err := os.Hostname()
 	if err != nil {
 		panic(err)
 	}
 	m.WorkerID = fmt.Sprintf("%s:%s", name, uuid.New().String())
+	loc, _ := time.LoadLocation("UTC")
+	m.timeLocation = loc
+	m.partitionNotify = make(chan string, 1000)
 	return m
 }
 
@@ -83,6 +103,7 @@ func main() {
 	bufSize := app.Flag("buf-size", "Buffer size").Default("1000000").Int32()
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
+	trimHorizon := app.Flag("trim-horizon", "Set initial position to TRIM_HORIZON").Bool()
 
 	core.InitLogging("WARN", *environment, "Kinesis-Consumer", Version, appName)
 
@@ -102,14 +123,80 @@ func main() {
 	log.Printf("Index name %v.", main.Index)
 	log.Printf("Buffer size %d.", main.BufferSize)
 	log.Printf("Service port %d.", main.Port)
-	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
-	log.Printf("KCL Worker ID %s\n", main.WorkerID)
-
+	log.Printf("Consul agent at [%s]", main.ConsulAddr)
+	log.Printf("KCL Worker ID %s", main.WorkerID)
+	if *trimHorizon == true {
+		main.InitialPos = cfg.TRIM_HORIZON
+		log.Printf("Initial position = TRIM_HORIZON")
+	} else {
+		main.InitialPos = cfg.LATEST
+		log.Printf("Initial position = LATEST")
+	}
 
 	worker, err := main.Init()
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	/*
+	       // Receive notifications to startup new Quanta processors for partitions
+	       go func() {
+	           for partition := range main.partitionNotify {
+	               log.Printf("Starting new Quanta processor for partition %s",  partition)
+	   			var eg errgroup.Group
+	   	        eg.Go(func() error {
+	   	            conn, err := core.OpenConnection("", main.Index, true,
+	   	                main.BufferSize, main.Port, main.clientConn)
+	   	            if err != nil {
+	   	                return fmt.Errorf("Error opening connection %v", err)
+	   				}
+	   				putCount := 0
+	   				for {
+	   					select {
+	   					case row, ok := <- main.getPartition(partition):
+	   						if !ok {
+	   							break
+	   						}
+	   						err = conn.PutRow(main.Index, row, 0)
+	   						if err != nil {
+	   							log.Printf("ERROR in PutRow, partition %s - %v", partition, err)
+	   							continue
+	   						}
+	   						_ = row
+	   						putCount++
+	   						main.processedRecs.Add(1)
+	   					}
+	   	            }
+	   				//conn.CloseConnection()
+	   	            return nil
+	   	        })
+	   			if err := eg.Wait(); err != nil {
+	   			    log.Fatalf("ERROR starting Quanta processor for partition %s - %v", partition, err)
+	   			}
+	           }
+	   		// TODO: Add shutdown/cleanup
+	       }()
+	*/
+
+	go func() {
+		for {
+			main.partitionMap.Range(func(k, v interface{}) bool {
+				//close(v.(chan map[string]interface{}))
+				pc := v.(chan map[string]interface{})
+				if len(pc) >= 1000 {
+					for i := 0; i < 1000; i++ {
+						select {
+						case row := <-pc:
+							_ = row
+							main.processedRecs.Add(1)
+						}
+					}
+				}
+
+				return true
+			})
+		}
+	}()
 
 	var ticker *time.Ticker
 	ticker = main.printStats()
@@ -121,13 +208,13 @@ func main() {
 			log.Printf("Interrupted,  Bytes processed: %s, Records: %v", core.Bytes(main.BytesProcessed()),
 				main.totalRecs.Get())
 			ticker.Stop()
-    		worker.Shutdown()
+			worker.Shutdown()
 			os.Exit(0)
 		}
 	}()
 
 	<-c
-    worker.Shutdown()
+	worker.Shutdown()
 }
 
 // Init function initilizations loader.
@@ -141,11 +228,25 @@ func (m *Main) Init() (*wk.Worker, error) {
 		return nil, err
 	}
 
+	m.clientConn = quanta.NewDefaultConnection()
+	m.clientConn.ServicePort = m.Port
+	m.clientConn.Quorum = 3
+	if err := m.clientConn.Connect(m.ConsulClient); err != nil {
+		log.Fatal(err)
+	}
+
+	m.Table, err = shared.LoadSchema("", m.Index, m.ConsulClient)
+	if err != nil {
+		return nil, err
+	}
+	m.Schema = shared.ToAvroSchema(m.Table)
+
 	kclConfig := cfg.NewKinesisClientLibConfig(m.Index, m.Stream, m.Region, m.WorkerID).
-		WithInitialPositionInStream(cfg.LATEST).
-		WithLeaseStealing(true).
-		WithMaxRecords(100).
-		WithMaxLeasesForWorker(runtime.NumCPU()).
+		WithInitialPositionInStream(m.InitialPos).
+		//WithLeaseStealing(true).
+		//WithMaxRecords(100).
+		WithIdleTimeBetweenReadsInMillis(50).
+		WithMaxLeasesForWorker(runtime.NumCPU() * 3).
 		WithShardSyncIntervalMillis(5000).
 		WithFailoverTimeMillis(300000)
 
@@ -167,12 +268,31 @@ func (m *Main) Init() (*wk.Worker, error) {
 		return nil, err
 	}
 	m.ShardCount = len(shout.Shards)
-
 	worker := wk.NewWorker(recordProcessorFactory(m), kclConfig)
 	worker.Start()
 
-	log.Printf("Created worker. ")
+	log.Printf("Created worker.")
 	return worker, nil
+}
+
+func (m *Main) getPartition(partition string) chan map[string]interface{} {
+
+	var c chan map[string]interface{}
+	s, ok := m.partitionMap.Load(partition)
+	if !ok {
+		//m.partitionLock.Lock()
+		//defer m.partitionLock.Unlock()
+		c = make(chan map[string]interface{}, partitionChannelSize)
+		m.partitionMap.Store(partition, c)
+		select {
+		case m.partitionNotify <- partition:
+		default:
+			log.Printf("blocking on creating new partition queue %s", partition)
+		}
+	} else {
+		c = s.(chan map[string]interface{})
+	}
+	return c
 }
 
 func getMetricsConfig(kclConfig *cfg.KinesisClientLibConfiguration, service string) metrics.MonitoringService {
@@ -202,7 +322,7 @@ func (m *Main) printStats() *time.Ticker {
 		for range t.C {
 			duration := time.Since(start)
 			bytes := m.BytesProcessed()
-			log.Printf("Bytes: %s, Records: %v, Duration: %v, Rate: %v/s", core.Bytes(bytes), m.totalRecs.Get(), duration, core.Bytes(float64(bytes)/duration.Seconds()))
+			log.Printf("Bytes: %s, Records: %v, Shards: %v, Processed: %v, Duration: %v, Rate: %v/s", core.Bytes(bytes), m.totalRecs.Get(), m.sessions.Get(), m.processedRecs.Get(), duration, core.Bytes(float64(bytes)/duration.Seconds()))
 		}
 	}()
 	return t
@@ -256,24 +376,14 @@ type quantaRecordProcessorFactory struct {
 
 // CreateProcess - Factory method implementation.
 func (f *quantaRecordProcessorFactory) CreateProcessor() kc.IRecordProcessor {
-
-	c, err := core.OpenConnection("", f.main.Index, true, f.main.BufferSize, f.main.Port, f.main.ConsulClient)
-	if err != nil {
-		log.Fatalf("Error opening connection %v", err)
-		return nil
-	}
-	tbuf := c.TableBuffers[f.main.Index]
-	return &quantaRecordProcessor{Connection: c, Table: tbuf.Table.BasicTable, main: f.main}
+	return &quantaRecordProcessor{main: f.main}
 }
 
 // Quanta record processor state.
 type quantaRecordProcessor struct {
-	ShardID    string
-	Connection *core.Connection
-	Table      *shared.BasicTable
-	Schema     avro.Schema
-	main       *Main
-	count      int
+	ShardID string
+	main    *Main
+	count   int
 }
 
 // Initialize record processor.
@@ -283,7 +393,7 @@ func (p *quantaRecordProcessor) Initialize(input *kc.InitializationInput) {
 		aws.StringValue(input.ExtendedSequenceNumber.SequenceNumber))
 	p.ShardID = input.ShardId
 	p.count = 0
-	p.Schema = shared.ToAvroSchema(p.Table)
+	p.main.sessions.Add(1)
 }
 
 // ProcessRecords - Batch process records.
@@ -295,16 +405,28 @@ func (p *quantaRecordProcessor) ProcessRecords(input *kc.ProcessRecordsInput) {
 	}
 
 	for _, v := range input.Records {
+
+		ts, err := dateparse.ParseIn(*v.PartitionKey, p.main.timeLocation)
+		if err != nil {
+			log.Fatalf("Date parse error for partition key %s - %v", *v.PartitionKey, err)
+		}
+		tFormat := shared.YMDTimeFmt
+		if p.main.Table.TimeQuantumType == "YMDH" {
+			tFormat = shared.YMDHTimeFmt
+		}
+		partition := ts.Format(tFormat)
+
 		out := make(map[string]interface{})
-		err := avro.Unmarshal(p.Schema, v.Data, &out)
+		err = avro.Unmarshal(p.main.Schema, v.Data, &out)
 		if err != nil {
 			log.Printf("ERROR %v", err)
 			continue
 		}
-		err = p.Connection.PutRow(p.main.Index, out, 0)
-		if err != nil {
-			log.Printf("ERROR in PutRow - %v", err)
-			continue
+		c := p.main.getPartition(partition)
+		select {
+		case c <- out:
+		default:
+			log.Printf("record processor for shard %s blocked on partion queue %s", p.ShardID, partition)
 		}
 		p.count++
 		p.main.totalRecs.Add(1)
@@ -319,7 +441,6 @@ func (p *quantaRecordProcessor) ProcessRecords(input *kc.ProcessRecordsInput) {
 	//diff := input.CacheExitTime.Sub(*input.CacheEntryTime)
 	//log.Printf("Checkpoint progress at: %v,  MillisBehindLatest = %v, KCLProcessTime = %v", lastRecordSequenceNumber, input.MillisBehindLatest, diff)
 	input.Checkpointer.Checkpoint(lastRecordSequenceNumber)
-	p.Connection.Flush()
 }
 
 // Shutdown - Shut down processor.
@@ -335,5 +456,10 @@ func (p *quantaRecordProcessor) Shutdown(input *kc.ShutdownInput) {
 		input.Checkpointer.Checkpoint(nil)
 	}
 
-	p.Connection.CloseConnection()
+	//p.Connection.CloseConnection()
+	p.main.partitionMap.Range(func(k, v interface{}) bool {
+		close(v.(chan map[string]interface{}))
+		return true
+	})
+	p.main.sessions.Add(-1)
 }

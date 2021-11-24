@@ -83,6 +83,7 @@ endif
 
 kinesis:
 	go build -o ${BIN_DIR}/${BIN_KINESIS} ${LDFLAGS} ${PKG_KINESIS}
+	docker build -t containerregistry.disney.com/digital/quanta-kinesis-consumer -f Docker/DeployKinesisConsumerDockerfile .
 
 kcl:
 	go build -o ${BIN_DIR}/${BIN_KCL} ${LDFLAGS} ${PKG_KCL}
@@ -96,6 +97,10 @@ loader:
 producer:
 	go build -o ${BIN_DIR}/${BIN_PRODUCER} ${LDFLAGS} ${PKG_PRODUCER}
 	docker build -t containerregistry.disney.com/digital/quanta-s3-producer -f Docker/DeployProducerDockerfile .
+
+kcl:
+	go build -o ${BIN_DIR}/${BIN_KCL} ${LDFLAGS} ${PKG_KCL}
+	docker build -t containerregistry.disney.com/digital/quanta-kcl-consumer -f Docker/DeployKCLConsumerDockerfile .
 
 docs: 
 	go get golang.org/x/tools/cmd/godoc

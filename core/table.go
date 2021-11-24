@@ -354,7 +354,7 @@ func (a *Attribute) GetValueForID(id uint64) (interface{}, error) {
 }
 
 // Transform - Perform a tranformation of a value (optional)
-func (a *Attribute) Transform(val interface{}, c *Connection) (newVal interface{}, err error) {
+func (a *Attribute) Transform(val interface{}, c *Session) (newVal interface{}, err error) {
 
 	if a.mapperInstance == nil {
 		return 0, fmt.Errorf("attribute '%s' MapperInstance is nil", a.FieldName)
@@ -363,7 +363,7 @@ func (a *Attribute) Transform(val interface{}, c *Connection) (newVal interface{
 }
 
 // MapValue - Return the row ID for a given value (Standard Bitmap)
-func (a *Attribute) MapValue(val interface{}, c *Connection) (result uint64, err error) {
+func (a *Attribute) MapValue(val interface{}, c *Session) (result uint64, err error) {
 
 	if a.mapperInstance == nil {
 		return 0, fmt.Errorf("attribute '%s' MapperInstance is nil", a.FieldName)
@@ -372,7 +372,7 @@ func (a *Attribute) MapValue(val interface{}, c *Connection) (result uint64, err
 }
 
 // MapValueReverse - Re-hydrate the original value for a given row ID.
-func (a *Attribute) MapValueReverse(id uint64, c *Connection) (result interface{}, err error) {
+func (a *Attribute) MapValueReverse(id uint64, c *Session) (result interface{}, err error) {
 
 	if a.mapperInstance == nil {
 		return 0, fmt.Errorf("attribute '%s' MapperInstance is nil", a.FieldName)
@@ -381,7 +381,7 @@ func (a *Attribute) MapValueReverse(id uint64, c *Connection) (result interface{
 }
 
 // ToBackingValue - Re-hydrate the original value.
-func (a *Attribute) ToBackingValue(rowIDs []uint64, c *Connection) (result string, err error) {
+func (a *Attribute) ToBackingValue(rowIDs []uint64, c *Session) (result string, err error) {
 
 	s := make([]string, len(rowIDs))
 	for i, rowID := range rowIDs {

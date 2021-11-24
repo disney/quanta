@@ -63,7 +63,7 @@ type Conn struct {
 	clientConn         []*grpc.ClientConn
 	err                chan error
 	stop               chan struct{}
-	consul             *api.Client
+	Consul             *api.Client
 	hashTable          *rendezvous.Table
 	waitIndex          uint64
 	pollWait           time.Duration
@@ -85,13 +85,16 @@ func NewDefaultConnection() *Conn {
 }
 
 // Connect with configured values.
-func (m *Conn) Connect() (err error) {
+func (m *Conn) Connect(consul *api.Client) (err error) {
 
 	if m.ServicePort > 0 {
-
-		m.consul, err = api.NewClient(api.DefaultConfig())
-		if err != nil {
-			return fmt.Errorf("client: can't create Consul API client: %s", err)
+		if consul != nil  {
+			m.Consul = consul
+		} else {
+			m.Consul, err = api.NewClient(api.DefaultConfig())
+			if err != nil {
+				return fmt.Errorf("client: can't create Consul API client: %s", err)
+			}
 		}
 		err = m.update()
 		if err != nil {
@@ -240,7 +243,7 @@ func (m *Conn) poll() {
 func (m *Conn) update() (err error) {
 
 	opts := &api.QueryOptions{WaitIndex: m.waitIndex}
-	serviceEntries, meta, err := m.consul.Health().Service(m.ServiceName, "", true, opts)
+	serviceEntries, meta, err := m.Consul.Health().Service(m.ServiceName, "", true, opts)
 	if err != nil {
 		return err
 	}

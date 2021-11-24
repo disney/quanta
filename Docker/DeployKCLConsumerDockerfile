@@ -1,0 +1,31 @@
+# quanta-kcl-consumer within a Docker Container
+
+#FROM amd64/alpine:latest
+#FROM golang:1.13.1-alpine
+FROM frolvlad/alpine-glibc
+
+LABEL version="1.0.0" \
+  maintainer="Guy Molinari" \
+  maintainer.email="molinariguy@gmail.com" \
+  description="Builds Generic Docker image for use in production deployment of Quanta Kinesis Consumer" \
+  repository="https://github.com/disney/quanta"
+
+# Update 
+RUN apk update
+RUN apk upgrade
+RUN apk add --no-cache --update alpine-sdk
+
+# clean apk cache
+RUN rm -rf /var/cache/apk/*
+
+COPY ./bin/quanta-kcl-consumer /usr/bin/quanta-kcl-consumer
+COPY ./Docker/kcl_entrypoint.sh /usr/bin/entrypoint.sh
+RUN chmod 755 /usr/bin/quanta-kcl-consumer
+RUN chmod 755 /usr/bin/entrypoint.sh
+
+# Expose default port, but can take in docker run --expose flag as additive port to expose
+# Port mapping of MySQL Proxy server. Default("127.0.0.1:4000")
+
+#VOLUME /data
+
+ENTRYPOINT ["/usr/bin/entrypoint.sh"]

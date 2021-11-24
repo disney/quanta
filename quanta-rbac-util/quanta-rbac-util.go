@@ -53,7 +53,7 @@ func main() {
 	conn := quanta.NewDefaultConnection()
 	conn.ServicePort = main.Port
 	conn.Quorum = 3
-	if err := conn.Connect(); err != nil {
+	if err := conn.Connect(nil); err != nil {
 		log.Fatal(err)
 	}
 	store := quanta.NewKVStore(conn)

@@ -7,10 +7,11 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/disney/quanta/core"
-	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/shared"
+	"github.com/hamba/avro"
 	"github.com/hashicorp/consul/api"
 	pqs3 "github.com/xitongsys/parquet-go-source/s3"
 	"github.com/xitongsys/parquet-go/reader"
@@ -20,7 +21,8 @@ import (
 	"os"
 	"os/signal"
 	"path"
-	"runtime"
+	"reflect"
+	_ "runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -42,7 +44,7 @@ const (
 // Main strct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
 	Index        string
-	BufferSize   uint
+	BatchSize    int
 	BucketPath   string
 	Bucket       string
 	Prefix       string
@@ -53,70 +55,61 @@ type Main struct {
 	totalBytes   int64
 	bytesLock    sync.RWMutex
 	totalRecs    *Counter
-	Port         int
+	failedRecs   *Counter
+	Stream       string
 	IsNested     bool
 	ConsulAddr   string
 	ConsulClient *api.Client
-	DateFilter   *time.Time
+	Table        *shared.BasicTable
+	Schema       avro.Schema
+	outClient    *kinesis.Kinesis
 	lock         *api.Lock
-	apiHost		 *quanta.Conn
+	partitionCol *shared.BasicAttribute
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
 func NewMain() *Main {
 	m := &Main{
-		totalRecs: &Counter{},
+		totalRecs:  &Counter{},
+		failedRecs: &Counter{},
 	}
 	return m
 }
 
 func main() {
 
-	app := kingpin.New(os.Args[0], "Quanta S3 data loader").DefaultEnvars()
+	app := kingpin.New(os.Args[0], "Quanta S3 to Kinesis data producer").DefaultEnvars()
 	app.Version("Version: " + Version + "\nBuild: " + Build)
 
 	bucketName := app.Arg("bucket-path", "AWS S3 Bucket Name/Path (patterns ok) to read from via the data loader.").Required().String()
 	index := app.Arg("index", "Table name (root name if nested schema)").Required().String()
-	port := app.Arg("port", "Port number for service").Default("4000").Int32()
+	stream := app.Arg("stream", "Kinesis stream name.").Required().String()
 	region := app.Flag("aws-region", "AWS region of bitmap server host(s)").Default("us-east-1").String()
-	bufSize := app.Flag("buf-size", "Import buffer size").Default("1000000").Int32()
+	batchSize := app.Flag("batch-size", "PutRecords batch size").Default("100").Int32()
 	dryRun := app.Flag("dry-run", "Perform a dry run and exit (just print selected file names).").Bool()
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	isNested := app.Flag("nested", "Input data is a nested schema. The <index> parameter is root.").Bool()
-	dateFilter := app.Flag("date-filter", "If provided, all rows must be within this time partition.").String()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 
-	core.InitLogging("WARN", *environment, "Loader", Version, "Quanta")
+	core.InitLogging("WARN", *environment, "S3-Producer", Version, "Quanta")
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	main := NewMain()
 	main.Index = *index
-	main.BufferSize = uint(*bufSize)
+	main.BatchSize = int(*batchSize)
 	main.AWSRegion = *region
-	main.Port = int(*port)
+	main.Stream = *stream
 	main.IsNested = *isNested
 	main.ConsulAddr = *consul
 
 	log.Printf("Index name %v.\n", main.Index)
-	log.Printf("Buffer size %d.\n", main.BufferSize)
+	log.Printf("Batch size %d.\n", main.BatchSize)
 	log.Printf("AWS region %s\n", main.AWSRegion)
-	log.Printf("Service port %d.\n", main.Port)
+	log.Printf("Kinesis stream  %s.\n", main.Stream)
 	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
 	if main.IsNested {
 		log.Printf("Nested Mode.  Input data is a nested schema, Index <%s> should be the root.", main.Index)
-	}
-
-	if *dateFilter != "" {
-		loc, _ := time.LoadLocation("Local")
-		ts, err := dateparse.ParseIn(*dateFilter, loc)
-		if err != nil {
-			log.Fatalf("Date parse error for time partition filter %s.", *dateFilter)
-		}
-		sf := ts.Format(shared.YMDTimeFmt)
-		tq, _ := time.Parse(shared.YMDTimeFmt, sf)
-		main.DateFilter = &tq
-		log.Printf("Filtering data for time partition %s.", sf)
 	}
 
 	if err := main.Init(); err != nil {
@@ -128,26 +121,18 @@ func main() {
 
 	log.Printf("S3 bucket %s contains %d files for processing.", main.BucketPath, len(main.S3files))
 
-	threads := runtime.NumCPU()
+	//threads := runtime.NumCPU()
+	threads := len(main.S3files)
 	var eg errgroup.Group
 	fileChan := make(chan *s3.Object, threads)
-    closeLater := make([]*core.Session, 0)
 	var ticker *time.Ticker
 	// Spin up worker threads
 	if !*dryRun {
 		for i := 0; i < threads; i++ {
 			eg.Go(func() error {
-				conn, err := core.OpenSession("", main.Index, main.IsNested, main.apiHost)
-				if err != nil {
-					return err
-				}
-				if main.DateFilter != nil {
-					conn.SetDateFilter(main.DateFilter)
-				}
 				for file := range fileChan {
-					main.processRowsForFile(file, conn)
+					main.processRowsForFile(file)
 				}
-                closeLater = append(closeLater, conn)
 				return nil
 			})
 		}
@@ -191,9 +176,6 @@ func main() {
 		if err := eg.Wait(); err != nil {
 			log.Fatalf("Open error %v", err)
 		}
-        for _, cc := range closeLater {
-            cc.CloseSession()
-        }
 		ticker.Stop()
 		log.Printf("Completed, Last Record: %d, Bytes: %s", main.totalRecs.Get(), core.Bytes(main.BytesProcessed()))
 		log.Printf("%d files processed.", selected)
@@ -263,7 +245,7 @@ func (m *Main) LoadBucketContents() {
 	m.S3files = ret
 }
 
-func (m *Main) processRowsForFile(s3object *s3.Object, dbConn *core.Session) {
+func (m *Main) processRowsForFile(s3object *s3.Object) {
 
 	pf, err1 := pqs3.NewS3FileReaderWithClient(context.Background(), m.S3svc, m.Bucket,
 		*aws.String(*s3object.Key))
@@ -279,35 +261,75 @@ func (m *Main) processRowsForFile(s3object *s3.Object, dbConn *core.Session) {
 	defer pr.ReadStop()
 	defer pf.Close()
 
+	putBatch := make([]*kinesis.PutRecordsRequestEntry, 0)
 	num := int(pr.GetNumRows())
 	for i := 1; i <= num; i++ {
-		var err error
-		m.totalRecs.Add(1)
-		err = dbConn.PutRow(m.Index, pr, 0)
+		outMap, partitionKey, err := m.GetRow(pr)
 		if err != nil {
-			// TODO: Improve this by logging into work queue for re-processing
+			log.Println(err)
+			continue
+		}
+
+		outData, errx := avro.Marshal(m.Schema, outMap)
+		if errx != nil {
+			log.Println(errx)
+		}
+
+		putBatch = append(putBatch, &kinesis.PutRecordsRequestEntry{
+			Data:         outData,
+			PartitionKey: aws.String(partitionKey),
+		})
+
+		if i%m.BatchSize == 0 {
+			// put data to stream
+			putOutput, err := m.outClient.PutRecords(&kinesis.PutRecordsInput{
+				Records:    putBatch,
+				StreamName: aws.String(m.Stream),
+			})
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+			m.failedRecs.Add(int(*putOutput.FailedRecordCount))
+			putBatch = make([]*kinesis.PutRecordsRequestEntry, 0)
+		}
+
+		m.totalRecs.Add(1)
+		m.AddBytes(len(outData))
+	}
+	if len(putBatch) > 0 {
+		putOutput, err := m.outClient.PutRecords(&kinesis.PutRecordsInput{
+			Records:    putBatch,
+			StreamName: aws.String(m.Stream),
+		})
+		if err != nil {
 			log.Println(err)
 		}
-		m.AddBytes(dbConn.BytesRead)
+		m.failedRecs.Add(int(*putOutput.FailedRecordCount))
 	}
-    dbConn.Flush()
 }
 
-// Init function initilizations loader.
-// Establishes session with bitmap server and AWS S3 client
+// Init function initializes process.
 func (m *Main) Init() error {
 
-	consul, err := api.NewClient(&api.Config{Address: m.ConsulAddr})
+	var err error
+
+	m.ConsulClient, err = api.NewClient(&api.Config{Address: m.ConsulAddr})
 	if err != nil {
 		return err
 	}
 
-    m.apiHost = quanta.NewDefaultConnection()
-    m.apiHost.ServicePort = m.Port
-    m.apiHost.Quorum = 3
-    if err = m.apiHost.Connect(consul); err != nil {
-        log.Fatal(err)
-    }
+	m.Table, err = shared.LoadSchema("", m.Index, m.ConsulClient)
+	if err != nil {
+		return err
+	}
+	m.Schema = shared.ToAvroSchema(m.Table)
+
+	pkInfo, errx := m.Table.GetPrimaryKeyInfo()
+	if errx != nil {
+		return errx
+	}
+	m.partitionCol = pkInfo[0]
 
 	// Initialize S3 client
 	sess, err := session.NewSession(&aws.Config{
@@ -315,11 +337,18 @@ func (m *Main) Init() error {
 	)
 
 	if err != nil {
-		return fmt.Errorf("Creating S3 session: %v", err)
+		return fmt.Errorf("error creating S3 session: %v", err)
 	}
 
 	// Create S3 service client
 	m.S3svc = s3.New(sess)
+
+	m.outClient = kinesis.New(sess)
+	outStreamName := aws.String(m.Stream)
+	_, err = m.outClient.DescribeStream(&kinesis.DescribeStreamInput{StreamName: outStreamName})
+	if err != nil {
+		return fmt.Errorf("error creating kinesis stream %s: %v", m.Stream, err)
+	}
 
 	return nil
 }
@@ -333,7 +362,7 @@ func (m *Main) printStats() *time.Ticker {
 		for range t.C {
 			duration := time.Since(start)
 			bytes := m.BytesProcessed()
-			log.Printf("Bytes: %s, Records: %v, Duration: %v, Rate: %v/s", core.Bytes(bytes), m.totalRecs.Get(), duration, core.Bytes(float64(bytes)/duration.Seconds()))
+			log.Printf("Bytes: %s, Records: %v, Failed: %v, Duration: %v, Rate: %v/s", core.Bytes(bytes), m.totalRecs.Get(), m.failedRecs.Get(), duration, core.Bytes(float64(bytes)/duration.Seconds()))
 		}
 	}()
 	return t
@@ -374,4 +403,69 @@ func (c *Counter) Get() (ret int64) {
 	ret = c.num
 	c.lock.Unlock()
 	return
+}
+
+// GetRow retrieves a complete record from parquet as a map
+func (m *Main) GetRow(pr *reader.ParquetReader) (map[string]interface{}, string, error) {
+
+	root := pr.SchemaHandler.GetRootExName()
+	outMap := make(map[string]interface{})
+	var partitionKey string
+
+	for _, v := range m.Table.Attributes {
+		var pqColPath string
+		source := v.SourceName
+		if strings.HasPrefix(v.SourceName, "/") {
+			source = v.SourceName[1:]
+			pqColPath = fmt.Sprintf("%s.%s", root, source)
+		} else {
+			pqColPath = fmt.Sprintf("%s.%s", root, v.SourceName)
+		}
+		vals, _, _, err := pr.ReadColumnByPath(pqColPath, 1)
+		if err != nil {
+			return nil, "", fmt.Errorf("parquet reader error for %s [%v]", pqColPath, err)
+		}
+		if len(vals) == 0 {
+			return nil, "", fmt.Errorf("field %s is empty", pqColPath)
+		}
+		cval := vals[0]
+		if cval == nil {
+			continue
+		}
+		outMap[source] = cval
+		if v.FieldName != m.partitionCol.FieldName {
+			continue
+		}
+		// Must be partition col
+		var ts time.Time
+		//tFormat := shared.YMDTimeFmt
+		tFormat := time.RFC3339
+		if m.Table.TimeQuantumType == "YMDH" {
+			tFormat = shared.YMDHTimeFmt
+		}
+		switch reflect.ValueOf(cval).Kind() {
+		case reflect.String:
+			strVal := cval.(string)
+			loc, _ := time.LoadLocation("Local")
+			ts, err = dateparse.ParseIn(strVal, loc)
+			if err != nil {
+				return nil, "", fmt.Errorf("Date parse error for PK field %s - value %s - %v",
+					pqColPath, strVal, err)
+			}
+			outMap[source] = ts.UnixNano() / 1000000 // TODO FIX ME
+		case reflect.Int64:
+			orig := cval.(int64)
+			if v.MappingStrategy == "SysMillisBSI" || v.MappingStrategy == "SysMicroBSI" {
+				ts = time.Unix(0, orig*1000000)
+				if v.MappingStrategy == "SysMicroBSI" {
+					ts = time.Unix(0, orig*1000)
+				}
+			}
+		}
+		partitionKey = ts.UTC().Format(tFormat)
+	}
+	if partitionKey == "" {
+		return nil, "", fmt.Errorf("no PK timestamp for row")
+	}
+	return outMap, partitionKey, nil
 }

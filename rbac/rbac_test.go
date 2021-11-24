@@ -37,8 +37,7 @@ func (suite *RBACTestSuite) SetupSuite() {
 
 	conn := quanta.NewDefaultConnection()
 	conn.ServicePort = 0
-	//conn.Quorum = 3
-	err = conn.Connect()
+	err = conn.Connect(nil)
 	assert.NoError(suite.T(), err)
 
 	suite.client = quanta.NewKVStore(conn)

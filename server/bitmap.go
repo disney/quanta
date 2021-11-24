@@ -377,7 +377,8 @@ func (m *BitmapIndex) updateBitmapCache(f *BitmapFragment) {
 		//Handle exclusive "updates"
 		m.clearAllRows(f.IndexName, f.FieldName, f.Time.UnixNano(), newBm.Bits)
 	}
-	if _, ok := m.bitmapCache[f.IndexName][f.FieldName][rowID][f.Time.UnixNano()]; !ok && f.IsUpdate {
+	if _, ok := m.bitmapCache[f.IndexName][f.FieldName][rowID][f.Time.UnixNano()]; !ok &&
+		f.IsUpdate && m.EndPoint.Port != 0 {
 		// Silently ignore attempts to update data not in local cache
 		m.bitmapCacheLock.Unlock()
 		return
@@ -505,11 +506,13 @@ func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 	}
 
 	m.bsiCacheLock.Lock()
+/*
 	if _, ok := m.bsiCache[f.IndexName][f.FieldName][f.Time.UnixNano()]; !ok && f.IsUpdate {
 		// Silently ignore update attempts against values not already in cache.
 		m.bsiCacheLock.Unlock()
 		return
 	}
+*/
 	if _, ok := m.bsiCache[f.IndexName]; !ok {
 		m.bsiCache[f.IndexName] = make(map[string]map[int64]*BSIBitmap)
 	}
@@ -534,6 +537,30 @@ func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 	if elapsed.Nanoseconds() > (1000000 * 75) {
 		log.Printf("updateBSICache [%s/%s/%s] done in %v.\n", f.IndexName, f.FieldName,
 			f.Time.Format(timeFmt), elapsed)
+	}
+}
+
+// Truncate - Truncate the in-memory data cache for a given index
+func (m *BitmapIndex) Truncate(index string) {
+
+	m.bitmapCacheLock.Lock()
+	m.bsiCacheLock.Lock()
+	defer m.bitmapCacheLock.Unlock()
+	defer m.bsiCacheLock.Unlock()
+
+	fm := m.bitmapCache[index]
+	for _, rm := range fm {
+		for _, tm := range rm {
+			for ts := range tm {
+				delete(tm, ts)
+			}
+		}
+	}
+	bm := m.bsiCache[index]
+	for _, tm := range bm {
+		for ts := range tm {
+			delete(tm, ts)
+		}
 	}
 }
 
@@ -884,7 +911,7 @@ func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperation
 		m.tableCacheLock.Lock()
 		defer m.tableCacheLock.Unlock()
 		delete(m.tableCache, req.Table)
-		m.truncateCaches(req.Table)
+		m.Truncate(req.Table)
 		tableDir := m.dataDir + sep + "bitmap" + sep + req.Table
 		if err := os.RemoveAll(tableDir); err != nil {
 			log.Printf("error dropping table %s directory - %v", req.Table, err)
@@ -894,7 +921,7 @@ func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperation
 	case pb.TableOperationRequest_TRUNCATE:
 		m.tableCacheLock.Lock()
 		defer m.tableCacheLock.Unlock()
-		m.truncateCaches(req.Table)
+		m.Truncate(req.Table)
 		tableDir := m.dataDir + sep + "bitmap" + sep + req.Table
 		if err := os.RemoveAll(tableDir); err != nil {
 			log.Printf("error truncating table %s directory - %v", req.Table, err)

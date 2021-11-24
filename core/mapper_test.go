@@ -11,14 +11,14 @@ import (
 
 var (
 	schema *Table
-	conn   *Connection
+	conn   *Session
 )
 
 func setup() {
 	schema, _ = LoadTable("./testdata", nil, "cities", nil)
 	tbuf := make(map[string]*TableBuffer, 0)
 	tbuf[schema.Name] = &TableBuffer{Table: schema}
-	conn = &Connection{TableBuffers: tbuf}
+	conn = &Session{TableBuffers: tbuf}
 }
 
 func teardown() {

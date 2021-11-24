@@ -17,7 +17,7 @@ import (
 
 // Projector - State of an in-flight projection
 type Projector struct {
-	connection     *Connection
+	connection     *Session
 	fromTime       int64
 	toTime         int64
 	projAttributes []*Attribute
@@ -46,7 +46,7 @@ type BitmapFieldRow struct {
 }
 
 // NewProjection - Construct a Projection.
-func NewProjection(s *Connection, foundSets map[string]*roaring64.Bitmap, joinNames, projNames []string,
+func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames, projNames []string,
 	driver string, fromTime, toTime int64, joinTypes map[string]bool) (*Projector, error) {
 
 	projFieldMap := make(map[string]int)
@@ -150,7 +150,7 @@ func NewProjection(s *Connection, foundSets map[string]*roaring64.Bitmap, joinNa
 	return p, nil
 }
 
-func getAttributes(s *Connection, fieldNames []string) ([]*Attribute, error) {
+func getAttributes(s *Session, fieldNames []string) ([]*Attribute, error) {
 
 	attributes := make([]*Attribute, len(fieldNames))
 
@@ -515,7 +515,14 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 					if shared.TypeFromString(v.Type) == shared.Date {
 						row[i] = t.Format("2006-01-02")
 					} else {
-						row[i] = t.Format("2006-01-02T15:04:05")
+						switch v.MappingStrategy {
+						case "SysSecBSI":
+							row[i] = t.Format(time.RFC3339)
+						case "SysMillisBSI":
+							row[i] = t.Format("2006-01-02T15:04:05.000Z")
+						default:
+							row[i] = t.Format(time.RFC3339Nano)
+						}
 					}
 				default:
 					row[i] = val

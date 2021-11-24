@@ -31,7 +31,7 @@ type ResultReader struct {
 	Total     int
 	response  *shared.BitmapQueryResponse
 	sql       *SQLToQuanta
-	conn      *core.Connection
+	conn      *core.Session
 }
 
 // ResultReaderNext - A wrapper, allowing us to implement sql/driver Next() interface
@@ -41,7 +41,7 @@ type ResultReaderNext struct {
 }
 
 // NewResultReader - Construct a result reader.
-func NewResultReader(conn *core.Connection, req *SQLToQuanta, q *shared.BitmapQueryResponse,
+func NewResultReader(conn *core.Session, req *SQLToQuanta, q *shared.BitmapQueryResponse,
 	limit, offset int) *ResultReader {
 	m := &ResultReader{}
 	if req.Ctx == nil {
@@ -60,7 +60,8 @@ func NewResultReader(conn *core.Connection, req *SQLToQuanta, q *shared.BitmapQu
 
 // Close the result reader.
 func (m *ResultReader) Close() error {
-	m.conn.CloseConnection()
+
+	m.sql.s.sessionPool.Return(m.sql.tbl.Name, m.conn)
 	return nil
 }
 

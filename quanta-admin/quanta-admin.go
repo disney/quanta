@@ -150,7 +150,7 @@ func performCreate(consul *api.Client, table *shared.BasicTable, port int) error
 	conn := quanta.NewDefaultConnection()
 	conn.ServicePort = port
 	conn.Quorum = 3
-	if err := conn.Connect(); err != nil {
+	if err := conn.Connect(consul); err != nil {
 		log.Fatal(err)
 	}
 	services := quanta.NewBitmapIndex(conn, 3000000)
@@ -261,7 +261,7 @@ func nukeData(consul *api.Client, port int, tableName, operation string, retainE
 	conn := quanta.NewDefaultConnection()
 	conn.ServicePort = port
 	conn.Quorum = 3
-	if err := conn.Connect(); err != nil {
+	if err := conn.Connect(consul); err != nil {
 		log.Fatal(err)
 	}
 	services := quanta.NewBitmapIndex(conn, 3000000)

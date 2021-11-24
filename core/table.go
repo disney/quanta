@@ -69,14 +69,14 @@ func LoadTable(path string, kvStore *quanta.KVStore, name string, consulClient *
 
 	table.attributeNameMap = make(map[string]*Attribute)
 
-    // Refactor this
-/*
-	lock, err := shared.Lock(consulClient, name, "LoadSchema")
-	if err != nil {
-		return nil, err
-	}
-	defer lock.Unlock()
-*/
+	// Refactor this
+	/*
+		lock, err := shared.Lock(consulClient, name, "LoadSchema")
+		if err != nil {
+			return nil, err
+		}
+		defer lock.Unlock()
+	*/
 
 	var fieldMap map[string]*Field
 	var errx error
@@ -332,11 +332,29 @@ func (a *Attribute) GetValueForID(id uint64) (interface{}, error) {
 	if v, ok := a.reverseMap[id]; ok {
 		return v, nil
 	}
-	return 0, fmt.Errorf("Attribute %s - Cannot locate value for rowID '%v'", a.SourceName, id)
+
+	if a.MappingStrategy != "StringEnum" {
+		return 0, fmt.Errorf("GetValueForID attribute %s is not a StringEnum", a.FieldName)
+	}
+	lookupName := a.Parent.Name + SEP + a.FieldName + ".StringEnum"
+	x, err := a.Parent.kvStore.Items(lookupName, reflect.String, reflect.Uint64)
+	if err != nil {
+		return nil, fmt.Errorf("ERROR: Cannot open enum for table %s, field %s. [%v]", a.Parent.Name,
+			a.FieldName, err)
+	}
+	for kk, vv := range x {
+		k := kk.(string)
+		v := vv.(uint64)
+		a.reverseMap[v] = k
+	}
+	if v, ok := a.reverseMap[id]; ok { // Try again
+		return v, nil
+	}
+	return 0, fmt.Errorf("Attribute %s - Cannot locate value for rowID '%v'", a.FieldName, id)
 }
 
 // Transform - Perform a tranformation of a value (optional)
-func (a *Attribute) Transform(val interface{}, c *Connection) (newVal interface{}, err error) {
+func (a *Attribute) Transform(val interface{}, c *Session) (newVal interface{}, err error) {
 
 	if a.mapperInstance == nil {
 		return 0, fmt.Errorf("attribute '%s' MapperInstance is nil", a.FieldName)
@@ -345,7 +363,7 @@ func (a *Attribute) Transform(val interface{}, c *Connection) (newVal interface{
 }
 
 // MapValue - Return the row ID for a given value (Standard Bitmap)
-func (a *Attribute) MapValue(val interface{}, c *Connection) (result uint64, err error) {
+func (a *Attribute) MapValue(val interface{}, c *Session) (result uint64, err error) {
 
 	if a.mapperInstance == nil {
 		return 0, fmt.Errorf("attribute '%s' MapperInstance is nil", a.FieldName)
@@ -354,7 +372,7 @@ func (a *Attribute) MapValue(val interface{}, c *Connection) (result uint64, err
 }
 
 // MapValueReverse - Re-hydrate the original value for a given row ID.
-func (a *Attribute) MapValueReverse(id uint64, c *Connection) (result interface{}, err error) {
+func (a *Attribute) MapValueReverse(id uint64, c *Session) (result interface{}, err error) {
 
 	if a.mapperInstance == nil {
 		return 0, fmt.Errorf("attribute '%s' MapperInstance is nil", a.FieldName)
@@ -363,7 +381,7 @@ func (a *Attribute) MapValueReverse(id uint64, c *Connection) (result interface{
 }
 
 // ToBackingValue - Re-hydrate the original value.
-func (a *Attribute) ToBackingValue(rowIDs []uint64, c *Connection) (result string, err error) {
+func (a *Attribute) ToBackingValue(rowIDs []uint64, c *Session) (result string, err error) {
 
 	s := make([]string, len(rowIDs))
 	for i, rowID := range rowIDs {

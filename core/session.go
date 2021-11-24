@@ -9,7 +9,6 @@ import (
 	"github.com/araddon/qlbridge/vm"
 	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/shared"
-	_ "github.com/hashicorp/consul/api"
 	"github.com/json-iterator/go"
 	"github.com/xitongsys/parquet-go/reader"
 	"log"

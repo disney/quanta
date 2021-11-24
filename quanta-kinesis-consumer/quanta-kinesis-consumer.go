@@ -61,6 +61,7 @@ type Main struct {
 	Table         *shared.BasicTable
 	Schema        avro.Schema
 	InitialPos    string
+	CheckpointDB  bool
 	partitionMap  map[string]*Partition
 	partitionLock sync.Mutex
 	timeLocation  *time.Location
@@ -94,6 +95,7 @@ func main() {
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 	trimHorizon := app.Flag("trim-horizon", "Set initial position to TRIM_HORIZON").Bool()
+	noCheckpointer := app.Flag("no-checkpoint-db", "Disable DynamoDB checkpointer.").Bool()
 
 	core.InitLogging("WARN", *environment, "Kinesis-Consumer", Version, "Quanta")
 
@@ -115,12 +117,19 @@ func main() {
 	log.Printf("Buffer size %d.", main.BufferSize)
 	log.Printf("Service port %d.", main.Port)
 	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
-	if *trimHorizon == true {
+	if *trimHorizon {
 		main.InitialPos = "TRIM_HORIZON"
 		log.Printf("Initial position = TRIM_HORIZON")
 	} else {
 		main.InitialPos = "LATEST"
 		log.Printf("Initial position = LATEST")
+	}
+	if *noCheckpointer {
+		main.CheckpointDB = false
+		log.Printf("Checkpoint DB disabled.")
+	} else {
+		main.CheckpointDB = true
+		log.Printf("Checkpoint DB enabled.")
 	}
 
 	var err error
@@ -204,22 +213,31 @@ func main() {
 					key := k
 					go func(rows []map[string]interface{}, part string) {
 						if err := main.processBatch(rows, part); err != nil {
-							main.errorCount.Add(1)
+							if err == core.ErrPoolDrained {
+								// Couldn't process, put data back in partition channel
+								time.Sleep(1 * time.Second)
+								main.getPartition(part).PutDataRows(rows)
+							} else {
+								main.errorCount.Add(1)
+								log.Print(err)
+							}
 						}
 					}(batch, key)
 				}
 				itemsOutstanding += len(v.Data)
 			}
 			main.partitionLock.Unlock()
-			//_, inUse := main.sessionPool.Metrics()
-			//log.Printf("PARTITIONS %d, STALE %d, OUTSTANDING ITEMS = %d, POOL = %d",
-			//		len(main.partitionMap), stalePartitions, itemsOutstanding, inUse)
+			_, inUse := main.sessionPool.Metrics()
+			if itemsOutstanding > 0 {
+				log.Printf("Partitions %d, Outstanding Items = %d, Processors in use = %d",
+						len(main.partitionMap), itemsOutstanding, inUse)
+			}
 			select {
 			case _, done := <-c:
 				if done {
 					break
 				}
-			case <-time.After(10 * time.Second):
+			case <-time.After(1 * time.Second):
 			}
 		}
 	}()
@@ -231,6 +249,9 @@ func (m *Main) processBatch(rows []map[string]interface{}, partition string) err
 
 	conn, err := m.sessionPool.Borrow(m.Index)
 	if err != nil {
+		if err == core.ErrPoolDrained {
+			return err
+		}
 		return fmt.Errorf("Error opening Quanta session %v", err)
 	}
 	defer m.sessionPool.Return(m.Index, conn)
@@ -304,14 +325,22 @@ func (m *Main) Init() (int, error) {
 		log.Fatalf("checkpoint storage initialization error: %v", err)
 	}
 
-	m.consumer, err = consumer.New(
-		m.Stream,
-		consumer.WithClient(kc),
-		//consumer.WithShardIteratorType(types.ShardIteratorTypeTrimHorizon),
-		consumer.WithShardIteratorType(m.InitialPos),
-		consumer.WithStore(db),
-		//consumer.WithCounter(counter),
-	)
+	if m.CheckpointDB {
+		m.consumer, err = consumer.New(
+			m.Stream,
+			consumer.WithClient(kc),
+			consumer.WithShardIteratorType(m.InitialPos),
+			consumer.WithStore(db),
+			//consumer.WithCounter(counter),
+		)
+	} else {
+		m.consumer, err = consumer.New(
+			m.Stream,
+			consumer.WithClient(kc),
+			consumer.WithShardIteratorType(m.InitialPos),
+			//consumer.WithCounter(counter),
+		)
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -346,6 +375,16 @@ func (p *Partition) GetDataRows() []map[string]interface{} {
 	return rows
 }
 
+func (p *Partition) PutDataRows(rows []map[string]interface{}) {
+
+	for i := 0; i < len(rows); i++ {
+		select {
+		case p.Data <- rows[i]:
+		}
+	}
+}
+
+// Lookup partition with the intent to write to it
 func (m *Main) getPartition(partition string) *Partition {
 
 	m.partitionLock.Lock()

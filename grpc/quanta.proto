@@ -3,6 +3,7 @@ syntax = "proto3";
 option java_multiple_files = true;
 option java_package = "io.grpc.disney.quanta";
 option java_outer_classname = "QuantaProto";
+option go_package = "github.com/disney/quanta;quanta";
 
 package quanta;
 import "google/protobuf/empty.proto";
@@ -19,6 +20,7 @@ service KVStore {
   rpc BatchLookup(stream IndexKVPair) returns (stream IndexKVPair) {}
   rpc Items(google.protobuf.StringValue) returns (stream IndexKVPair) {}
   rpc PutStringEnum(StringEnum) returns (google.protobuf.UInt64Value) {}
+  rpc DeleteIndicesWithPrefix(DeleteIndicesWithPrefixRequest) returns (google.protobuf.Empty) {}
 }
 
 service StringSearch {
@@ -34,6 +36,7 @@ service BitmapIndex {
   rpc Join(JoinRequest) returns (JoinResponse) {}
   rpc Projection(ProjectionRequest) returns (ProjectionResponse) {}
   rpc CheckoutSequence(CheckoutSequenceRequest) returns (CheckoutSequenceResponse) {}
+  rpc TableOperation(TableOperationRequest) returns (google.protobuf.Empty) {}
 }
 
 message Success {
@@ -98,6 +101,16 @@ message QueryFragment {
   float  samplePct = 13;
   bool  nullCheck = 14;
   bool  negate = 15;
+}
+
+message TableOperationRequest {
+  string table = 1;
+  enum OpType {
+	DEPLOY = 0;
+	DROP = 1;
+	TRUNCATE = 2;
+  }
+  OpType operation = 2;
 }
 
 message QueryResult {
@@ -172,5 +185,10 @@ message CheckoutSequenceRequest {
 message CheckoutSequenceResponse {
   uint64   start = 3;
   uint32   count = 4;
+}
+
+message DeleteIndicesWithPrefixRequest {
+  string   prefix = 1;
+  bool     retainEnums = 2;
 }
 

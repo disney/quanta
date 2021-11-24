@@ -8,7 +8,9 @@ import (
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/schema"
 	"github.com/araddon/qlbridge/value"
+	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	"io/ioutil"
 	"log"
@@ -40,25 +42,35 @@ type QuantaSource struct {
 	//result         *pcli.QueryResult
 	lastResultPos int
 	baseDir       string
-	servicePort   int
-	consulClient  *api.Client
+    sessionPool   *core.SessionPool
 }
 
 // NewQuantaSource - Construct a QuantaSource.
 func NewQuantaSource(baseDir, consulAddr string, servicePort int) (*QuantaSource, error) {
 
 	m := &QuantaSource{}
-	m.servicePort = servicePort
 	var err error
+	var consulClient *api.Client 
 	if consulAddr != "" {
-		m.consulClient, err = api.NewClient(&api.Config{Address: consulAddr})
+		consulClient, err = api.NewClient(&api.Config{Address: consulAddr})
 		if err != nil {
 			return m, err
 		}
 	}
 
+    clientConn := quanta.NewDefaultConnection()
+    clientConn.ServicePort = servicePort
+    clientConn.Quorum = 3
+    if err := clientConn.Connect(consulClient); err != nil {
+        log.Fatal(err)
+    }
+
+    m.sessionPool = core.NewSessionPool(clientConn, m.Schema, baseDir)
+
 	m.baseDir = baseDir
-	log.Printf("Constructing QuantaSource at baseDir '%s'", baseDir)
+	if m.baseDir != "" {
+		log.Printf("Constructing QuantaSource at baseDir '%s'", baseDir)
+	}
 
 	// name is a string and cols is an []string
 	m.exit = make(chan bool, 1)
@@ -67,7 +79,8 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort int) (*QuantaSource
 }
 
 // Init initilize this db
-func (m *QuantaSource) Init() {}
+func (m *QuantaSource) Init() {
+}
 
 // Setup this db with parent schema.
 func (m *QuantaSource) Setup(ss *schema.Schema) error {
@@ -95,34 +108,25 @@ func (m *QuantaSource) Open(tableName string) (schema.Conn, error) {
 		return nil, fmt.Errorf("Could not find '%v'.'%v' schema)", m.Schema.Name, tableName)
 	}
 
-	conn, err := core.OpenConnection(m.baseDir, tableName, false, 0, m.servicePort, m.consulClient)
-	if err != nil {
-		return nil, err
-	}
-
+    conn, err := m.sessionPool.Borrow(tableName)
+    if err != nil {
+        return nil, fmt.Errorf("Error opening Quanta session %v", err)
+    }
 	return NewSQLToQuanta(m, tbl, conn), nil
 }
 
 // Table by name
 func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 
-	conn, err := core.OpenConnection(m.baseDir, table, false, 0, m.servicePort, m.consulClient)
+	conn, err := m.sessionPool.Borrow(table)
 	if err != nil {
-		log.Printf("Error '%v' opening connection for table %s.", err, table)
-		return nil, err
+		return nil, fmt.Errorf("error opening connection for table %s - %v", table, err)
 	}
 	tb, found := conn.TableBuffers[table]
 	if !found {
 		return nil, fmt.Errorf("cannot find table buffer for %s", table)
 	}
 	ts := tb.Table
-	/*
-		ts, err := core.LoadSchema(m.baseDir, nil, table, m.consulClient)
-		if err != nil {
-			log.Printf("Error '%v' loading schema for table %s.", err, table)
-			return nil, err
-		}
-	*/
 	pkMap := make(map[string]*core.Attribute)
 	pka, _ := ts.GetPrimaryKeyInfo()
 	for _, v := range pka {
@@ -138,7 +142,7 @@ func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 			return nil, fmt.Errorf("field name missing from schema definition")
 		}
 		cols = append(cols, v.FieldName)
-		f := schema.NewField(v.FieldName, core.ValueTypeFromString(v.Type),
+		f := schema.NewField(v.FieldName, shared.ValueTypeFromString(v.Type),
 			0, v.Required, v.DefaultValue, v.ForeignKey, "-", v.Desc)
 		f.Extra = v.MappingStrategy
 		if v.ForeignKey != "" {
@@ -168,6 +172,7 @@ func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 		rows = append(rows, m.AsRow(v))
 	}
 	tbl.SetRows(rows)
+	m.sessionPool.Return(table, conn)
 	return tbl, nil
 }
 
@@ -190,6 +195,8 @@ func (m *QuantaSource) AsRow(f *schema.Field) []driver.Value {
 
 // Close this source
 func (m *QuantaSource) Close() error {
+
+	m.sessionPool.Shutdown()
 	defer func() { recover() }()
 	close(m.exit)
 	return nil
@@ -218,13 +225,26 @@ func (m *QuantaSource) Next() schema.Message {
 // ListTableNames - Return table name strings.
 func (m *QuantaSource) ListTableNames() []string {
 
+	if m.baseDir == "" {
+		lock, errx := shared.Lock(m.sessionPool.AppHost.Consul, "admin-tool", "admin-tool")
+		if errx != nil {
+			log.Printf("listTableNames: cannot obtain lock %v", errx)
+			return []string{}
+		}
+		defer shared.Unlock(m.sessionPool.AppHost.Consul, lock)
+		tables, errx := shared.GetTables(m.sessionPool.AppHost.Consul)
+		if errx != nil {
+			log.Printf("shared.getTables failed: %v", errx)
+			return []string{}
+		}
+		return tables
+	}
+
+	list := make([]string, 0)
 	files, err := ioutil.ReadDir(m.baseDir)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	list := make([]string, 0)
-
 	for _, f := range files {
 		if f.IsDir() {
 			list = append(list, f.Name())

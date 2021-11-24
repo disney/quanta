@@ -70,15 +70,19 @@ func (m *BitmapIndex) saveCompleteBSI(bsi *BSIBitmap, indexName, fieldName strin
 }
 
 // Move data from active use to the archive directory path
-func (m *BitmapIndex) archiveData(index, field string, rowIDOrBits int64, ts time.Time,
-	tqType string) error {
+func (m *BitmapIndex) archiveOrTruncateData(index, field string, rowIDOrBits int64, ts time.Time,
+	tqType string, archive bool) error {
 
 	oldPath := m.generateFilePath(index, field, rowIDOrBits, ts, tqType, false)
 	newPath := m.generateFilePath(index, field, rowIDOrBits, ts, tqType, true)
 
 	if rowIDOrBits >= 0 {
-		return os.Rename(oldPath, newPath)
+		if archive {
+			return os.Rename(oldPath, newPath)
+		}
+		return os.Remove(oldPath)
 	}
+
 	return filepath.Walk(oldPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -86,7 +90,10 @@ func (m *BitmapIndex) archiveData(index, field string, rowIDOrBits int64, ts tim
 		if info.IsDir() {
 			return nil
 		}
-		return os.Rename(path, newPath+sep+info.Name())
+		if archive {
+			return os.Rename(path, newPath+sep+info.Name())
+		}
+		return os.Remove(path)
 	})
 }
 

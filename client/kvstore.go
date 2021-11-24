@@ -37,16 +37,16 @@ func (c *KVStore) Put(index string, k interface{}, v interface{}) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
-	replicaClients := c.selectNodes(k, false)
+	replicaClients, indices := c.selectNodes(k, false)
 	if len(replicaClients) == 0 {
 		return fmt.Errorf("%v.Put(_) = _, %v: ", c.client, " no available nodes!")
 	}
 	// Iterate over replica client list and perform Put operation
-	for _, client := range replicaClients {
+	for i, client := range replicaClients {
 		_, err := client.Put(ctx, &pb.IndexKVPair{IndexPath: index, Key: shared.ToBytes(k),
 			Value: [][]byte{shared.ToBytes(v)}})
 		if err != nil {
-			return fmt.Errorf("%v.Put(_) = _, %v: ", c.client, err)
+			return fmt.Errorf("%v.Put(_) = _, %v: [%s]", c.client, err, c.Conn.clientConn[indices[i]].Target())
 		}
 	}
 	return nil
@@ -136,7 +136,7 @@ func (c *KVStore) Lookup(index string, key interface{}, valueType reflect.Kind) 
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
-	replicaClients := c.selectNodes(key, false)
+	replicaClients, indices := c.selectNodes(key, false)
 	if len(replicaClients) == 0 {
 		return nil, fmt.Errorf("%v.Lookup(_) = _, %v: ", c.client, " no available nodes!")
 	}
@@ -144,7 +144,8 @@ func (c *KVStore) Lookup(index string, key interface{}, valueType reflect.Kind) 
 	// Use the highest weight client
 	lookup, err := replicaClients[0].Lookup(ctx, &pb.IndexKVPair{IndexPath: index, Key: shared.ToBytes(key), Value: nil})
 	if err != nil {
-		return uint64(0), fmt.Errorf("%v.Lookup(_) = _, %v: ", c.client, err)
+		return uint64(0), fmt.Errorf("%v.Lookup(_) = _, %v: [%s]", c.client, err,
+			c.Conn.clientConn[indices[0]].Target())
 	}
 	if lookup.Value != nil && len(lookup.Value) != 0 && len(lookup.Value[0]) != 0 {
 		return shared.UnmarshalValue(valueType, lookup.Value[0]), nil
@@ -244,37 +245,34 @@ func (c *KVStore) batchLookup(client pb.KVStoreClient, index string,
 func (c *KVStore) Items(index string, keyType, valueType reflect.Kind) (map[interface{}]interface{}, error) {
 
 	results := make(map[interface{}]interface{}, 0)
-	rchan := make(chan map[interface{}]interface{})
-	defer close(rchan)
-	done := make(chan error)
-	defer close(done)
-	count := len(c.client)
+	rchan := make(chan map[interface{}]interface{}, len(c.client))
+
+	var eg errgroup.Group
 
 	for i := range c.client {
-		go func(client pb.KVStoreClient, idx string) {
-			r, e := c.items(client, idx, keyType, valueType)
+		x := c.client[i]
+		eg.Go(func() error {
+			r, err := c.items(x, index, keyType, valueType)
+			if err != nil {
+				return err
+			}
 			rchan <- r
-			done <- e
-		}(c.client[i], index)
+			return nil
+		})
 	}
 
-	for {
-		b := <-rchan
+	if err := eg.Wait(); err != nil {
+		return results, err
+	}
+	close(rchan)
+
+	for b := range rchan {
 		if b != nil {
 			for k, v := range b {
 				results[k] = v
 			}
 		}
-		err := <-done
-		if err != nil {
-			return nil, err
-		}
-		count--
-		if count == 0 {
-			break
-		}
 	}
-
 	return results, nil
 }
 
@@ -309,7 +307,7 @@ func (c *KVStore) PutStringEnum(index, value string) (uint64, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
-	replicaClients := c.selectNodes(index, true)
+	replicaClients, indices := c.selectNodes(index, true)
 	if len(replicaClients) == 0 {
 		return 0, fmt.Errorf("%v.PutStringEnum(_) = _, %v: ", c.client, " no available nodes!")
 	}
@@ -318,7 +316,8 @@ func (c *KVStore) PutStringEnum(index, value string) (uint64, error) {
 	// If the value already exists it will silently return the existing rowID
 	rowID, err := replicaClients[0].PutStringEnum(ctx, &pb.StringEnum{IndexPath: index, Value: value})
 	if err != nil {
-		return 0, fmt.Errorf("%v.PutStringEnum(_) = _, %v: ", c.client, err)
+		return 0, fmt.Errorf("%v.PutStringEnum(_) = _, %v: [%s]", c.client, err,
+			c.Conn.clientConn[indices[0]].Target())
 	}
 
 	// Parallel iterate over remaining client list and perform Put operation (replication)
@@ -341,7 +340,7 @@ func (c *KVStore) PutStringEnum(index, value string) (uint64, error) {
 }
 
 // Resolve the node location(s) of a single key. If 'all' == true than all nodes are selected.
-func (c *KVStore) selectNodes(key interface{}, all bool) []pb.KVStoreClient {
+func (c *KVStore) selectNodes(key interface{}, all bool) ([]pb.KVStoreClient, []int) {
 
 	c.Conn.nodeMapLock.RLock()
 	defer c.Conn.nodeMapLock.RUnlock()
@@ -353,12 +352,46 @@ func (c *KVStore) selectNodes(key interface{}, all bool) []pb.KVStoreClient {
 
 	nodeKeys := c.Conn.hashTable.GetN(replicas, shared.ToString(key))
 	selected := make([]pb.KVStoreClient, len(nodeKeys))
+	indices := make([]int, len(nodeKeys))
 
 	for i, v := range nodeKeys {
 		if j, ok := c.Conn.nodeMap[v]; ok {
 			selected[i] = c.client[j]
+			indices[i] = j
 		}
 	}
 
-	return selected
+	return selected, indices
+}
+
+// DeleteIndicesWithPrefix - Delete indices with a table prefix, optionally retain StringEnum data
+func (c *KVStore) DeleteIndicesWithPrefix(prefix string, retainEnums bool) error {
+
+	var eg errgroup.Group
+	replicaClients, _ := c.selectNodes(prefix, true)
+	if len(replicaClients) == 0 {
+		return fmt.Errorf("no available nodes")
+	}
+	for _, client := range replicaClients {
+		x := client
+		eg.Go(func() error {
+			return c.deleteIndicesWithPrefix(x, prefix, retainEnums)
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *KVStore) deleteIndicesWithPrefix(client pb.KVStoreClient, prefix string, retainEnums bool) error {
+
+	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	defer cancel()
+	_, err := client.DeleteIndicesWithPrefix(ctx,
+		&pb.DeleteIndicesWithPrefixRequest{Prefix: prefix, RetainEnums: retainEnums})
+	if err != nil {
+		return fmt.Errorf("%v.DeleteIndicesWithPrefix(_) = _, %v: ", c, err)
+	}
+	return nil
 }

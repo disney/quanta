@@ -40,7 +40,7 @@ type EndPoint struct {
 }
 
 // NewEndPoint construct a new data node endpoint.
-func NewEndPoint(dataDir string) (*EndPoint, error) {
+func NewEndPoint(dataDir string, consul *api.Client) (*EndPoint, error) {
 
 	m := &EndPoint{}
 	m.hashKey = path.Base(dataDir) // leaf directory name is consisten hash key
@@ -49,6 +49,7 @@ func NewEndPoint(dataDir string) (*EndPoint, error) {
 	}
 
 	m.dataDir = dataDir
+	m.consul = consul
 
 	var opts []grpc.ServerOption
 	opts = append(opts, grpc.MaxRecvMsgSize(shared.GRPCRecvBufsize),

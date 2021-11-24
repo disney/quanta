@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/disney/quanta/shared"
 	"math"
 	"sort"
 	"strings"
@@ -16,7 +17,7 @@ import (
 
 // Projector - State of an in-flight projection
 type Projector struct {
-	connection     *Connection
+	connection     *Session
 	fromTime       int64
 	toTime         int64
 	projAttributes []*Attribute
@@ -45,7 +46,7 @@ type BitmapFieldRow struct {
 }
 
 // NewProjection - Construct a Projection.
-func NewProjection(s *Connection, foundSets map[string]*roaring64.Bitmap, joinNames, projNames []string,
+func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames, projNames []string,
 	driver string, fromTime, toTime int64, joinTypes map[string]bool) (*Projector, error) {
 
 	projFieldMap := make(map[string]int)
@@ -149,7 +150,7 @@ func NewProjection(s *Connection, foundSets map[string]*roaring64.Bitmap, joinNa
 	return p, nil
 }
 
-func getAttributes(s *Connection, fieldNames []string) ([]*Attribute, error) {
+func getAttributes(s *Session, fieldNames []string) ([]*Attribute, error) {
 
 	attributes := make([]*Attribute, len(fieldNames))
 
@@ -500,21 +501,28 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 			if val, ok := rs.GetValue(cid); !ok {
 				row[i] = "NULL"
 			} else {
-				switch TypeFromString(v.Type) {
-				case Integer:
+				switch shared.TypeFromString(v.Type) {
+				case shared.Integer:
 					row[i] = fmt.Sprintf("%10d", val)
-				case Float:
+				case shared.Float:
 					f := fmt.Sprintf("%%10.%df", v.Scale)
 					row[i] = fmt.Sprintf(f, float64(val)/math.Pow10(v.Scale))
-				case Date, DateTime:
+				case shared.Date, shared.DateTime:
 					t := time.Unix(0, val*1000000).UTC()
 					if v.MappingStrategy == "SysMicroBSI" {
 						t = time.Unix(0, val*1000).UTC()
 					}
-					if TypeFromString(v.Type) == Date {
+					if shared.TypeFromString(v.Type) == shared.Date {
 						row[i] = t.Format("2006-01-02")
 					} else {
-						row[i] = t.Format("2006-01-02T15:04:05")
+						switch v.MappingStrategy {
+						case "SysSecBSI":
+							row[i] = t.Format(time.RFC3339)
+						case "SysMillisBSI":
+							row[i] = t.Format("2006-01-02T15:04:05.000Z")
+						default:
+							row[i] = t.Format(time.RFC3339Nano)
+						}
 					}
 				default:
 					row[i] = val

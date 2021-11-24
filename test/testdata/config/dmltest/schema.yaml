@@ -1,0 +1,21 @@
+tableName: dmltest
+primaryKey: date+name
+timeQuantumType: YMDH
+attributes:
+- fieldName: date
+  mappingStrategy: SysMillisBSI
+  type: DateTime
+  defaultValue: now()
+- fieldName: name
+  sourceName: /name
+  type: String
+  mappingStrategy: StringHashBSI
+- fieldName: age
+  sourceName: /age
+  type: Integer
+  mappingStrategy: IntBSI
+- fieldName: gender
+  sourceName: /gender
+  type: String
+  mappingStrategy: StringEnum
+  exclusive: true

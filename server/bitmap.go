@@ -41,7 +41,7 @@ const (
 //
 type BitmapIndex struct {
 	*EndPoint
-	expireDays      uint
+	expireDays      int
 	bitmapCache     map[string]map[string]map[uint64]map[int64]*StandardBitmap
 	bitmapCacheLock sync.RWMutex
 	bsiCache        map[string]map[string]map[int64]*BSIBitmap
@@ -51,38 +51,55 @@ type BitmapIndex struct {
 	fragFileLock    sync.Mutex
 	setBitThreads   *CountTrigger
 	writeSignal     chan bool
-	tableCache      map[string]*shared.Table
+	tableCache      map[string]*shared.BasicTable
+	tableCacheLock  sync.RWMutex
 }
 
 // NewBitmapIndex - Construct and initialize bitmap server state.
-func NewBitmapIndex(endPoint *EndPoint, expireDays uint) *BitmapIndex {
+func NewBitmapIndex(endPoint *EndPoint, expireDays int) *BitmapIndex {
 
 	e := &BitmapIndex{EndPoint: endPoint}
 	e.expireDays = expireDays
-	e.tableCache = make(map[string]*shared.Table)
-	configPath := endPoint.dataDir + sep + "config"
-
-	_ = filepath.Walk(configPath,
-		func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			if info.IsDir() {
-				index := info.Name()
-				if _, err := os.Stat(path + sep + "schema.yaml"); err != nil {
-					return nil
+	e.tableCache = make(map[string]*shared.BasicTable)
+	configPath := e.EndPoint.dataDir + sep + "config"
+	schemaPath := ""          // this is normally an empty string forcing schema to come from Consul
+	if e.EndPoint.Port == 0 { // In-memory test harness
+		schemaPath = configPath // read schema from local config yaml
+		_ = filepath.Walk(configPath,
+			func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
 				}
-				if table, err := shared.LoadSchema(configPath, index, endPoint.consul); err != nil {
-					log.Fatalf("ERROR: Could not load schema for %s - %v", index, err)
-				} else {
-					e.tableCache[index] = table
-					log.Printf("Index %s initialized.", index)
+				if info.IsDir() {
+					index := info.Name()
+					if _, err := os.Stat(path + sep + "schema.yaml"); err != nil {
+						return nil
+					}
+					if table, err := shared.LoadSchema(schemaPath, index, nil); err != nil {
+						log.Fatalf("ERROR: Could not load schema for %s - %v", index, err)
+					} else {
+						e.tableCache[index] = table
+						log.Printf("Index %s initialized.", index)
+					}
 				}
+				return nil
+			})
+	} else { // Normal (from Consul) initialization
+		tables, err := shared.GetTables(e.EndPoint.consul)
+		if err != nil {
+			log.Fatalf("ERROR: Could not load table schema, GetTables error %v", err)
+		}
+		for _, table := range tables {
+			if t, err := shared.LoadSchema(schemaPath, table, e.EndPoint.consul); err != nil {
+				log.Fatalf("ERROR: Could not load schema for %s - %v", table, err)
+			} else {
+				e.tableCache[table] = t
+				log.Printf("Table %s initialized.", table)
 			}
-			return nil
-		})
+		}
+	}
 
-	pb.RegisterBitmapIndexServer(endPoint.server, e)
+	pb.RegisterBitmapIndexServer(e.EndPoint.server, e)
 	return e
 }
 
@@ -247,8 +264,10 @@ func newBitmapFragment(index, field string, rowIDOrBits int64, ts time.Time, f [
 }
 
 // Lookup field metadata (time quantum, exclusivity)
-func (m *BitmapIndex) getFieldConfig(index, field string) (*shared.Attribute, error) {
+func (m *BitmapIndex) getFieldConfig(index, field string) (*shared.BasicAttribute, error) {
 
+	m.tableCacheLock.RLock()
+	defer m.tableCacheLock.RUnlock()
 	table := m.tableCache[index]
 	attr, err := table.GetAttribute(field)
 	if err != nil {
@@ -264,30 +283,14 @@ func (m *BitmapIndex) getFieldConfig(index, field string) (*shared.Attribute, er
 // Check metadata - Is the field a BSI?
 func (m *BitmapIndex) isBSI(index, field string) bool {
 
+	m.tableCacheLock.RLock()
+	defer m.tableCacheLock.RUnlock()
 	table := m.tableCache[index]
 	attr, err := table.GetAttribute(field)
 	if err != nil {
 		log.Printf("isBSI ERROR: Non existent attribute %s for index %s was referenced.", field, index)
 	}
-
-	switch attr.MappingStrategy {
-	case "IntBSI":
-		return true
-	case "CustomBSI":
-		return true
-	case "FloatScaleBSI":
-		return true
-	case "SysSecBSI":
-		return true
-	case "SysMillisBSI", "SysMicroBSI":
-		return true
-	case "StringHashBSI":
-		return true
-	case "ParentRelation":
-		return true
-	default:
-		return false
-	}
+	return attr.IsBSI()
 }
 
 //
@@ -342,11 +345,11 @@ func (m *BitmapIndex) batchProcessLoop(threadID int) {
  *
  * Wake up on interval and run data expiration process.
  */
-func (m *BitmapIndex) expireProcessLoop(days uint) {
+func (m *BitmapIndex) expireProcessLoop(days int) {
 
 	select {
 	case <-time.After(time.Minute * 10):
-		m.expire(days)
+		m.expireOrTruncate(days, false)
 	}
 }
 
@@ -374,7 +377,8 @@ func (m *BitmapIndex) updateBitmapCache(f *BitmapFragment) {
 		//Handle exclusive "updates"
 		m.clearAllRows(f.IndexName, f.FieldName, f.Time.UnixNano(), newBm.Bits)
 	}
-	if _, ok := m.bitmapCache[f.IndexName][f.FieldName][rowID][f.Time.UnixNano()]; !ok && f.IsUpdate {
+	if _, ok := m.bitmapCache[f.IndexName][f.FieldName][rowID][f.Time.UnixNano()]; !ok &&
+		f.IsUpdate && m.EndPoint.Port != 0 {
 		// Silently ignore attempts to update data not in local cache
 		m.bitmapCacheLock.Unlock()
 		return
@@ -502,11 +506,13 @@ func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 	}
 
 	m.bsiCacheLock.Lock()
+/*
 	if _, ok := m.bsiCache[f.IndexName][f.FieldName][f.Time.UnixNano()]; !ok && f.IsUpdate {
 		// Silently ignore update attempts against values not already in cache.
 		m.bsiCacheLock.Unlock()
 		return
 	}
+*/
 	if _, ok := m.bsiCache[f.IndexName]; !ok {
 		m.bsiCache[f.IndexName] = make(map[string]map[int64]*BSIBitmap)
 	}
@@ -534,7 +540,31 @@ func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 	}
 }
 
-func (m *BitmapIndex) expire(days uint) {
+// Truncate - Truncate the in-memory data cache for a given index
+func (m *BitmapIndex) Truncate(index string) {
+
+	m.bitmapCacheLock.Lock()
+	m.bsiCacheLock.Lock()
+	defer m.bitmapCacheLock.Unlock()
+	defer m.bsiCacheLock.Unlock()
+
+	fm := m.bitmapCache[index]
+	for _, rm := range fm {
+		for _, tm := range rm {
+			for ts := range tm {
+				delete(tm, ts)
+			}
+		}
+	}
+	bm := m.bsiCache[index]
+	for _, tm := range bm {
+		for ts := range tm {
+			delete(tm, ts)
+		}
+	}
+}
+
+func (m *BitmapIndex) expireOrTruncate(days int, truncate bool) {
 
 	m.bitmapCacheLock.Lock()
 	m.bsiCacheLock.Lock()
@@ -548,12 +578,13 @@ func (m *BitmapIndex) expire(days uint) {
 				for ts, bitmap := range tm {
 					endDate := time.Unix(0, ts).Add(expiration)
 					if endDate.After(time.Now()) {
-						if err := m.archiveData(indexName, fieldName, int64(rowID), time.Unix(0, ts),
-							bitmap.TQType); err != nil {
+						if err := m.archiveOrTruncateData(indexName, fieldName, int64(rowID), time.Unix(0, ts),
+							bitmap.TQType, truncate); err != nil {
 						} else {
 							delete(tm, ts)
 						}
-
+					} else if truncate {
+						delete(tm, ts)
 					}
 				}
 			}
@@ -565,12 +596,42 @@ func (m *BitmapIndex) expire(days uint) {
 			for ts, bsi := range tm {
 				endDate := time.Unix(0, ts).Add(expiration)
 				if endDate.After(time.Now()) {
-					if err := m.archiveData(indexName, fieldName, -1, time.Unix(0, ts),
-						bsi.TQType); err != nil {
+					if err := m.archiveOrTruncateData(indexName, fieldName, -1, time.Unix(0, ts),
+						bsi.TQType, truncate); err != nil {
 					} else {
 						delete(tm, ts)
 					}
+				} else if truncate {
+					delete(tm, ts)
 				}
+			}
+		}
+	}
+}
+
+func (m *BitmapIndex) truncateCaches(index string) {
+
+	m.bitmapCacheLock.Lock()
+	m.bsiCacheLock.Lock()
+	defer m.bitmapCacheLock.Unlock()
+	defer m.bsiCacheLock.Unlock()
+
+    fm, _ := m.bitmapCache[index]
+	if fm != nil {
+		for _, rm := range fm {
+			for _, tm := range rm {
+				for ts, _ := range tm {
+					delete(tm, ts)
+				}
+			}
+		}
+	}
+
+    xm, _ := m.bsiCache[index]
+	if xm != nil {
+		for _, tm := range xm {
+			for ts, _ := range tm {
+				delete(tm, ts)
 			}
 		}
 	}
@@ -827,4 +888,49 @@ func (c *CountTrigger) Add(n int) {
 			//    return
 		}
 	}
+}
+
+// TableOperation - Process TableOperations.
+func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperationRequest) (*empty.Empty, error) {
+
+	if req.Table == "" {
+		return &empty.Empty{}, fmt.Errorf("table not specified for table operation")
+	}
+
+	switch req.Operation {
+	case pb.TableOperationRequest_DEPLOY:
+		if table, err := shared.LoadSchema("", req.Table, m.EndPoint.consul); err != nil {
+			log.Fatalf("ERROR: Could not load schema for %s - %v", req.Table, err)
+		} else {
+			m.tableCacheLock.Lock()
+			defer m.tableCacheLock.Unlock()
+			m.tableCache[req.Table] = table
+			log.Printf("schema for %s re-loaded and initialized", req.Table)
+		}
+	case pb.TableOperationRequest_DROP:
+		m.tableCacheLock.Lock()
+		defer m.tableCacheLock.Unlock()
+		delete(m.tableCache, req.Table)
+		m.Truncate(req.Table)
+		tableDir := m.dataDir + sep + "bitmap" + sep + req.Table
+		if err := os.RemoveAll(tableDir); err != nil {
+			log.Printf("error dropping table %s directory - %v", req.Table, err)
+		} else {
+			log.Printf("Table %s dropped.", req.Table)
+		}
+	case pb.TableOperationRequest_TRUNCATE:
+		m.tableCacheLock.Lock()
+		defer m.tableCacheLock.Unlock()
+		m.Truncate(req.Table)
+		tableDir := m.dataDir + sep + "bitmap" + sep + req.Table
+		if err := os.RemoveAll(tableDir); err != nil {
+			log.Printf("error truncating table %s directory - %v", req.Table, err)
+		} else {
+			log.Printf("Table %s truncated.", req.Table)
+		}
+	default:
+		return &empty.Empty{}, fmt.Errorf("unknown operation type for table operation request")
+	}
+
+	return &empty.Empty{}, nil
 }

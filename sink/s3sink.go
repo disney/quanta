@@ -1,4 +1,5 @@
 package sink
+
 // S3Sink - Support for SELECT * INTO "s3://..."
 
 import (
@@ -16,7 +17,7 @@ import (
 )
 
 type (
-    // S3Sink - State for AWS S3 implemention of Sink interface.
+	// S3Sink - State for AWS S3 implemention of Sink interface.
 	S3Sink struct {
 		outBucket      *s3gof3r.Bucket
 		outBucketConf  *s3gof3r.Config
@@ -71,7 +72,7 @@ func (s *S3Sink) Open(ctx *plan.Context, bucketpath string, params map[string]in
 	s.outBucketConf = s3gof3r.DefaultConfig
 	s.outBucketConf.Concurrency = 16
 	w, err := s.outBucket.PutWriter(file, nil, s.outBucketConf)
-    if  err != nil {
+	if err != nil {
 		return err
 	}
 	s.writer = w

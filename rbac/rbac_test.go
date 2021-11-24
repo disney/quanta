@@ -20,12 +20,11 @@ type RBACTestSuite struct {
 
 func (suite *RBACTestSuite) SetupSuite() {
 
-	os.RemoveAll("./testdata/metadata")
-	os.RemoveAll("./testdata/UserRoles")
+	os.RemoveAll("./testdata/index")
 	var err error
 	u.SetupLogging("debug")
 
-	endpoint, err := server.NewEndPoint("./testdata")
+	endpoint, err := server.NewEndPoint("./testdata", nil)
 	assert.NoError(suite.T(), err)
 	assert.NotNil(suite.T(), endpoint)
 	endpoint.Port = 0 // Enable in memory instance
@@ -38,8 +37,7 @@ func (suite *RBACTestSuite) SetupSuite() {
 
 	conn := quanta.NewDefaultConnection()
 	conn.ServicePort = 0
-	//conn.Quorum = 3
-	err = conn.Connect()
+	err = conn.Connect(nil)
 	assert.NoError(suite.T(), err)
 
 	suite.client = quanta.NewKVStore(conn)
@@ -48,8 +46,7 @@ func (suite *RBACTestSuite) SetupSuite() {
 
 func (suite *RBACTestSuite) TearDownSuite() {
 	suite.server.Shutdown()
-	os.RemoveAll("./testdata/metadata")
-	os.RemoveAll("./testdata/UserRoles")
+	os.RemoveAll("./testdata/index")
 }
 
 // In order for 'go test' to run this suite, we need to create

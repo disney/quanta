@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/araddon/qlbridge/expr"
+	"github.com/araddon/qlbridge/lex"
 	_ "github.com/araddon/qlbridge/qlbdriver"
 	"github.com/araddon/qlbridge/schema"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -19,15 +20,17 @@ import (
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/expr/builtins"
 
+	"github.com/hashicorp/consul/api"
 	"github.com/lestrrat-go/jwx/jwk"
 	mysql "github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/server"
+	"github.com/siddontang/go-mysql/test_util/test_keys"
 
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/custom/functions"
+	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/sink"
 	"github.com/disney/quanta/source"
-	"github.com/siddontang/go-mysql/test_util/test_keys"
 )
 
 // Variables to identify the build
@@ -46,7 +49,6 @@ var (
 	logging       *string
 	environment   *string
 	proxyHostPort *string
-	dataDir       *string
 	username      *string
 	password      *string
 	reWhitespace  *regexp.Regexp
@@ -65,7 +67,6 @@ func main() {
 	environment = app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	proxyHostPort = app.Flag("proxy-host-port", "Host:port mapping of MySQL Proxy server").Default("0.0.0.0:4000").String()
 	quantaPort := app.Flag("quanta-port", "Port number for Quanta service").Default("4000").Int()
-	schemaDir := app.Arg("schema-dir", "Base directory containing schema files").Default("/home/data/schema").String()
 	publicKeyURL := app.Arg("public-key-url", "URL for JWT public key.").String()
 	tokenservicePort := app.Arg("tokenservice-port", "Token exchance service port").Default("4001").Int()
 	userKey := app.Flag("user-key", "Key used to get user id from JWT claims").Default("username").String()
@@ -84,9 +85,13 @@ func main() {
 		core.InitLogging(*logging, *environment, "Proxy", Version, "Quanta")
 	}
 
-	u.Infof("SCHEMADIR=%s\n", *schemaDir)
 	consulAddr := *consul
 	u.Infof("Connecting to Consul at: [%s] ...\n", consulAddr)
+	consulConfig := &api.Config{Address: consulAddr}
+	errx := shared.RegisterSchemaChangeListener(consulConfig, schemaChangeListener)
+	if errx != nil {
+		log.Fatal(errx)
+	}
 
 	if publicKeyURL != nil {
 		publicKeySet = make([]*jwk.Set, 0)
@@ -117,7 +122,7 @@ func main() {
 	var err error
 	var src *source.QuantaSource
 
-	src, err = source.NewQuantaSource(*schemaDir, consulAddr, *quantaPort)
+	src, err = source.NewQuantaSource("", consulAddr, *quantaPort)
 	if err != nil {
 		log.Println(err)
 	}
@@ -138,6 +143,21 @@ func main() {
 		go onConn(conn)
 	}
 
+}
+
+func schemaChangeListener(e shared.SchemaChangeEvent) {
+
+	core.ClearTableCache()
+	switch e.Event {
+	case shared.Drop:
+		schema.DefaultRegistry().SchemaDrop("quanta", e.Table, lex.TokenTable)
+		u.Infof("Dropped table %s", e.Table)
+	case shared.Modify:
+		u.Infof("Truncated table %s", e.Table)
+	case shared.Create:
+		schema.DefaultRegistry().SchemaRefresh("quanta")
+		u.Infof("Created table %s", e.Table)
+	}
 }
 
 func onConn(conn net.Conn) {
@@ -223,6 +243,7 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 
 	switch strings.ToLower(ss[0]) {
 	case "select", "describe", "show":
+
 		h.checkSessionUserID(true)
 
 		var r *mysql.Resultset

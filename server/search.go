@@ -38,7 +38,7 @@ type StringSearch struct {
 // NewStringSearch - Construct server side state for search service.
 func NewStringSearch(endPoint *EndPoint) (*StringSearch, error) {
 
-	db, err := pogreb.Open(endPoint.dataDir+"/"+"search.dat", nil)
+	db, err := pogreb.Open(endPoint.dataDir+"/index/"+"search.dat", nil)
 	if err != nil {
 		return nil, err
 	}

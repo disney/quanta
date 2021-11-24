@@ -31,7 +31,7 @@ type ResultReader struct {
 	Total     int
 	response  *shared.BitmapQueryResponse
 	sql       *SQLToQuanta
-	conn      *core.Connection
+	conn      *core.Session
 }
 
 // ResultReaderNext - A wrapper, allowing us to implement sql/driver Next() interface
@@ -41,7 +41,7 @@ type ResultReaderNext struct {
 }
 
 // NewResultReader - Construct a result reader.
-func NewResultReader(conn *core.Connection, req *SQLToQuanta, q *shared.BitmapQueryResponse,
+func NewResultReader(conn *core.Session, req *SQLToQuanta, q *shared.BitmapQueryResponse,
 	limit, offset int) *ResultReader {
 	m := &ResultReader{}
 	if req.Ctx == nil {
@@ -60,7 +60,8 @@ func NewResultReader(conn *core.Connection, req *SQLToQuanta, q *shared.BitmapQu
 
 // Close the result reader.
 func (m *ResultReader) Close() error {
-	m.conn.CloseConnection()
+
+	m.sql.s.sessionPool.Return(m.sql.tbl.Name, m.conn)
 	return nil
 }
 
@@ -204,10 +205,10 @@ func (m *ResultReader) Run() error {
 			if err != nil {
 				return err
 			}
-			switch core.TypeFromString(field.Type) {
-			case core.Integer:
+			switch shared.TypeFromString(field.Type) {
+			case shared.Integer:
 				vals[0] = fmt.Sprintf("%10d", minmax)
-			case core.Float:
+			case shared.Float:
 				f := fmt.Sprintf("%%10.%df", field.Scale)
 				vals[0] = fmt.Sprintf(f, float64(minmax)/math.Pow10(field.Scale))
 			}

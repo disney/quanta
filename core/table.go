@@ -5,14 +5,12 @@ package core
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/araddon/qlbridge/value"
 	"github.com/disney/quanta/client"
+	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"os"
-	"os/signal"
 	"plugin"
 	"reflect"
 	"strings"
@@ -21,153 +19,25 @@ import (
 
 // Table - Table structure.
 type Table struct {
-	Name             string                `yaml:"tableName"`
-	PrimaryKey       string                `yaml:"primaryKey,omitempty"`
-	SecondaryKeys    string                `yaml:"secondaryKeys,omitempty"`
-	DefaultPredicate string                `yaml:"defaultPredicate,omitempty"`
-	TimeQuantumType  string                `yaml:"timeQuantumType,omitempty"`
-	DisableDedup     bool                  `yaml:"disableDedup"`
-	Attributes       []Attribute           `yaml:"attributes"`
-	attributeNameMap map[string]*Attribute `yaml:"-"`
-	ConsulClient     *api.Client           `yaml:"-"`
-	lock             *api.Lock             `yaml:"-"`
-	localLock        sync.RWMutex          `yaml:"-"`
-	basePath         string                `yaml:"-"`
-	kvStore          *quanta.KVStore       `yaml:"-"`
+	*shared.BasicTable
+	Attributes       []Attribute
+	attributeNameMap map[string]*Attribute
+	localLock        sync.RWMutex
+	kvStore          *quanta.KVStore
 }
 
 // Attribute - Field structure.
 type Attribute struct {
-	Parent           *Table                 `yaml:"-" json:"-"`
-	SourceName       string                 `yaml:"sourceName"`
-	ChildTable       string                 `yaml:"childTable"`
-	FieldName        string                 `yaml:"fieldName"`
-	Type             string                 `yaml:"type"`
-	ForeignKey       string                 `yaml:"foreignKey,omitempty"`
-	MappingStrategy  string                 `yaml:"mappingStrategy"`
-	Size             int                    `yaml:"maxLen,omitempty"`
-	Ordinal          int                    `yaml:"-"`
-	Scale            int                    `yaml:"scale,omitempty"`
-	Values           []Value                `yaml:"values,omitempty"`
-	MapperConfig     map[string]string      `yaml:"configuration,omitempty"`
-	Desc             string                 `yaml:"desc,omitempty"`
-	MinValue         int                    `yaml:"minValue,omitempty"`
-	MaxValue         int                    `yaml:"maxValue,omitempty"`
-	CallTransform    bool                   `yaml:"callTransform,omitempty"`
-	HighCard         bool                   `yaml:"highCard"`
-	Required         bool                   `yaml:"required,omitempty"`
-	Searchable       bool                   `yaml:"searchable,omitempty"`
-	DefaultValue     string                 `yaml:"defaultValue,omitempty"`
-	valueMap         map[interface{}]uint64 `yaml:"-"`
-	reverseMap       map[uint64]interface{} `yaml:"-" json:"-"`
-	mapperInstance   Mapper                 `yaml:"-"`
-	ColumnID         bool                   `yaml:"columnID,omitempty"`
-	ColumnIDMSV      bool                   `yaml:"columnIDMSV,omitempty"`
-	IsTimeSeries     bool                   `yaml:"isTimeSeries,omitempty"`
-	TimeQuantumType  string                 `yaml:"timeQuantumType,omitempty"`
-	Exclusive        bool                   `yaml:"exclusive,omitempty"`
-	DelegationTarget string                 `yaml:"delegationTarget,omitempty"`
-}
-
-// Value - Metadata value items for StringEnum mapper type.
-type Value struct {
-	Value interface{} `yaml:"value" json:"value"`
-	RowID uint64      `yaml:"rowID" json:"rowID"`
-	Desc  string      `yaml:"desc,omitempty" json:"desc,omitempty"`
-}
-
-// DataType - Field data types.
-type DataType int
-
-// Constant defines for data type.
-const (
-	NotExist = DataType(iota)
-	String
-	Integer
-	Float
-	Date
-	DateTime
-	Boolean
-	JSON
-	NotDefined
-)
-
-// String - Return string respresentation of DataType
-func (vt DataType) String() string {
-	switch vt {
-	case NotExist:
-		return "NotExist"
-	case String:
-		return "String"
-	case Integer:
-		return "Integer"
-	case Float:
-		return "Float"
-	case Boolean:
-		return "Boolean"
-	case JSON:
-		return "JSON"
-	case Date:
-		return "Date"
-	case DateTime:
-		return "DateTime"
-	case NotDefined:
-		return "NotDefined"
-	default:
-		return "NotDefined"
-	}
-}
-
-// TypeFromString - Construct a DataType from the string representation.
-func TypeFromString(vt string) DataType {
-	switch vt {
-	case "NotExist":
-		return NotExist
-	case "String":
-		return String
-	case "Integer":
-		return Integer
-	case "Float":
-		return Float
-	case "Boolean":
-		return Boolean
-	case "JSON":
-		return JSON
-	case "Date":
-		return Date
-	case "DateTime":
-		return DateTime
-	default:
-		return NotDefined
-	}
-}
-
-// ValueTypeFromString - Get value type for a given string representation.j
-func ValueTypeFromString(vt string) value.ValueType {
-	switch vt {
-	case "NotExist":
-		return value.NilType
-	case "String":
-		return value.StringType
-	case "Integer":
-		return value.IntType
-	case "Float":
-		return value.NumberType
-	case "Boolean":
-		return value.BoolType
-	case "Date":
-		return value.TimeType
-	case "DateTime":
-		return value.TimeType
-	default:
-		return value.UnknownType
-	}
+	*shared.BasicAttribute
+	Parent         *Table
+	valueMap       map[interface{}]uint64
+	reverseMap     map[uint64]interface{}
+	mapperInstance Mapper
 }
 
 const (
 	// SEP - Path Separator
-	SEP    = string(os.PathSeparator)
-	fDelim = ":"
+	SEP = string(os.PathSeparator)
 )
 
 var (
@@ -175,35 +45,38 @@ var (
 	tableCacheLock sync.Mutex
 )
 
-// LoadSchema - Load a new Table object from configuration.
-func LoadSchema(path string, kvStore *quanta.KVStore, name string, consulClient *api.Client) (*Table, error) {
+// LoadTable - Load and initialize table object.
+func LoadTable(path string, kvStore *quanta.KVStore, name string, consulClient *api.Client) (*Table, error) {
 
 	tableCacheLock.Lock()
 	defer tableCacheLock.Unlock()
 	if t, ok := tableCache[name]; ok {
+		t.kvStore = kvStore
 		return t, nil
 	}
 
-	b, err := ioutil.ReadFile(path + SEP + name + SEP + "schema.yaml")
+	sch, err := shared.LoadSchema(path, name, consulClient)
 	if err != nil {
 		return nil, err
 	}
-	var table Table
-	err2 := yaml.Unmarshal(b, &table)
-	if err2 != nil {
-		return nil, err2
-	}
 
-	table.ConsulClient = consulClient
-	table.basePath = path
-	table.kvStore = kvStore
+	table := &Table{BasicTable: sch, kvStore: kvStore, Attributes: make([]Attribute, len(sch.Attributes))}
+	for j := range sch.Attributes { // wrap BasicAttributes
+		v := &Attribute{BasicAttribute: &sch.Attributes[j]}
+		table.Attributes[j] = *v
+		table.Attributes[j].Parent = table
+	}
 
 	table.attributeNameMap = make(map[string]*Attribute)
-	if err := table.Lock(); err != nil {
-		return nil, err
-	}
 
-	defer table.Unlock()
+	// Refactor this
+	/*
+		lock, err := shared.Lock(consulClient, name, "LoadSchema")
+		if err != nil {
+			return nil, err
+		}
+		defer lock.Unlock()
+	*/
 
 	var fieldMap map[string]*Field
 	var errx error
@@ -213,9 +86,6 @@ func LoadSchema(path string, kvStore *quanta.KVStore, name string, consulClient 
 
 	i := 1
 	for j, v := range table.Attributes {
-
-		table.Attributes[j].Parent = &table
-		v.Parent = &table
 
 		if v.SourceName == "" && v.FieldName == "" {
 			return nil, fmt.Errorf("a valid attribute must have an input source name or field name.  Neither exists")
@@ -251,8 +121,6 @@ func LoadSchema(path string, kvStore *quanta.KVStore, name string, consulClient 
 			if v.ForeignKey == "" {
 				return nil, fmt.Errorf("foreign key table name must be specified for %s", v.FieldName)
 			}
-			// Force field to be mapped by IntBSIMapper
-			v.MappingStrategy = "IntBSI"
 		}
 		if v.MappingStrategy != "ChildRelation" {
 			if table.Attributes[j].mapperInstance, err = ResolveMapper(&v); err != nil {
@@ -263,7 +131,7 @@ func LoadSchema(path string, kvStore *quanta.KVStore, name string, consulClient 
 		if v.FieldName != "" {
 
 			// check to see if there are values in the API call (if applicable)
-			lookupName := table.Name + ":" + v.FieldName
+			lookupName := table.Name + SEP + v.FieldName + ".StringEnum"
 			// if there are values in schema.yaml then override string enum values in global cache
 			if f, ok := fieldMap[lookupName]; ok && len(table.Attributes[j].Values) > 0 {
 				// Pull it in
@@ -277,19 +145,19 @@ func LoadSchema(path string, kvStore *quanta.KVStore, name string, consulClient 
 
 			// Dont allow string enum values to override local cache
 			if x, ok := fieldMap[lookupName]; ok && len(table.Attributes[j].Values) == 0 {
-				var values []Value = make([]Value, 0)
+				var values []shared.Value = make([]shared.Value, 0)
 				for _, z := range x.Values {
 					if z.Mapping == "" {
 						z.Mapping = z.Label
 					}
-					values = append(values, Value{Value: z.Mapping, RowID: uint64(z.Value), Desc: z.Label})
+					values = append(values, shared.Value{Value: z.Mapping, RowID: uint64(z.Value), Desc: z.Label})
 				}
 				table.Attributes[j].Values = values
 			}
 
 			// check to see if there is an external json values file and load it
 			if x, err3 := ioutil.ReadFile(path + SEP + name + SEP + v.FieldName + ".json"); err3 == nil {
-				var values []Value
+				var values []shared.Value
 				if err4 := json.Unmarshal(x, &values); err4 == nil {
 					table.Attributes[j].Values = values
 				}
@@ -340,7 +208,7 @@ func LoadSchema(path string, kvStore *quanta.KVStore, name string, consulClient 
 		pka, err := table.GetPrimaryKeyInfo()
 		if err != nil {
 			return nil,
-				fmt.Errorf("A primary key field was defined but it is not valid field name(s) [%s] - %v",
+				fmt.Errorf("A primary key field was defined but it does not contain valid field name(s) [%s] - %v",
 					table.PrimaryKey, err)
 		}
 		if table.TimeQuantumType != "" && (pka[0].Type != "Date" && pka[0].Type != "DateTime") {
@@ -349,11 +217,11 @@ func LoadSchema(path string, kvStore *quanta.KVStore, name string, consulClient 
 		}
 	}
 
-	tableCache[name] = &table
-	return &table, nil
+	tableCache[name] = table
+	return table, nil
 }
 
-// GetAttribute - Get a tables attribute by name.
+// GetAttribute - Get a table's attribute by name.
 func (t *Table) GetAttribute(name string) (*Attribute, error) {
 
 	if attr, ok := t.attributeNameMap[name]; ok {
@@ -397,6 +265,21 @@ func (t *Table) GetAlternateKeyInfo() (map[string][]*Attribute, error) {
 	return ret, nil
 }
 
+// GetFKSpec - Get info for foreign key
+func (a *Attribute) GetFKSpec() (string, string, error) {
+	if a.ForeignKey == "" {
+		return "", "", fmt.Errorf("field %s.%s is not a foreign key", a.Parent.Name, a.FieldName)
+	}
+	s := strings.Split(a.ForeignKey, ".")
+	table := s[0]
+	hasFieldSpec := len(s) > 1
+	fieldSpec := ""
+	if hasFieldSpec {
+		fieldSpec = s[1]
+	}
+	return table, fieldSpec, nil
+}
+
 // GetValue - Return row ID for a given input value (StringEnum).
 func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 
@@ -420,14 +303,18 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 		if a.Parent.kvStore == nil {
 			return 0, fmt.Errorf("kvStore is not initialized")
 		}
+		if a.Parent.Name == "" {
+			panic("a.Parent.Name is empty")
+		}
 
 		// OK, value not anywhere to be found, invoke service to add.
-		rowID, err := a.Parent.kvStore.PutStringEnum(a.Parent.Name+":"+a.FieldName, value.(string))
+		rowID, err := a.Parent.kvStore.PutStringEnum(a.Parent.Name+SEP+a.FieldName+".StringEnum",
+			value.(string))
 		if err != nil {
 			return 0, err
 		}
 
-		a.Values = append(a.Values, Value{Value: value, RowID: rowID})
+		a.Values = append(a.Values, shared.Value{Value: value, RowID: rowID})
 		a.valueMap[value] = rowID
 		a.reverseMap[rowID] = value
 
@@ -445,26 +332,29 @@ func (a *Attribute) GetValueForID(id uint64) (interface{}, error) {
 	if v, ok := a.reverseMap[id]; ok {
 		return v, nil
 	}
-	return 0, fmt.Errorf("Attribute %s - Cannot locate value for rowID '%v'", a.SourceName, id)
-}
 
-// GetFKSpec - Get info for foreign key
-func (a *Attribute) GetFKSpec() (string, string, error) {
-	if a.ForeignKey == "" {
-		return "", "", fmt.Errorf("field %s.%s is not a foreign key", a.Parent.Name, a.FieldName)
+	if a.MappingStrategy != "StringEnum" {
+		return 0, fmt.Errorf("GetValueForID attribute %s is not a StringEnum", a.FieldName)
 	}
-	s := strings.Split(a.ForeignKey, ".")
-	table := s[0]
-	hasFieldSpec := len(s) > 1
-	fieldSpec := ""
-	if hasFieldSpec {
-		fieldSpec = s[1]
+	lookupName := a.Parent.Name + SEP + a.FieldName + ".StringEnum"
+	x, err := a.Parent.kvStore.Items(lookupName, reflect.String, reflect.Uint64)
+	if err != nil {
+		return nil, fmt.Errorf("ERROR: Cannot open enum for table %s, field %s. [%v]", a.Parent.Name,
+			a.FieldName, err)
 	}
-	return table, fieldSpec, nil
+	for kk, vv := range x {
+		k := kk.(string)
+		v := vv.(uint64)
+		a.reverseMap[v] = k
+	}
+	if v, ok := a.reverseMap[id]; ok { // Try again
+		return v, nil
+	}
+	return 0, fmt.Errorf("Attribute %s - Cannot locate value for rowID '%v'", a.FieldName, id)
 }
 
 // Transform - Perform a tranformation of a value (optional)
-func (a *Attribute) Transform(val interface{}, c *Connection) (newVal interface{}, err error) {
+func (a *Attribute) Transform(val interface{}, c *Session) (newVal interface{}, err error) {
 
 	if a.mapperInstance == nil {
 		return 0, fmt.Errorf("attribute '%s' MapperInstance is nil", a.FieldName)
@@ -473,7 +363,7 @@ func (a *Attribute) Transform(val interface{}, c *Connection) (newVal interface{
 }
 
 // MapValue - Return the row ID for a given value (Standard Bitmap)
-func (a *Attribute) MapValue(val interface{}, c *Connection) (result uint64, err error) {
+func (a *Attribute) MapValue(val interface{}, c *Session) (result uint64, err error) {
 
 	if a.mapperInstance == nil {
 		return 0, fmt.Errorf("attribute '%s' MapperInstance is nil", a.FieldName)
@@ -482,7 +372,7 @@ func (a *Attribute) MapValue(val interface{}, c *Connection) (result uint64, err
 }
 
 // MapValueReverse - Re-hydrate the original value for a given row ID.
-func (a *Attribute) MapValueReverse(id uint64, c *Connection) (result interface{}, err error) {
+func (a *Attribute) MapValueReverse(id uint64, c *Session) (result interface{}, err error) {
 
 	if a.mapperInstance == nil {
 		return 0, fmt.Errorf("attribute '%s' MapperInstance is nil", a.FieldName)
@@ -491,7 +381,7 @@ func (a *Attribute) MapValueReverse(id uint64, c *Connection) (result interface{
 }
 
 // ToBackingValue - Re-hydrate the original value.
-func (a *Attribute) ToBackingValue(rowIDs []uint64, c *Connection) (result string, err error) {
+func (a *Attribute) ToBackingValue(rowIDs []uint64, c *Session) (result string, err error) {
 
 	s := make([]string, len(rowIDs))
 	for i, rowID := range rowIDs {
@@ -511,18 +401,6 @@ func (a *Attribute) ToBackingValue(rowIDs []uint64, c *Connection) (result strin
 		}
 	}
 	return strings.Join(s, a.mapperInstance.GetMultiDelimiter()), nil
-}
-
-// IsBSI - Is this attribute a BSI?
-func (a *Attribute) IsBSI() bool {
-
-	// TODO:  Add IsBSI() to Mapper interface and let mappers self describe
-	switch a.MappingStrategy {
-	case "IntBSI", "FloatScaleBSI", "SysMillisBSI", "SysMicroBSI", "SysSecBSI", "StringHashBSI", "CustomBSI", "ParentRelation":
-		return true
-	default:
-		return false
-	}
 }
 
 // Field Metadata struct
@@ -549,6 +427,9 @@ func (t *Table) LoadFieldValues() (fieldMap map[string]*Field, err error) {
 	if t.kvStore == nil {
 		return nil, nil
 	}
+	if t.Name == "" {
+		panic("t.Name is nil")
+	}
 
 	var attributeFieldMap map[string]*Field = make(map[string]*Field)
 
@@ -556,7 +437,7 @@ func (t *Table) LoadFieldValues() (fieldMap map[string]*Field, err error) {
 		if attr.MappingStrategy != "StringEnum" {
 			continue
 		}
-		lookupName := t.Name + ":" + attr.FieldName
+		lookupName := t.Name + SEP + attr.FieldName + ".StringEnum"
 		x, err := t.kvStore.Items(lookupName, reflect.String, reflect.Uint64)
 		if err != nil {
 			return nil, fmt.Errorf("ERROR: Cannot open enum for table %s, field %s. [%v]", t.Name,
@@ -577,74 +458,6 @@ func (t *Table) LoadFieldValues() (fieldMap map[string]*Field, err error) {
 	}
 
 	return attributeFieldMap, nil
-}
-
-// Lock the table.
-func (t *Table) Lock() error {
-
-	var err error
-	// If Consul client is not set then we are not running in distributed mode.  Use local mutex.
-	if t.ConsulClient == nil {
-		t.localLock.Lock()
-		return nil
-	}
-
-	// create lock key
-	opts := &api.LockOptions{
-		Key:        t.Name + "/1",
-		Value:      []byte("set by loader"),
-		SessionTTL: "10s",
-		/*
-		   		SessionOpts: &api.SessionEntry{
-		     	Checks:   []string{"check1", "check2"},
-		     	Behavior: "release",
-		   		},
-		*/
-	}
-
-	t.lock, err = t.ConsulClient.LockOpts(opts)
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	go func() {
-		for range c {
-			//log.Println("Interrupted...")
-			err = t.lock.Unlock()
-			if err != nil {
-				return
-			}
-		}
-	}()
-
-	// acquire lock
-	//log.Println("Acquiring lock ...")
-	stopCh := make(chan struct{})
-	lockCh, err := t.lock.Lock(stopCh)
-	if err != nil {
-		return err
-	}
-	if lockCh == nil {
-		return fmt.Errorf("lock already held")
-	}
-	return nil
-}
-
-// Unlock the table.
-func (t *Table) Unlock() error {
-
-	var err error
-	if t.ConsulClient == nil {
-		t.localLock.Unlock()
-		return nil
-	}
-	if t.lock == nil {
-		return fmt.Errorf("lock value was nil (not set)")
-	}
-	err = t.lock.Unlock()
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 // ClearTableCache - Clear the table cache.

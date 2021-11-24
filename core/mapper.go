@@ -18,9 +18,9 @@ type DefaultMapper struct {
 
 // Mapper - Mapper interface.   MapValue is the only required method.
 type Mapper interface {
-	Transform(attr *Attribute, val interface{}, c *Connection) (newVal interface{}, err error)
-	MapValue(attr *Attribute, val interface{}, c *Connection) (result uint64, err error)
-	MapValueReverse(attr *Attribute, id uint64, c *Connection) (result interface{}, err error)
+	Transform(attr *Attribute, val interface{}, c *Session) (newVal interface{}, err error)
+	MapValue(attr *Attribute, val interface{}, c *Session) (result uint64, err error)
+	MapValueReverse(attr *Attribute, id uint64, c *Session) (result interface{}, err error)
 	GetMultiDelimiter() string
 }
 
@@ -116,13 +116,13 @@ const (
 )
 
 // Transform - Default transformer just passes the input value as return argument
-func (dm DefaultMapper) Transform(attr *Attribute, val interface{}, c *Connection) (newVal interface{}, err error) {
+func (dm DefaultMapper) Transform(attr *Attribute, val interface{}, c *Session) (newVal interface{}, err error) {
 	newVal = val
 	return
 }
 
 // MapValueReverse - Default reverse mapper throws not implemented error
-func (dm DefaultMapper) MapValueReverse(attr *Attribute, id uint64, c *Connection) (result interface{}, err error) {
+func (dm DefaultMapper) MapValueReverse(attr *Attribute, id uint64, c *Session) (result interface{}, err error) {
 	err = fmt.Errorf("MapValueReverse - Not implemented for this mapper [%s]", dm.String())
 	return
 }
@@ -255,7 +255,7 @@ func MapperTypeFromString(mt string) MapperType {
 }
 
 // MapValue - Map a value to a row id for standard bitmaps or an int64
-func (mt MapperType) MapValue(attr *Attribute, val interface{}, c *Connection) (result uint64, err error) {
+func (mt MapperType) MapValue(attr *Attribute, val interface{}, c *Session) (result uint64, err error) {
 	return attr.MapValue(val, c)
 }
 
@@ -270,7 +270,7 @@ func (mt MapperType) IsBSI() bool {
 }
 
 // UpdateBitmap - Mutate bitmap.
-func (mt MapperType) UpdateBitmap(c *Connection, table, field string, mval uint64, isTimeSeries bool) (err error) {
+func (mt MapperType) UpdateBitmap(c *Session, table, field string, mval uint64, isTimeSeries bool) (err error) {
 
 	//TIME_FMT := "2006-01-02T15"
 	tbuf, ok := c.TableBuffers[table]
@@ -319,6 +319,8 @@ func ResolveMapper(attr *Attribute) (mapper Mapper, err error) {
 				mapper, err = lookupMapper(name, attr.MapperConfig)
 			}
 		}
+	} else if attr.MappingStrategy == "ParentRelation" {
+		mapper, err = lookupMapper("IntBSI", attr.MapperConfig)
 	} else {
 		mapper, err = lookupMapper(attr.MappingStrategy, attr.MapperConfig)
 	}

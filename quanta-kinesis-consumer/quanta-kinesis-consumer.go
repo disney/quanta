@@ -348,17 +348,20 @@ func (m *Main) Init() (int, error) {
 	return shardCount, nil
 }
 
+// Partition - A partition is a Quanta concept and defines an daily or hourly time segment.
 type Partition struct {
 	ModTime      time.Time
 	PartitionKey string
 	Data         chan map[string]interface{}
 }
 
+// NewPartition - Construct a new partition.
 func NewPartition(partition string) *Partition {
 	return &Partition{PartitionKey: partition, Data: make(chan map[string]interface{}, partitionChannelSize),
 		ModTime: time.Now().UTC()}
 }
 
+// GetDataRows - Extract data rows from partition channel.  Number of rows are larger of outstanding data or batchSize.
 func (p *Partition) GetDataRows() []map[string]interface{} {
 
 	size := len(p.Data)
@@ -375,6 +378,7 @@ func (p *Partition) GetDataRows() []map[string]interface{} {
 	return rows
 }
 
+// PutDataRows - Put batch back in channel for retry.
 func (p *Partition) PutDataRows(rows []map[string]interface{}) {
 
 	for i := 0; i < len(rows); i++ {

@@ -11,9 +11,10 @@ import (
 	"time"
 )
 
-var ErrPoolDrained = errors.New("Error opening Quanta session pool drained")
+// ErrPoolDrained - Special case error indicates that the pool is exhausted
+var ErrPoolDrained = errors.New("session pool drained")
 
-// SessionPoolConfig - Session pool configuration
+// SessionPool - Session pool encapsulates a Quanta session.
 type SessionPool struct {
 	AppHost      *quanta.Conn
 	schema       *sch.Schema

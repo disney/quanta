@@ -59,7 +59,8 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err2)
 	schema.RegisterSourceAsSchema("quanta", src)
 
-	suite.store = quanta.NewKVStore(conn)
+	suite.store, err = quanta.NewKVStore(conn)
+	assert.NoError(suite.T(), err)
 	assert.NotNil(suite.T(), suite.store)
 
 	ctx, err := rbac.NewAuthContext(suite.store, "USER001", true)

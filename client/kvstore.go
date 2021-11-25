@@ -12,6 +12,7 @@ import (
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 	"io"
 	"reflect"
 )
@@ -19,17 +20,27 @@ import (
 // KVStore API wrapper
 type KVStore struct {
 	*Conn
-	client []pb.KVStoreClient
+	client 		[]pb.KVStoreClient
+  	nodeConns   []*grpc.ClientConn
 }
 
 // NewKVStore - Construct KVStore service endpoint.
-func NewKVStore(conn *Conn) *KVStore {
+func NewKVStore(conn *Conn) (*KVStore, error) {
 
 	clients := make([]pb.KVStoreClient, len(conn.clientConn))
-	for i := 0; i < len(conn.clientConn); i++ {
-		clients[i] = pb.NewKVStoreClient(conn.clientConn[i])
+	nodeConns, err := conn.CreateNodeConnections(false)
+	for i := 0; i < len(nodeConns); i++ {
+		clients[i] = pb.NewKVStoreClient(nodeConns[i])
 	}
-	return &KVStore{Conn: conn, client: clients}
+	return &KVStore{Conn: conn, client: clients, nodeConns: nodeConns}, err
+}
+
+// Close - Close all GRPC connections for this service session.
+func (c *KVStore) Close() {
+
+	for _, v := range c.nodeConns {
+		v.Close()
+	}
 }
 
 // Put a new attribute
@@ -138,7 +149,7 @@ func (c *KVStore) Lookup(index string, key interface{}, valueType reflect.Kind) 
 	defer cancel()
 	replicaClients, indices := c.selectNodes(key, false)
 	if len(replicaClients) == 0 {
-		return nil, fmt.Errorf("%v.Lookup(_) = _, %v: ", c.client, " no available nodes!")
+		return nil, fmt.Errorf("%v.Lookup(_) = _, %v: ", c.client, " no available nodes")
 	}
 
 	// Use the highest weight client
@@ -360,7 +371,6 @@ func (c *KVStore) selectNodes(key interface{}, all bool) ([]pb.KVStoreClient, []
 			indices[i] = j
 		}
 	}
-
 	return selected, indices
 }
 

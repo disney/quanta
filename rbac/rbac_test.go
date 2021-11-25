@@ -40,7 +40,8 @@ func (suite *RBACTestSuite) SetupSuite() {
 	err = conn.Connect(nil)
 	assert.NoError(suite.T(), err)
 
-	suite.client = quanta.NewKVStore(conn)
+	suite.client, err = quanta.NewKVStore(conn)
+	assert.NoError(suite.T(), err)
 	assert.NotNil(suite.T(), suite.client)
 }
 

@@ -12,6 +12,7 @@ import (
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
 	"golang.org/x/sync/errgroup"
+    "google.golang.org/grpc"
 	"log"
 	"sync"
 	"time"
@@ -40,6 +41,7 @@ type BitmapIndex struct {
 	*Conn
 	KVStore             *KVStore
 	client              []pb.BitmapIndexClient
+    nodeConns			[]*grpc.ClientConn
 	batchSets           map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
 	batchClears         map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
 	batchValues         map[string]map[string]map[int64]*roaring64.BSI
@@ -56,13 +58,22 @@ type BitmapIndex struct {
 }
 
 // NewBitmapIndex - Initializer for client side API wrappers.
-func NewBitmapIndex(conn *Conn, batchSize int) *BitmapIndex {
+func NewBitmapIndex(conn *Conn, batchSize int) (*BitmapIndex, error) {
 
 	clients := make([]pb.BitmapIndexClient, len(conn.clientConn))
-	for i := 0; i < len(conn.clientConn); i++ {
-		clients[i] = pb.NewBitmapIndexClient(conn.clientConn[i])
+    nodeConns, err := conn.CreateNodeConnections(true)
+    for i := 0; i < len(nodeConns); i++ {
+		clients[i] = pb.NewBitmapIndexClient(nodeConns[i])
 	}
-	return &BitmapIndex{Conn: conn, batchSize: batchSize, client: clients}
+	return &BitmapIndex{Conn: conn, batchSize: batchSize, client: clients}, err
+}
+
+// Close - Close all GRPC connections for this service session.
+func (c *BitmapIndex) Close() {
+
+    for _, v := range c.nodeConns {
+        v.Close()
+    }
 }
 
 // Flush outstanding batch before.

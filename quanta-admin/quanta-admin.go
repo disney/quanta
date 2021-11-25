@@ -153,7 +153,10 @@ func performCreate(consul *api.Client, table *shared.BasicTable, port int) error
 	if err := conn.Connect(consul); err != nil {
 		log.Fatal(err)
 	}
-	services := quanta.NewBitmapIndex(conn, 3000000)
+	services, err1 := quanta.NewBitmapIndex(conn, 3000000)
+	if err1 != nil {
+		return fmt.Errorf("DeleteTable error %v", err1)
+	}
 
 	err := shared.DeleteTable(consul, table.Name)
 	if err != nil {
@@ -264,8 +267,14 @@ func nukeData(consul *api.Client, port int, tableName, operation string, retainE
 	if err := conn.Connect(consul); err != nil {
 		log.Fatal(err)
 	}
-	services := quanta.NewBitmapIndex(conn, 3000000)
-	kvStore := quanta.NewKVStore(conn)
+	services, err1 := quanta.NewBitmapIndex(conn, 3000000)
+	if err1 != nil {
+		return fmt.Errorf("TableOperation error %v", err1)
+	}
+	kvStore, err2 := quanta.NewKVStore(conn)
+	if err2 != nil {
+		return fmt.Errorf("TableOperation error %v", err2)
+	}
 
 	err := services.TableOperation(tableName, operation)
 	if err != nil {

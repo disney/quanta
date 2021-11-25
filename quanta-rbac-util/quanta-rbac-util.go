@@ -56,7 +56,10 @@ func main() {
 	if err := conn.Connect(nil); err != nil {
 		log.Fatal(err)
 	}
-	store := quanta.NewKVStore(conn)
+	store, err1 := quanta.NewKVStore(conn)
+	if err1 != nil {
+		log.Fatal(err1)
+	}
 
 	ctx, err2 := rbac.NewAuthContext(store, main.UserID, true)
 	if err2 != nil {

@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/testdata"
 	"log"
+	"strings"
 	"sync"
 	"time"
 )
@@ -272,17 +273,36 @@ func (m *Conn) update() (err error) {
 	m.nodeMapLock.Lock()
 	defer m.nodeMapLock.Unlock()
 
-	m.nodes = serviceEntries
-	m.nodeMap = make(map[string]int, len(serviceEntries))
-
-	ids := make([]string, len(serviceEntries))
-	for i, entry := range serviceEntries {
-		ids[i] = entry.Service.ID
-		m.nodeMap[entry.Service.ID] = i
+	ids := make([]string, 0)
+	idMap := make(map[string]struct{})
+	for _, entry := range serviceEntries {
+		node := strings.Split(entry.Node.Node, ".")[0]
+		idMap[node] = struct{}{}
+	}
+	for k, _ := range idMap {
+		ids = append(ids, k)
 	}
 
+	m.nodes = make([]*api.ServiceEntry, 0)
+	m.nodeMap = make(map[string]int)
+	i := 0
+	for _, entry := range serviceEntries {
+		if _, found := idMap[entry.Service.ID]; found {
+			if _, found := m.nodeMap[entry.Service.ID]; !found {
+				m.nodes = append(m.nodes, entry)
+				m.nodeMap[entry.Service.ID] = i
+				i++
+			}
+		}
+	}
 	m.hashTable = rendezvous.New(ids)
 	m.waitIndex = meta.LastIndex
 
 	return nil
 }
+
+// Nodes - Return list of active nodes.
+func (m *Conn) Nodes() []*api.ServiceEntry {
+    return m.nodes
+}
+

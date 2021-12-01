@@ -13,6 +13,7 @@ import (
 	"github.com/stvp/rendezvous"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -127,11 +128,15 @@ func (n *Node) update() (err error) {
 		return nil
 	}
 
-	ids := make([]string, len(serviceEntries))
-	for i, entry := range serviceEntries {
-		ids[i] = entry.Service.ID
+	ids := make([]string, 0)
+	idMap := make(map[string]struct{})
+	for _, entry := range serviceEntries {
+		node := strings.Split(entry.Node.Node, ".")[0]
+		idMap[node] = struct{}{}
 	}
-
+	for k, _ := range idMap {
+		ids = append(ids, k)
+	}
 	n.hashTable = rendezvous.New(ids)
 	n.waitIndex = meta.LastIndex
 

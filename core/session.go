@@ -9,7 +9,6 @@ import (
 	"github.com/araddon/qlbridge/vm"
 	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/shared"
-	_ "github.com/hashicorp/consul/api"
 	"github.com/json-iterator/go"
 	"github.com/xitongsys/parquet-go/reader"
 	"log"
@@ -133,6 +132,7 @@ func OpenSession(path, name string, nested bool, conn *quanta.Conn) (*Session, e
 	s.StringIndex = quanta.NewStringSearch(conn, 1000)
 	s.KVStore = kvStore
 	s.Client = quanta.NewBitmapIndex(conn, 3000000)
+
 	s.Client.KVStore = s.KVStore
 	s.CreatedAt = time.Now().UTC()
 
@@ -740,7 +740,6 @@ func (s *Session) CloseSession() {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
 	if s.StringIndex != nil {
-
 		if err := s.StringIndex.Flush(); err != nil {
 			log.Println(err)
 		}
@@ -748,11 +747,9 @@ func (s *Session) CloseSession() {
 	}
 
 	if s.Client != nil {
-
 		if err := s.Client.Flush(); err != nil {
 			log.Println(err)
 		}
-		//s.Client = nil
 	}
 }
 

@@ -19,7 +19,7 @@ import (
 // KVStore API wrapper
 type KVStore struct {
 	*Conn
-	client []pb.KVStoreClient
+	client 		[]pb.KVStoreClient
 }
 
 // NewKVStore - Construct KVStore service endpoint.
@@ -138,7 +138,7 @@ func (c *KVStore) Lookup(index string, key interface{}, valueType reflect.Kind) 
 	defer cancel()
 	replicaClients, indices := c.selectNodes(key, false)
 	if len(replicaClients) == 0 {
-		return nil, fmt.Errorf("%v.Lookup(_) = _, %v: ", c.client, " no available nodes!")
+		return nil, fmt.Errorf("%v.Lookup(_) = _, %v: ", c.client, " no available nodes")
 	}
 
 	// Use the highest weight client
@@ -360,7 +360,6 @@ func (c *KVStore) selectNodes(key interface{}, all bool) ([]pb.KVStoreClient, []
 			indices[i] = j
 		}
 	}
-
 	return selected, indices
 }
 

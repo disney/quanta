@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	u "github.com/araddon/gou"
 	sch "github.com/araddon/qlbridge/schema"
@@ -10,7 +11,10 @@ import (
 	"time"
 )
 
-// SessionPoolConfig - Session pool configuration
+// ErrPoolDrained - Special case error indicates that the pool is exhausted
+var ErrPoolDrained = errors.New("session pool drained")
+
+// SessionPool - Session pool encapsulates a Quanta session.
 type SessionPool struct {
 	AppHost      *quanta.Conn
 	schema       *sch.Schema
@@ -25,6 +29,7 @@ type sessionPoolEntry struct {
 	pool chan *Session
 }
 
+// NewSessionPool - Construct a session pool to constrain resources.
 func NewSessionPool(appHost *quanta.Conn, schema *sch.Schema, baseDir string) *SessionPool {
 	p := &SessionPool{AppHost: appHost, schema: schema, baseDir: baseDir,
 		sessPoolMap: make(map[string]*sessionPoolEntry), semaphores: make(chan struct{}, runtime.NumCPU())}
@@ -50,7 +55,7 @@ func (m *SessionPool) getPoolByTableName(tableName string) *sessionPoolEntry {
 	return cp
 }
 
-// BorrowSession - get a pooled connection.
+// Borrow - Get a pooled connection.
 func (m *SessionPool) Borrow(tableName string) (*Session, error) {
 
 	cp := m.getPoolByTableName(tableName)
@@ -71,16 +76,16 @@ func (m *SessionPool) Borrow(tableName string) (*Session, error) {
 		default:
 			conn, err := m.newSession(tableName)
 			if err != nil {
-				return nil, fmt.Errorf("BorrowSession %v", err)
+				return nil, fmt.Errorf("borrowSession %v", err)
 			}
 			return conn, nil
 		}
 	default:
-		return nil, fmt.Errorf("POOL IS DRAINED!!!")
+		return nil, ErrPoolDrained
 	}
 }
 
-// ReturnSession - return a connection to the pool.
+// Return - Return a connection to the pool.
 func (m *SessionPool) Return(tableName string, conn *Session) {
 
 	conn.Flush()
@@ -107,6 +112,7 @@ func (m *SessionPool) newSession(tableName string) (*Session, error) {
 	return conn, nil
 }
 
+// Shutdown - Terminate and destroy the pool.
 func (m *SessionPool) Shutdown() {
 
 	for _, v := range m.sessPoolMap {
@@ -118,6 +124,7 @@ func (m *SessionPool) Shutdown() {
 	close(m.semaphores)
 }
 
+// Metrics - Return pool size and usage.
 func (m *SessionPool) Metrics() (poolSize, inUse int) {
 
 	poolSize = runtime.NumCPU()

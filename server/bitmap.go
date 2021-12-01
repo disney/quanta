@@ -85,7 +85,11 @@ func NewBitmapIndex(endPoint *EndPoint, expireDays int) *BitmapIndex {
 				return nil
 			})
 	} else { // Normal (from Consul) initialization
-		tables, err := shared.GetTables(e.EndPoint.consul)
+		var tables []string
+		err := shared.Retry(5, 2*time.Second, func() (err error) {
+			tables, err = shared.GetTables(e.EndPoint.consul)
+			return
+		})
 		if err != nil {
 			log.Fatalf("ERROR: Could not load table schema, GetTables error %v", err)
 		}
@@ -506,13 +510,13 @@ func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 	}
 
 	m.bsiCacheLock.Lock()
-/*
-	if _, ok := m.bsiCache[f.IndexName][f.FieldName][f.Time.UnixNano()]; !ok && f.IsUpdate {
-		// Silently ignore update attempts against values not already in cache.
-		m.bsiCacheLock.Unlock()
-		return
-	}
-*/
+	/*
+		if _, ok := m.bsiCache[f.IndexName][f.FieldName][f.Time.UnixNano()]; !ok && f.IsUpdate {
+			// Silently ignore update attempts against values not already in cache.
+			m.bsiCacheLock.Unlock()
+			return
+		}
+	*/
 	if _, ok := m.bsiCache[f.IndexName]; !ok {
 		m.bsiCache[f.IndexName] = make(map[string]map[int64]*BSIBitmap)
 	}
@@ -616,21 +620,21 @@ func (m *BitmapIndex) truncateCaches(index string) {
 	defer m.bitmapCacheLock.Unlock()
 	defer m.bsiCacheLock.Unlock()
 
-    fm, _ := m.bitmapCache[index]
+	fm, _ := m.bitmapCache[index]
 	if fm != nil {
 		for _, rm := range fm {
 			for _, tm := range rm {
-				for ts, _ := range tm {
+				for ts := range tm {
 					delete(tm, ts)
 				}
 			}
 		}
 	}
 
-    xm, _ := m.bsiCache[index]
+	xm, _ := m.bsiCache[index]
 	if xm != nil {
 		for _, tm := range xm {
-			for ts, _ := range tm {
+			for ts := range tm {
 				delete(tm, ts)
 			}
 		}

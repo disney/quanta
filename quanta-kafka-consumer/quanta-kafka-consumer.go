@@ -39,7 +39,7 @@ type Main struct {
 	ConsulAddr   string
 	ConsulClient *api.Client
 	lock         *api.Lock
-	conns        []*core.Connection
+	conns        []*core.Session
 	KafkaBroker  string
 	KafkaGroup   string
 	KafkaTopics  []string
@@ -97,7 +97,7 @@ func main() {
 	}
 
 	msgChan := make(chan []byte, main.BufferSize)
-	main.conns = make([]*core.Connection, runtime.NumCPU())
+	main.conns = make([]*core.Session, runtime.NumCPU())
 
 	var ticker *time.Ticker
 	ticker = main.printStats()
@@ -119,8 +119,7 @@ func main() {
 	for n := 0; n < runtime.NumCPU(); n++ {
 		go func(i int) {
 			var err error
-			main.conns[i], err = core.OpenConnection(main.SchemaDir, main.Index, true,
-				main.BufferSize, main.Port, main.ConsulClient)
+			main.conns[i], err = core.OpenSession(main.SchemaDir, main.Index, true, nil)
 			if err != nil {
 				log.Fatalf("Error opening connection %v", err)
 			}
@@ -132,7 +131,7 @@ func main() {
 				main.totalRecs.Add(1)
 				main.AddBytes(len(msg))
 			}
-			main.conns[i].CloseConnection()
+			main.conns[i].CloseSession()
 		}(n)
 	}
 

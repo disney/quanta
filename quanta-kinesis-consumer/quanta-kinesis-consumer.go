@@ -8,7 +8,7 @@ import (
 	"github.com/araddon/qlbridge/expr/builtins"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis/types"
 	"github.com/aws/aws-sdk-go/aws"
-	_ "github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/kinesis"
@@ -61,11 +61,13 @@ type Main struct {
 	Table         *shared.BasicTable
 	Schema        avro.Schema
 	InitialPos    string
+	CheckpointDB  bool
 	partitionMap  map[string]*Partition
 	partitionLock sync.Mutex
 	timeLocation  *time.Location
 	processedRecs *Counter
 	sessionPool   *core.SessionPool
+	assumeRoleArn string
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -94,6 +96,8 @@ func main() {
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 	trimHorizon := app.Flag("trim-horizon", "Set initial position to TRIM_HORIZON").Bool()
+	noCheckpointer := app.Flag("no-checkpoint-db", "Disable DynamoDB checkpointer.").Bool()
+	withAssumeRoleArn := app.Flag("with-assume-role-arn", "Assume role ARN.").String()
 
 	core.InitLogging("WARN", *environment, "Kinesis-Consumer", Version, "Quanta")
 
@@ -115,12 +119,23 @@ func main() {
 	log.Printf("Buffer size %d.", main.BufferSize)
 	log.Printf("Service port %d.", main.Port)
 	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
-	if *trimHorizon == true {
+	if *trimHorizon {
 		main.InitialPos = "TRIM_HORIZON"
 		log.Printf("Initial position = TRIM_HORIZON")
 	} else {
 		main.InitialPos = "LATEST"
 		log.Printf("Initial position = LATEST")
+	}
+	if *noCheckpointer {
+		main.CheckpointDB = false
+		log.Printf("Checkpoint DB disabled.")
+	} else {
+		main.CheckpointDB = true
+		log.Printf("Checkpoint DB enabled.")
+	}
+	if withAssumeRoleArn != nil {
+		main.assumeRoleArn = *withAssumeRoleArn
+		log.Printf("With assume role ARN [%s]", main.assumeRoleArn)
 	}
 
 	var err error
@@ -204,22 +219,31 @@ func main() {
 					key := k
 					go func(rows []map[string]interface{}, part string) {
 						if err := main.processBatch(rows, part); err != nil {
-							main.errorCount.Add(1)
+							if err == core.ErrPoolDrained {
+								// Couldn't process, put data back in partition channel
+								time.Sleep(1 * time.Second)
+								main.getPartition(part).PutDataRows(rows)
+							} else {
+								main.errorCount.Add(1)
+								log.Print(err)
+							}
 						}
 					}(batch, key)
 				}
 				itemsOutstanding += len(v.Data)
 			}
 			main.partitionLock.Unlock()
-			//_, inUse := main.sessionPool.Metrics()
-			//log.Printf("PARTITIONS %d, STALE %d, OUTSTANDING ITEMS = %d, POOL = %d",
-			//		len(main.partitionMap), stalePartitions, itemsOutstanding, inUse)
+			_, inUse := main.sessionPool.Metrics()
+			if itemsOutstanding > 0 {
+				log.Printf("Partitions %d, Outstanding Items = %d, Processors in use = %d",
+						len(main.partitionMap), itemsOutstanding, inUse)
+			}
 			select {
 			case _, done := <-c:
 				if done {
 					break
 				}
-			case <-time.After(10 * time.Second):
+			case <-time.After(1 * time.Second):
 			}
 		}
 	}()
@@ -231,6 +255,9 @@ func (m *Main) processBatch(rows []map[string]interface{}, partition string) err
 
 	conn, err := m.sessionPool.Borrow(m.Index)
 	if err != nil {
+		if err == core.ErrPoolDrained {
+			return err
+		}
 		return fmt.Errorf("Error opening Quanta session %v", err)
 	}
 	defer m.sessionPool.Return(m.Index, conn)
@@ -281,7 +308,18 @@ func (m *Main) Init() (int, error) {
 		return 0, errx
 	}
 
-	kc := kinesis.New(sess)
+	var kc *kinesis.Kinesis
+	if m.assumeRoleArn != "" {
+    	creds := stscreds.NewCredentials(sess, m.assumeRoleArn)
+		config := aws.NewConfig().
+			WithCredentials(creds).
+ 			WithRegion(m.Region).
+			WithMaxRetries(10)
+		kc = kinesis.New(sess, config)
+	} else {
+		kc = kinesis.New(sess)
+	}
+
 	streamName := aws.String(m.Stream)
 	shout, err := kc.ListShards(&kinesis.ListShardsInput{StreamName: streamName})
 	if err != nil {
@@ -289,29 +327,30 @@ func (m *Main) Init() (int, error) {
 	}
 	shardCount := len(shout.Shards)
 
-	// Override the Kinesis if any needs on session (e.g. assume role)
-	//myDynamoDbClient := dynamodb.New(session.New(aws.NewConfig()))
 	dynamoDbClient := dynamodb.New(sess)
-
-	// For versions of AWS sdk that fixed config being picked up properly, the example of
-	// setting region should work.
-	//    myDynamoDbClient := dynamodb.New(session.New(aws.NewConfig()), &aws.Config{
-	//        Region: aws.String("us-west-2"),
-	//    })
 
 	db, err := store.New(m.Index, m.Index, store.WithDynamoClient(dynamoDbClient), store.WithRetryer(&QuantaRetryer{}))
 	if err != nil {
 		log.Fatalf("checkpoint storage initialization error: %v", err)
 	}
 
-	m.consumer, err = consumer.New(
-		m.Stream,
-		consumer.WithClient(kc),
-		//consumer.WithShardIteratorType(types.ShardIteratorTypeTrimHorizon),
-		consumer.WithShardIteratorType(m.InitialPos),
-		consumer.WithStore(db),
-		//consumer.WithCounter(counter),
-	)
+
+	if m.CheckpointDB {
+		m.consumer, err = consumer.New(
+			m.Stream,
+			consumer.WithClient(kc),
+			consumer.WithShardIteratorType(m.InitialPos),
+			consumer.WithStore(db),
+			//consumer.WithCounter(counter),
+		)
+	} else {
+		m.consumer, err = consumer.New(
+			m.Stream,
+			consumer.WithClient(kc),
+			consumer.WithShardIteratorType(m.InitialPos),
+			//consumer.WithCounter(counter),
+		)
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -319,17 +358,20 @@ func (m *Main) Init() (int, error) {
 	return shardCount, nil
 }
 
+// Partition - A partition is a Quanta concept and defines an daily or hourly time segment.
 type Partition struct {
 	ModTime      time.Time
 	PartitionKey string
 	Data         chan map[string]interface{}
 }
 
+// NewPartition - Construct a new partition.
 func NewPartition(partition string) *Partition {
 	return &Partition{PartitionKey: partition, Data: make(chan map[string]interface{}, partitionChannelSize),
 		ModTime: time.Now().UTC()}
 }
 
+// GetDataRows - Extract data rows from partition channel.  Number of rows are larger of outstanding data or batchSize.
 func (p *Partition) GetDataRows() []map[string]interface{} {
 
 	size := len(p.Data)
@@ -346,6 +388,17 @@ func (p *Partition) GetDataRows() []map[string]interface{} {
 	return rows
 }
 
+// PutDataRows - Put batch back in channel for retry.
+func (p *Partition) PutDataRows(rows []map[string]interface{}) {
+
+	for i := 0; i < len(rows); i++ {
+		select {
+		case p.Data <- rows[i]:
+		}
+	}
+}
+
+// Lookup partition with the intent to write to it
 func (m *Main) getPartition(partition string) *Partition {
 
 	m.partitionLock.Lock()

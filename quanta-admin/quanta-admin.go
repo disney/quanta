@@ -196,7 +196,24 @@ func (v *VersionCmd) Run(ctx *Context) error {
 // Run - Status command implementation
 func (s *StatusCmd) Run(ctx *Context) error {
 
-	log.Printf("Not implemented yet.")
+    log.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
+    consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
+    if err != nil {
+        log.Printf("Is the consul agent running?")
+        return fmt.Errorf("Error connecting to consul %v", err)
+    }
+    log.Printf("Connecting to Quanta services at port: [%d] ...\n", ctx.Port)
+    conn := quanta.NewDefaultConnection()
+    conn.ServicePort = ctx.Port
+    conn.Quorum = 0
+    if err := conn.Connect(consulClient); err != nil {
+        log.Fatal(err)
+    }
+    log.Printf("ADDRESS            DATA CENTER      CONSUL NODE ID")
+    log.Printf("================   ==============   ==========================")
+	for _, node := range conn.Nodes() {
+		log.Printf("%-16s   %-14s   %s", node.Node.Address, node.Node.Datacenter, node.Node.ID)
+	}
 	return nil
 }
 
@@ -266,7 +283,6 @@ func nukeData(consul *api.Client, port int, tableName, operation string, retainE
 	}
 	services := quanta.NewBitmapIndex(conn, 3000000)
 	kvStore := quanta.NewKVStore(conn)
-
 	err := services.TableOperation(tableName, operation)
 	if err != nil {
 		return fmt.Errorf("TableOperation error %v", err)

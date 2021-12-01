@@ -59,7 +59,7 @@ type BitmapIndex struct {
 func NewBitmapIndex(conn *Conn, batchSize int) *BitmapIndex {
 
 	clients := make([]pb.BitmapIndexClient, len(conn.clientConn))
-	for i := 0; i < len(conn.clientConn); i++ {
+    for i := 0; i < len(conn.clientConn); i++ {
 		clients[i] = pb.NewBitmapIndexClient(conn.clientConn[i])
 	}
 	return &BitmapIndex{Conn: conn, batchSize: batchSize, client: clients}

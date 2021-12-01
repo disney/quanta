@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/testdata"
 	"log"
+	"strings"
 	"sync"
 	"time"
 )
@@ -109,35 +110,8 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 			return fmt.Errorf("node: quorum size %d currently,  must be at least %d to handle requests for service %s",
 				len(m.nodes), m.Quorum, m.ServiceName)
 		}
-		m.clientConn = make([]*grpc.ClientConn, len(m.nodes))
+		m.clientConn, err = m.CreateNodeConnections(false)
 		m.admin = make([]pb.ClusterAdminClient, len(m.nodes))
-
-		for i := 0; i < len(m.nodes); i++ {
-			var opts []grpc.DialOption
-			opts = append(opts,
-				grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(shared.GRPCRecvBufsize),
-					grpc.MaxCallSendMsgSize(shared.GRPCSendBufsize)))
-			if m.tls {
-				if m.certFile == "" {
-					m.certFile = testdata.Path("ca.pem")
-				}
-				creds, err2 := credentials.NewClientTLSFromFile(m.certFile, m.ServerHostOverride)
-				if err2 != nil {
-					err = fmt.Errorf("Failed to create TLS credentials %v", err2)
-					return
-				}
-				opts = append(opts, grpc.WithTransportCredentials(creds))
-			} else {
-				opts = append(opts, grpc.WithInsecure())
-			}
-			m.clientConn[i], err = grpc.Dial(fmt.Sprintf("%s:%d", m.nodes[i].Node.Address,
-				m.ServicePort), opts...)
-			if err != nil {
-				log.Fatalf("fail to dial: %v", err)
-			}
-			m.admin[i] = pb.NewClusterAdminClient(m.clientConn[i])
-
-		}
 		go m.poll()
 	} else {
 		m.hashTable = rendezvous.New([]string{"test"})
@@ -159,6 +133,52 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 	return
 }
 
+// CreateNodeConnections - Open a set of GRPC connections to all data nodes
+func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.ClientConn, err error) {
+
+	nodeCount := len(m.nodes)
+	if nodeCount == 0 {
+		nodeCount = 1
+	}
+	nodeConns = make([]*grpc.ClientConn, nodeCount)
+	var opts []grpc.DialOption
+
+	if m.ServicePort == 0 {  // Test harness
+		ctx := context.Background()
+		nodeConns[0], err = grpc.DialContext(ctx, "bufnet",
+            grpc.WithDialer(shared.TestDialer), grpc.WithInsecure())
+		return 
+	}
+
+	for i := 0; i < len(m.nodes); i++ {
+		if largeBuffer {
+			opts = append(opts,
+				grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(shared.GRPCRecvBufsize),
+					grpc.MaxCallSendMsgSize(shared.GRPCSendBufsize)))
+		}
+		if m.tls {
+			if m.certFile == "" {
+				m.certFile = testdata.Path("ca.pem")
+			}
+			creds, err2 := credentials.NewClientTLSFromFile(m.certFile, m.ServerHostOverride)
+			if err2 != nil {
+				err = fmt.Errorf("Failed to create TLS credentials %v", err2)
+				return
+			}
+			opts = append(opts, grpc.WithTransportCredentials(creds))
+		} else {
+			opts = append(opts, grpc.WithInsecure())
+		}
+		
+		nodeConns[i], err = grpc.Dial(fmt.Sprintf("%s:%d", m.nodes[i].Node.Address,
+			m.ServicePort), opts...)
+		if err != nil {
+			log.Fatalf("fail to dial: %v", err)
+		}
+	}
+	return
+}
+
 /*
  * Return a list of nodes for a given shard key.  The returned node list is sorted in descending order
  * highest random weight first.
@@ -176,11 +196,10 @@ func (m *Conn) selectNodes(key interface{}) []pb.ClusterAdminClient {
 			selected[i] = m.admin[j]
 		}
 	}
-
 	return selected
 }
 
-// Disconnect - Terminate connections to all cluster nodes.
+// Disconnect - Terminate admin connections to all cluster nodes.
 func (m *Conn) Disconnect() error {
 
 	for i := 0; i < len(m.clientConn); i++ {
@@ -254,17 +273,36 @@ func (m *Conn) update() (err error) {
 	m.nodeMapLock.Lock()
 	defer m.nodeMapLock.Unlock()
 
-	m.nodes = serviceEntries
-	m.nodeMap = make(map[string]int, len(serviceEntries))
-
-	ids := make([]string, len(serviceEntries))
-	for i, entry := range serviceEntries {
-		ids[i] = entry.Service.ID
-		m.nodeMap[entry.Service.ID] = i
+	ids := make([]string, 0)
+	idMap := make(map[string]struct{})
+	for _, entry := range serviceEntries {
+		node := strings.Split(entry.Node.Node, ".")[0]
+		idMap[node] = struct{}{}
+	}
+	for k, _ := range idMap {
+		ids = append(ids, k)
 	}
 
+	m.nodes = make([]*api.ServiceEntry, 0)
+	m.nodeMap = make(map[string]int)
+	i := 0
+	for _, entry := range serviceEntries {
+		if _, found := idMap[entry.Service.ID]; found {
+			if _, found := m.nodeMap[entry.Service.ID]; !found {
+				m.nodes = append(m.nodes, entry)
+				m.nodeMap[entry.Service.ID] = i
+				i++
+			}
+		}
+	}
 	m.hashTable = rendezvous.New(ids)
 	m.waitIndex = meta.LastIndex
 
 	return nil
 }
+
+// Nodes - Return list of active nodes.
+func (m *Conn) Nodes() []*api.ServiceEntry {
+    return m.nodes
+}
+

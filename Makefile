@@ -68,6 +68,7 @@ build: format vet
 	go build -o ${BIN_DIR}/${BIN_NODE} ${LDFLAGS} ${PKG_NODE}
 	go build -o ${BIN_DIR}/${BIN_PROXY} ${LDFLAGS} ${PKG_PROXY}
 	go build -o ${BIN_DIR}/${BIN_ADMIN} ${LDFLAGS} ${PKG_ADMIN}
+	docker build -t containerregistry.disney.com/digital/quanta-proxy -f Docker/DeployProxyDockerfile .
 
 build_all: format vet
 	$(foreach GOOS, $(PLATFORMS),\

@@ -28,6 +28,7 @@ type StringSearch struct {
 // NewStringSearch - Construct and Initialize search API.
 func NewStringSearch(conn *Conn, batchSize int) *StringSearch {
 
+	// Search utilizes the admin connections for the service
 	clients := make([]pb.StringSearchClient, len(conn.clientConn))
 	for i := 0; i < len(conn.clientConn); i++ {
 		clients[i] = pb.NewStringSearchClient(conn.clientConn[i])

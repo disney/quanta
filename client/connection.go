@@ -110,7 +110,7 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 			return fmt.Errorf("node: quorum size %d currently,  must be at least %d to handle requests for service %s",
 				len(m.nodes), m.Quorum, m.ServiceName)
 		}
-		m.clientConn, err = m.CreateNodeConnections(false)
+		m.clientConn, err = m.CreateNodeConnections(true)
 		m.admin = make([]pb.ClusterAdminClient, len(m.nodes))
 		go m.poll()
 	} else {

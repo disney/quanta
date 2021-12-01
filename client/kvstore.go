@@ -12,7 +12,6 @@ import (
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc"
 	"io"
 	"reflect"
 )
@@ -21,26 +20,16 @@ import (
 type KVStore struct {
 	*Conn
 	client 		[]pb.KVStoreClient
-  	nodeConns   []*grpc.ClientConn
 }
 
 // NewKVStore - Construct KVStore service endpoint.
-func NewKVStore(conn *Conn) (*KVStore, error) {
+func NewKVStore(conn *Conn) *KVStore {
 
 	clients := make([]pb.KVStoreClient, len(conn.clientConn))
-	nodeConns, err := conn.CreateNodeConnections(false)
-	for i := 0; i < len(nodeConns); i++ {
-		clients[i] = pb.NewKVStoreClient(nodeConns[i])
+	for i := 0; i < len(conn.clientConn); i++ {
+		clients[i] = pb.NewKVStoreClient(conn.clientConn[i])
 	}
-	return &KVStore{Conn: conn, client: clients, nodeConns: nodeConns}, err
-}
-
-// Close - Close all GRPC connections for this service session.
-func (c *KVStore) Close() {
-
-	for _, v := range c.nodeConns {
-		v.Close()
-	}
+	return &KVStore{Conn: conn, client: clients}
 }
 
 // Put a new attribute

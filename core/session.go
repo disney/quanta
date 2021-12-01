@@ -95,10 +95,7 @@ func OpenSession(path, name string, nested bool, conn *quanta.Conn) (*Session, e
 	}
 
 	consul := conn.Consul
-	kvStore, errx := quanta.NewKVStore(conn)
-	if errx != nil {
-		return nil, errx
-	}
+	kvStore := quanta.NewKVStore(conn)
 
 	tableBuffers := make(map[string]*TableBuffer, 0)
 	tab, err := LoadTable(path, kvStore, name, consul)
@@ -134,10 +131,7 @@ func OpenSession(path, name string, nested bool, conn *quanta.Conn) (*Session, e
 	s := &Session{BasePath: path, TableBuffers: tableBuffers, Nested: nested}
 	s.StringIndex = quanta.NewStringSearch(conn, 1000)
 	s.KVStore = kvStore
-	s.Client, err = quanta.NewBitmapIndex(conn, 3000000)
-	if err != nil {
-		return nil, err
-	}
+	s.Client = quanta.NewBitmapIndex(conn, 3000000)
 
 	s.Client.KVStore = s.KVStore
 	s.CreatedAt = time.Now().UTC()
@@ -756,8 +750,6 @@ func (s *Session) CloseSession() {
 		if err := s.Client.Flush(); err != nil {
 			log.Println(err)
 		}
-		s.Client.Close()
-		s.Client.KVStore.Close()
 	}
 }
 

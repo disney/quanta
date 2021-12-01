@@ -380,10 +380,7 @@ func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitma
 		return nil, false, err
 	}
 
-	client, err1 := quanta.NewBitmapIndex(conn, 3000000)
-	if err1 != nil {
-		return nil, false, err1
-	}
+	client := quanta.NewBitmapIndex(conn, 3000000)
 	defer cleanup(client)
 
 	joinCols := make([]string, 0)
@@ -420,6 +417,5 @@ func cleanup(client *quanta.BitmapIndex) error {
 		u.Errorf("%v", err)
 		return err
 	}
-	client.Close()
 	return nil
 }

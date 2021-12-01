@@ -8,7 +8,7 @@ import (
 	"github.com/araddon/qlbridge/expr/builtins"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis/types"
 	"github.com/aws/aws-sdk-go/aws"
-	_ "github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/kinesis"
@@ -67,6 +67,7 @@ type Main struct {
 	timeLocation  *time.Location
 	processedRecs *Counter
 	sessionPool   *core.SessionPool
+	assumeRoleArn string
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -96,6 +97,7 @@ func main() {
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 	trimHorizon := app.Flag("trim-horizon", "Set initial position to TRIM_HORIZON").Bool()
 	noCheckpointer := app.Flag("no-checkpoint-db", "Disable DynamoDB checkpointer.").Bool()
+	withAssumeRoleArn := app.Flag("with-assume-role-arn", "Assume role ARN.").String()
 
 	core.InitLogging("WARN", *environment, "Kinesis-Consumer", Version, "Quanta")
 
@@ -130,6 +132,10 @@ func main() {
 	} else {
 		main.CheckpointDB = true
 		log.Printf("Checkpoint DB enabled.")
+	}
+	if withAssumeRoleArn != nil {
+		main.assumeRoleArn = *withAssumeRoleArn
+		log.Printf("With assume role ARN [%s]", main.assumeRoleArn)
 	}
 
 	var err error
@@ -302,7 +308,18 @@ func (m *Main) Init() (int, error) {
 		return 0, errx
 	}
 
-	kc := kinesis.New(sess)
+	var kc *kinesis.Kinesis
+	if m.assumeRoleArn != "" {
+    	creds := stscreds.NewCredentials(sess, m.assumeRoleArn)
+		config := aws.NewConfig().
+			WithCredentials(creds).
+ 			WithRegion(m.Region).
+			WithMaxRetries(10)
+		kc = kinesis.New(sess, config)
+	} else {
+		kc = kinesis.New(sess)
+	}
+
 	streamName := aws.String(m.Stream)
 	shout, err := kc.ListShards(&kinesis.ListShardsInput{StreamName: streamName})
 	if err != nil {
@@ -310,20 +327,13 @@ func (m *Main) Init() (int, error) {
 	}
 	shardCount := len(shout.Shards)
 
-	// Override the Kinesis if any needs on session (e.g. assume role)
-	//myDynamoDbClient := dynamodb.New(session.New(aws.NewConfig()))
 	dynamoDbClient := dynamodb.New(sess)
-
-	// For versions of AWS sdk that fixed config being picked up properly, the example of
-	// setting region should work.
-	//    myDynamoDbClient := dynamodb.New(session.New(aws.NewConfig()), &aws.Config{
-	//        Region: aws.String("us-west-2"),
-	//    })
 
 	db, err := store.New(m.Index, m.Index, store.WithDynamoClient(dynamoDbClient), store.WithRetryer(&QuantaRetryer{}))
 	if err != nil {
 		log.Fatalf("checkpoint storage initialization error: %v", err)
 	}
+
 
 	if m.CheckpointDB {
 		m.consumer, err = consumer.New(

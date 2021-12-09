@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	//"expvar"
 	"fmt"
 	"github.com/araddon/dateparse"
@@ -61,13 +62,15 @@ type Main struct {
 	Table         *shared.BasicTable
 	Schema        avro.Schema
 	InitialPos    string
+	IsAvro        bool
 	CheckpointDB  bool
+	AssumeRoleArn string
+	Deaggregate   bool
 	partitionMap  map[string]*Partition
 	partitionLock sync.Mutex
 	timeLocation  *time.Location
 	processedRecs *Counter
 	sessionPool   *core.SessionPool
-	assumeRoleArn string
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -90,6 +93,7 @@ func main() {
 
 	stream := app.Arg("stream", "Kinesis stream name.").Required().String()
 	index := app.Arg("index", "Table name (root name if nested schema)").Required().String()
+	withAssumeRoleArn := app.Arg("assume-role-arn", "Assume role ARN.").String()
 	region := app.Arg("region", "AWS region").Default("us-east-1").String()
 	port := app.Arg("port", "Port number for service").Default("4000").Int32()
 	bufSize := app.Flag("buf-size", "Buffer size").Default("1000000").Int32()
@@ -97,7 +101,8 @@ func main() {
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 	trimHorizon := app.Flag("trim-horizon", "Set initial position to TRIM_HORIZON").Bool()
 	noCheckpointer := app.Flag("no-checkpoint-db", "Disable DynamoDB checkpointer.").Bool()
-	withAssumeRoleArn := app.Flag("with-assume-role-arn", "Assume role ARN.").String()
+	avroPayload := app.Flag("avro-payload", "Payload is Avro.").Bool()
+	deaggregate := app.Flag("deaggregate", "Incoming payload records are aggregated.").Bool()
 
 	core.InitLogging("WARN", *environment, "Kinesis-Consumer", Version, "Quanta")
 
@@ -134,8 +139,21 @@ func main() {
 		log.Printf("Checkpoint DB enabled.")
 	}
 	if withAssumeRoleArn != nil {
-		main.assumeRoleArn = *withAssumeRoleArn
-		log.Printf("With assume role ARN [%s]", main.assumeRoleArn)
+		main.AssumeRoleArn = *withAssumeRoleArn
+		log.Printf("With assume role ARN [%s]", main.AssumeRoleArn)
+	}
+	if *avroPayload {
+		main.IsAvro = true
+		log.Printf("Payload is Avro.")
+	} else {
+		main.IsAvro = false
+		log.Printf("Payload is JSON.")
+	}
+	if *deaggregate {
+		main.Deaggregate = true
+		log.Printf("Payload is aggregated, de-aggregation is enabled in consumer.")
+	} else {
+		main.Deaggregate = false
 	}
 
 	var err error
@@ -174,9 +192,15 @@ func main() {
 			partition := ts.Format(tFormat)
 
 			out := make(map[string]interface{})
-			err = avro.Unmarshal(main.Schema, v.Data, &out)
+
+			if main.IsAvro {
+				err = avro.Unmarshal(main.Schema, v.Data, &out)
+			} else {
+				err = json.Unmarshal(v.Data, &out)
+			}
 			if err != nil {
 				log.Printf("Unmarshal ERROR %v", err)
+				main.errorCount.Add(1)
 				return nil
 			}
 			if main.ShardCount > 1 {
@@ -265,6 +289,7 @@ func (m *Main) processBatch(rows []map[string]interface{}, partition string) err
 		err = conn.PutRow(m.Index, rows[i], 0)
 		if err != nil {
 			log.Printf("ERROR in PutRow, partition %s - %v", partition, err)
+			m.errorCount.Add(1)
 			continue
 		}
 		m.processedRecs.Add(1)
@@ -299,7 +324,9 @@ func (m *Main) Init() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	m.Schema = shared.ToAvroSchema(m.Table)
+	if m.IsAvro {
+		m.Schema = shared.ToAvroSchema(m.Table)
+	}
 
 	sess, errx := session.NewSession(&aws.Config{
 		Region: aws.String(m.Region),
@@ -309,8 +336,8 @@ func (m *Main) Init() (int, error) {
 	}
 
 	var kc *kinesis.Kinesis
-	if m.assumeRoleArn != "" {
-    	creds := stscreds.NewCredentials(sess, m.assumeRoleArn)
+	if m.AssumeRoleArn != "" {
+    	creds := stscreds.NewCredentials(sess, m.AssumeRoleArn)
 		config := aws.NewConfig().
 			WithCredentials(creds).
  			WithRegion(m.Region).
@@ -326,7 +353,6 @@ func (m *Main) Init() (int, error) {
 		return 0, err
 	}
 	shardCount := len(shout.Shards)
-
 	dynamoDbClient := dynamodb.New(sess)
 
 	db, err := store.New(m.Index, m.Index, store.WithDynamoClient(dynamoDbClient), store.WithRetryer(&QuantaRetryer{}))
@@ -341,6 +367,7 @@ func (m *Main) Init() (int, error) {
 			consumer.WithClient(kc),
 			consumer.WithShardIteratorType(m.InitialPos),
 			consumer.WithStore(db),
+			consumer.WithAggregation(m.Deaggregate),
 			//consumer.WithCounter(counter),
 		)
 	} else {
@@ -348,6 +375,7 @@ func (m *Main) Init() (int, error) {
 			m.Stream,
 			consumer.WithClient(kc),
 			consumer.WithShardIteratorType(m.InitialPos),
+			consumer.WithAggregation(m.Deaggregate),
 			//consumer.WithCounter(counter),
 		)
 	}

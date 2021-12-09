@@ -11,4 +11,4 @@ if [ -n "$NO_CHECKPOINTER" ]
 then
     BOOL_FLAGS=${BOOL_FLAGS}" --no-checkpoint-db"
 fi
-exec /usr/bin/quanta-kinesis-consumer ${STREAM} ${INDEX} ${BOOL_FLAGS}
+exec /usr/bin/quanta-kinesis-consumer ${STREAM} ${INDEX} ${ASSUME_ROLE_ARN} us-east-2 ${BOOL_FLAGS}

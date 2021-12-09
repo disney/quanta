@@ -17,6 +17,8 @@ func ErrorResponse(w *http.ResponseWriter, code int, responseText string, logMes
 
 	log.Println(logMessage, errorMessage)
 	writer.WriteHeader(code)
+	writer.Header().Add("Access-Control-Allow-Origin", "*")
+	writer.Header().Add("Access-Control-Allow", "*")
 	writer.Write([]byte(responseText))
 }
 
@@ -31,6 +33,8 @@ func SuccessResponse(w *http.ResponseWriter, result interface{}) {
 	}
 
 	writer.Header().Add("Content-Type", "application/json")
+	writer.Header().Add("Access-Control-Allow-Origin", "*")
+	writer.Header().Add("Access-Control-Allow", "*")
 	writer.WriteHeader(200)
 	writer.Write(marshalled)
 }

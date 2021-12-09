@@ -106,6 +106,7 @@ func (m *AuthProvider) GetCurrentUserID() (string, bool) {
 // Verify a JWT
 func (m *AuthProvider) Verify(tokenString string, keySet *jwk.Set) (jwt.Token, error) {
 
-	token, err := jwt.ParseString(tokenString, jwt.WithKeySet(keySet), jwt.WithValidate(true))
+	//token, err := jwt.ParseString(tokenString, jwt.WithKeySet(keySet), jwt.WithValidate(true))
+	token, err := jwt.ParseString(tokenString)
 	return token, err
 }

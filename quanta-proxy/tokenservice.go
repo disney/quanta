@@ -8,11 +8,12 @@ package main
 
 import (
 	"fmt"
+	u "github.com/araddon/gou"
 	"github.com/lestrrat-go/jwx/jwt"
 	"io/ioutil"
-	"log"
 	"math/rand"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -44,7 +45,8 @@ func StartTokenService(port int, authProvider *AuthProvider) {
 	go func() {
 		var err = http.ListenAndServe(fmt.Sprintf(":%d", ts.port), nil)
 		if err != nil {
-			log.Fatalf("Server failed starting. Error: %s", err)
+			u.Errorf("Server failed starting. Error: %s", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -52,7 +54,7 @@ func StartTokenService(port int, authProvider *AuthProvider) {
 
 // HandleRequest - Service request handler.
 func (s *TokenExchangeService) HandleRequest(w http.ResponseWriter, r *http.Request) {
-	log.Println("Incoming Request:", r.Method)
+	u.Debugf("Incoming Request: %v", r.Method)
 	switch r.Method {
 	case http.MethodPost:
 		s.CreateAccount(w, r)

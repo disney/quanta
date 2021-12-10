@@ -8,10 +8,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/RoaringBitmap/roaring/roaring64"
+	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
 	"golang.org/x/sync/errgroup"
-	"log"
 	"time"
 )
 
@@ -150,8 +150,7 @@ func (c *BitmapIndex) query(query *pb.BitmapQuery) (*roaring64.Bitmap, error) {
 			}
 			fki.AddIntersect(rs.GetExistenceBitmap())
 			elapsed := time.Since(start)
-			log.Printf("Transpose input (%d), elapsed time %v",
-				r.GetCardinality(), elapsed)
+			u.Infof("Transpose input (%d), elapsed time %v", r.GetCardinality(), elapsed)
 		}
 	}
 
@@ -309,10 +308,10 @@ func (c *BitmapIndex) queryClient(client pb.BitmapIndexClient, q *pb.BitmapQuery
 	/*
 	   d, err := json.Marshal(&q)
 	   if err != nil {
-	       log.Printf("error: %v", err)
+	       u.Errorf("error: %v", err)
 	       return nil, err
 	   }
-	   log.Printf("vvv query dump:\n%s\n\n", string(d))
+	   u.Debugf("vvv query dump:\n%s\n\n", string(d))
 	*/
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)

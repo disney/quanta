@@ -6,6 +6,7 @@ import (
 	//"expvar"
 	"fmt"
 	"github.com/araddon/dateparse"
+	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/expr/builtins"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis/types"
 	"github.com/aws/aws-sdk-go/aws"
@@ -21,7 +22,6 @@ import (
 	store "github.com/harlow/kinesis-consumer/store/ddb"
 	"github.com/hashicorp/consul/api"
 	"gopkg.in/alecthomas/kingpin.v2"
-	"log"
 	"os"
 	"os/signal"
 	//"runtime"
@@ -104,7 +104,7 @@ func main() {
 	avroPayload := app.Flag("avro-payload", "Payload is Avro.").Bool()
 	deaggregate := app.Flag("deaggregate", "Incoming payload records are aggregated.").Bool()
 
-	core.InitLogging("WARN", *environment, "Kinesis-Consumer", Version, "Quanta")
+	shared.InitLogging("WARN", *environment, "Kinesis-Consumer", Version, "Quanta")
 
 	builtins.LoadAllBuiltins()
 
@@ -118,40 +118,40 @@ func main() {
 	main.Port = int(*port)
 	main.ConsulAddr = *consul
 
-	log.Printf("Kinesis stream %v.", main.Stream)
-	log.Printf("Kinesis region %v.", main.Region)
-	log.Printf("Index name %v.", main.Index)
-	log.Printf("Buffer size %d.", main.BufferSize)
-	log.Printf("Service port %d.", main.Port)
-	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
+	u.Infof("Kinesis stream %v.", main.Stream)
+	u.Infof("Kinesis region %v.", main.Region)
+	u.Infof("Index name %v.", main.Index)
+	u.Infof("Buffer size %d.", main.BufferSize)
+	u.Infof("Service port %d.", main.Port)
+	u.Infof("Consul agent at [%s]\n", main.ConsulAddr)
 	if *trimHorizon {
 		main.InitialPos = "TRIM_HORIZON"
-		log.Printf("Initial position = TRIM_HORIZON")
+		u.Infof("Initial position = TRIM_HORIZON")
 	} else {
 		main.InitialPos = "LATEST"
-		log.Printf("Initial position = LATEST")
+		u.Infof("Initial position = LATEST")
 	}
 	if *noCheckpointer {
 		main.CheckpointDB = false
-		log.Printf("Checkpoint DB disabled.")
+		u.Infof("Checkpoint DB disabled.")
 	} else {
 		main.CheckpointDB = true
-		log.Printf("Checkpoint DB enabled.")
+		u.Infof("Checkpoint DB enabled.")
 	}
 	if withAssumeRoleArn != nil {
 		main.AssumeRoleArn = *withAssumeRoleArn
-		log.Printf("With assume role ARN [%s]", main.AssumeRoleArn)
+		u.Infof("With assume role ARN [%s]", main.AssumeRoleArn)
 	}
 	if *avroPayload {
 		main.IsAvro = true
-		log.Printf("Payload is Avro.")
+		u.Infof("Payload is Avro.")
 	} else {
 		main.IsAvro = false
-		log.Printf("Payload is JSON.")
+		u.Infof("Payload is JSON.")
 	}
 	if *deaggregate {
 		main.Deaggregate = true
-		log.Printf("Payload is aggregated, de-aggregation is enabled in consumer.")
+		u.Infof("Payload is aggregated, de-aggregation is enabled in consumer.")
 	} else {
 		main.Deaggregate = false
 	}
@@ -159,7 +159,8 @@ func main() {
 	var err error
 
 	if main.ShardCount, err = main.Init(); err != nil {
-		log.Fatal(err)
+		u.Error(err)
+		os.Exit(1)
 	}
 
 	var ticker *time.Ticker
@@ -169,7 +170,7 @@ func main() {
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		for range c {
-			log.Printf("Interrupted,  Bytes processed: %s, Records: %v", core.Bytes(main.BytesProcessed()),
+			u.Infof("Interrupted,  Bytes processed: %s, Records: %v", core.Bytes(main.BytesProcessed()),
 				main.totalRecs.Get())
 			//close(msgChan)
 			//main.consumer.Close()
@@ -183,7 +184,8 @@ func main() {
 		err = main.consumer.Scan(context.TODO(), func(v *consumer.Record) error {
 			ts, err := dateparse.ParseIn(*v.PartitionKey, main.timeLocation)
 			if err != nil {
-				log.Fatalf("Date parse error for partition key %s - %v", *v.PartitionKey, err)
+				u.Errorf("Date parse error for partition key %s - %v", *v.PartitionKey, err)
+				os.Exit(1)
 			}
 			tFormat := shared.YMDTimeFmt
 			if main.Table.TimeQuantumType == "YMDH" {
@@ -199,7 +201,7 @@ func main() {
 				err = json.Unmarshal(v.Data, &out)
 			}
 			if err != nil {
-				log.Printf("Unmarshal ERROR %v", err)
+				u.Errorf("Unmarshal ERROR %v", err)
 				main.errorCount.Add(1)
 				return nil
 			}
@@ -210,7 +212,7 @@ func main() {
 				}
 			} else { // Bypass partition worker dispatching
 				if err := main.processBatch([]map[string]interface{}{out}, partition); err != nil {
-					log.Printf("processBatch ERROR %v", err)
+					u.Errorf("processBatch ERROR %v", err)
 					return nil // continue processing
 				}
 			}
@@ -221,7 +223,8 @@ func main() {
 		})
 
 		if err != nil {
-			log.Fatalf("scan error: %v", err)
+			u.Errorf("scan error: %v", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -249,7 +252,7 @@ func main() {
 								main.getPartition(part).PutDataRows(rows)
 							} else {
 								main.errorCount.Add(1)
-								log.Print(err)
+								u.Error(err)
 							}
 						}
 					}(batch, key)
@@ -259,8 +262,8 @@ func main() {
 			main.partitionLock.Unlock()
 			_, inUse := main.sessionPool.Metrics()
 			if itemsOutstanding > 0 {
-				log.Printf("Partitions %d, Outstanding Items = %d, Processors in use = %d",
-						len(main.partitionMap), itemsOutstanding, inUse)
+				u.Infof("Partitions %d, Outstanding Items = %d, Processors in use = %d",
+					len(main.partitionMap), itemsOutstanding, inUse)
 			}
 			select {
 			case _, done := <-c:
@@ -288,7 +291,7 @@ func (m *Main) processBatch(rows []map[string]interface{}, partition string) err
 	for i := 0; i < len(rows); i++ {
 		err = conn.PutRow(m.Index, rows[i], 0)
 		if err != nil {
-			log.Printf("ERROR in PutRow, partition %s - %v", partition, err)
+			u.Errorf("ERROR in PutRow, partition %s - %v", partition, err)
 			m.errorCount.Add(1)
 			continue
 		}
@@ -315,7 +318,8 @@ func (m *Main) Init() (int, error) {
 	clientConn.ServicePort = m.Port
 	clientConn.Quorum = 3
 	if err := clientConn.Connect(consulClient); err != nil {
-		log.Fatal(err)
+		u.Error(err)
+		os.Exit(1)
 	}
 
 	m.sessionPool = core.NewSessionPool(clientConn, nil, "")
@@ -337,10 +341,10 @@ func (m *Main) Init() (int, error) {
 
 	var kc *kinesis.Kinesis
 	if m.AssumeRoleArn != "" {
-    	creds := stscreds.NewCredentials(sess, m.AssumeRoleArn)
+		creds := stscreds.NewCredentials(sess, m.AssumeRoleArn)
 		config := aws.NewConfig().
 			WithCredentials(creds).
- 			WithRegion(m.Region).
+			WithRegion(m.Region).
 			WithMaxRetries(10)
 		kc = kinesis.New(sess, config)
 	} else {
@@ -357,9 +361,9 @@ func (m *Main) Init() (int, error) {
 
 	db, err := store.New(m.Index, m.Index, store.WithDynamoClient(dynamoDbClient), store.WithRetryer(&QuantaRetryer{}))
 	if err != nil {
-		log.Fatalf("checkpoint storage initialization error: %v", err)
+		u.Errorf("checkpoint storage initialization error: %v", err)
+		os.Exit(1)
 	}
-
 
 	if m.CheckpointDB {
 		m.consumer, err = consumer.New(
@@ -382,7 +386,7 @@ func (m *Main) Init() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	log.Printf("Created consumer. ")
+	u.Infof("Created consumer. ")
 	return shardCount, nil
 }
 
@@ -450,7 +454,7 @@ func (m *Main) printStats() *time.Ticker {
 		for range t.C {
 			duration := time.Since(start)
 			bytes := m.BytesProcessed()
-			log.Printf("Bytes: %s, Records: %v, Processed: %v, Errors: %v, Duration: %v, Rate: %v/s",
+			u.Infof("Bytes: %s, Records: %v, Processed: %v, Errors: %v, Duration: %v, Rate: %v/s",
 				core.Bytes(bytes), m.totalRecs.Get(), m.processedRecs.Get(), m.errorCount.Get(), duration,
 				core.Bytes(float64(bytes)/duration.Seconds()))
 		}

@@ -1,9 +1,10 @@
 package shared
 
 import (
+	u "github.com/araddon/gou"
 	"github.com/hashicorp/consul/api"
 	"github.com/hashicorp/consul/api/watch"
-	"log"
+	"os"
 	"strings"
 	"time"
 )
@@ -46,7 +47,8 @@ func RegisterSchemaChangeListener(conf *api.Config, cb SchemaChangeListener) err
 	go func() {
 		err = watch.Run(conf.Address)
 		if err != nil {
-			log.Fatal(err)
+			u.Error(err)
+			os.Exit(1)
 		}
 	}()
 	return nil
@@ -56,13 +58,15 @@ func makeKvPairsHandler(conf *api.Config, cb SchemaChangeListener) watch.Handler
 
 	client, err := api.NewClient(conf)
 	if err != nil {
-		log.Fatal(err)
+		u.Error(err)
+		os.Exit(1)
 	}
 
 	kv := client.KV()
 	oldKvPairs, _, err := kv.List("schema", nil)
 	if err != nil {
-		log.Fatal(err)
+		u.Error(err)
+		os.Exit(1)
 	}
 	oldUMap := makeUniquesMap(oldKvPairs)
 	oldModTimeMap := getModTimeMap(oldKvPairs)

@@ -9,10 +9,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/RoaringBitmap/roaring/roaring64"
+	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
 	"golang.org/x/sync/errgroup"
-	"log"
 	"sync"
 	"time"
 )
@@ -59,7 +59,7 @@ type BitmapIndex struct {
 func NewBitmapIndex(conn *Conn, batchSize int) *BitmapIndex {
 
 	clients := make([]pb.BitmapIndexClient, len(conn.clientConn))
-    for i := 0; i < len(conn.clientConn); i++ {
+	for i := 0; i < len(conn.clientConn); i++ {
 		clients[i] = pb.NewBitmapIndexClient(conn.clientConn[i])
 	}
 	return &BitmapIndex{Conn: conn, batchSize: batchSize, client: clients}
@@ -328,7 +328,7 @@ func (c *BitmapIndex) batchMutate(clear bool, client pb.BitmapIndexClient,
 				for t, bitmap := range ts {
 					buf, err := bitmap.ToBytes()
 					if err != nil {
-						log.Printf("bitmap.ToBytes: %v", err)
+						u.Errorf("bitmap.ToBytes: %v", err)
 						return err
 					}
 					ba := make([][]byte, 1)
@@ -336,26 +336,26 @@ func (c *BitmapIndex) batchMutate(clear bool, client pb.BitmapIndexClient,
 					b = append(b, &pb.IndexKVPair{IndexPath: indexName + "/" + fieldName,
 						Key: shared.ToBytes(int64(rowID)), Value: ba, Time: t, IsClear: clear})
 					i++
-					//log.Printf("Sent batch %d for path %s\n", i, b[i].IndexPath)
+					//u.Debug("Sent batch %d for path %s\n", i, b[i].IndexPath)
 				}
 			}
 		}
 	}
 	stream, err := client.BatchMutate(ctx)
 	if err != nil {
-		log.Printf("%v.BatchMutate(_) = _, %v: ", c.client, err)
+		u.Errorf("%v.BatchMutate(_) = _, %v: ", c.client, err)
 		return fmt.Errorf("%v.BatchMutate(_) = _, %v: ", c.client, err)
 	}
 
 	for i := 0; i < len(b); i++ {
 		if err := stream.Send(b[i]); err != nil {
-			log.Printf("%v.Send(%v) = %v", stream, b[i], err)
+			u.Errorf("%v.Send(%v) = %v", stream, b[i], err)
 			return fmt.Errorf("%v.Send(%v) = %v", stream, b[i], err)
 		}
 	}
 	_, err2 := stream.CloseAndRecv()
 	if err2 != nil {
-		log.Printf("%v.CloseAndRecv() got error %v, want %v", stream, err2, nil)
+		u.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err2, nil)
 		return fmt.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err2, nil)
 	}
 	return nil
@@ -442,36 +442,36 @@ func (c *BitmapIndex) batchSetValue(client pb.BitmapIndexClient,
 		for fieldName, field := range index {
 			for t, bsi := range field {
 				if bsi.BitCount() == 0 {
-					//log.Printf("BSI for %s - %s is empty.", indexName, fieldName)
+					u.Debugf("BSI for %s - %s is empty.", indexName, fieldName)
 					continue
 				}
 				ba, err := bsi.MarshalBinary()
 				if err != nil {
-					log.Printf("BSI.MarshalBinary: %v", err)
+					u.Errorf("BSI.MarshalBinary: %v", err)
 					return err
 				}
 				b = append(b, &pb.IndexKVPair{IndexPath: indexName + "/" + fieldName,
 					Key: shared.ToBytes(int64(bsi.BitCount() * -1)), Value: ba, Time: t})
 				i++
-				//log.Printf("Sent batch %d for path %s\n", i, b[i].IndexPath)
+				//u.Debugf("Sent batch %d for path %s\n", i, b[i].IndexPath)
 			}
 		}
 	}
 	stream, err := client.BatchMutate(ctx)
 	if err != nil {
-		log.Printf("%v.BatchMutate(_) = _, %v: ", c.client, err)
+		u.Errorf("%v.BatchMutate(_) = _, %v: ", c.client, err)
 		return fmt.Errorf("%v.BatchMutate(_) = _, %v: ", c.client, err)
 	}
 
 	for i := 0; i < len(b); i++ {
 		if err := stream.Send(b[i]); err != nil {
-			log.Printf("%v.Send(%v) = %v", stream, b[i], err)
+			u.Errorf("%v.Send(%v) = %v", stream, b[i], err)
 			return fmt.Errorf("%v.Send(%v) = %v", stream, b[i], err)
 		}
 	}
 	_, err2 := stream.CloseAndRecv()
 	if err2 != nil {
-		log.Printf("%v.CloseAndRecv() got error %v, want %v", stream, err2, nil)
+		u.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err2, nil)
 		return fmt.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err2, nil)
 	}
 	return nil

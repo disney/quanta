@@ -91,7 +91,7 @@ func main() {
 	isNested := app.Flag("nested", "Input data is a nested schema. The <index> parameter is root.").Bool()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 
-	core.InitLogging("WARN", *environment, "S3-Producer", Version, "Quanta")
+	shared.InitLogging("WARN", *environment, "S3-Producer", Version, "Quanta")
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 

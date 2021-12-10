@@ -7,6 +7,7 @@ package server
 import (
 	"context"
 	"fmt"
+	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
@@ -15,7 +16,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/testdata"
-	"log"
 	"net"
 	"os"
 	"path"
@@ -99,6 +99,6 @@ func (m *EndPoint) Start() error {
 
 // Status - Status API.
 func (m *EndPoint) Status(ctx context.Context, e *empty.Empty) (*pb.StatusMessage, error) {
-	log.Printf("Status ping returning OK.\n")
+	u.Info("Status ping returning OK.\n")
 	return &pb.StatusMessage{Status: "OK"}, nil
 }

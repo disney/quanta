@@ -74,11 +74,11 @@ func main() {
 // Run - Create command implementation
 func (c *CreateCmd) Run(ctx *Context) error {
 
-	log.Printf("Configuration directory = %s\n", c.SchemaDir)
-	log.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
+	fmt.Printf("Configuration directory = %s\n", c.SchemaDir)
+	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
 	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
 	if err != nil {
-		log.Printf("Is the consul agent running?")
+		fmt.Printf("Is the consul agent running?")
 		return fmt.Errorf("Error connecting to consul %v", err)
 	}
 	table, err3 := shared.LoadSchema(c.SchemaDir, c.Table, consulClient)
@@ -146,7 +146,7 @@ func performCreate(consul *api.Client, table *shared.BasicTable, port int) error
 	}
 	defer shared.Unlock(consul, lock)
 
-	log.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
+	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
 	conn := quanta.NewDefaultConnection()
 	conn.ServicePort = port
 	conn.Quorum = 3
@@ -196,23 +196,23 @@ func (v *VersionCmd) Run(ctx *Context) error {
 // Run - Status command implementation
 func (s *StatusCmd) Run(ctx *Context) error {
 
-    log.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
-    consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
-    if err != nil {
-        log.Printf("Is the consul agent running?")
-        return fmt.Errorf("Error connecting to consul %v", err)
-    }
-    log.Printf("Connecting to Quanta services at port: [%d] ...\n", ctx.Port)
-    conn := quanta.NewDefaultConnection()
-    conn.ServicePort = ctx.Port
-    conn.Quorum = 0
-    if err := conn.Connect(consulClient); err != nil {
-        log.Fatal(err)
-    }
-    log.Printf("ADDRESS            DATA CENTER      CONSUL NODE ID")
-    log.Printf("================   ==============   ==========================")
+	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
+	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
+	if err != nil {
+		fmt.Printf("Is the consul agent running?")
+		return fmt.Errorf("Error connecting to consul %v", err)
+	}
+	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", ctx.Port)
+	conn := quanta.NewDefaultConnection()
+	conn.ServicePort = ctx.Port
+	conn.Quorum = 0
+	if err := conn.Connect(consulClient); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("ADDRESS            DATA CENTER      CONSUL NODE ID")
+	fmt.Printf("================   ==============   ==========================")
 	for _, node := range conn.Nodes() {
-		log.Printf("%-16s   %-14s   %s", node.Node.Address, node.Node.Datacenter, node.Node.ID)
+		fmt.Printf("%-16s   %-14s   %s", node.Node.Address, node.Node.Datacenter, node.Node.ID)
 	}
 	return nil
 }
@@ -220,10 +220,10 @@ func (s *StatusCmd) Run(ctx *Context) error {
 // Run - Drop command implementation
 func (c *DropCmd) Run(ctx *Context) error {
 
-	log.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
+	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
 	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
 	if err != nil {
-		log.Printf("Is the consul agent running?")
+		fmt.Printf("Is the consul agent running?")
 		return fmt.Errorf("Error connecting to consul %v", err)
 	}
 
@@ -274,7 +274,7 @@ func checkForChildDependencies(consul *api.Client, tableName, operation string) 
 
 func nukeData(consul *api.Client, port int, tableName, operation string, retainEnums bool) error {
 
-	log.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
+	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
 	conn := quanta.NewDefaultConnection()
 	conn.ServicePort = port
 	conn.Quorum = 3
@@ -297,10 +297,10 @@ func nukeData(consul *api.Client, port int, tableName, operation string, retainE
 // Run - Truncate command implementation
 func (c *TruncateCmd) Run(ctx *Context) error {
 
-	log.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
+	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
 	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
 	if err != nil {
-		log.Printf("Is the consul agent running?")
+		fmt.Printf("Is the consul agent running?")
 		return fmt.Errorf("Error connecting to consul %v", err)
 	}
 
@@ -331,10 +331,10 @@ func (c *TruncateCmd) Run(ctx *Context) error {
 // Run - Show tables implementation
 func (t *TablesCmd) Run(ctx *Context) error {
 
-	log.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
+	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
 	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
 	if err != nil {
-		log.Printf("Is the consul agent running?")
+		fmt.Printf("Is the consul agent running?")
 		return fmt.Errorf("Error connecting to consul %v", err)
 	}
 

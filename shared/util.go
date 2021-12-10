@@ -5,8 +5,8 @@ package shared
 import (
 	"encoding/binary"
 	"fmt"
+	u "github.com/araddon/gou"
 	"github.com/hashicorp/consul/api"
-	"log"
 	"os"
 	"os/signal"
 	filepath "path"
@@ -394,7 +394,7 @@ func Lock(consul *api.Client, lockName, processName string) (*api.Lock, error) {
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		for range c {
-			//log.Println("Interrupted...")
+			u.Infof("Interrupted...")
 			err = lock.Unlock()
 			if err != nil {
 				return
@@ -403,7 +403,7 @@ func Lock(consul *api.Client, lockName, processName string) (*api.Lock, error) {
 	}()
 
 	// acquire lock
-	//log.Println("Acquiring lock ...")
+	u.Debugf("Acquiring lock ...")
 	stopCh := make(chan struct{})
 	lockCh, err := lock.Lock(stopCh)
 	if err != nil {
@@ -446,7 +446,7 @@ func Retry(attempts int, sleep time.Duration, f func() error) (err error) {
 
 		time.Sleep(sleep)
 
-		log.Println("retrying after error:", err)
+		u.Errorf("retrying after error: %v", err)
 	}
 	return fmt.Errorf("after %d attempts, last error: %s", attempts, err)
 }

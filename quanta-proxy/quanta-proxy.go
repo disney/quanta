@@ -9,7 +9,6 @@ import (
 	_ "github.com/araddon/qlbridge/qlbdriver"
 	"github.com/araddon/qlbridge/schema"
 	"gopkg.in/alecthomas/kingpin.v2"
-	"log"
 	"net"
 	"os"
 	"regexp"
@@ -63,7 +62,7 @@ func main() {
 	app := kingpin.New("quanta-proxy", "MySQL Proxy adapter to Quanta").DefaultEnvars()
 	app.Version("Version: " + Version + "\nBuild: " + Build)
 
-	logging = app.Flag("logging", "Logging level [debug, info]").Default("info").String()
+	logging = app.Flag("logging", "Logging level [ERROR, WARN, INFO, DEBUG]").Default("INFO").String()
 	environment = app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	proxyHostPort = app.Flag("proxy-host-port", "Host:port mapping of MySQL Proxy server").Default("0.0.0.0:4000").String()
 	quantaPort := app.Flag("quanta-port", "Port number for Quanta service").Default("4000").Int()
@@ -82,7 +81,7 @@ func main() {
 		}
 		u.SetupLogging("debug")
 	} else {
-		core.InitLogging(*logging, *environment, "Proxy", Version, "Quanta")
+		shared.InitLogging(*logging, *environment, "Proxy", Version, "Quanta")
 	}
 
 	consulAddr := *consul
@@ -90,7 +89,8 @@ func main() {
 	consulConfig := &api.Config{Address: consulAddr}
 	errx := shared.RegisterSchemaChangeListener(consulConfig, schemaChangeListener)
 	if errx != nil {
-		log.Fatal(errx)
+		u.Error(errx)
+		os.Exit(1)
 	}
 
 	if publicKeyURL != nil {
@@ -100,7 +100,8 @@ func main() {
 			u.Infof("Retrieving JWT public key from [%s]", url)
 			keySet, err := jwk.Fetch(url)
 			if err != nil {
-				log.Fatal(err)
+				u.Error(err)
+				os.Exit(1)
 			}
 			publicKeySet = append(publicKeySet, keySet)
 		}
@@ -124,7 +125,7 @@ func main() {
 
 	src, err = source.NewQuantaSource("", consulAddr, *quantaPort)
 	if err != nil {
-		log.Println(err)
+		u.Error(err)
 	}
 	schema.RegisterSourceAsSchema("quanta", src)
 

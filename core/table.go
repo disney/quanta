@@ -5,11 +5,11 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	u "github.com/araddon/gou"
 	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	"io/ioutil"
-	"log"
 	"os"
 	"plugin"
 	"reflect"
@@ -319,7 +319,7 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 		a.reverseMap[rowID] = value
 
 		v = rowID
-		log.Printf("Added enum for field = %s, value = %v, ID = %v", a.FieldName, value, v)
+		u.Infof("Added enum for field = %s, value = %v, ID = %v", a.FieldName, value, v)
 	} else {
 		a.Parent.localLock.RUnlock()
 	}

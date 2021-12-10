@@ -5,13 +5,13 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/akrylysov/pogreb"
+	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"golang.org/x/sync/singleflight"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,7 +63,7 @@ func (m *KVStore) Init() error {
 	}
 
 	for _, v := range dbList {
-		log.Printf("Opening [%s]", v)
+		u.Infof("Opening [%s]", v)
 		if _, err := m.getStore(v); err != nil {
 			return err
 		}
@@ -76,7 +76,7 @@ func (m *KVStore) Shutdown() {
 	m.storeCacheLock.Lock()
 	defer m.storeCacheLock.Unlock()
 	for k, v := range m.storeCache {
-		log.Printf("Sync and close [%s]", k)
+		u.Infof("Sync and close [%s]", k)
 		v.Sync()
 		v.Close()
 	}
@@ -333,13 +333,13 @@ func (m *KVStore) DeleteIndicesWithPrefix(ctx context.Context,
 			v.Close()
 			delete(m.storeCache, k)
 			if req.RetainEnums && strings.HasSuffix(k, "StringEnum") {
-				log.Printf("Sync and close [%s]", k)
+				u.Infof("Sync and close [%s]", k)
 				continue
 			}
 			if err := os.RemoveAll(m.EndPoint.dataDir + sep + "index" + sep + k); err != nil {
 				return &empty.Empty{}, fmt.Errorf("DeleteIndicesWithPrefix error [%v]", err)
 			}
-			log.Printf("Sync, close, and delete [%s]", k)
+			u.Infof("Sync, close, and delete [%s]", k)
 		}
 	}
 	if !req.RetainEnums {

@@ -357,12 +357,12 @@ func (m *JoinMerge) makeBufferedConnection(driverTable string) (*core.Session, e
 	if !ok {
 		return nil, fmt.Errorf("cannot obtain base path from session")
 	}
-    clientConn := quanta.NewDefaultConnection()
+	clientConn := quanta.NewDefaultConnection()
 	clientConn.ServicePort = int(port.Value().(int64))
-    clientConn.Quorum = 3
-    if err := clientConn.Connect(nil); err != nil {
+	clientConn.Quorum = 3
+	if err := clientConn.Connect(nil); err != nil {
 		return nil, fmt.Errorf("error opening quanta connection - %v", err)
-    }
+	}
 	return core.OpenSession(basePath.ToString(), driverTable, false, clientConn)
 }
 

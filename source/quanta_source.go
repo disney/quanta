@@ -13,7 +13,7 @@ import (
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	"io/ioutil"
-	"log"
+	"os"
 	"strings"
 )
 
@@ -42,7 +42,7 @@ type QuantaSource struct {
 	//result         *pcli.QueryResult
 	lastResultPos int
 	baseDir       string
-    sessionPool   *core.SessionPool
+	sessionPool   *core.SessionPool
 }
 
 // NewQuantaSource - Construct a QuantaSource.
@@ -50,7 +50,7 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort int) (*QuantaSource
 
 	m := &QuantaSource{}
 	var err error
-	var consulClient *api.Client 
+	var consulClient *api.Client
 	if consulAddr != "" {
 		consulClient, err = api.NewClient(&api.Config{Address: consulAddr})
 		if err != nil {
@@ -58,18 +58,19 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort int) (*QuantaSource
 		}
 	}
 
-    clientConn := quanta.NewDefaultConnection()
-    clientConn.ServicePort = servicePort
-    clientConn.Quorum = 3
-    if err := clientConn.Connect(consulClient); err != nil {
-        log.Fatal(err)
-    }
+	clientConn := quanta.NewDefaultConnection()
+	clientConn.ServicePort = servicePort
+	clientConn.Quorum = 3
+	if err := clientConn.Connect(consulClient); err != nil {
+		u.Error(err)
+		os.Exit(1)
+	}
 
-    m.sessionPool = core.NewSessionPool(clientConn, m.Schema, baseDir)
+	m.sessionPool = core.NewSessionPool(clientConn, m.Schema, baseDir)
 
 	m.baseDir = baseDir
 	if m.baseDir != "" {
-		log.Printf("Constructing QuantaSource at baseDir '%s'", baseDir)
+		u.Infof("Constructing QuantaSource at baseDir '%s'", baseDir)
 	}
 
 	// name is a string and cols is an []string
@@ -108,10 +109,10 @@ func (m *QuantaSource) Open(tableName string) (schema.Conn, error) {
 		return nil, fmt.Errorf("Could not find '%v'.'%v' schema)", m.Schema.Name, tableName)
 	}
 
-    conn, err := m.sessionPool.Borrow(tableName)
-    if err != nil {
-        return nil, fmt.Errorf("Error opening Quanta session %v", err)
-    }
+	conn, err := m.sessionPool.Borrow(tableName)
+	if err != nil {
+		return nil, fmt.Errorf("Error opening Quanta session %v", err)
+	}
 	return NewSQLToQuanta(m, tbl, conn), nil
 }
 
@@ -212,13 +213,13 @@ func (m *QuantaSource) Tables() []string {
 // Columns - Return column name strings.
 func (m *QuantaSource) Columns() []string {
 	//return m.tbl.Columns()
-	log.Println("QuantaSource: Columns() called!")
+	u.Debug("QuantaSource: Columns() called!")
 	return nil
 }
 
 // Next values.
 func (m *QuantaSource) Next() schema.Message {
-	log.Println("QuantaSource: Next() called!")
+	u.Debug("QuantaSource: Next() called!")
 	return nil
 }
 
@@ -228,13 +229,13 @@ func (m *QuantaSource) ListTableNames() []string {
 	if m.baseDir == "" {
 		lock, errx := shared.Lock(m.sessionPool.AppHost.Consul, "admin-tool", "admin-tool")
 		if errx != nil {
-			log.Printf("listTableNames: cannot obtain lock %v", errx)
+			u.Errorf("listTableNames: cannot obtain lock %v", errx)
 			return []string{}
 		}
 		defer shared.Unlock(m.sessionPool.AppHost.Consul, lock)
 		tables, errx := shared.GetTables(m.sessionPool.AppHost.Consul)
 		if errx != nil {
-			log.Printf("shared.getTables failed: %v", errx)
+			u.Errorf("shared.getTables failed: %v", errx)
 			return []string{}
 		}
 		return tables
@@ -243,7 +244,8 @@ func (m *QuantaSource) ListTableNames() []string {
 	list := make([]string, 0)
 	files, err := ioutil.ReadDir(m.baseDir)
 	if err != nil {
-		log.Fatal(err)
+		u.Error(err)
+		os.Exit(1)
 	}
 	for _, f := range files {
 		if f.IsDir() {

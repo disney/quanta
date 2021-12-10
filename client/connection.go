@@ -12,6 +12,7 @@ package quanta
 import (
 	"context"
 	"fmt"
+	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
@@ -89,7 +90,7 @@ func NewDefaultConnection() *Conn {
 func (m *Conn) Connect(consul *api.Client) (err error) {
 
 	if m.ServicePort > 0 {
-		if consul != nil  {
+		if consul != nil {
 			m.Consul = consul
 		} else {
 			m.Consul, err = api.NewClient(api.DefaultConfig())
@@ -143,11 +144,11 @@ func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.Client
 	nodeConns = make([]*grpc.ClientConn, nodeCount)
 	var opts []grpc.DialOption
 
-	if m.ServicePort == 0 {  // Test harness
+	if m.ServicePort == 0 { // Test harness
 		ctx := context.Background()
 		nodeConns[0], err = grpc.DialContext(ctx, "bufnet",
-            grpc.WithDialer(shared.TestDialer), grpc.WithInsecure())
-		return 
+			grpc.WithDialer(shared.TestDialer), grpc.WithInsecure())
+		return
 	}
 
 	for i := 0; i < len(m.nodes); i++ {
@@ -169,7 +170,7 @@ func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.Client
 		} else {
 			opts = append(opts, grpc.WithInsecure())
 		}
-		
+
 		nodeConns[i], err = grpc.Dial(fmt.Sprintf("%s:%d", m.nodes[i].Node.Address,
 			m.ServicePort), opts...)
 		if err != nil {
@@ -225,14 +226,14 @@ func (m *Conn) Disconnect() error {
 
 // Status admin API.  TODO: Make this useful
 func printStatus(client pb.ClusterAdminClient) {
-	fmt.Print("Checking status ... ")
+	u.Infof("Checking status ... ")
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline*time.Second)
 	defer cancel()
 	status, err := client.Status(ctx, &empty.Empty{})
 	if err != nil {
 		log.Fatalf("%v.Status(_) = _, %v: ", client, err)
 	}
-	fmt.Println(status)
+	u.Info(status)
 }
 
 // Poll Consul for node membership list.
@@ -245,13 +246,13 @@ func (m *Conn) poll() {
 			return
 		case err = <-m.err:
 			if err != nil {
-				log.Printf("[client %s] error: %s", m.ServiceName, err)
+				u.Errorf("[client %s] error: %s", m.ServiceName, err)
 			}
 			return
 		case <-time.After(m.pollWait):
 			err = m.update()
 			if err != nil {
-				log.Printf("[client %s] error: %s", m.ServiceName, err)
+				u.Errorf("[client %s] error: %s", m.ServiceName, err)
 			}
 		}
 	}
@@ -279,7 +280,7 @@ func (m *Conn) update() (err error) {
 		node := strings.Split(entry.Node.Node, ".")[0]
 		idMap[node] = struct{}{}
 	}
-	for k, _ := range idMap {
+	for k := range idMap {
 		ids = append(ids, k)
 	}
 
@@ -303,6 +304,5 @@ func (m *Conn) update() (err error) {
 
 // Nodes - Return list of active nodes.
 func (m *Conn) Nodes() []*api.ServiceEntry {
-    return m.nodes
+	return m.nodes
 }
-

@@ -8,8 +8,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/client"
+	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	pqs3 "github.com/xitongsys/parquet-go-source/s3"
@@ -59,7 +59,7 @@ type Main struct {
 	ConsulClient *api.Client
 	DateFilter   *time.Time
 	lock         *api.Lock
-	apiHost		 *quanta.Conn
+	apiHost      *quanta.Conn
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -86,7 +86,7 @@ func main() {
 	dateFilter := app.Flag("date-filter", "If provided, all rows must be within this time partition.").String()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 
-	core.InitLogging("WARN", *environment, "Loader", Version, "Quanta")
+	shared.InitLogging("WARN", *environment, "Loader", Version, "Quanta")
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -131,7 +131,7 @@ func main() {
 	threads := runtime.NumCPU()
 	var eg errgroup.Group
 	fileChan := make(chan *s3.Object, threads)
-    closeLater := make([]*core.Session, 0)
+	closeLater := make([]*core.Session, 0)
 	var ticker *time.Ticker
 	// Spin up worker threads
 	if !*dryRun {
@@ -147,7 +147,7 @@ func main() {
 				for file := range fileChan {
 					main.processRowsForFile(file, conn)
 				}
-                closeLater = append(closeLater, conn)
+				closeLater = append(closeLater, conn)
 				return nil
 			})
 		}
@@ -191,9 +191,9 @@ func main() {
 		if err := eg.Wait(); err != nil {
 			log.Fatalf("Open error %v", err)
 		}
-        for _, cc := range closeLater {
-            cc.CloseSession()
-        }
+		for _, cc := range closeLater {
+			cc.CloseSession()
+		}
 		ticker.Stop()
 		log.Printf("Completed, Last Record: %d, Bytes: %s", main.totalRecs.Get(), core.Bytes(main.BytesProcessed()))
 		log.Printf("%d files processed.", selected)
@@ -290,7 +290,7 @@ func (m *Main) processRowsForFile(s3object *s3.Object, dbConn *core.Session) {
 		}
 		m.AddBytes(dbConn.BytesRead)
 	}
-    dbConn.Flush()
+	dbConn.Flush()
 }
 
 // Init function initilizations loader.
@@ -302,12 +302,12 @@ func (m *Main) Init() error {
 		return err
 	}
 
-    m.apiHost = quanta.NewDefaultConnection()
-    m.apiHost.ServicePort = m.Port
-    m.apiHost.Quorum = 3
-    if err = m.apiHost.Connect(consul); err != nil {
-        log.Fatal(err)
-    }
+	m.apiHost = quanta.NewDefaultConnection()
+	m.apiHost.ServicePort = m.Port
+	m.apiHost.Quorum = 3
+	if err = m.apiHost.Connect(consul); err != nil {
+		log.Fatal(err)
+	}
 
 	// Initialize S3 client
 	sess, err := session.NewSession(&aws.Config{

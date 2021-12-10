@@ -19,7 +19,7 @@ import (
 // KVStore API wrapper
 type KVStore struct {
 	*Conn
-	client 		[]pb.KVStoreClient
+	client []pb.KVStoreClient
 }
 
 // NewKVStore - Construct KVStore service endpoint.

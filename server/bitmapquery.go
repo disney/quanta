@@ -14,10 +14,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/RoaringBitmap/roaring/roaring64"
+	u "github.com/araddon/gou"
 	// "github.com/golang/protobuf/ptypes/wrappers"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
-	"log"
 	"time"
 )
 
@@ -30,10 +30,10 @@ func (m *BitmapIndex) Query(ctx context.Context, query *pb.BitmapQuery) (*pb.Que
 
 	d, errx := json.Marshal(&query)
 	if errx != nil {
-		log.Printf("error: %v", errx)
+		u.Errorf("error: %v", errx)
 		return nil, errx
 	}
-	log.Printf("vvv query dump:\n%s\n\n", string(d))
+	u.Debugf("vvv query dump:\n%s\n\n", string(d))
 
 	if query.Query == nil {
 		return nil, fmt.Errorf("query fragment array must not be nil")
@@ -113,7 +113,7 @@ func (m *BitmapIndex) Query(ctx context.Context, query *pb.BitmapQuery) (*pb.Que
 				return nil, err
 			}
 			elapsed := time.Since(start)
-			log.Printf("timeRange BSI elapsed time %v", elapsed)
+			u.Debugf("timeRange BSI elapsed time %v", elapsed)
 			// Evaluate BSI operation resulting in roaring bitmap
 			start = time.Now()
 			switch v.BsiOp {
@@ -133,7 +133,7 @@ func (m *BitmapIndex) Query(ctx context.Context, query *pb.BitmapQuery) (*pb.Que
 				bm = bsi.BatchEqual(0, v.Values)
 			}
 			elapsed = time.Since(start)
-			log.Printf("BSI Compare (%d) elapsed time %v", v.BsiOp, elapsed)
+			u.Debugf("BSI Compare (%d) elapsed time %v", v.BsiOp, elapsed)
 		} else {
 			start := time.Now()
 			if v.SamplePct > 0 || v.NullCheck {
@@ -161,7 +161,7 @@ func (m *BitmapIndex) Query(ctx context.Context, query *pb.BitmapQuery) (*pb.Que
 				}
 			}
 			elapsed := time.Since(start)
-			log.Printf("timeRange elapsed time %v", elapsed)
+			u.Debugf("timeRange elapsed time %v", elapsed)
 		}
 
 		if bm != nil {
@@ -180,7 +180,7 @@ func (m *BitmapIndex) Query(ctx context.Context, query *pb.BitmapQuery) (*pb.Que
 		ir.AddExistence(ge)
 	}
 	elapsed := time.Since(start)
-	log.Printf("Reduce and finalize response elapsed time %v", elapsed)
+	u.Debugf("Reduce and finalize response elapsed time %v", elapsed)
 
 	return ir.MarshalQueryResult()
 }
@@ -230,7 +230,7 @@ func (m *BitmapIndex) timeRange(index, field string, rowID uint64, fromTime,
 			} else {
 				a = append(a, bm.Bits)
 			}
-			log.Printf("timeRange No Quantum selecting %s", hashKey)
+			u.Debugf("timeRange No Quantum selecting %s", hashKey)
 			result = roaring64.ParOr(0, a...)
 		}
 	} else {
@@ -251,10 +251,10 @@ func (m *BitmapIndex) timeRange(index, field string, rowID uint64, fromTime,
 						continue
 					}
 					a = append(a, b)
-					log.Printf("timeRange %s selecting %s", tq, hashKey)
+					u.Debugf("timeRange %s selecting %s", tq, hashKey)
 				} else {
 					a = append(a, bitmap.Bits)
-					log.Printf("timeRange %s selecting %s", tq, hashKey)
+					u.Debugf("timeRange %s selecting %s", tq, hashKey)
 				}
 			}
 		}
@@ -307,7 +307,7 @@ func (m *BitmapIndex) timeRangeBSI(index, field string, fromTime, toTime time.Ti
 			} else {
 				a = append(a, bm.BSI)
 			}
-			log.Printf("timeRangeBSI No Quantum selecting %s", hashKey)
+			u.Debugf("timeRangeBSI No Quantum selecting %s", hashKey)
 			result.BSI.ParOr(0, a...)
 		}
 	} else {
@@ -329,10 +329,10 @@ func (m *BitmapIndex) timeRangeBSI(index, field string, fromTime, toTime time.Ti
 						continue
 					}
 					a = append(a, x)
-					log.Printf("timeRangeBSI %s selecting %s", tq, hashKey)
+					u.Debugf("timeRangeBSI %s selecting %s", tq, hashKey)
 				} else {
 					a = append(a, bsi.BSI)
-					log.Printf("timeRangeBSI %s selecting %s", tq, hashKey)
+					u.Debugf("timeRangeBSI %s selecting %s", tq, hashKey)
 				}
 			}
 		}
@@ -368,7 +368,7 @@ func (m *BitmapIndex) timeRangeExistence(index, field string, fromTime, toTime t
 		if bm, ok := m.bsiCache[index][field][0]; ok {
 			results = append(results, bm.BSI.GetExistenceBitmap())
 		}
-		log.Printf("timeRangeExistence No Quantum selecting %s", hashKey)
+		u.Debugf("timeRangeExistence No Quantum selecting %s", hashKey)
 	} else {
 		if tm, ok := m.bsiCache[index][field]; ok {
 			for ts, bm := range tm {
@@ -382,7 +382,7 @@ func (m *BitmapIndex) timeRangeExistence(index, field string, fromTime, toTime t
 						continue
 					}
 				*/
-				log.Printf("timeRangeExistence %s selecting %s", tq, hashKey)
+				u.Debugf("timeRangeExistence %s selecting %s", tq, hashKey)
 				results = append(results, bm.BSI.GetExistenceBitmap())
 			}
 		}
@@ -442,7 +442,7 @@ func (m *BitmapIndex) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRe
 		}
 		bsiArray[i] = bsi
 		elapsed := time.Since(start)
-		log.Printf("inner join timeRange BSI elapsed time %v for %s %s", elapsed, req.DriverIndex, v)
+		u.Debugf("inner join timeRange BSI elapsed time %v for %s %s", elapsed, req.DriverIndex, v)
 	}
 
 	// Process the final FK relation with TransposeWithCounts
@@ -450,7 +450,7 @@ func (m *BitmapIndex) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRe
 	transposeBsi := bsiArray[minCardIndex]
 	jr := transposeBsi.TransposeWithCounts(0, transposeBsi.GetExistenceBitmap(), filterSets[minCardIndex])
 	elapsed := time.Since(start)
-	log.Printf("inner join transpose elapsed time %v", elapsed)
+	u.Debugf("inner join transpose elapsed time %v", elapsed)
 
 	data, err := jr.MarshalBinary()
 	if err != nil {
@@ -464,7 +464,7 @@ func (m *BitmapIndex) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRe
 //
 func (m *BitmapIndex) Projection(ctx context.Context, req *pb.ProjectionRequest) (*pb.ProjectionResponse, error) {
 
-	log.Printf("Projection retrieval started for %v - %v", req.Index, req.Fields)
+	u.Debugf("Projection retrieval started for %v - %v", req.Index, req.Fields)
 
 	fromTime := time.Unix(0, req.FromTime)
 	toTime := time.Unix(0, req.ToTime)
@@ -519,6 +519,6 @@ func (m *BitmapIndex) Projection(ctx context.Context, req *pb.ProjectionRequest)
 		}
 	}
 	elapsed := time.Since(start)
-	log.Printf("Projection retrieval elapsed time %v", elapsed)
+	u.Debugf("Projection retrieval elapsed time %v", elapsed)
 	return &pb.ProjectionResponse{BitmapResults: bitmapResults, BsiResults: bsiResults}, nil
 }

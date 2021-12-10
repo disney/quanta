@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"gopkg.in/confluentinc/confluent-kafka-go.v1/kafka"
@@ -69,7 +70,7 @@ func main() {
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 
-	core.InitLogging("WARN", *environment, "Kafka-Consumer", Version, "Quanta")
+	shared.InitLogging("WARN", *environment, "Kafka-Consumer", Version, "Quanta")
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 

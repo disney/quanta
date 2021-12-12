@@ -9,6 +9,7 @@ package shared
 import (
 	"fmt"
 	"github.com/RoaringBitmap/roaring/roaring64"
+	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/pborman/uuid"
 	"time"
@@ -491,11 +492,11 @@ func (q *BitmapQuery) Dump() {
 	dq := q.ToProto()
 	from := time.Unix(0, dq.FromTime).Format(YMDHTimeFmt)
 	to := time.Unix(0, dq.ToTime).Format(YMDHTimeFmt)
-	fmt.Printf(" FROM TIME: %s\n", from)
-	fmt.Printf("   TO TIME: %s\n", to)
-	fmt.Println("FRAGMENTS: VVV")
+	u.Debugf(" FROM TIME: %s\n", from)
+	u.Debugf("   TO TIME: %s\n", to)
+	u.Debugf("FRAGMENTS: VVV")
 	for _, f := range dq.Query {
-		fmt.Printf("%s->:%#v\n", f.Operation, f)
+		u.Debugf("%s->:%#v\n", f.Operation, f)
 	}
 }
 

@@ -1,8 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"github.com/disney/quanta/client"
-	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/rbac"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
@@ -39,7 +40,7 @@ func main() {
 	userID := app.Arg("user-id", "User ID for SystemAdmin grant.").Required().String()
 	port := app.Arg("port", "Port number for service").Default("4000").Int32()
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
-	core.InitLogging("WARN", *environment, "RBAC Utility", Version, "Quanta")
+	shared.InitLogging("WARN", *environment, "RBAC Utility", Version, "Quanta")
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -47,8 +48,8 @@ func main() {
 	main.UserID = *userID
 	main.Port = int(*port)
 
-	log.Printf("User ID %v.\n", main.UserID)
-	log.Printf("Service port %d.\n", main.Port)
+	fmt.Printf("User ID %v.\n", main.UserID)
+	fmt.Printf("Service port %d.\n", main.Port)
 
 	conn := quanta.NewDefaultConnection()
 	conn.ServicePort = main.Port
@@ -65,5 +66,5 @@ func main() {
 	if err3 != nil {
 		log.Fatal(err3)
 	}
-	log.Printf("Success!\n")
+	fmt.Printf("Success!\n")
 }

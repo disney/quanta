@@ -105,7 +105,7 @@ func main() {
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 	trimHorizon := app.Flag("trim-horizon", "Set initial position to TRIM_HORIZON").Bool()
 
-	core.InitLogging("WARN", *environment, "Kinesis-Consumer", Version, appName)
+	shared.InitLogging("WARN", *environment, "Kinesis-Consumer", Version, appName)
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 	builtins.LoadAllBuiltins()

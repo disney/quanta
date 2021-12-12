@@ -6,8 +6,8 @@ package server
 
 import (
 	"fmt"
+	u "github.com/araddon/gou"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -184,7 +184,7 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 
 			data, err := ioutil.ReadFile(path)
 			if err != nil {
-				log.Printf("readBitmapFiles: ioutil.ReadFile - %v", err)
+				u.Errorf("readBitmapFiles: ioutil.ReadFile - %v", err)
 				return err
 			}
 
@@ -193,7 +193,7 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 			s := strings.Split(trPath, sep)
 			if len(s) < 4 {
 				err := fmt.Errorf("readBitmapFiles: Could not parse path [%s]", path)
-				log.Println(err)
+				u.Error(err)
 				return err
 			}
 			bf.IndexName = s[0]
@@ -211,7 +211,7 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 					if err != nil {
 						err := fmt.Errorf("readBitmapFiles: %s[%s] Could not parse '%s' Time[%s] - %v",
 							bf.IndexName, bf.FieldName, s[len(s)-2], tq, err)
-						log.Println(err)
+						u.Error(err)
 						return err
 					}
 					bf.Time = ts
@@ -225,7 +225,7 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 					val, err := strconv.ParseInt(s[len(s)-1], 10, 64)
 					if err != nil {
 						err := fmt.Errorf("readBitmapFiles: Could not parse BSI Bit file - %v", err)
-						log.Println(err)
+						u.Error(err)
 						return err
 					}
 					bitSliceIndex = int(val)
@@ -243,7 +243,7 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 				if existFrag, ok := fragMap[bf.IndexName][bf.FieldName][int64(-1)][bf.Time.UnixNano()]; !ok {
 					if bitSliceIndex == -1 {
 						err := fmt.Errorf("readBitmapFiles: Should not be here bitslice must be zero here")
-						log.Println(err)
+						u.Error(err)
 						return err
 					}
 					// first bitslice start at bf.BitData[1].  bf.BitData[0] = EBM
@@ -259,7 +259,7 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 				bf.RowIDOrBits, err = strconv.ParseInt(s[2], 10, 64)
 				if err != nil {
 					err := fmt.Errorf("readBitmapFiles: Could not parse RowID - %v", err)
-					log.Println(err)
+					u.Error(err)
 					return err
 				}
 				if s[len(s)-1] == "default" {
@@ -269,7 +269,7 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 					if err != nil {
 						err := fmt.Errorf("readBitmapFiles: %s[%s] Could not parse '%s' - %v",
 							bf.IndexName, bf.FieldName, s[len(s)-1], err)
-						log.Println(err)
+						u.Error(err)
 						return err
 					}
 					bf.Time = ts
@@ -290,14 +290,14 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 				} else {
 					err := fmt.Errorf("readBitmapFiles: Should not be here for standard bitmaps! [%s/%s]",
 						bf.IndexName, bf.FieldName)
-					log.Println(err)
+					u.Error(err)
 					return err
 				}
 			}
 			return nil
 		})
 	if err != nil {
-		log.Printf("filepath.Walk - %v", err)
+		u.Errorf("filepath.Walk - %v", err)
 		return err
 	}
 

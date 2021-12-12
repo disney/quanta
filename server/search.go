@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/akrylysov/pogreb"
+	u "github.com/araddon/gou"
 	"github.com/aviddiviner/go-murmur"
 	"github.com/bbalet/stopwords"
 	pb "github.com/disney/quanta/grpc"
@@ -15,7 +16,6 @@ import (
 	"hash"
 	"hash/fnv"
 	"io"
-	"log"
 	"regexp"
 	"time"
 )
@@ -43,7 +43,7 @@ func NewStringSearch(endPoint *EndPoint) (*StringSearch, error) {
 		return nil, err
 	}
 
-	log.Println("Pre-warming  string search cache.")
+	u.Info("Pre-warming  string search cache.")
 	start := time.Now()
 	count := 0
 	it := db.Items()
@@ -58,7 +58,7 @@ func NewStringSearch(endPoint *EndPoint) (*StringSearch, error) {
 		count++
 	}
 	elapsed := time.Since(start)
-	log.Printf("Cache initialization complete %d items loaded in %s.\n", count, elapsed)
+	u.Infof("Cache initialization complete %d items loaded in %s.\n", count, elapsed)
 
 	e := &StringSearch{EndPoint: endPoint, store: db}
 	pb.RegisterStringSearchServer(endPoint.server, e)

@@ -1211,8 +1211,8 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 	start := time.Now()
 	response, err = m.conn.Client.Query(m.q)
 	elapsed := time.Since(start)
-	u.Infof("Elapsed time %s\n", elapsed)
-	u.Infof("SQL = %v\n", m.sel)
+	u.Debugf("Elapsed time %s\n", elapsed)
+	u.Debugf("SQL = %v\n", m.sel)
 
 	if err != nil {
 		u.Errorf("%v", err)

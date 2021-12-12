@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/araddon/dateparse"
+	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/expr"
 	"github.com/araddon/qlbridge/value"
 	"github.com/araddon/qlbridge/vm"
@@ -11,7 +12,6 @@ import (
 	"github.com/disney/quanta/shared"
 	"github.com/json-iterator/go"
 	"github.com/xitongsys/parquet-go/reader"
-	"log"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -567,13 +567,13 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		}
 	} else {
 		if tbuf.Table.DisableDedup {
-			//log.Printf("WARN: PK %s found in cache but dedup is disabled.  PK mapping error?", pkLookupVal.String())
+			u.Infof("PK %s found in cache but dedup is disabled.  PK mapping error?", pkLookupVal.String())
 		}
 		tbuf.CurrentColumnID = lColID
 	}
 
 	// Map the value(s) and update table
-	//log.Printf("PK = %s [%v]", pk.FieldName, cval)
+	//u.Debugf("PK = %s [%v]", pk.FieldName, cval)
 	for i, v := range tbuf.CurrentPKValue {
 		if v == nil {
 			return false, fmt.Errorf("PK mapping error %s - nil value", pqColPaths[i])
@@ -721,12 +721,12 @@ func (s *Session) Flush() {
 	defer s.stateLock.Unlock()
 	if s.StringIndex != nil {
 		if err := s.StringIndex.Flush(); err != nil {
-			log.Println(err)
+			u.Error(err)
 		}
 	}
 	if s.Client != nil {
 		if err := s.Client.Flush(); err != nil {
-			log.Println(err)
+			u.Error(err)
 		}
 	}
 }
@@ -741,14 +741,14 @@ func (s *Session) CloseSession() {
 	defer s.stateLock.Unlock()
 	if s.StringIndex != nil {
 		if err := s.StringIndex.Flush(); err != nil {
-			log.Println(err)
+			u.Error(err)
 		}
 		s.StringIndex = nil
 	}
 
 	if s.Client != nil {
 		if err := s.Client.Flush(); err != nil {
-			log.Println(err)
+			u.Error(err)
 		}
 	}
 }

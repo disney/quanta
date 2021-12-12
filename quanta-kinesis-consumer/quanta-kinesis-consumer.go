@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	//"expvar"
 	"fmt"
 	"github.com/araddon/dateparse"
+	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/expr/builtins"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis/types"
 	"github.com/aws/aws-sdk-go/aws"
@@ -61,13 +63,15 @@ type Main struct {
 	Table         *shared.BasicTable
 	Schema        avro.Schema
 	InitialPos    string
+	IsAvro        bool
 	CheckpointDB  bool
+	AssumeRoleArn string
+	Deaggregate   bool
 	partitionMap  map[string]*Partition
 	partitionLock sync.Mutex
 	timeLocation  *time.Location
 	processedRecs *Counter
 	sessionPool   *core.SessionPool
-	assumeRoleArn string
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -90,6 +94,7 @@ func main() {
 
 	stream := app.Arg("stream", "Kinesis stream name.").Required().String()
 	index := app.Arg("index", "Table name (root name if nested schema)").Required().String()
+	withAssumeRoleArn := app.Arg("assume-role-arn", "Assume role ARN.").String()
 	region := app.Arg("region", "AWS region").Default("us-east-1").String()
 	port := app.Arg("port", "Port number for service").Default("4000").Int32()
 	bufSize := app.Flag("buf-size", "Buffer size").Default("1000000").Int32()
@@ -97,13 +102,16 @@ func main() {
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 	trimHorizon := app.Flag("trim-horizon", "Set initial position to TRIM_HORIZON").Bool()
 	noCheckpointer := app.Flag("no-checkpoint-db", "Disable DynamoDB checkpointer.").Bool()
-	withAssumeRoleArn := app.Flag("with-assume-role-arn", "Assume role ARN.").String()
+	avroPayload := app.Flag("avro-payload", "Payload is Avro.").Bool()
+	deaggregate := app.Flag("deaggregate", "Incoming payload records are aggregated.").Bool()
+	logLevel := app.Flag("log-level", "Log Level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
 
-	core.InitLogging("WARN", *environment, "Kinesis-Consumer", Version, "Quanta")
+	kingpin.MustParse(app.Parse(os.Args[1:]))
+
+	shared.InitLogging(*logLevel, *environment, "Kinesis-Consumer", Version, "Quanta")
 
 	builtins.LoadAllBuiltins()
 
-	kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	main := NewMain()
 	main.Stream = *stream
@@ -113,6 +121,7 @@ func main() {
 	main.Port = int(*port)
 	main.ConsulAddr = *consul
 
+	log.Printf("Set Logging level to %v.", *logLevel)
 	log.Printf("Kinesis stream %v.", main.Stream)
 	log.Printf("Kinesis region %v.", main.Region)
 	log.Printf("Index name %v.", main.Index)
@@ -134,14 +143,28 @@ func main() {
 		log.Printf("Checkpoint DB enabled.")
 	}
 	if withAssumeRoleArn != nil {
-		main.assumeRoleArn = *withAssumeRoleArn
-		log.Printf("With assume role ARN [%s]", main.assumeRoleArn)
+		main.AssumeRoleArn = *withAssumeRoleArn
+		log.Printf("With assume role ARN [%s]", main.AssumeRoleArn)
+	}
+	if *avroPayload {
+		main.IsAvro = true
+		log.Printf("Payload is Avro.")
+	} else {
+		main.IsAvro = false
+		log.Printf("Payload is JSON.")
+	}
+	if *deaggregate {
+		main.Deaggregate = true
+		log.Printf("Payload is aggregated, de-aggregation is enabled in consumer.")
+	} else {
+		main.Deaggregate = false
 	}
 
 	var err error
 
 	if main.ShardCount, err = main.Init(); err != nil {
-		log.Fatal(err)
+		u.Error(err)
+		os.Exit(1)
 	}
 
 	var ticker *time.Ticker
@@ -151,7 +174,7 @@ func main() {
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		for range c {
-			log.Printf("Interrupted,  Bytes processed: %s, Records: %v", core.Bytes(main.BytesProcessed()),
+			u.Infof("Interrupted,  Bytes processed: %s, Records: %v", core.Bytes(main.BytesProcessed()),
 				main.totalRecs.Get())
 			//close(msgChan)
 			//main.consumer.Close()
@@ -165,7 +188,8 @@ func main() {
 		err = main.consumer.Scan(context.TODO(), func(v *consumer.Record) error {
 			ts, err := dateparse.ParseIn(*v.PartitionKey, main.timeLocation)
 			if err != nil {
-				log.Fatalf("Date parse error for partition key %s - %v", *v.PartitionKey, err)
+				u.Errorf("Date parse error for partition key %s - %v", *v.PartitionKey, err)
+				os.Exit(1)
 			}
 			tFormat := shared.YMDTimeFmt
 			if main.Table.TimeQuantumType == "YMDH" {
@@ -174,9 +198,15 @@ func main() {
 			partition := ts.Format(tFormat)
 
 			out := make(map[string]interface{})
-			err = avro.Unmarshal(main.Schema, v.Data, &out)
+
+			if main.IsAvro {
+				err = avro.Unmarshal(main.Schema, v.Data, &out)
+			} else {
+				err = json.Unmarshal(v.Data, &out)
+			}
 			if err != nil {
-				log.Printf("Unmarshal ERROR %v", err)
+				u.Errorf("Unmarshal ERROR %v", err)
+				main.errorCount.Add(1)
 				return nil
 			}
 			if main.ShardCount > 1 {
@@ -186,7 +216,7 @@ func main() {
 				}
 			} else { // Bypass partition worker dispatching
 				if err := main.processBatch([]map[string]interface{}{out}, partition); err != nil {
-					log.Printf("processBatch ERROR %v", err)
+					u.Errorf("processBatch ERROR %v", err)
 					return nil // continue processing
 				}
 			}
@@ -197,7 +227,8 @@ func main() {
 		})
 
 		if err != nil {
-			log.Fatalf("scan error: %v", err)
+			u.Errorf("scan error: %v", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -225,7 +256,7 @@ func main() {
 								main.getPartition(part).PutDataRows(rows)
 							} else {
 								main.errorCount.Add(1)
-								log.Print(err)
+								u.Error(err)
 							}
 						}
 					}(batch, key)
@@ -235,8 +266,8 @@ func main() {
 			main.partitionLock.Unlock()
 			_, inUse := main.sessionPool.Metrics()
 			if itemsOutstanding > 0 {
-				log.Printf("Partitions %d, Outstanding Items = %d, Processors in use = %d",
-						len(main.partitionMap), itemsOutstanding, inUse)
+				u.Infof("Partitions %d, Outstanding Items = %d, Processors in use = %d",
+					len(main.partitionMap), itemsOutstanding, inUse)
 			}
 			select {
 			case _, done := <-c:
@@ -264,7 +295,8 @@ func (m *Main) processBatch(rows []map[string]interface{}, partition string) err
 	for i := 0; i < len(rows); i++ {
 		err = conn.PutRow(m.Index, rows[i], 0)
 		if err != nil {
-			log.Printf("ERROR in PutRow, partition %s - %v", partition, err)
+			u.Errorf("ERROR in PutRow, partition %s - %v", partition, err)
+			m.errorCount.Add(1)
 			continue
 		}
 		m.processedRecs.Add(1)
@@ -290,7 +322,8 @@ func (m *Main) Init() (int, error) {
 	clientConn.ServicePort = m.Port
 	clientConn.Quorum = 3
 	if err := clientConn.Connect(consulClient); err != nil {
-		log.Fatal(err)
+		u.Error(err)
+		os.Exit(1)
 	}
 
 	m.sessionPool = core.NewSessionPool(clientConn, nil, "")
@@ -299,7 +332,9 @@ func (m *Main) Init() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	m.Schema = shared.ToAvroSchema(m.Table)
+	if m.IsAvro {
+		m.Schema = shared.ToAvroSchema(m.Table)
+	}
 
 	sess, errx := session.NewSession(&aws.Config{
 		Region: aws.String(m.Region),
@@ -309,11 +344,11 @@ func (m *Main) Init() (int, error) {
 	}
 
 	var kc *kinesis.Kinesis
-	if m.assumeRoleArn != "" {
-    	creds := stscreds.NewCredentials(sess, m.assumeRoleArn)
+	if m.AssumeRoleArn != "" {
+		creds := stscreds.NewCredentials(sess, m.AssumeRoleArn)
 		config := aws.NewConfig().
 			WithCredentials(creds).
- 			WithRegion(m.Region).
+			WithRegion(m.Region).
 			WithMaxRetries(10)
 		kc = kinesis.New(sess, config)
 	} else {
@@ -326,14 +361,13 @@ func (m *Main) Init() (int, error) {
 		return 0, err
 	}
 	shardCount := len(shout.Shards)
-
 	dynamoDbClient := dynamodb.New(sess)
 
 	db, err := store.New(m.Index, m.Index, store.WithDynamoClient(dynamoDbClient), store.WithRetryer(&QuantaRetryer{}))
 	if err != nil {
-		log.Fatalf("checkpoint storage initialization error: %v", err)
+		u.Errorf("checkpoint storage initialization error: %v", err)
+		os.Exit(1)
 	}
-
 
 	if m.CheckpointDB {
 		m.consumer, err = consumer.New(
@@ -341,6 +375,7 @@ func (m *Main) Init() (int, error) {
 			consumer.WithClient(kc),
 			consumer.WithShardIteratorType(m.InitialPos),
 			consumer.WithStore(db),
+			consumer.WithAggregation(m.Deaggregate),
 			//consumer.WithCounter(counter),
 		)
 	} else {
@@ -348,13 +383,14 @@ func (m *Main) Init() (int, error) {
 			m.Stream,
 			consumer.WithClient(kc),
 			consumer.WithShardIteratorType(m.InitialPos),
+			consumer.WithAggregation(m.Deaggregate),
 			//consumer.WithCounter(counter),
 		)
 	}
 	if err != nil {
 		return 0, err
 	}
-	log.Printf("Created consumer. ")
+	u.Infof("Created consumer. ")
 	return shardCount, nil
 }
 
@@ -422,7 +458,7 @@ func (m *Main) printStats() *time.Ticker {
 		for range t.C {
 			duration := time.Since(start)
 			bytes := m.BytesProcessed()
-			log.Printf("Bytes: %s, Records: %v, Processed: %v, Errors: %v, Duration: %v, Rate: %v/s",
+			u.Infof("Bytes: %s, Records: %v, Processed: %v, Errors: %v, Duration: %v, Rate: %v/s",
 				core.Bytes(bytes), m.totalRecs.Get(), m.processedRecs.Get(), m.errorCount.Get(), duration,
 				core.Bytes(float64(bytes)/duration.Seconds()))
 		}

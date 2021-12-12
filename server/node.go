@@ -9,10 +9,10 @@ package server
 import (
 	"context"
 	"fmt"
+	u "github.com/araddon/gou"
 	"github.com/hashicorp/consul/api"
 	"github.com/stvp/rendezvous"
 	"google.golang.org/grpc/health/grpc_health_v1"
-	"log"
 	"strings"
 	"time"
 )
@@ -103,13 +103,13 @@ func (n *Node) poll() {
 			return
 		case err = <-n.Err:
 			if err != nil {
-				log.Printf("[node %s %s] error: %s", n.serviceName, n.serviceID, err)
+				u.Errorf("[node %s %s] error: %s", n.serviceName, n.serviceID, err)
 			}
 			return
 		case <-time.After(pollWait):
 			err = n.update()
 			if err != nil {
-				log.Printf("[node %s %s] error: %s", n.serviceName, n.serviceID, err)
+				u.Errorf("[node %s %s] error: %s", n.serviceName, n.serviceID, err)
 			}
 		}
 	}
@@ -134,7 +134,7 @@ func (n *Node) update() (err error) {
 		node := strings.Split(entry.Node.Node, ".")[0]
 		idMap[node] = struct{}{}
 	}
-	for k, _ := range idMap {
+	for k := range idMap {
 		ids = append(ids, k)
 	}
 	n.hashTable = rendezvous.New(ids)
@@ -170,7 +170,7 @@ type HealthImpl struct{}
 
 // Check implements the health check interface, which directly returns to health status. There are also more complex health check strategies, such as returning based on server load.
 func (h *HealthImpl) Check(ctx context.Context, req *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
-	//log.Printf("Health checking ...\n")
+	//u.Errorf("Health checking ...\n")
 	return &grpc_health_v1.HealthCheckResponse{
 		Status: grpc_health_v1.HealthCheckResponse_SERVING,
 	}, nil

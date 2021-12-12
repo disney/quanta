@@ -1,4 +1,4 @@
-package core
+package shared
 
 import (
 	"encoding/json"
@@ -37,12 +37,12 @@ type jsonLogger struct {
 
 // LogMessage - Logger message struct
 type LogMessage struct {
-	Environment string `json:"env"`
-	Level       string `json:"level"`
-	SvcName     string `json:"svc_name"`
-	Version     string `json:"svc_ver"`
-	Product     string `json:"product"`
-	Timestamp   string `json:"timestamp"`
+	Environment string `json:"env,omitempty"`
+	Level       string `json:"level,omitempty"`
+	SvcName     string `json:"svc_name,omitempty"`
+	Version     string `json:"svc_ver,omitempty"`
+	Product     string `json:"product,omitempty"`
+	Timestamp   string `json:"timestamp,omitempty"`
 	Message     string `json:"msg"`
 }
 
@@ -52,17 +52,21 @@ func (l *jsonLogger) Log(depth, logLevel int, msg string, fields map[string]inte
 	m.Timestamp = time.Now().UTC().Format(time.RFC3339)
 	m.Message = msg
 	m.Level = logPrefix[logLevel]
-	o, _ := json.Marshal(m)
 
 	switch logLevel {
 	case u.NOLOGGING:
 		return
 	case u.FATAL, u.ERROR:
+		o, _ := json.Marshal(m)
 		fmt.Printf("%v\n", string(o))
 		if logLevel == u.FATAL {
-			os.Exit(0)
+			os.Exit(1)
 		}
+	case u.DEBUG:
+		o, _ := json.Marshal(m)
+		fmt.Printf("%v\n", string(o))
 	default:
+		o, _ := json.Marshal(m)
 		fmt.Printf("%v\n", string(o))
 	}
 }
@@ -70,17 +74,22 @@ func (l *jsonLogger) Log(depth, logLevel int, msg string, fields map[string]inte
 // Write log output.
 func (l *jsonLogger) Write(bytes []byte) (int, error) {
 
-	l.Log(0, u.WARN, string(bytes), nil)
+	//l.Log(0, u.WARN, string(bytes), nil)
+	m := &LogMessage{Environment: l.Environment, SvcName: l.SvcName, Version: l.Version, Product: l.Product}
+	m.Timestamp = time.Now().UTC().Format(time.RFC3339)
+	m.Level = "WARN"
+	m.Message = string(bytes)
+	o, _ := json.Marshal(m)
+	u.Log(u.WARN, string(o))
 	return len(bytes), nil
 }
 
 // InitLogging - Initialize logging.  Call this function as early as possible in your code
 func InitLogging(level string, environment string, svcName string, version string, product string) {
 
-	c := &jsonLogger{level, environment, svcName, version, product}
-	u.SetupLogging(level)
-	u.SetColorOutput()
-	u.SetCustomLogger(c)
+	c := &jsonLogger{Level: level, Environment: environment, SvcName: svcName, Version: version, Product: product}
+	//u.SetCustomLogger(c)
 	log.SetFlags(0)  // Disable standard Go logger formatting
 	log.SetOutput(c) // Redirect output stream
+	u.SetupLogging(level)
 }

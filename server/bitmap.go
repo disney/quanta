@@ -10,11 +10,11 @@ import (
 	"fmt"
 	"github.com/Jeffail/tunny"
 	"github.com/RoaringBitmap/roaring/roaring64"
+	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
 	"io"
-	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -76,10 +76,11 @@ func NewBitmapIndex(endPoint *EndPoint, expireDays int) *BitmapIndex {
 						return nil
 					}
 					if table, err := shared.LoadSchema(schemaPath, index, nil); err != nil {
-						log.Fatalf("ERROR: Could not load schema for %s - %v", index, err)
+						u.Errorf("ERROR: Could not load schema for %s - %v", index, err)
+						os.Exit(1)
 					} else {
 						e.tableCache[index] = table
-						log.Printf("Index %s initialized.", index)
+						u.Infof("Index %s initialized.", index)
 					}
 				}
 				return nil
@@ -91,14 +92,16 @@ func NewBitmapIndex(endPoint *EndPoint, expireDays int) *BitmapIndex {
 			return
 		})
 		if err != nil {
-			log.Fatalf("ERROR: Could not load table schema, GetTables error %v", err)
+			u.Errorf("could not load table schema, GetTables error %v", err)
+			os.Exit(1)
 		}
 		for _, table := range tables {
 			if t, err := shared.LoadSchema(schemaPath, table, e.EndPoint.consul); err != nil {
-				log.Fatalf("ERROR: Could not load schema for %s - %v", table, err)
+				u.Errorf("could not load schema for %s - %v", table, err)
+				os.Exit(1)
 			} else {
 				e.tableCache[table] = t
-				log.Printf("Table %s initialized.", table)
+				u.Infof("Table %s initialized.", table)
 			}
 		}
 	}
@@ -126,10 +129,10 @@ func (m *BitmapIndex) Init() error {
 	m.readBitmapFiles(m.fragQueue)
 
 	if m.expireDays > 0 {
-		log.Printf("Starting data expiration thread - expiration after %d days.", m.expireDays)
+		u.Infof("Starting data expiration thread - expiration after %d days.", m.expireDays)
 		go m.expireProcessLoop(m.expireDays)
 	} else {
-		log.Printf("Data expiration thread disabled.")
+		u.Info("Data expiration thread disabled.")
 	}
 	return nil
 }
@@ -162,7 +165,7 @@ func (m *BitmapIndex) BatchMutate(stream pb.BitmapIndex_BatchMutateServer) error
 		s := strings.Split(kv.IndexPath, "/")
 		if len(s) != 2 {
 			err = fmt.Errorf("IndexPath %s not valid", kv.IndexPath)
-			log.Printf("%s", err)
+			u.Errorf("%s", err)
 			return err
 		}
 		indexName := s[0]
@@ -183,7 +186,7 @@ func (m *BitmapIndex) BatchMutate(stream pb.BitmapIndex_BatchMutateServer) error
 			isBSI, kv.IsClear, false):
 		default:
 			// Fragment queue is full
-			log.Println("ERROR: BatchMutate: fragment queue is full!")
+			u.Errorf("BatchMutate: fragment queue is full!")
 		}
 	}
 }
@@ -292,7 +295,7 @@ func (m *BitmapIndex) isBSI(index, field string) bool {
 	table := m.tableCache[index]
 	attr, err := table.GetAttribute(field)
 	if err != nil {
-		log.Printf("isBSI ERROR: Non existent attribute %s for index %s was referenced.", field, index)
+		u.Errorf("attribute %s for index %s does not exist", field, index)
 	}
 	return attr.IsBSI()
 }
@@ -310,7 +313,6 @@ func (m *BitmapIndex) isBSI(index, field string) bool {
 //
 func (m *BitmapIndex) batchProcessLoop(threadID int) {
 
-	log.Printf("batchProcess [Thread #%d] - Started.", threadID)
 	for {
 		// This is a way to make sure that the fraq queue has priority over persistence.
 		select {
@@ -341,7 +343,6 @@ func (m *BitmapIndex) batchProcessLoop(threadID int) {
 			m.checkPersistBSICache(true)
 		}
 	}
-	log.Printf("batchProcessLoop [Thread #%d] - Ended.", threadID)
 }
 
 /*
@@ -368,11 +369,11 @@ func (m *BitmapIndex) updateBitmapCache(f *BitmapFragment) {
 		newBm.PersistTime = f.ModTime
 	}
 	if len(f.BitData) != 1 {
-		log.Printf("updateBitmapCache - Index out of range %d, Index = %s, Field = %s",
+		u.Errorf("updateBitmapCache - Index out of range %d, Index = %s, Field = %s",
 			len(f.BitData), f.IndexName, f.FieldName)
 	}
 	if err := newBm.Bits.UnmarshalBinary(f.BitData[0]); err != nil {
-		log.Printf("updateBitmapCache - UnmarshalBinary error - %v", err)
+		u.Errorf("updateBitmapCache - UnmarshalBinary error - %v", err)
 		return
 	}
 	rowID := uint64(f.RowIDOrBits)
@@ -416,7 +417,7 @@ func (m *BitmapIndex) updateBitmapCache(f *BitmapFragment) {
 	}
 	elapsed := time.Since(start)
 	if elapsed.Nanoseconds() > (1000000 * 25) {
-		log.Printf("updateBitmapCache [%s/%s/%d/%s] done in %v.\n", f.IndexName, f.FieldName,
+		u.Debugf("updateBitmapCache [%s/%s/%d/%s] done in %v.\n", f.IndexName, f.FieldName,
 			rowID, f.Time.Format(timeFmt), elapsed)
 	}
 }
@@ -461,7 +462,7 @@ func (m *BitmapIndex) clearAll(index string, start, end int64, nbm *roaring64.Bi
 
 	pool := tunny.NewFunc(numCPUs, func(payload interface{}) interface{} {
 		params := payload.(ClearParams)
-		//log.Printf("ClearBits %s.%s ROW: %d - %s", params.Index, params.Field, params.RowID, time.Unix(0, params.Timestamp).Format(timeFmt))
+		//u.Debugf("ClearBits %s.%s ROW: %d - %s", params.Index, params.Field, params.RowID, time.Unix(0, params.Timestamp).Format(timeFmt))
 		roaring64.ClearBits(params.FoundSet, params.Target.Bits)
 		params.Target.ModTime = time.Now()
 		return nil
@@ -505,7 +506,7 @@ func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 	}
 
 	if err := newBSI.UnmarshalBinary(f.BitData); err != nil {
-		log.Printf("updateBSICache - UnmarshalBinary error - %v", err)
+		u.Errorf("updateBSICache - UnmarshalBinary error - %v", err)
 		return
 	}
 
@@ -539,7 +540,7 @@ func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 	}
 	elapsed := time.Since(start)
 	if elapsed.Nanoseconds() > (1000000 * 75) {
-		log.Printf("updateBSICache [%s/%s/%s] done in %v.\n", f.IndexName, f.FieldName,
+		u.Debugf("updateBSICache [%s/%s/%s] done in %v.\n", f.IndexName, f.FieldName,
 			f.Time.Format(timeFmt), elapsed)
 	}
 }
@@ -661,7 +662,7 @@ func (m *BitmapIndex) checkPersistBitmapCache(forceSync bool) {
 					if bitmap.ModTime.After(bitmap.PersistTime) {
 						if err := m.saveCompleteBitmap(bitmap, indexName, fieldName, int64(rowID),
 							time.Unix(0, t)); err != nil {
-							log.Printf("saveCompleteBitmap failed! - %v", err)
+							u.Errorf("saveCompleteBitmap failed! - %v", err)
 							bitmap.Lock.Unlock()
 							continue
 						}
@@ -677,9 +678,9 @@ func (m *BitmapIndex) checkPersistBitmapCache(forceSync bool) {
 	elapsed := time.Since(start)
 	if writeCount > 0 {
 		if forceSync {
-			log.Printf("Persist [timer expired] %d files done in %v", writeCount, elapsed)
+			u.Debugf("Persist [timer expired] %d files done in %v", writeCount, elapsed)
 		} else {
-			log.Printf("Persist [edge triggered] %d files done in %v", writeCount, elapsed)
+			u.Debugf("Persist [edge triggered] %d files done in %v", writeCount, elapsed)
 		}
 	}
 }
@@ -703,7 +704,7 @@ func (m *BitmapIndex) checkPersistBSICache(forceSync bool) {
 				if bsi.ModTime.After(bsi.PersistTime) {
 					if err := m.saveCompleteBSI(bsi, indexName, fieldName, int(bsi.BitCount()),
 						time.Unix(0, t)); err != nil {
-						log.Printf("saveCompleteBSI failed! - %v", err)
+						u.Errorf("saveCompleteBSI failed! - %v", err)
 						bsi.Lock.Unlock()
 						return
 					}
@@ -718,9 +719,9 @@ func (m *BitmapIndex) checkPersistBSICache(forceSync bool) {
 	elapsed := time.Since(start)
 	if writeCount > 0 {
 		if forceSync {
-			log.Printf("Persist BSI [timer expired] %d files done in %v", writeCount, elapsed)
+			u.Debugf("Persist BSI [timer expired] %d files done in %v", writeCount, elapsed)
 		} else {
-			log.Printf("Persist BSI [edge triggered] %d files done in %v", writeCount, elapsed)
+			u.Debugf("Persist BSI [edge triggered] %d files done in %v", writeCount, elapsed)
 		}
 	}
 }
@@ -789,7 +790,7 @@ func (m *BitmapIndex) Update(ctx context.Context, req *pb.UpdateRequest) (*empty
 	case m.fragQueue <- frag:
 	default:
 		// Fragment queue is full
-		log.Println("ERROR: Update: fragment queue is full!")
+		u.Errorf("Update: fragment queue is full!")
 	}
 	return &empty.Empty{}, nil
 }
@@ -859,7 +860,7 @@ func (m *BitmapIndex) CheckoutSequence(ctx context.Context,
 	}
 	targetBSI.sequencerQueue.Push(shared.NewSequencer(nextSeqStart, int(req.ReservationSize)))
 	res := &pb.CheckoutSequenceResponse{Start: nextSeqStart, Count: req.ReservationSize}
-	//log.Printf("SERVER RESPONSE [Start %d, Count %d] Queue depth = %d", res.Start, res.Count, targetBSI.sequencerQueue.Len())
+	//u.Debugf("SERVER RESPONSE [Start %d, Count %d] Queue depth = %d", res.Start, res.Count, targetBSI.sequencerQueue.Len())
 	return res, nil
 
 }
@@ -904,12 +905,13 @@ func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperation
 	switch req.Operation {
 	case pb.TableOperationRequest_DEPLOY:
 		if table, err := shared.LoadSchema("", req.Table, m.EndPoint.consul); err != nil {
-			log.Fatalf("ERROR: Could not load schema for %s - %v", req.Table, err)
+			u.Errorf("could not load schema for %s - %v", req.Table, err)
+			os.Exit(1)
 		} else {
 			m.tableCacheLock.Lock()
 			defer m.tableCacheLock.Unlock()
 			m.tableCache[req.Table] = table
-			log.Printf("schema for %s re-loaded and initialized", req.Table)
+			u.Infof("schema for %s re-loaded and initialized", req.Table)
 		}
 	case pb.TableOperationRequest_DROP:
 		m.tableCacheLock.Lock()
@@ -918,9 +920,9 @@ func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperation
 		m.Truncate(req.Table)
 		tableDir := m.dataDir + sep + "bitmap" + sep + req.Table
 		if err := os.RemoveAll(tableDir); err != nil {
-			log.Printf("error dropping table %s directory - %v", req.Table, err)
+			u.Infof("error dropping table %s directory - %v", req.Table, err)
 		} else {
-			log.Printf("Table %s dropped.", req.Table)
+			u.Infof("Table %s dropped.", req.Table)
 		}
 	case pb.TableOperationRequest_TRUNCATE:
 		m.tableCacheLock.Lock()
@@ -928,9 +930,9 @@ func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperation
 		m.Truncate(req.Table)
 		tableDir := m.dataDir + sep + "bitmap" + sep + req.Table
 		if err := os.RemoveAll(tableDir); err != nil {
-			log.Printf("error truncating table %s directory - %v", req.Table, err)
+			u.Errorf("error truncating table %s directory - %v", req.Table, err)
 		} else {
-			log.Printf("Table %s truncated.", req.Table)
+			u.Infof("Table %s truncated.", req.Table)
 		}
 	default:
 		return &empty.Empty{}, fmt.Errorf("unknown operation type for table operation request")

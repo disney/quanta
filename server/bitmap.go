@@ -382,11 +382,14 @@ func (m *BitmapIndex) updateBitmapCache(f *BitmapFragment) {
 		//Handle exclusive "updates"
 		m.clearAllRows(f.IndexName, f.FieldName, f.Time.UnixNano(), newBm.Bits)
 	}
-	if _, ok := m.bitmapCache[f.IndexName][f.FieldName][rowID][f.Time.UnixNano()]; !ok &&
-		f.IsUpdate && m.EndPoint.Port != 0 {
-		// Silently ignore attempts to update data not in local cache
-		m.bitmapCacheLock.Unlock()
-		return
+	if _, ok := m.bitmapCache[f.IndexName][f.FieldName][rowID][f.Time.UnixNano()]; !ok && f.IsUpdate {
+		// Silently ignore attempts to update data not in local cache that is not in hashKey
+		// because updates are sent to all nodes
+		hashKey := fmt.Sprintf("%s/%s/%d/%s", f.IndexName, f.FieldName, rowID, f.Time.Format(timeFmt))
+		if !m.Member(hashKey) {  // not here and not a member
+			m.bitmapCacheLock.Unlock()
+			return
+		}
 	}
 	if _, ok := m.bitmapCache[f.IndexName]; !ok {
 		m.bitmapCache[f.IndexName] = make(map[string]map[uint64]map[int64]*StandardBitmap)
@@ -511,13 +514,15 @@ func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 	}
 
 	m.bsiCacheLock.Lock()
-	/*
-		if _, ok := m.bsiCache[f.IndexName][f.FieldName][f.Time.UnixNano()]; !ok && f.IsUpdate {
-			// Silently ignore update attempts against values not already in cache.
+	if _, ok := m.bsiCache[f.IndexName][f.FieldName][f.Time.UnixNano()]; !ok && f.IsUpdate {
+        // Silently ignore attempts to update data not in local cache that is not in hashKey
+        // because updates are sent to all nodes
+        hashKey := fmt.Sprintf("%s/%s/%s", f.IndexName, f.FieldName, f.Time.Format(timeFmt))
+        if !m.Member(hashKey) {  // not here and not a member
 			m.bsiCacheLock.Unlock()
-			return
-		}
-	*/
+            return
+        }
+    }
 	if _, ok := m.bsiCache[f.IndexName]; !ok {
 		m.bsiCache[f.IndexName] = make(map[string]map[int64]*BSIBitmap)
 	}

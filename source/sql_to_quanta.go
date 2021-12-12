@@ -1316,16 +1316,16 @@ func (m *SQLToQuanta) PatchWhere(ctx context.Context, where expr.Node, patch int
 	}
 
 	var timeFmt = shared.YMDHTimeFmt
-	var partition time.Time
+	updColID := results[0]
+	partition := time.Unix(0, int64(updColID))
 	table := m.conn.TableBuffers[m.tbl.Name].Table
 	if table.TimeQuantumType == "YMD" {
 		timeFmt = shared.YMDTimeFmt
 	}
-	if from, err := time.Parse(timeFmt, m.startDate); err == nil {
-		partition = from
-	}
+	partStr := partition.Format(timeFmt)
+	partition, _ = time.Parse(timeFmt, partStr)
 
-	return m.updateRow(m.tbl.Name, results[0], valueMap, partition)
+	return m.updateRow(m.tbl.Name, updColID, valueMap, partition)
 }
 
 // Put Interface for inserts.  Updates are handled by PatchWhere
@@ -1464,8 +1464,7 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 
 // Call Client.Update - TODO, This fuctionality should be merged with PutRow()
 func (m *SQLToQuanta) updateRow(table string, columnID uint64, updValueMap map[string]*rel.ValueColumn,
-
-	timePartition time.Time) (int64, error) {
+		timePartition time.Time) (int64, error) {
 
 	tbuf, ok := m.conn.TableBuffers[table]
 	if !ok {

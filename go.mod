@@ -17,6 +17,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/kinesis v1.9.0
 	github.com/bbalet/stopwords v1.0.0
 	github.com/confluentinc/confluent-kafka-go v1.4.2 // indirect
+	github.com/dchest/siphash v1.2.2 // indirect
 	github.com/glycerine/go-unsnap-stream v0.0.0-20190901134440-81cf024a9e0a // indirect
 	github.com/golang/protobuf v1.5.2
 	github.com/google/uuid v1.3.0
@@ -59,4 +60,4 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 )
 
-replace github.com/araddon/qlbridge => github.com/guymolinari/qlbridge v0.0.0-20210427190254-cbe1dac6e693
+replace github.com/araddon/qlbridge => github.com/guymolinari/qlbridge v0.0.0-20211212143244-2d30eaa76549

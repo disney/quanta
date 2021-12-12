@@ -37,8 +37,9 @@ func main() {
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	logLevel := app.Flag("log-level", "Log Level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
 
-	shared.InitLogging(*logLevel, *environment, "Data-Node", Version, "Quanta")
 	kingpin.MustParse(app.Parse(os.Args[1:]))
+
+	shared.InitLogging(*logLevel, *environment, "Data-Node", Version, "Quanta")
 
 	u.Infof("Connecting to Consul at: [%s] ...\n", *consul)
 	consulClient, err := api.NewClient(&api.Config{Address: *consul})
@@ -76,7 +77,7 @@ func main() {
 	bitmapIndex := server.NewBitmapIndex(m, int(*expireDays))
 	bitmapIndex.Init()
 	elapsed := time.Since(start)
-	u.Errorf("Bitmap data server initialized in %v.", elapsed)
+	log.Printf("Bitmap data server initialized in %v.", elapsed)
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)

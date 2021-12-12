@@ -9,6 +9,7 @@ import (
 	_ "github.com/araddon/qlbridge/qlbdriver"
 	"github.com/araddon/qlbridge/schema"
 	"gopkg.in/alecthomas/kingpin.v2"
+	"log"
 	"net"
 	"os"
 	"regexp"
@@ -62,7 +63,7 @@ func main() {
 	app := kingpin.New("quanta-proxy", "MySQL Proxy adapter to Quanta").DefaultEnvars()
 	app.Version("Version: " + Version + "\nBuild: " + Build)
 
-	logging = app.Flag("logging", "Logging level [ERROR, WARN, INFO, DEBUG]").Default("INFO").String()
+	logging = app.Flag("log-level", "Logging level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
 	environment = app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	proxyHostPort = app.Flag("proxy-host-port", "Host:port mapping of MySQL Proxy server").Default("0.0.0.0:4000").String()
 	quantaPort := app.Flag("quanta-port", "Port number for Quanta service").Default("4000").Int()
@@ -85,7 +86,7 @@ func main() {
 	}
 
 	consulAddr := *consul
-	u.Infof("Connecting to Consul at: [%s] ...\n", consulAddr)
+	log.Printf("Connecting to Consul at: [%s] ...\n", consulAddr)
 	consulConfig := &api.Config{Address: consulAddr}
 	errx := shared.RegisterSchemaChangeListener(consulConfig, schemaChangeListener)
 	if errx != nil {
@@ -97,7 +98,7 @@ func main() {
 		publicKeySet = make([]*jwk.Set, 0)
 		urls := strings.Split(*publicKeyURL, ",")
 		for _, url := range urls {
-			u.Infof("Retrieving JWT public key from [%s]", url)
+			log.Printf("Retrieving JWT public key from [%s]", url)
 			keySet, err := jwk.Fetch(url)
 			if err != nil {
 				u.Error(err)
@@ -108,7 +109,7 @@ func main() {
 	}
 	userClaimsKey = *userKey
 	// Start the token exchange service
-	u.Infof("Starting the token exchange service on port %d", *tokenservicePort)
+	log.Printf("Starting the token exchange service on port %d", *tokenservicePort)
 	authProvider = NewAuthProvider() // this instance is global used by tokenservice
 	StartTokenService(*tokenservicePort, authProvider)
 
@@ -152,12 +153,12 @@ func schemaChangeListener(e shared.SchemaChangeEvent) {
 	switch e.Event {
 	case shared.Drop:
 		schema.DefaultRegistry().SchemaDrop("quanta", e.Table, lex.TokenTable)
-		u.Infof("Dropped table %s", e.Table)
+		log.Printf("Dropped table %s", e.Table)
 	case shared.Modify:
-		u.Infof("Truncated table %s", e.Table)
+		log.Printf("Truncated table %s", e.Table)
 	case shared.Create:
 		schema.DefaultRegistry().SchemaRefresh("quanta")
-		u.Infof("Created table %s", e.Table)
+		log.Printf("Created table %s", e.Table)
 	}
 }
 
@@ -167,7 +168,11 @@ func onConn(conn net.Conn) {
 	authProvider := NewAuthProvider() // Per connection (session) instance
 	sconn, err := server.NewCustomizedConn(conn, svr, authProvider, NewProxyHandler(authProvider))
 	if err != nil {
+		if err.Error() == "invalid sequence 32 != 1" {
+			return
+		}
 		u.Errorf(err.Error())
+		u.Errorf("error from remote address %v", conn.RemoteAddr())
 		return
 	}
 
@@ -177,7 +182,9 @@ func onConn(conn net.Conn) {
 			break
 		}
 		if err := sconn.HandleCommand(); err != nil {
-			u.Errorf(err.Error())
+			if err.Error() != "connection closed" {
+				u.Errorf(err.Error())
+			}
 			break
 		}
 

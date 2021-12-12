@@ -78,7 +78,7 @@ func (c *CreateCmd) Run(ctx *Context) error {
 	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
 	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
 	if err != nil {
-		fmt.Printf("Is the consul agent running?")
+		fmt.Println("Is the consul agent running?")
 		return fmt.Errorf("Error connecting to consul %v", err)
 	}
 	table, err3 := shared.LoadSchema(c.SchemaDir, c.Table, consulClient)
@@ -199,7 +199,7 @@ func (s *StatusCmd) Run(ctx *Context) error {
 	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
 	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
 	if err != nil {
-		fmt.Printf("Is the consul agent running?")
+		fmt.Println("Is the consul agent running?")
 		return fmt.Errorf("Error connecting to consul %v", err)
 	}
 	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", ctx.Port)
@@ -209,10 +209,10 @@ func (s *StatusCmd) Run(ctx *Context) error {
 	if err := conn.Connect(consulClient); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("ADDRESS            DATA CENTER      CONSUL NODE ID")
-	fmt.Printf("================   ==============   ==========================")
+	fmt.Println("ADDRESS            DATA CENTER      CONSUL NODE ID")
+	fmt.Println("================   ==============   ==========================")
 	for _, node := range conn.Nodes() {
-		fmt.Printf("%-16s   %-14s   %s", node.Node.Address, node.Node.Datacenter, node.Node.ID)
+		fmt.Printf("%-16s   %-14s   %s\n", node.Node.Address, node.Node.Datacenter, node.Node.ID)
 	}
 	return nil
 }
@@ -223,7 +223,7 @@ func (c *DropCmd) Run(ctx *Context) error {
 	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
 	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
 	if err != nil {
-		fmt.Printf("Is the consul agent running?")
+		fmt.Println("Is the consul agent running?")
 		return fmt.Errorf("Error connecting to consul %v", err)
 	}
 
@@ -300,7 +300,7 @@ func (c *TruncateCmd) Run(ctx *Context) error {
 	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
 	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
 	if err != nil {
-		fmt.Printf("Is the consul agent running?")
+		fmt.Println("Is the consul agent running?")
 		return fmt.Errorf("Error connecting to consul %v", err)
 	}
 
@@ -334,7 +334,7 @@ func (t *TablesCmd) Run(ctx *Context) error {
 	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
 	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
 	if err != nil {
-		fmt.Printf("Is the consul agent running?")
+		fmt.Println("Is the consul agent running?")
 		return fmt.Errorf("Error connecting to consul %v", err)
 	}
 

@@ -418,6 +418,7 @@ func Lock(consul *api.Client, lockName, processName string) (*api.Lock, error) {
 // Unlock - Unlock distributed lock
 func Unlock(consul *api.Client, lock *api.Lock) error {
 
+	u.Debugf("Releasing lock ...")
 	if consul == nil {
 		return fmt.Errorf("unlock: Consul client not set")
 	}

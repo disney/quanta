@@ -22,6 +22,7 @@ import (
 	store "github.com/harlow/kinesis-consumer/store/ddb"
 	"github.com/hashicorp/consul/api"
 	"gopkg.in/alecthomas/kingpin.v2"
+	"log"
 	"os"
 	"os/signal"
 	//"runtime"
@@ -103,12 +104,14 @@ func main() {
 	noCheckpointer := app.Flag("no-checkpoint-db", "Disable DynamoDB checkpointer.").Bool()
 	avroPayload := app.Flag("avro-payload", "Payload is Avro.").Bool()
 	deaggregate := app.Flag("deaggregate", "Incoming payload records are aggregated.").Bool()
+	logLevel := app.Flag("log-level", "Log Level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
 
-	shared.InitLogging("WARN", *environment, "Kinesis-Consumer", Version, "Quanta")
+	kingpin.MustParse(app.Parse(os.Args[1:]))
+
+	shared.InitLogging(*logLevel, *environment, "Kinesis-Consumer", Version, "Quanta")
 
 	builtins.LoadAllBuiltins()
 
-	kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	main := NewMain()
 	main.Stream = *stream
@@ -118,40 +121,41 @@ func main() {
 	main.Port = int(*port)
 	main.ConsulAddr = *consul
 
-	u.Infof("Kinesis stream %v.", main.Stream)
-	u.Infof("Kinesis region %v.", main.Region)
-	u.Infof("Index name %v.", main.Index)
-	u.Infof("Buffer size %d.", main.BufferSize)
-	u.Infof("Service port %d.", main.Port)
-	u.Infof("Consul agent at [%s]\n", main.ConsulAddr)
+	log.Printf("Set Logging level to %v.", *logLevel)
+	log.Printf("Kinesis stream %v.", main.Stream)
+	log.Printf("Kinesis region %v.", main.Region)
+	log.Printf("Index name %v.", main.Index)
+	log.Printf("Buffer size %d.", main.BufferSize)
+	log.Printf("Service port %d.", main.Port)
+	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
 	if *trimHorizon {
 		main.InitialPos = "TRIM_HORIZON"
-		u.Infof("Initial position = TRIM_HORIZON")
+		log.Printf("Initial position = TRIM_HORIZON")
 	} else {
 		main.InitialPos = "LATEST"
-		u.Infof("Initial position = LATEST")
+		log.Printf("Initial position = LATEST")
 	}
 	if *noCheckpointer {
 		main.CheckpointDB = false
-		u.Infof("Checkpoint DB disabled.")
+		log.Printf("Checkpoint DB disabled.")
 	} else {
 		main.CheckpointDB = true
-		u.Infof("Checkpoint DB enabled.")
+		log.Printf("Checkpoint DB enabled.")
 	}
 	if withAssumeRoleArn != nil {
 		main.AssumeRoleArn = *withAssumeRoleArn
-		u.Infof("With assume role ARN [%s]", main.AssumeRoleArn)
+		log.Printf("With assume role ARN [%s]", main.AssumeRoleArn)
 	}
 	if *avroPayload {
 		main.IsAvro = true
-		u.Infof("Payload is Avro.")
+		log.Printf("Payload is Avro.")
 	} else {
 		main.IsAvro = false
-		u.Infof("Payload is JSON.")
+		log.Printf("Payload is JSON.")
 	}
 	if *deaggregate {
 		main.Deaggregate = true
-		u.Infof("Payload is aggregated, de-aggregation is enabled in consumer.")
+		log.Printf("Payload is aggregated, de-aggregation is enabled in consumer.")
 	} else {
 		main.Deaggregate = false
 	}

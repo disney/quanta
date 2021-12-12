@@ -146,6 +146,8 @@ github.com/coreos/go-systemd/v22 v22.3.2/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSV
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/dchest/siphash v1.2.2 h1:9DFz8tQwl9pTVt5iok/9zKyzA1Q6bRGiF3HPiEEVr9I=
+github.com/dchest/siphash v1.2.2/go.mod h1:q+IRvb2gOSrUnYoPqHiyHXS0FOBBOdl6tONBlVnOnt4=
 github.com/dgrijalva/jwt-go v3.2.0+incompatible/go.mod h1:E3ru+11k8xSBh+hMPgOLZmtrrCbhqsmaPHjLKYnJCaQ=
 github.com/dgryski/go-rendezvous v0.0.0-20200624174652-8d2f3be8b2d9/go.mod h1:cuUVRXasLTGF7a8hSLbxyZXjz+1KgoB3wDUb6vlszIc=
 github.com/dvyukov/go-fuzz v0.0.0-20210429054444-fca39067bc72/go.mod h1:11Gm+ccJnvAhCNLlf5+cS9KjtbaD5I5zaZpFMsTHWTw=
@@ -263,10 +265,14 @@ github.com/googleapis/gax-go/v2 v2.0.5/go.mod h1:DWXyrwAJ9X0FpwwEdw+IPEYBICEFu5m
 github.com/gopherjs/gopherjs v0.0.0-20190910122728-9d188e94fb99 h1:twflg0XRTjwKpxb/jFExr4HGq6on2dEOmnL6FV+fgPw=
 github.com/gopherjs/gopherjs v0.0.0-20190910122728-9d188e94fb99/go.mod h1:wJfORRmW1u3UXTncJ5qlYoELFm8eSnnEO6hX4iZ3EWY=
 github.com/grpc-ecosystem/grpc-gateway v1.16.0/go.mod h1:BDjrQk3hbvj6Nolgz8mAMFbcEtjT1g+wF4CSlocrBnw=
+github.com/guymolinari/qlbridge v0.0.0-20180922155251-977adc44791d h1:kQy09gNSbAFQ7wZw/CaZlwR0mo/E1tYVBP5V57DVFyc=
+github.com/guymolinari/qlbridge v0.0.0-20180922155251-977adc44791d/go.mod h1:b/pHF5VRmi+pCNp386fhyijn10Xm65FETDmyMu6jm2o=
 github.com/guymolinari/qlbridge v0.0.0-20210224201134-b0a2b8904765 h1:QmzLoCD2esI3XEHABOc9b/lX4dVqgezxZo7UJx/AuPs=
 github.com/guymolinari/qlbridge v0.0.0-20210224201134-b0a2b8904765/go.mod h1:59/1p3wKRleebdj6CSWqZW0NNbDxLqkWpsfV3BjuUsE=
 github.com/guymolinari/qlbridge v0.0.0-20210427190254-cbe1dac6e693 h1:/q6JZoM6LSH0OOjhVf50UlGBdgHBPnGva2v3bEZ0pZk=
 github.com/guymolinari/qlbridge v0.0.0-20210427190254-cbe1dac6e693/go.mod h1:59/1p3wKRleebdj6CSWqZW0NNbDxLqkWpsfV3BjuUsE=
+github.com/guymolinari/qlbridge v0.0.0-20211212143244-2d30eaa76549 h1:aTCaFJGVzZv8VpY+g8tGRBc4J7AxWYzWJGjOsG8qE1Q=
+github.com/guymolinari/qlbridge v0.0.0-20211212143244-2d30eaa76549/go.mod h1:59/1p3wKRleebdj6CSWqZW0NNbDxLqkWpsfV3BjuUsE=
 github.com/hamba/avro v1.6.0 h1:a9tNvjpZVfDQQJWSM2g8hUc7gYacKZkHF3OK0w49UXY=
 github.com/hamba/avro v1.6.0/go.mod h1:iKbXifVeT1gOHU+Eqe8wWziE745Z+Aa/6sbJnWeSW5A=
 github.com/harlow/kinesis-consumer v0.3.5 h1:xeiDp2frP8DdKDeOzVuS+vaBX03JjifQO/Apzu4IOMA=

@@ -90,6 +90,9 @@ func NewSQLToQuanta(s *QuantaSource, t *schema.Table, conn *core.Session) *SQLTo
 // ResolveField - Resolve a attribute by name.
 func (m *SQLToQuanta) ResolveField(name string) (field *core.Attribute, isBSI bool, err error) {
 
+	if name == "@rownum" {
+		return
+	}
 	isBSI = false
 	table := m.conn.TableBuffers[m.tbl.Name].Table
 	field, err = table.GetAttribute(name)

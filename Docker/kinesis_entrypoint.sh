@@ -19,4 +19,8 @@ if [ -n "$ENV" ]
 then
     BOOL_FLAGS=${BOOL_FLAGS}" --env=${ENV}"
 fi
+if [ -n "$DEAGGREGATE" ]
+then
+    BOOL_FLAGS=${BOOL_FLAGS}" --deaggregate"
+fi
 exec /usr/bin/quanta-kinesis-consumer ${STREAM} ${INDEX} ${ASSUME_ROLE_ARN} us-east-2 ${BOOL_FLAGS}

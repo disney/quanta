@@ -13,6 +13,7 @@ import (
 	"github.com/araddon/qlbridge/exec"
 	"github.com/araddon/qlbridge/rel"
 	"github.com/araddon/qlbridge/schema"
+	"github.com/araddon/qlbridge/value"
 	"github.com/disney/quanta/core"
 )
 
@@ -59,6 +60,7 @@ func outputProjection(outCh exec.MessageChan, sigChan exec.SigChan, proj *core.P
 	nThreads := 1
 	limitIsBatch := true
 	var dupMap sync.Map
+	insertRowNumAt, insertRowNum := colNames["@rownum"]
 
 	// Parallelize projection for SELECT ... INTO
 	if isExport {
@@ -80,6 +82,11 @@ func outputProjection(outCh exec.MessageChan, sigChan exec.SigChan, proj *core.P
 					return nil
 				}
 				for i, columnID := range colIDs {
+					if insertRowNum {
+						rows[i] = append(rows[i], 0)
+						copy(rows[i][insertRowNumAt + 1:], rows[i][insertRowNumAt:])
+						rows[i][insertRowNumAt] = fmt.Sprintf("%d", columnID)
+					}
 					if isDistinct {
 						var sb strings.Builder
 						for _, fld := range rows[i] {
@@ -178,15 +185,17 @@ func createFinalProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable 
 				}
 			} else {
 				colName := v.As
-				if vt, ok := table.Column(v.SourceField); ok {
+				if colName == "@rownum" {
+					ret.AddColumn(v, value.IntType)
+				} else if vt, ok := table.Column(v.SourceField); ok {
 					ret.AddColumn(v, vt)
-					colNames[colName] = i
-					projCols = append(projCols, fmt.Sprintf("%s.%s", table.Name, v.SourceField))
-					i++
 				} else {
 					return nil, nil, nil, nil,
 						fmt.Errorf("createFinalProjection: schema lookup fail for %s.%s", table.Name, v.SourceField)
 				}
+				colNames[colName] = i
+				projCols = append(projCols, fmt.Sprintf("%s.%s", table.Name, v.SourceField))
+				i++
 			}
 		}
 	}

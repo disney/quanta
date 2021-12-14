@@ -163,7 +163,7 @@ func (m *ResultReader) Run() error {
 		msg := datasource.NewContextSimpleNative(dataMap)
 		outCh <- msg
 		return nil
-	} else if cols[0].As == "@rownum" {
+	} else if cols[0].As == "@rownum" && len(cols) == 1 {
 		outputRownumMessages(outCh, m.response.Results, m.limit, m.offset)
 		return nil
 	}
@@ -274,7 +274,9 @@ func (m *ResultReader) Run() error {
 	}
 	cols = m.sql.p.Proj.Columns
 	for _, v := range cols {
-		projFields = append(projFields, fmt.Sprintf("%s.%s", m.sql.tbl.Name, v.Name))
+		if v.As != "@rownum" {
+			projFields = append(projFields, fmt.Sprintf("%s.%s", m.sql.tbl.Name, v.Name))
+		}
 	}
 
 	foundSet := make(map[string]*roaring64.Bitmap)

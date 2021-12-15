@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
+    "github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/disney/quanta/client"
@@ -72,6 +73,7 @@ type Main struct {
 	timeLocation  *time.Location
 	processedRecs *Counter
 	sessionPool   *core.SessionPool
+	metrics       *cloudwatch.CloudWatch
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -390,7 +392,9 @@ func (m *Main) Init() (int, error) {
 	if err != nil {
 		return 0, err
 	}
+    m.metrics = cloudwatch.New(sess)
 	u.Infof("Created consumer. ")
+
 	return shardCount, nil
 }
 
@@ -461,9 +465,78 @@ func (m *Main) printStats() *time.Ticker {
 			u.Infof("Bytes: %s, Records: %v, Processed: %v, Errors: %v, Duration: %v, Rate: %v/s",
 				core.Bytes(bytes), m.totalRecs.Get(), m.processedRecs.Get(), m.errorCount.Get(), duration,
 				core.Bytes(float64(bytes)/duration.Seconds()))
+			m.publishMetrics(duration)
 		}
 	}()
 	return t
+}
+
+func (m *Main) publishMetrics(upTime time.Duration) {
+
+	_, err := m.metrics.PutMetricData(&cloudwatch.PutMetricDataInput{
+	    Namespace: aws.String("Quanta-Consumer/Records"),
+	    MetricData: []*cloudwatch.MetricDatum{
+	        &cloudwatch.MetricDatum{
+	            MetricName: aws.String("Arrived"),
+	            Unit:       aws.String("Count"),
+	            Value:      aws.Float64(float64(m.totalRecs.Get())),
+	            Dimensions: []*cloudwatch.Dimension{
+	                &cloudwatch.Dimension{
+	                    Name:  aws.String("Stream"),
+	                    Value: aws.String(m.Stream),
+	                },
+	            },
+	        },
+	        &cloudwatch.MetricDatum{
+	            MetricName: aws.String("Processed"),
+	            Unit:       aws.String("Count"),
+	            Value:      aws.Float64(float64(m.processedRecs.Get())),
+	            Dimensions: []*cloudwatch.Dimension{
+	                &cloudwatch.Dimension{
+	                    Name:  aws.String("Table"),
+	                    Value: aws.String(m.Index),
+	                },
+	            },
+	        },
+	        &cloudwatch.MetricDatum{
+	            MetricName: aws.String("Errors"),
+	            Unit:       aws.String("Count"),
+	            Value:      aws.Float64(float64(m.errorCount.Get())),
+	            Dimensions: []*cloudwatch.Dimension{
+	                &cloudwatch.Dimension{
+	                    Name:  aws.String("Table"),
+	                    Value: aws.String(m.Index),
+	                },
+	            },
+	        },
+	        &cloudwatch.MetricDatum{
+	            MetricName: aws.String("ProcessedBytes"),
+	            Unit:       aws.String("Bytes"),
+	            Value:      aws.Float64(float64(m.BytesProcessed())),
+	            Dimensions: []*cloudwatch.Dimension{
+	                &cloudwatch.Dimension{
+	                    Name:  aws.String("Table"),
+	                    Value: aws.String(m.Index),
+	                },
+	            },
+	        },
+	        &cloudwatch.MetricDatum{
+	            MetricName: aws.String("UpTime"),
+	            Unit:       aws.String("Microseconds"),
+	            Value:      aws.Float64(float64(upTime / 1000)),
+	            Dimensions: []*cloudwatch.Dimension{
+	                &cloudwatch.Dimension{
+	                    Name:  aws.String("Table"),
+	                    Value: aws.String(m.Index),
+	                },
+	            },
+	        },
+	    },
+	})
+	if err != nil {
+		u.Error(err)
+	}
+
 }
 
 // AddBytes provides thread safe processing to set the total bytes processed.
@@ -516,3 +589,4 @@ func (r *QuantaRetryer) ShouldRetry(err error) bool {
 	}
 	return false
 }
+

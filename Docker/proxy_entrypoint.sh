@@ -13,4 +13,4 @@ if [ -n "$USER_KEY" ]
 then
     USER_KEY_FLAG="--user-key $USER_KEY"
 fi
-exec /usr/bin/quanta-proxy ${PUBLIC_KEY_URL} ${USER_KEY_FLAG} ${BOOL_FLAGS}
+exec /usr/bin/quanta-proxy ${PUBLIC_KEY_URL} ${REGION} ${USER_KEY_FLAG} ${BOOL_FLAGS}

@@ -521,9 +521,9 @@ func (m *Main) publishMetrics(upTime time.Duration) {
 	            },
 	        },
 	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("UpTime"),
-	            Unit:       aws.String("Microseconds"),
-	            Value:      aws.Float64(float64(upTime / 1000)),
+	            MetricName: aws.String("UpTimeHours"),
+	            Unit:       aws.String("Count"),
+	            Value:      aws.Float64(float64(upTime / (1000000000 * 3600))),
 	            Dimensions: []*cloudwatch.Dimension{
 	                &cloudwatch.Dimension{
 	                    Name:  aws.String("Table"),
@@ -536,7 +536,6 @@ func (m *Main) publishMetrics(upTime time.Duration) {
 	if err != nil {
 		u.Error(err)
 	}
-
 }
 
 // AddBytes provides thread safe processing to set the total bytes processed.

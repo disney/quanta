@@ -23,4 +23,12 @@ if [ -n "$DEAGGREGATE" ]
 then
     BOOL_FLAGS=${BOOL_FLAGS}" --deaggregate"
 fi
-exec /usr/bin/quanta-kinesis-consumer ${STREAM} ${INDEX} ${ASSUME_ROLE_ARN} us-east-2 ${BOOL_FLAGS}
+if [ -n "$AVRO" ]
+then
+    BOOL_FLAGS=${BOOL_FLAGS}" --avro-payload"
+fi
+if [ -n "$ASSUME_ROLE_ARN" ]
+then
+    BOOL_FLAGS=${BOOL_FLAGS}" --assume-role-arn=${ASSUME_ROLE_ARN}"
+fi
+exec /usr/bin/quanta-kinesis-consumer ${STREAM} ${INDEX} ${REGION} ${BOOL_FLAGS}

@@ -65,6 +65,11 @@ var (
 	updateCount   *Counter
 	insertCount   *Counter
 	deleteCount   *Counter
+	connectCountL *Counter
+    queryCountL   *Counter
+	updateCountL  *Counter
+	insertCountL  *Counter
+	deleteCountL  *Counter
 	queryTime     *Counter
 	updateTime    *Counter
 	insertTime    *Counter
@@ -171,6 +176,11 @@ func main() {
     insertCount = &Counter{}
     deleteCount = &Counter{}
     connectCount = &Counter{}
+    queryCountL = &Counter{}
+    updateCountL = &Counter{}
+    insertCountL = &Counter{}
+    deleteCountL = &Counter{}
+    connectCountL = &Counter{}
     queryTime = &Counter{}
     updateTime = &Counter{}
     insertTime = &Counter{}
@@ -535,26 +545,29 @@ func (c *Counter) Get() (ret int64) {
 }
 
 // Set function provides thread safe set of counter value.
-func (c *Counter) Set(n int) {
+func (c *Counter) Set(n int64) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	c.num = int64(n)
+	c.num = n
 	return
 }
 
 func metricsTicker() *time.Ticker {
 	t := time.NewTicker(time.Second * 10)
 	start := time.Now()
+	lastTime := time.Now()
 	go func() {
 		for range t.C {
 			duration := time.Since(start)
-			publishMetrics(duration)
+			lastTime = publishMetrics(duration, lastTime)
 		}
 	}()
 	return t
 }
 
-func publishMetrics(upTime time.Duration) {
+func publishMetrics(upTime time.Duration, lastPublishedAt time.Time) time.Time {
+
+	interval := time.Since(lastPublishedAt).Seconds()
 	avgQueryLatency := queryTime.Get()
 	if queryCount.Get() > 0 {
 		avgQueryLatency = queryTime.Get() / queryCount.Get()
@@ -575,9 +588,24 @@ func publishMetrics(upTime time.Duration) {
 	    Namespace: aws.String("Quanta-Proxy"),
 	    MetricData: []*cloudwatch.MetricDatum{
 	        &cloudwatch.MetricDatum{
+	            MetricName: aws.String("Connections"),
+	            Unit:       aws.String("Count"),
+	            Value:      aws.Float64(float64(connectCount.Get())),
+	        },
+	        &cloudwatch.MetricDatum{
+	            MetricName: aws.String("ConnectionsPerSec"),
+	            Unit:       aws.String("Count/Second"),
+	            Value:      aws.Float64(float64(connectCount.Get() - connectCountL.Get()) / interval),
+	        },
+	        &cloudwatch.MetricDatum{
 	            MetricName: aws.String("Queries"),
 	            Unit:       aws.String("Count"),
 	            Value:      aws.Float64(float64(queryCount.Get())),
+	        },
+	        &cloudwatch.MetricDatum{
+	            MetricName: aws.String("QueriesPerSec"),
+	            Unit:       aws.String("Count/Second"),
+	            Value:      aws.Float64(float64(queryCount.Get() - queryCountL.Get()) / interval),
 	        },
 	        &cloudwatch.MetricDatum{
 	            MetricName: aws.String("AvgQueryLatency"),
@@ -590,6 +618,11 @@ func publishMetrics(upTime time.Duration) {
 	            Value:      aws.Float64(float64(updateCount.Get())),
 	        },
 	        &cloudwatch.MetricDatum{
+	            MetricName: aws.String("UpdatesPerSec"),
+	            Unit:       aws.String("Count/Second"),
+	            Value:      aws.Float64(float64(updateCount.Get() - updateCountL.Get()) / interval),
+	        },
+	        &cloudwatch.MetricDatum{
 	            MetricName: aws.String("AvgUpdateLatency"),
 	            Unit:       aws.String("Milliseconds"),
 	            Value:      aws.Float64(float64(avgUpdateLatency)),
@@ -600,6 +633,11 @@ func publishMetrics(upTime time.Duration) {
 	            Value:      aws.Float64(float64(insertCount.Get())),
 	        },
 	        &cloudwatch.MetricDatum{
+	            MetricName: aws.String("InsertsPerSec"),
+	            Unit:       aws.String("Count/Second"),
+	            Value:      aws.Float64(float64(insertCount.Get() - insertCountL.Get()) / interval),
+	        },
+	        &cloudwatch.MetricDatum{
 	            MetricName: aws.String("AvgInsertLatency"),
 	            Unit:       aws.String("Milliseconds"),
 	            Value:      aws.Float64(float64(avgInsertLatency)),
@@ -608,6 +646,11 @@ func publishMetrics(upTime time.Duration) {
 	            MetricName: aws.String("Deletes"),
 	            Unit:       aws.String("Count"),
 	            Value:      aws.Float64(float64(deleteCount.Get())),
+	        },
+	        &cloudwatch.MetricDatum{
+	            MetricName: aws.String("DeletesPerSec"),
+	            Unit:       aws.String("Count/Second"),
+	            Value:      aws.Float64(float64(deleteCount.Get() - deleteCountL.Get()) / interval),
 	        },
 	        &cloudwatch.MetricDatum{
 	            MetricName: aws.String("AvgDeleteLatency"),
@@ -621,8 +664,14 @@ func publishMetrics(upTime time.Duration) {
 	        },
 	    },
 	})
+	connectCountL.Set(connectCount.Get())
+	queryCountL.Set(queryCount.Get())
+	updateCountL.Set(updateCount.Get())
+	insertCountL.Set(insertCount.Get())
+	deleteCountL.Set(deleteCount.Get())
 	if err != nil {
 		u.Error(err)
 	}
+	return time.Now()
 }
 

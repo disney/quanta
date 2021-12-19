@@ -12,7 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
-    "github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/disney/quanta/client"
@@ -121,7 +121,6 @@ func main() {
 	shared.InitLogging(*logLevel, *environment, "Kinesis-Consumer", Version, "Quanta")
 
 	builtins.LoadAllBuiltins()
-
 
 	main := NewMain()
 	main.Stream = *stream
@@ -278,7 +277,7 @@ func main() {
 				u.Infof("Partitions %d, Outstanding Items = %d, Processors in use = %d",
 					len(main.partitionMap), itemsOutstanding, inUse)
 			}
-			main.poolPercent.Set(int64(float64(inUse / poolSize) * 100))
+			main.poolPercent.Set(int64(float64(inUse/poolSize) * 100))
 			select {
 			case _, done := <-c:
 				if done {
@@ -400,7 +399,7 @@ func (m *Main) Init() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-    m.metrics = cloudwatch.New(sess)
+	m.metrics = cloudwatch.New(sess)
 	u.Infof("Created consumer. ")
 
 	return shardCount, nil
@@ -484,97 +483,97 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 
 	interval := time.Since(lastPublishedAt).Seconds()
 	_, err := m.metrics.PutMetricData(&cloudwatch.PutMetricDataInput{
-	    Namespace: aws.String("Quanta-Consumer/Records"),
-	    MetricData: []*cloudwatch.MetricDatum{
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("Arrived"),
-	            Unit:       aws.String("Count"),
-	            Value:      aws.Float64(float64(m.totalRecs.Get())),
-	            Dimensions: []*cloudwatch.Dimension{
-	                &cloudwatch.Dimension{
-	                    Name:  aws.String("Stream"),
-	                    Value: aws.String(m.Stream),
-	                },
-	            },
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("RecordsPerSec"),
-	            Unit:       aws.String("Count/Second"),
-				Value:      aws.Float64(float64(m.totalRecs.Get() - m.totalRecsL.Get()) / interval),
-	            Dimensions: []*cloudwatch.Dimension{
-	                &cloudwatch.Dimension{
-	                    Name:  aws.String("Stream"),
-	                    Value: aws.String(m.Stream),
-	                },
-	            },
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("Processed"),
-	            Unit:       aws.String("Count"),
-	            Value:      aws.Float64(float64(m.processedRecs.Get())),
-	            Dimensions: []*cloudwatch.Dimension{
-	                &cloudwatch.Dimension{
-	                    Name:  aws.String("Table"),
-	                    Value: aws.String(m.Index),
-	                },
-	            },
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("ProcessedPerSecond"),
-	            Unit:       aws.String("Count/Second"),
-				Value:      aws.Float64(float64(m.processedRecs.Get() - m.processedRecL.Get()) / interval),
-	            Dimensions: []*cloudwatch.Dimension{
-	                &cloudwatch.Dimension{
-	                    Name:  aws.String("Table"),
-	                    Value: aws.String(m.Index),
-	                },
-	            },
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("Errors"),
-	            Unit:       aws.String("Count"),
-	            Value:      aws.Float64(float64(m.errorCount.Get())),
-	            Dimensions: []*cloudwatch.Dimension{
-	                &cloudwatch.Dimension{
-	                    Name:  aws.String("Table"),
-	                    Value: aws.String(m.Index),
-	                },
-	            },
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("ProcessedBytes"),
-	            Unit:       aws.String("Bytes"),
-	            Value:      aws.Float64(float64(m.totalBytes.Get())),
-	            Dimensions: []*cloudwatch.Dimension{
-	                &cloudwatch.Dimension{
-	                    Name:  aws.String("Table"),
-	                    Value: aws.String(m.Index),
-	                },
-	            },
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("BytesPerSec"),
-	            Unit:       aws.String("Bytes/Second"),
-				Value:      aws.Float64(float64(m.totalBytes.Get() - m.totalBytesL.Get()) / interval),
-	            Dimensions: []*cloudwatch.Dimension{
-	                &cloudwatch.Dimension{
-	                    Name:  aws.String("Table"),
-	                    Value: aws.String(m.Index),
-	                },
-	            },
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("UpTimeHours"),
-	            Unit:       aws.String("Count"),
-	            Value:      aws.Float64(float64(upTime / (1000000000 * 3600))),
-	            Dimensions: []*cloudwatch.Dimension{
-	                &cloudwatch.Dimension{
-	                    Name:  aws.String("Table"),
-	                    Value: aws.String(m.Index),
-	                },
-	            },
-	        },
-	    },
+		Namespace: aws.String("Quanta-Consumer/Records"),
+		MetricData: []*cloudwatch.MetricDatum{
+			{
+				MetricName: aws.String("Arrived"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(m.totalRecs.Get())),
+				Dimensions: []*cloudwatch.Dimension{
+					{
+						Name:  aws.String("Stream"),
+						Value: aws.String(m.Stream),
+					},
+				},
+			},
+			{
+				MetricName: aws.String("RecordsPerSec"),
+				Unit:       aws.String("Count/Second"),
+				Value:      aws.Float64(float64(m.totalRecs.Get()-m.totalRecsL.Get()) / interval),
+				Dimensions: []*cloudwatch.Dimension{
+					{
+						Name:  aws.String("Stream"),
+						Value: aws.String(m.Stream),
+					},
+				},
+			},
+			{
+				MetricName: aws.String("Processed"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(m.processedRecs.Get())),
+				Dimensions: []*cloudwatch.Dimension{
+					{
+						Name:  aws.String("Table"),
+						Value: aws.String(m.Index),
+					},
+				},
+			},
+			{
+				MetricName: aws.String("ProcessedPerSecond"),
+				Unit:       aws.String("Count/Second"),
+				Value:      aws.Float64(float64(m.processedRecs.Get()-m.processedRecL.Get()) / interval),
+				Dimensions: []*cloudwatch.Dimension{
+					{
+						Name:  aws.String("Table"),
+						Value: aws.String(m.Index),
+					},
+				},
+			},
+			{
+				MetricName: aws.String("Errors"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(m.errorCount.Get())),
+				Dimensions: []*cloudwatch.Dimension{
+					{
+						Name:  aws.String("Table"),
+						Value: aws.String(m.Index),
+					},
+				},
+			},
+			{
+				MetricName: aws.String("ProcessedBytes"),
+				Unit:       aws.String("Bytes"),
+				Value:      aws.Float64(float64(m.totalBytes.Get())),
+				Dimensions: []*cloudwatch.Dimension{
+					{
+						Name:  aws.String("Table"),
+						Value: aws.String(m.Index),
+					},
+				},
+			},
+			{
+				MetricName: aws.String("BytesPerSec"),
+				Unit:       aws.String("Bytes/Second"),
+				Value:      aws.Float64(float64(m.totalBytes.Get()-m.totalBytesL.Get()) / interval),
+				Dimensions: []*cloudwatch.Dimension{
+					{
+						Name:  aws.String("Table"),
+						Value: aws.String(m.Index),
+					},
+				},
+			},
+			{
+				MetricName: aws.String("UpTimeHours"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(upTime / (1000000000 * 3600))),
+				Dimensions: []*cloudwatch.Dimension{
+					{
+						Name:  aws.String("Table"),
+						Value: aws.String(m.Index),
+					},
+				},
+			},
+		},
 	})
 	m.totalRecsL.Set(m.totalRecs.Get())
 	m.processedRecL.Set(m.processedRecs.Get())
@@ -608,10 +607,10 @@ func (c *Counter) Get() (ret int64) {
 
 // Set function provides thread safe set of counter value.
 func (c *Counter) Set(n int64) {
-    c.lock.Lock()
-    defer c.lock.Unlock()
-    c.num = n
-    return
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.num = n
+	return
 }
 
 // QuantaRetryer used for storage
@@ -627,4 +626,3 @@ func (r *QuantaRetryer) ShouldRetry(err error) bool {
 	}
 	return false
 }
-

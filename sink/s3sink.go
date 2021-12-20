@@ -172,7 +172,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 	}
 
 	// Create S3 service client
-	u.Warnf("Opening Output S3 path s3:///%s/%s", bucket, file)
+	u.Infof("Opening Output S3 path s3:///%s/%s", bucket, file)
 	s3svc := s3.New(sess)
 	s.outFile, err = pqs3.NewS3FileWriterWithClient(context.Background(), s3svc, bucket, file, nil)
 	if err != nil {
@@ -180,21 +180,6 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		return err
 	}
 
-	s.csvWriter, err = writer.NewCSVWriter(s.md, s.outFile, 4)
-	if err != nil {
-		u.Errorf("Can't create csv writer %s", err)
-		return err
-	}
-	s.csvWriter.RowGroupSize = 128 * 1024 * 1024 //128M
-	s.csvWriter.CompressionType = parquet.CompressionCodec_SNAPPY
-
-	s.md = []string{
-		"name=Name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY",
-		"name=Age, type=INT32",
-		"name=Id, type=INT64",
-		"name=Weight, type=FLOAT",
-		"name=Sex, type=BOOLEAN",
-	}
 	// Construct parquet metadata
 	s.md = make([]string, len(ctx.Projection.Proj.Columns))
 	for i, v := range ctx.Projection.Proj.Columns {
@@ -206,9 +191,17 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		case value.BoolType:
 			s.md[i] = fmt.Sprintf("name=%s, type=BOOLEAN", v.As)
 		default:
-			s.md[i] = fmt.Sprintf("name=%s, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY", v.As)
+			s.md[i] = fmt.Sprintf("name=%s, type=UTF8, encoding=PLAIN_DICTIONARY", v.As)
 		}
 	}
+
+	s.csvWriter, err = writer.NewCSVWriter(s.md, s.outFile, 4)
+	if err != nil {
+		u.Errorf("Can't create csv writer %s", err)
+		return err
+	}
+	s.csvWriter.RowGroupSize = 128 * 1024 * 1024 //128M
+	s.csvWriter.CompressionType = parquet.CompressionCodec_SNAPPY
 	return nil
 }
 
@@ -216,7 +209,6 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 func (s *S3ParquetSink) Next(dest []driver.Value, colIndex map[string]int) error {
 
 	vals := make([]string, len(dest))
-	rec := make([]*string, len(dest))
 	for i, v := range dest {
 		if val, ok := v.(string); ok {
 			vals[i] = strings.TrimSpace(val)
@@ -227,7 +219,10 @@ func (s *S3ParquetSink) Next(dest []driver.Value, colIndex map[string]int) error
 		} else {
 			vals[i] = strings.TrimSpace(fmt.Sprintf("%v", v))
 		}
-		rec[i] = &vals[i]
+	}
+	rec := make([]*string, len(vals))
+	for j := 0; j < len(vals); j++ {
+		rec[j] = &vals[j]
 	}
 	if err := s.csvWriter.WriteString(rec); err != nil {
 		return err

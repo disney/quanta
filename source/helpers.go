@@ -84,7 +84,7 @@ func outputProjection(outCh exec.MessageChan, sigChan exec.SigChan, proj *core.P
 				for i, columnID := range colIDs {
 					if insertRowNum {
 						rows[i] = append(rows[i], 0)
-						copy(rows[i][insertRowNumAt + 1:], rows[i][insertRowNumAt:])
+						copy(rows[i][insertRowNumAt+1:], rows[i][insertRowNumAt:])
 						rows[i][insertRowNumAt] = fmt.Sprintf("%d", columnID)
 					}
 					if isDistinct {

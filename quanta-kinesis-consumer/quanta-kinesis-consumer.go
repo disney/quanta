@@ -12,7 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
-    "github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/disney/quanta/client"
@@ -52,10 +52,12 @@ type Main struct {
 	Region        string
 	Index         string
 	BufferSize    uint
-	totalBytes    int64
-	bytesLock     sync.RWMutex
+	totalBytes    *Counter
+	totalBytesL   *Counter
 	totalRecs     *Counter
+	totalRecsL    *Counter
 	errorCount    *Counter
+	poolPercent   *Counter
 	Port          int
 	ConsulAddr    string
 	ShardCount    int
@@ -72,6 +74,7 @@ type Main struct {
 	partitionLock sync.Mutex
 	timeLocation  *time.Location
 	processedRecs *Counter
+	processedRecL *Counter
 	sessionPool   *core.SessionPool
 	metrics       *cloudwatch.CloudWatch
 }
@@ -80,8 +83,13 @@ type Main struct {
 func NewMain() *Main {
 	m := &Main{
 		totalRecs:     &Counter{},
+		totalRecsL:    &Counter{},
+		totalBytes:    &Counter{},
+		totalBytesL:   &Counter{},
 		processedRecs: &Counter{},
+		processedRecL: &Counter{},
 		errorCount:    &Counter{},
+		poolPercent:   &Counter{},
 		partitionMap:  make(map[string]*Partition),
 	}
 	loc, _ := time.LoadLocation("UTC")
@@ -96,10 +104,10 @@ func main() {
 
 	stream := app.Arg("stream", "Kinesis stream name.").Required().String()
 	index := app.Arg("index", "Table name (root name if nested schema)").Required().String()
-	withAssumeRoleArn := app.Arg("assume-role-arn", "Assume role ARN.").String()
 	region := app.Arg("region", "AWS region").Default("us-east-1").String()
-	port := app.Arg("port", "Port number for service").Default("4000").Int32()
+	port := app.Flag("port", "Port number for service").Default("4000").Int32()
 	bufSize := app.Flag("buf-size", "Buffer size").Default("1000000").Int32()
+	withAssumeRoleArn := app.Flag("assume-role-arn", "Assume role ARN.").String()
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 	trimHorizon := app.Flag("trim-horizon", "Set initial position to TRIM_HORIZON").Bool()
@@ -113,7 +121,6 @@ func main() {
 	shared.InitLogging(*logLevel, *environment, "Kinesis-Consumer", Version, "Quanta")
 
 	builtins.LoadAllBuiltins()
-
 
 	main := NewMain()
 	main.Stream = *stream
@@ -144,7 +151,7 @@ func main() {
 		main.CheckpointDB = true
 		log.Printf("Checkpoint DB enabled.")
 	}
-	if withAssumeRoleArn != nil {
+	if *withAssumeRoleArn != "" {
 		main.AssumeRoleArn = *withAssumeRoleArn
 		log.Printf("With assume role ARN [%s]", main.AssumeRoleArn)
 	}
@@ -176,9 +183,8 @@ func main() {
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		for range c {
-			u.Infof("Interrupted,  Bytes processed: %s, Records: %v", core.Bytes(main.BytesProcessed()),
+			u.Infof("Interrupted,  Bytes processed: %s, Records: %v", core.Bytes(main.totalBytes.Get()),
 				main.totalRecs.Get())
-			//close(msgChan)
 			//main.consumer.Close()
 			ticker.Stop()
 			os.Exit(0)
@@ -223,7 +229,7 @@ func main() {
 				}
 			}
 			main.totalRecs.Add(1)
-			main.AddBytes(len(v.Data))
+			main.totalBytes.Add(len(v.Data))
 
 			return nil // continue scanning
 		})
@@ -266,11 +272,12 @@ func main() {
 				itemsOutstanding += len(v.Data)
 			}
 			main.partitionLock.Unlock()
-			_, inUse := main.sessionPool.Metrics()
+			poolSize, inUse := main.sessionPool.Metrics()
 			if itemsOutstanding > 0 {
 				u.Infof("Partitions %d, Outstanding Items = %d, Processors in use = %d",
 					len(main.partitionMap), itemsOutstanding, inUse)
 			}
+			main.poolPercent.Set(int64(float64(inUse/poolSize) * 100))
 			select {
 			case _, done := <-c:
 				if done {
@@ -392,7 +399,7 @@ func (m *Main) Init() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-    m.metrics = cloudwatch.New(sess)
+	m.metrics = cloudwatch.New(sess)
 	u.Infof("Created consumer. ")
 
 	return shardCount, nil
@@ -458,100 +465,123 @@ func (m *Main) getPartition(partition string) *Partition {
 func (m *Main) printStats() *time.Ticker {
 	t := time.NewTicker(time.Second * 10)
 	start := time.Now()
+	lastTime := time.Now()
 	go func() {
 		for range t.C {
 			duration := time.Since(start)
-			bytes := m.BytesProcessed()
+			bytes := m.totalBytes.Get()
 			u.Infof("Bytes: %s, Records: %v, Processed: %v, Errors: %v, Duration: %v, Rate: %v/s",
 				core.Bytes(bytes), m.totalRecs.Get(), m.processedRecs.Get(), m.errorCount.Get(), duration,
 				core.Bytes(float64(bytes)/duration.Seconds()))
-			m.publishMetrics(duration)
+			lastTime = m.publishMetrics(duration, lastTime)
 		}
 	}()
 	return t
 }
 
-func (m *Main) publishMetrics(upTime time.Duration) {
+func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) time.Time {
 
+	interval := time.Since(lastPublishedAt).Seconds()
 	_, err := m.metrics.PutMetricData(&cloudwatch.PutMetricDataInput{
-	    Namespace: aws.String("Quanta-Consumer/Records"),
-	    MetricData: []*cloudwatch.MetricDatum{
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("Arrived"),
-	            Unit:       aws.String("Count"),
-	            Value:      aws.Float64(float64(m.totalRecs.Get())),
-	            Dimensions: []*cloudwatch.Dimension{
-	                &cloudwatch.Dimension{
-	                    Name:  aws.String("Stream"),
-	                    Value: aws.String(m.Stream),
-	                },
-	            },
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("Processed"),
-	            Unit:       aws.String("Count"),
-	            Value:      aws.Float64(float64(m.processedRecs.Get())),
-	            Dimensions: []*cloudwatch.Dimension{
-	                &cloudwatch.Dimension{
-	                    Name:  aws.String("Table"),
-	                    Value: aws.String(m.Index),
-	                },
-	            },
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("Errors"),
-	            Unit:       aws.String("Count"),
-	            Value:      aws.Float64(float64(m.errorCount.Get())),
-	            Dimensions: []*cloudwatch.Dimension{
-	                &cloudwatch.Dimension{
-	                    Name:  aws.String("Table"),
-	                    Value: aws.String(m.Index),
-	                },
-	            },
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("ProcessedBytes"),
-	            Unit:       aws.String("Bytes"),
-	            Value:      aws.Float64(float64(m.BytesProcessed())),
-	            Dimensions: []*cloudwatch.Dimension{
-	                &cloudwatch.Dimension{
-	                    Name:  aws.String("Table"),
-	                    Value: aws.String(m.Index),
-	                },
-	            },
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("UpTimeHours"),
-	            Unit:       aws.String("Count"),
-	            Value:      aws.Float64(float64(upTime / (1000000000 * 3600))),
-	            Dimensions: []*cloudwatch.Dimension{
-	                &cloudwatch.Dimension{
-	                    Name:  aws.String("Table"),
-	                    Value: aws.String(m.Index),
-	                },
-	            },
-	        },
-	    },
+		Namespace: aws.String("Quanta-Consumer/Records"),
+		MetricData: []*cloudwatch.MetricDatum{
+			{
+				MetricName: aws.String("Arrived"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(m.totalRecs.Get())),
+				Dimensions: []*cloudwatch.Dimension{
+					{
+						Name:  aws.String("Stream"),
+						Value: aws.String(m.Stream),
+					},
+				},
+			},
+			{
+				MetricName: aws.String("RecordsPerSec"),
+				Unit:       aws.String("Count/Second"),
+				Value:      aws.Float64(float64(m.totalRecs.Get()-m.totalRecsL.Get()) / interval),
+				Dimensions: []*cloudwatch.Dimension{
+					{
+						Name:  aws.String("Stream"),
+						Value: aws.String(m.Stream),
+					},
+				},
+			},
+			{
+				MetricName: aws.String("Processed"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(m.processedRecs.Get())),
+				Dimensions: []*cloudwatch.Dimension{
+					{
+						Name:  aws.String("Table"),
+						Value: aws.String(m.Index),
+					},
+				},
+			},
+			{
+				MetricName: aws.String("ProcessedPerSecond"),
+				Unit:       aws.String("Count/Second"),
+				Value:      aws.Float64(float64(m.processedRecs.Get()-m.processedRecL.Get()) / interval),
+				Dimensions: []*cloudwatch.Dimension{
+					{
+						Name:  aws.String("Table"),
+						Value: aws.String(m.Index),
+					},
+				},
+			},
+			{
+				MetricName: aws.String("Errors"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(m.errorCount.Get())),
+				Dimensions: []*cloudwatch.Dimension{
+					{
+						Name:  aws.String("Table"),
+						Value: aws.String(m.Index),
+					},
+				},
+			},
+			{
+				MetricName: aws.String("ProcessedBytes"),
+				Unit:       aws.String("Bytes"),
+				Value:      aws.Float64(float64(m.totalBytes.Get())),
+				Dimensions: []*cloudwatch.Dimension{
+					{
+						Name:  aws.String("Table"),
+						Value: aws.String(m.Index),
+					},
+				},
+			},
+			{
+				MetricName: aws.String("BytesPerSec"),
+				Unit:       aws.String("Bytes/Second"),
+				Value:      aws.Float64(float64(m.totalBytes.Get()-m.totalBytesL.Get()) / interval),
+				Dimensions: []*cloudwatch.Dimension{
+					{
+						Name:  aws.String("Table"),
+						Value: aws.String(m.Index),
+					},
+				},
+			},
+			{
+				MetricName: aws.String("UpTimeHours"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(upTime / (1000000000 * 3600))),
+				Dimensions: []*cloudwatch.Dimension{
+					{
+						Name:  aws.String("Table"),
+						Value: aws.String(m.Index),
+					},
+				},
+			},
+		},
 	})
+	m.totalRecsL.Set(m.totalRecs.Get())
+	m.processedRecL.Set(m.processedRecs.Get())
+	m.totalBytesL.Set(m.totalBytes.Get())
 	if err != nil {
 		u.Error(err)
 	}
-}
-
-// AddBytes provides thread safe processing to set the total bytes processed.
-// Adds the bytes parameter to total bytes processed.
-func (m *Main) AddBytes(n int) {
-	m.bytesLock.Lock()
-	m.totalBytes += int64(n)
-	m.bytesLock.Unlock()
-}
-
-// BytesProcessed provides thread safe read of total bytes processed.
-func (m *Main) BytesProcessed() (num int64) {
-	m.bytesLock.Lock()
-	num = m.totalBytes
-	m.bytesLock.Unlock()
-	return
+	return time.Now()
 }
 
 // Counter - Generic counter with mutex (threading) support
@@ -563,15 +593,23 @@ type Counter struct {
 // Add function provides thread safe addition of counter value based on input parameter.
 func (c *Counter) Add(n int) {
 	c.lock.Lock()
+	defer c.lock.Unlock()
 	c.num += int64(n)
-	c.lock.Unlock()
 }
 
 // Get function provides thread safe read of counter value.
 func (c *Counter) Get() (ret int64) {
 	c.lock.Lock()
+	defer c.lock.Unlock()
 	ret = c.num
-	c.lock.Unlock()
+	return
+}
+
+// Set function provides thread safe set of counter value.
+func (c *Counter) Set(n int64) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.num = n
 	return
 }
 
@@ -588,4 +626,3 @@ func (r *QuantaRetryer) ShouldRetry(err error) bool {
 	}
 	return false
 }
-

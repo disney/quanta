@@ -345,7 +345,15 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 		}
 		val, found := tbuf.rowCache[pqColPath]
 		if !found && !isParquet {
-			val, found = tbuf.rowCache[source[1:]]
+			//val, found = tbuf.rowCache[source[1:]]
+			var err error
+			found = true
+			if val, err = shared.GetPath(source[1:], tbuf.rowCache); err != nil {
+				found = false
+				if v.Required {
+					u.Warnf("field %s, source %s = %v", v.FieldName, source, err)
+				}
+			}
 		}
 		if !isParquet {
 			if (found && v.Required && val == nil) || (!found && v.Required) {

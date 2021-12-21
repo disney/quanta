@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 	"github.com/disney/quanta/client"
-	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/rbac"
+	"github.com/disney/quanta/shared"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
 	"os"

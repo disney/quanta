@@ -4,10 +4,20 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"fmt"
+	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/expr"
+	"github.com/araddon/qlbridge/expr/builtins"
 	"github.com/araddon/qlbridge/lex"
 	_ "github.com/araddon/qlbridge/qlbdriver"
 	"github.com/araddon/qlbridge/schema"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/hashicorp/consul/api"
+	"github.com/lestrrat-go/jwx/jwk"
+	mysql "github.com/siddontang/go-mysql/mysql"
+	"github.com/siddontang/go-mysql/server"
+	"github.com/siddontang/go-mysql/test_util/test_keys"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
 	"net"
@@ -18,16 +28,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	u "github.com/araddon/gou"
-	"github.com/araddon/qlbridge/expr/builtins"
-    "github.com/aws/aws-sdk-go/aws"
-    "github.com/aws/aws-sdk-go/aws/session"
-    "github.com/aws/aws-sdk-go/service/cloudwatch"
-	"github.com/hashicorp/consul/api"
-	"github.com/lestrrat-go/jwx/jwk"
-	mysql "github.com/siddontang/go-mysql/mysql"
-	"github.com/siddontang/go-mysql/server"
-	"github.com/siddontang/go-mysql/test_util/test_keys"
 
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/custom/functions"
@@ -59,12 +59,17 @@ var (
 	userPool      sync.Map
 	authProvider  *AuthProvider
 	userClaimsKey string
-    metrics       *cloudwatch.CloudWatch
+	metrics       *cloudwatch.CloudWatch
 	connectCount  *Counter
-    queryCount    *Counter
+	queryCount    *Counter
 	updateCount   *Counter
 	insertCount   *Counter
 	deleteCount   *Counter
+	connectCountL *Counter
+	queryCountL   *Counter
+	updateCountL  *Counter
+	insertCountL  *Counter
+	deleteCountL  *Counter
 	queryTime     *Counter
 	updateTime    *Counter
 	insertTime    *Counter
@@ -135,14 +140,14 @@ func main() {
 	sink.LoadAll()      // Register output sinks
 	functions.LoadAll() // Custom functions
 
-    sess, errx := session.NewSession(&aws.Config{
-        Region: aws.String(*region),
-    })
-    if errx != nil {
+	sess, errx := session.NewSession(&aws.Config{
+		Region: aws.String(*region),
+	})
+	if errx != nil {
 		u.Error(errx)
 		os.Exit(1)
-    }
-    metrics = cloudwatch.New(sess)
+	}
+	metrics = cloudwatch.New(sess)
 
 	var err error
 	var src *source.QuantaSource
@@ -153,28 +158,33 @@ func main() {
 	schema.RegisterSourceAsSchema("quanta", src)
 
 	// Start metrics publisher
-    var ticker *time.Ticker
-    ticker = metricsTicker()
-    c := make(chan os.Signal, 1)
-    signal.Notify(c, os.Interrupt)
-    go func() {
-        for range c {
-            u.Warn("Interrupted,  shutting down ...")
-            ticker.Stop()
+	var ticker *time.Ticker
+	ticker = metricsTicker()
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		for range c {
+			u.Warn("Interrupted,  shutting down ...")
+			ticker.Stop()
 			src.Close()
-            os.Exit(0)
-        }
-    }()
+			os.Exit(0)
+		}
+	}()
 
-    queryCount = &Counter{}
-    updateCount = &Counter{}
-    insertCount = &Counter{}
-    deleteCount = &Counter{}
-    connectCount = &Counter{}
-    queryTime = &Counter{}
-    updateTime = &Counter{}
-    insertTime = &Counter{}
-    deleteTime = &Counter{}
+	queryCount = &Counter{}
+	updateCount = &Counter{}
+	insertCount = &Counter{}
+	deleteCount = &Counter{}
+	connectCount = &Counter{}
+	queryCountL = &Counter{}
+	updateCountL = &Counter{}
+	insertCountL = &Counter{}
+	deleteCountL = &Counter{}
+	connectCountL = &Counter{}
+	queryTime = &Counter{}
+	updateTime = &Counter{}
+	insertTime = &Counter{}
+	deleteTime = &Counter{}
 
 	// Start server endpoint
 	l, err := net.Listen("tcp", *proxyHostPort)
@@ -221,7 +231,7 @@ func onConn(conn net.Conn) {
 		u.Errorf("error from remote address %v", conn.RemoteAddr())
 		return
 	}
-    connectCount.Add(1)
+	connectCount.Add(1)
 	// Dispatch loop
 	for {
 		if sconn == nil {
@@ -295,7 +305,7 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 		ss[0] = "selectinto"
 	}
 
-    operation := strings.ToLower(ss[0])
+	operation := strings.ToLower(ss[0])
 	switch operation {
 	case "select", "describe", "show":
 
@@ -333,8 +343,7 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 			return nil, err2
 		}
 		defer rows.Close()
-    	queryCount.Add(1)
-
+		queryCount.Add(1)
 
 		cols, _ := rows.Columns()
 
@@ -355,8 +364,8 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 			rs = append(rs, row)
 		}
 		// End hack
-        elapsed := time.Since(start)
-    	queryTime.Add(int(elapsed.Milliseconds()))
+		elapsed := time.Since(start)
+		queryTime.Add(int(elapsed.Milliseconds()))
 		r, err = mysql.BuildSimpleResultset(cols, rs, binary)
 		if err != nil {
 			return nil, fmt.Errorf("%v", err)
@@ -380,18 +389,18 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 			u.Errorf("could not execute stmt: %v", err2)
 			return nil, err2
 		}
-        elapsed := time.Since(start)
+		elapsed := time.Since(start)
 		if operation == "update" {
-        	updateTime.Add(int(elapsed.Milliseconds()))
-        	updateCount.Add(1)
+			updateTime.Add(int(elapsed.Milliseconds()))
+			updateCount.Add(1)
 		}
 		if operation == "insert" {
-        	insertTime.Add(int(elapsed.Milliseconds()))
-        	insertCount.Add(1)
+			insertTime.Add(int(elapsed.Milliseconds()))
+			insertCount.Add(1)
 		}
 		if operation == "delete" {
-        	deleteTime.Add(int(elapsed.Milliseconds()))
-        	deleteCount.Add(1)
+			deleteTime.Add(int(elapsed.Milliseconds()))
+			deleteCount.Add(1)
 		}
 		return &mysql.Result{0, uint64(insertID), uint64(rowCount), nil}, nil
 	case "set":
@@ -535,26 +544,29 @@ func (c *Counter) Get() (ret int64) {
 }
 
 // Set function provides thread safe set of counter value.
-func (c *Counter) Set(n int) {
+func (c *Counter) Set(n int64) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	c.num = int64(n)
+	c.num = n
 	return
 }
 
 func metricsTicker() *time.Ticker {
 	t := time.NewTicker(time.Second * 10)
 	start := time.Now()
+	lastTime := time.Now()
 	go func() {
 		for range t.C {
 			duration := time.Since(start)
-			publishMetrics(duration)
+			lastTime = publishMetrics(duration, lastTime)
 		}
 	}()
 	return t
 }
 
-func publishMetrics(upTime time.Duration) {
+func publishMetrics(upTime time.Duration, lastPublishedAt time.Time) time.Time {
+
+	interval := time.Since(lastPublishedAt).Seconds()
 	avgQueryLatency := queryTime.Get()
 	if queryCount.Get() > 0 {
 		avgQueryLatency = queryTime.Get() / queryCount.Get()
@@ -572,57 +584,92 @@ func publishMetrics(upTime time.Duration) {
 		avgDeleteLatency = deleteTime.Get() / deleteCount.Get()
 	}
 	_, err := metrics.PutMetricData(&cloudwatch.PutMetricDataInput{
-	    Namespace: aws.String("Quanta-Proxy"),
-	    MetricData: []*cloudwatch.MetricDatum{
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("Queries"),
-	            Unit:       aws.String("Count"),
-	            Value:      aws.Float64(float64(queryCount.Get())),
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("AvgQueryLatency"),
-	            Unit:       aws.String("Milliseconds"),
-	            Value:      aws.Float64(float64(avgQueryLatency)),
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("Updates"),
-	            Unit:       aws.String("Count"),
-	            Value:      aws.Float64(float64(updateCount.Get())),
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("AvgUpdateLatency"),
-	            Unit:       aws.String("Milliseconds"),
-	            Value:      aws.Float64(float64(avgUpdateLatency)),
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("Inserts"),
-	            Unit:       aws.String("Count"),
-	            Value:      aws.Float64(float64(insertCount.Get())),
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("AvgInsertLatency"),
-	            Unit:       aws.String("Milliseconds"),
-	            Value:      aws.Float64(float64(avgInsertLatency)),
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("Deletes"),
-	            Unit:       aws.String("Count"),
-	            Value:      aws.Float64(float64(deleteCount.Get())),
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("AvgDeleteLatency"),
-	            Unit:       aws.String("Milliseconds"),
-	            Value:      aws.Float64(float64(avgDeleteLatency)),
-	        },
-	        &cloudwatch.MetricDatum{
-	            MetricName: aws.String("UpTimeHours"),
-	            Unit:       aws.String("Count"),
-	            Value:      aws.Float64(float64(upTime / (1000000000 * 3600))),
-	        },
-	    },
+		Namespace: aws.String("Quanta-Proxy"),
+		MetricData: []*cloudwatch.MetricDatum{
+			{
+				MetricName: aws.String("Connections"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(connectCount.Get())),
+			},
+			{
+				MetricName: aws.String("ConnectionsPerSec"),
+				Unit:       aws.String("Count/Second"),
+				Value:      aws.Float64(float64(connectCount.Get()-connectCountL.Get()) / interval),
+			},
+			{
+				MetricName: aws.String("Queries"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(queryCount.Get())),
+			},
+			{
+				MetricName: aws.String("QueriesPerSec"),
+				Unit:       aws.String("Count/Second"),
+				Value:      aws.Float64(float64(queryCount.Get()-queryCountL.Get()) / interval),
+			},
+			{
+				MetricName: aws.String("AvgQueryLatency"),
+				Unit:       aws.String("Milliseconds"),
+				Value:      aws.Float64(float64(avgQueryLatency)),
+			},
+			{
+				MetricName: aws.String("Updates"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(updateCount.Get())),
+			},
+			{
+				MetricName: aws.String("UpdatesPerSec"),
+				Unit:       aws.String("Count/Second"),
+				Value:      aws.Float64(float64(updateCount.Get()-updateCountL.Get()) / interval),
+			},
+			{
+				MetricName: aws.String("AvgUpdateLatency"),
+				Unit:       aws.String("Milliseconds"),
+				Value:      aws.Float64(float64(avgUpdateLatency)),
+			},
+			{
+				MetricName: aws.String("Inserts"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(insertCount.Get())),
+			},
+			{
+				MetricName: aws.String("InsertsPerSec"),
+				Unit:       aws.String("Count/Second"),
+				Value:      aws.Float64(float64(insertCount.Get()-insertCountL.Get()) / interval),
+			},
+			{
+				MetricName: aws.String("AvgInsertLatency"),
+				Unit:       aws.String("Milliseconds"),
+				Value:      aws.Float64(float64(avgInsertLatency)),
+			},
+			{
+				MetricName: aws.String("Deletes"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(deleteCount.Get())),
+			},
+			{
+				MetricName: aws.String("DeletesPerSec"),
+				Unit:       aws.String("Count/Second"),
+				Value:      aws.Float64(float64(deleteCount.Get()-deleteCountL.Get()) / interval),
+			},
+			{
+				MetricName: aws.String("AvgDeleteLatency"),
+				Unit:       aws.String("Milliseconds"),
+				Value:      aws.Float64(float64(avgDeleteLatency)),
+			},
+			{
+				MetricName: aws.String("UpTimeHours"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(upTime / (1000000000 * 3600))),
+			},
+		},
 	})
+	connectCountL.Set(connectCount.Get())
+	queryCountL.Set(queryCount.Get())
+	updateCountL.Set(updateCount.Get())
+	insertCountL.Set(insertCount.Get())
+	deleteCountL.Set(deleteCount.Get())
 	if err != nil {
 		u.Error(err)
 	}
+	return time.Now()
 }
-

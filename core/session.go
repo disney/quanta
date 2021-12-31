@@ -664,7 +664,7 @@ func (s *Session) lookupColumnID(tbuf *TableBuffer, lookupVal, fkFieldSpec strin
 		// Use the secondary/alternate key specification
 		kvIndex = fmt.Sprintf("%s%s%s.SK", tbuf.Table.Name, ifDelim, fkFieldSpec)
 	}
-	kvResult, err := s.KVStore.Lookup(kvIndex, lookupVal, reflect.Uint64)
+	kvResult, err := s.KVStore.Lookup(kvIndex, lookupVal, reflect.Uint64, false)
 	if err != nil {
 		return 0, false, fmt.Errorf("KVStore error for [%s] = [%s], [%v]", kvIndex, lookupVal, err)
 	}

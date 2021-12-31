@@ -33,17 +33,21 @@ func NewKVStore(conn *Conn) *KVStore {
 }
 
 // Put a new attribute
-func (c *KVStore) Put(index string, k interface{}, v interface{}) error {
+func (c *KVStore) Put(indexPath string, k interface{}, v interface{}, pathIsKey bool) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
-	replicaClients, indices := c.selectNodes(k, false)
+	key := k
+	if pathIsKey {
+		key = indexPath
+	}
+	replicaClients, indices := c.selectNodes(key, false)
 	if len(replicaClients) == 0 {
 		return fmt.Errorf("%v.Put(_) = _, %v: ", c.client, " no available nodes!")
 	}
 	// Iterate over replica client list and perform Put operation
 	for i, client := range replicaClients {
-		_, err := client.Put(ctx, &pb.IndexKVPair{IndexPath: index, Key: shared.ToBytes(k),
+		_, err := client.Put(ctx, &pb.IndexKVPair{IndexPath: indexPath, Key: shared.ToBytes(k),
 			Value: [][]byte{shared.ToBytes(v)}})
 		if err != nil {
 			return fmt.Errorf("%v.Put(_) = _, %v: [%s]", c.client, err, c.Conn.clientConn[indices[i]].Target())
@@ -81,12 +85,15 @@ func (c *KVStore) splitBatch(batch map[interface{}]interface{}, replicas int) []
 // BatchPut - Insert a batch of attributes.
 func (c *KVStore) BatchPut(indexPath string, batch map[interface{}]interface{}, pathIsKey bool) error {
 
-	batches := make([]map[interface{}]interface{}, 0)
+	batches := make([]map[interface{}]interface{}, len(c.client))
+	for i := range batches {
+		batches[i] = make(map[interface{}]interface{}, 0)
+	}
 	if pathIsKey {
 		nodeKeys := c.Conn.hashTable.GetN(c.Conn.Replicas, indexPath)
 		for _, nodeKey := range nodeKeys {
-			if _, ok := c.Conn.nodeMap[nodeKey]; ok {
-				batches = append(batches, batch)
+			if i, ok := c.Conn.nodeMap[nodeKey]; ok {
+				batches[i] = batch
 			}
 		}
 	} else {
@@ -142,17 +149,22 @@ func (c *KVStore) batchPut(client pb.KVStoreClient, index string, batch map[inte
 }
 
 // Lookup a single key.
-func (c *KVStore) Lookup(index string, key interface{}, valueType reflect.Kind) (interface{}, error) {
+func (c *KVStore) Lookup(indexPath string, k interface{}, valueType reflect.Kind, pathIsKey bool) (interface{}, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
+	
+	key := k
+	if pathIsKey {
+		key = indexPath
+	}
 	replicaClients, indices := c.selectNodes(key, false)
 	if len(replicaClients) == 0 {
 		return nil, fmt.Errorf("%v.Lookup(_) = _, %v: ", c.client, " no available nodes")
 	}
 
 	// Use the highest weight client
-	lookup, err := replicaClients[0].Lookup(ctx, &pb.IndexKVPair{IndexPath: index, Key: shared.ToBytes(key), Value: nil})
+	lookup, err := replicaClients[0].Lookup(ctx, &pb.IndexKVPair{IndexPath: indexPath, Key: shared.ToBytes(k), Value: nil})
 	if err != nil {
 		return uint64(0), fmt.Errorf("%v.Lookup(_) = _, %v: [%s]", c.client, err,
 			c.Conn.clientConn[indices[0]].Target())

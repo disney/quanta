@@ -30,7 +30,7 @@ func NewAuthContext(store *quanta.KVStore, userID string, createUser bool) (*Aut
 		return nil, fmt.Errorf("No connected session")
 	}
 
-	kvResult, err := store.Lookup(UserRoles, userID, reflect.String)
+	kvResult, err := store.Lookup(UserRoles, userID, reflect.String, false)
 	if err != nil {
 		return nil, fmt.Errorf("Error in NewAuthContext(Lookup UserRoles) [%v]", err)
 	}
@@ -245,7 +245,7 @@ type User struct {
 
 func load(store *quanta.KVStore, userID string) (*User, error) {
 
-	b, err := store.Lookup(UserRoles, userID, reflect.String)
+	b, err := store.Lookup(UserRoles, userID, reflect.String, false)
 	if err != nil {
 		return nil, fmt.Errorf("Error loading user [%v]", err)
 	}
@@ -295,7 +295,7 @@ func (user *User) save(store *quanta.KVStore) error {
 	if err != nil {
 		return fmt.Errorf("Error in save(Marshal User for %s) [%v]", user.UserID, err)
 	}
-	if err := store.Put(UserRoles, user.UserID, string(b)); err != nil {
+	if err := store.Put(UserRoles, user.UserID, string(b), false); err != nil {
 		return fmt.Errorf("Error in save(Put new UserRole for %s) [%v]", user.UserID, err)
 	}
 	u.Debugf("Saved user [%s]", string(b))

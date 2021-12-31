@@ -683,7 +683,7 @@ func (s *Session) LookupKeyBatch(tbuf *TableBuffer, lookupVals map[interface{}]i
 		// Use the secondary/alternate key specification
 		kvIndex = fmt.Sprintf("%s%s%s.SK", tbuf.Table.Name, ifDelim, fkFieldSpec)
 	}
-	lookupVals, err := s.KVStore.BatchLookup(kvIndex, lookupVals)
+	lookupVals, err := s.KVStore.BatchLookup(kvIndex, lookupVals, false)
 	if err != nil {
 		return nil, fmt.Errorf("KVStore.LookupBatch error for [%s] - [%v]", kvIndex, err)
 	}

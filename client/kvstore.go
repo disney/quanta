@@ -79,9 +79,19 @@ func (c *KVStore) splitBatch(batch map[interface{}]interface{}, replicas int) []
 }
 
 // BatchPut - Insert a batch of attributes.
-func (c *KVStore) BatchPut(index string, batch map[interface{}]interface{}) error {
+func (c *KVStore) BatchPut(indexPath string, batch map[interface{}]interface{}, pathIsKey bool) error {
 
-	batches := c.splitBatch(batch, c.Replicas)
+	batches := make([]map[interface{}]interface{}, 0)
+	if pathIsKey {
+		nodeKeys := c.Conn.hashTable.GetN(c.Conn.Replicas, indexPath)
+		for _, nodeKey := range nodeKeys {
+			if _, ok := c.Conn.nodeMap[nodeKey]; ok {
+				batches = append(batches, batch)
+			}
+		}
+	} else {
+		batches = c.splitBatch(batch, c.Replicas)
+	}
 
 	done := make(chan error)
 	defer close(done)
@@ -89,7 +99,7 @@ func (c *KVStore) BatchPut(index string, batch map[interface{}]interface{}) erro
 	for i, v := range batches {
 		go func(client pb.KVStoreClient, idx string, m map[interface{}]interface{}) {
 			done <- c.batchPut(client, idx, m)
-		}(c.client[i], index, v)
+		}(c.client[i], indexPath, v)
 	}
 	for {
 		err := <-done
@@ -154,9 +164,20 @@ func (c *KVStore) Lookup(index string, key interface{}, valueType reflect.Kind) 
 }
 
 // BatchLookup of multiple keys.
-func (c *KVStore) BatchLookup(index string, batch map[interface{}]interface{}) (map[interface{}]interface{}, error) {
+func (c *KVStore) BatchLookup(indexPath string, batch map[interface{}]interface{}, pathIsKey bool) (map[interface{}]interface{}, error) {
 
-	// We dont want to iterate over replicas for lookups so count is 1
+	if pathIsKey {
+		nodeKeys := c.Conn.hashTable.GetN(c.Conn.Replicas, indexPath)
+		if len(nodeKeys) == 0 {
+			return nil, fmt.Errorf("no nodes available")
+		}
+		if i, ok := c.Conn.nodeMap[nodeKeys[0]]; ok {
+			return c.batchLookup(c.client[i], indexPath, batch)
+		}
+		return nil, fmt.Errorf("no nodes available")
+	}
+
+	// We dont want to iterate over replicas for lookups so count is 1, first replica is primary
 	batches := c.splitBatch(batch, 1)
 
 	results := make(map[interface{}]interface{}, 0)
@@ -170,7 +191,7 @@ func (c *KVStore) BatchLookup(index string, batch map[interface{}]interface{}) (
 			r, e := c.batchLookup(client, idx, b)
 			rchan <- r
 			done <- e
-		}(c.client[i], index, batches[i])
+		}(c.client[i], indexPath, batches[i])
 
 	}
 	for {
@@ -194,7 +215,7 @@ func (c *KVStore) BatchLookup(index string, batch map[interface{}]interface{}) (
 }
 
 func (c *KVStore) batchLookup(client pb.KVStoreClient, index string,
-	batch map[interface{}]interface{}) (map[interface{}]interface{}, error) {
+		batch map[interface{}]interface{}) (map[interface{}]interface{}, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
@@ -277,10 +298,9 @@ func (c *KVStore) Items(index string, keyType, valueType reflect.Kind) (map[inte
 }
 
 func (c *KVStore) items(client pb.KVStoreClient, index string, keyType,
+
 	valueType reflect.Kind) (map[interface{}]interface{}, error) {
-
 	batch := make(map[interface{}]interface{}, 0)
-
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
 

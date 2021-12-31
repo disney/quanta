@@ -44,13 +44,13 @@ type BitmapIndex struct {
 	batchClears         map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
 	batchValues         map[string]map[string]map[int64]*roaring64.BSI
 	batchStringKey      map[string]map[string]map[string]map[interface{}]interface{}
-	batchColID2Str      map[string]map[string]map[interface{}]interface{}
+	batchPartitionStr   map[string]map[interface{}]interface{}
 	batchSize           int
 	batchSetCount       int
 	batchClearCount     int
 	batchValueCount     int
 	batchStringKeyCount int
-	batchColID2StrCount int
+	batchPartitionStrCount int
 	batchMutex          sync.Mutex
 	batchKeyMutex       sync.RWMutex
 }
@@ -94,19 +94,15 @@ func (c *BitmapIndex) Flush() error {
 		c.batchValues = nil
 		c.batchValueCount = 0
 	}
-	if c.batchColID2Str != nil {
-		for index, fieldMap := range c.batchColID2Str {
-			for field, valueMap := range fieldMap {
-				tableField := fmt.Sprintf("%s%s%s.CID2String", index, ifDelim, field)
-				if err := c.KVStore.BatchPut(tableField, valueMap); err != nil {
-					c.batchMutex.Unlock()
-					return err
-				}
-
+	if c.batchPartitionStr != nil {
+		for indexPath, valueMap := range c.batchPartitionStr {
+			if err := c.KVStore.BatchPut(indexPath, valueMap, true); err != nil {
+				c.batchMutex.Unlock()
+				return err
 			}
 		}
-		c.batchColID2Str = nil
-		c.batchColID2StrCount = 0
+		c.batchPartitionStr = nil
+		c.batchPartitionStrCount = 0
 	}
 	c.batchMutex.Unlock()
 
@@ -116,7 +112,7 @@ func (c *BitmapIndex) Flush() error {
 			for field, typeMap := range fieldMap {
 				for itype, valueMap := range typeMap { // itype is 'P' for Primary, 'S' for secondary
 					tableField := fmt.Sprintf("%s%s%s.%sK", index, ifDelim, field, itype)
-					if err := c.KVStore.BatchPut(tableField, valueMap); err != nil {
+					if err := c.KVStore.BatchPut(tableField, valueMap, false); err != nil {
 						c.batchKeyMutex.Unlock()
 						return err
 					}
@@ -664,7 +660,7 @@ func (c *BitmapIndex) SetKeyString(index, field, itype string, value interface{}
 			for field, typeMap := range fieldMap {
 				for itype, valueMap := range typeMap { // itype is 'P' for Primary, 'S' for secondary
 					tableField := fmt.Sprintf("%s%s%s.%sK", index, ifDelim, field, itype)
-					if err := c.KVStore.BatchPut(tableField, valueMap); err != nil {
+					if err := c.KVStore.BatchPut(tableField, valueMap, false); err != nil {
 						return err
 					}
 				}
@@ -676,39 +672,33 @@ func (c *BitmapIndex) SetKeyString(index, field, itype string, value interface{}
 	return nil
 }
 
-// SetCID2String - Create column ID to backing string index entry.
-func (c *BitmapIndex) SetCID2String(index, field string, columnID, value interface{}) error {
+// SetPartitionedString - Create column ID to backing string index entry.
+func (c *BitmapIndex) SetPartitionedString(indexPath string, columnID, value interface{}) error {
 
 	c.batchMutex.Lock()
 	defer c.batchMutex.Unlock()
 
-	if c.batchColID2Str == nil {
-		c.batchColID2Str = make(map[string]map[string]map[interface{}]interface{})
+	if c.batchPartitionStr == nil {
+		c.batchPartitionStr = make(map[string]map[interface{}]interface{})
 	}
-	if _, ok := c.batchColID2Str[index]; !ok {
-		c.batchColID2Str[index] = make(map[string]map[interface{}]interface{})
+	if _, ok := c.batchPartitionStr[indexPath]; !ok {
+		c.batchPartitionStr[indexPath] = make(map[interface{}]interface{})
 	}
-	if _, ok := c.batchColID2Str[index][field]; !ok {
-		c.batchColID2Str[index][field] = make(map[interface{}]interface{})
-	}
-	if _, ok := c.batchColID2Str[index][field][columnID]; !ok {
-		c.batchColID2Str[index][field][columnID] = value
+	if _, ok := c.batchPartitionStr[indexPath][columnID]; !ok {
+		c.batchPartitionStr[indexPath][columnID] = value
 	}
 
-	c.batchColID2StrCount++
+	c.batchPartitionStrCount++
 
-	if c.batchColID2StrCount >= c.batchSize/100 {
-		for index, fieldMap := range c.batchColID2Str {
-			for field, valueMap := range fieldMap {
-				tableField := fmt.Sprintf("%s%s%s.CID2String", index, ifDelim, field)
-				if err := c.KVStore.BatchPut(tableField, valueMap); err != nil {
-					return err
-				}
-
+	if c.batchPartitionStrCount >= c.batchSize/100 {
+		for indexPath, valueMap := range c.batchPartitionStr {
+			if err := c.KVStore.BatchPut(indexPath, valueMap, true); err != nil {
+				return err
 			}
+
 		}
-		c.batchColID2Str = nil
-		c.batchColID2StrCount = 0
+		c.batchPartitionStr = nil
+		c.batchPartitionStrCount = 0
 	}
 	return nil
 }

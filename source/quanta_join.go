@@ -17,6 +17,7 @@ import (
 	"github.com/araddon/qlbridge/rel"
 	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/shared"
 )
 
 var (
@@ -357,7 +358,7 @@ func (m *JoinMerge) makeBufferedConnection(driverTable string) (*core.Session, e
 	if !ok {
 		return nil, fmt.Errorf("cannot obtain base path from session")
 	}
-	clientConn := quanta.NewDefaultConnection()
+	clientConn := shared.NewDefaultConnection()
 	clientConn.ServicePort = int(port.Value().(int64))
 	clientConn.Quorum = 3
 	if err := clientConn.Connect(nil); err != nil {
@@ -369,7 +370,7 @@ func (m *JoinMerge) makeBufferedConnection(driverTable string) (*core.Session, e
 func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitmap,
 	fromTime, toTime int64) (*roaring64.BSI, bool, error) {
 
-	conn := quanta.NewDefaultConnection()
+	conn := shared.NewDefaultConnection()
 	port, ok := m.Ctx.Session.Get(servicePort)
 	if !ok {
 		return nil, false, fmt.Errorf("cannot obtain service port from session")

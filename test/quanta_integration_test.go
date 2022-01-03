@@ -11,7 +11,7 @@ import (
 	"github.com/araddon/qlbridge/expr/builtins"
 	_ "github.com/araddon/qlbridge/qlbdriver"
 	"github.com/araddon/qlbridge/schema"
-	quanta "github.com/disney/quanta/client"
+	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/custom/functions"
 	"github.com/disney/quanta/rbac"
@@ -26,7 +26,7 @@ import (
 type QuantaTestSuite struct {
 	suite.Suite
 	endpoint *server.EndPoint
-	store    *quanta.KVStore
+	store    *shared.KVStore
 }
 
 func (suite *QuantaTestSuite) SetupSuite() {
@@ -38,7 +38,7 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	RemoveContents("./testdata/index")
 
 	// Server side components already started and available in package level variables in harness.go
-	conn := quanta.NewDefaultConnection()
+	conn := shared.NewDefaultConnection()
 	conn.ServicePort = 0
 	err = conn.Connect(nil) // no consul
 	assert.NoError(suite.T(), err)
@@ -58,7 +58,7 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err2)
 	schema.RegisterSourceAsSchema("quanta", src)
 
-	suite.store = quanta.NewKVStore(conn)
+	suite.store = shared.NewKVStore(conn)
 	assert.NotNil(suite.T(), suite.store)
 
 	ctx, err := rbac.NewAuthContext(suite.store, "USER001", true)
@@ -67,7 +67,7 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err)
 }
 
-func (suite *QuantaTestSuite) loadData(table, filePath string, conn *quanta.Conn) error {
+func (suite *QuantaTestSuite) loadData(table, filePath string, conn *shared.Conn) error {
 
 	fr, err := local.NewLocalFileReader(filePath)
 	assert.Nil(suite.T(), err)

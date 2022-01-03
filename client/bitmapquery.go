@@ -20,8 +20,8 @@ import (
 //
 func (c *BitmapIndex) query(query *pb.BitmapQuery) (*roaring64.Bitmap, error) {
 
-	c.Conn.nodeMapLock.RLock()
-	defer c.Conn.nodeMapLock.RUnlock()
+	//c.Conn.nodeMapLock.RLock()
+	//defer c.Conn.nodeMapLock.RUnlock()
 
 	if len(query.Query) == 0 {
 		return nil, fmt.Errorf("query must have at least 1 predicate")
@@ -253,7 +253,7 @@ func (c *BitmapIndex) queryGroup(index string, query *pb.BitmapQuery) (*shared.I
 	for i, v := range ra {
 		// Perform stratified sampling (if applicable) and add to operational list.  Samples are collapsed client side.
 		if v.SamplePct > 0 {
-			samples = performStratifiedSampling(samples, v.SamplePct)
+			samples = shared.PerformStratifiedSampling(samples, v.SamplePct)
 			for _, x := range samples {
 				if v.SampleIsUnion {
 					v.AddUnion(x)
@@ -314,13 +314,13 @@ func (c *BitmapIndex) queryClient(client pb.BitmapIndexClient, q *pb.BitmapQuery
 	   u.Debugf("vvv query dump:\n%s\n\n", string(d))
 	*/
 
-	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	ctx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
 	defer cancel()
 
 	result, err := client.Query(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("%v.Query(_) = _, %v, node = %s", client, err,
-			c.Conn.clientConn[clientIndex].Target())
+			c.ClientConnections()[clientIndex].Target())
 	}
 	return result, nil
 }
@@ -438,13 +438,13 @@ func (c *BitmapIndex) Join(driverIndex string, fklist []string, fromTime, toTime
 func (c *BitmapIndex) joinClient(client pb.BitmapIndexClient, req *pb.JoinRequest,
 	clientIndex int) (*pb.JoinResponse, error) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	ctx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
 	defer cancel()
 
 	result, err := client.Join(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("%v.Join(_) = _, %v, node = %s", client, err,
-			c.Conn.clientConn[clientIndex].Target())
+			c.ClientConnections()[clientIndex].Target())
 	}
 	return result, nil
 }
@@ -539,13 +539,13 @@ func (c *BitmapIndex) Projection(index string, fields []string, fromTime, toTime
 func (c *BitmapIndex) projectionClient(client pb.BitmapIndexClient, req *pb.ProjectionRequest,
 	clientIndex int) (*pb.ProjectionResponse, error) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	ctx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
 	defer cancel()
 
 	result, err := client.Projection(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("%v.Projection(_) = _, %v, node = %s", client, err,
-			c.Conn.clientConn[clientIndex].Target())
+			c.ClientConnections()[clientIndex].Target())
 	}
 	return result, nil
 }

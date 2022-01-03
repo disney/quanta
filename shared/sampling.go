@@ -1,4 +1,4 @@
-package quanta
+package shared
 
 import (
 	"github.com/RoaringBitmap/roaring/roaring64"
@@ -15,7 +15,7 @@ import (
 //
 // Returns the sample set.
 //
-func performStratifiedSampling(input []*roaring64.Bitmap, samplePct float32) []*roaring64.Bitmap {
+func PerformStratifiedSampling(input []*roaring64.Bitmap, samplePct float32) []*roaring64.Bitmap {
 
 	result := make([]*roaring64.Bitmap, len(input))
 	rg := make([]*rand.Rand, len(input))

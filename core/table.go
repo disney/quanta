@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	u "github.com/araddon/gou"
-	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	"io/ioutil"
@@ -23,7 +22,7 @@ type Table struct {
 	Attributes       []Attribute
 	attributeNameMap map[string]*Attribute
 	localLock        sync.RWMutex
-	kvStore          *quanta.KVStore
+	kvStore          *shared.KVStore
 }
 
 // Attribute - Field structure.
@@ -46,7 +45,7 @@ var (
 )
 
 // LoadTable - Load and initialize table object.
-func LoadTable(path string, kvStore *quanta.KVStore, name string, consulClient *api.Client) (*Table, error) {
+func LoadTable(path string, kvStore *shared.KVStore, name string, consulClient *api.Client) (*Table, error) {
 
 	tableCacheLock.Lock()
 	defer tableCacheLock.Unlock()

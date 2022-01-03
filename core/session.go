@@ -38,8 +38,8 @@ const (
 type Session struct {
 	BasePath     string // path to schema directory
 	Client       *quanta.BitmapIndex
-	StringIndex  *quanta.StringSearch
-	KVStore      *quanta.KVStore
+	StringIndex  *shared.StringSearch
+	KVStore      *shared.KVStore
 	TableBuffers map[string]*TableBuffer
 	Nested       bool
 	DateFilter   *time.Time // optional filter to only include records matching timestamp
@@ -88,14 +88,14 @@ func NewTableBuffer(table *Table) (*TableBuffer, error) {
 // OpenSession - Creates a connected session to the underlying core.
 // (This is intentionally not thread-safe for maximum throughput.)
 //
-func OpenSession(path, name string, nested bool, conn *quanta.Conn) (*Session, error) {
+func OpenSession(path, name string, nested bool, conn *shared.Conn) (*Session, error) {
 
 	if name == "" {
 		return nil, fmt.Errorf("table name is nil")
 	}
 
 	consul := conn.Consul
-	kvStore := quanta.NewKVStore(conn)
+	kvStore := shared.NewKVStore(conn)
 
 	tableBuffers := make(map[string]*TableBuffer, 0)
 	tab, err := LoadTable(path, kvStore, name, consul)
@@ -129,7 +129,7 @@ func OpenSession(path, name string, nested bool, conn *quanta.Conn) (*Session, e
 		return nil, fmt.Errorf("OpenSession error - %v", err)
 	}
 	s := &Session{BasePath: path, TableBuffers: tableBuffers, Nested: nested}
-	s.StringIndex = quanta.NewStringSearch(conn, 1000)
+	s.StringIndex = shared.NewStringSearch(conn, 1000)
 	s.KVStore = kvStore
 	s.Client = quanta.NewBitmapIndex(conn, 3000000)
 
@@ -144,7 +144,7 @@ func (s *Session) SetDateFilter(filter *time.Time) {
 	s.DateFilter = filter
 }
 
-func recurseAndLoadTable(basePath string, kvStore *quanta.KVStore, tableBuffers map[string]*TableBuffer, curTable *Table) error {
+func recurseAndLoadTable(basePath string, kvStore *shared.KVStore, tableBuffers map[string]*TableBuffer, curTable *Table) error {
 
 	for _, v := range curTable.Attributes {
 		_, ok := tableBuffers[v.ChildTable]

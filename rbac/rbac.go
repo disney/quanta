@@ -5,7 +5,7 @@ import (
 	"reflect"
 
 	u "github.com/araddon/gou"
-	"github.com/disney/quanta/client"
+	"github.com/disney/quanta/shared"
 	"gopkg.in/yaml.v2"
 )
 
@@ -16,12 +16,12 @@ const (
 
 // AuthContext - Authorization Services API
 type AuthContext struct {
-	Store  *quanta.KVStore // KVStore client
+	Store  *shared.KVStore // KVStore client
 	UserID string          // User Identifier
 }
 
 // NewAuthContext - Construct API context for RBAC auth services
-func NewAuthContext(store *quanta.KVStore, userID string, createUser bool) (*AuthContext, error) {
+func NewAuthContext(store *shared.KVStore, userID string, createUser bool) (*AuthContext, error) {
 
 	if userID == "" {
 		return nil, fmt.Errorf("User ID not specified")
@@ -243,7 +243,7 @@ type User struct {
 	DBRoles       []DbRole `yaml:"dbRoles"`
 }
 
-func load(store *quanta.KVStore, userID string) (*User, error) {
+func load(store *shared.KVStore, userID string) (*User, error) {
 
 	b, err := store.Lookup(UserRoles, userID, reflect.String, false)
 	if err != nil {
@@ -289,7 +289,7 @@ func (user *User) setRole(role Role, database string) {
 	return
 }
 
-func (user *User) save(store *quanta.KVStore) error {
+func (user *User) save(store *shared.KVStore) error {
 
 	b, err := yaml.Marshal(&user)
 	if err != nil {

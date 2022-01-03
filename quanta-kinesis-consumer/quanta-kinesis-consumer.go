@@ -15,7 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/kinesis"
-	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 	"github.com/hamba/avro"
@@ -327,7 +326,7 @@ func (m *Main) Init() (int, error) {
 		return 0, err
 	}
 
-	clientConn := quanta.NewDefaultConnection()
+	clientConn := shared.NewDefaultConnection()
 	clientConn.ServicePort = m.Port
 	clientConn.Quorum = 3
 	if err := clientConn.Connect(consulClient); err != nil {

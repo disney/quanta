@@ -1,4 +1,4 @@
-package quanta
+package shared
 
 //
 // The Conn struct and related functions represents an abstraction layer for connections
@@ -14,7 +14,6 @@ import (
 	"fmt"
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
-	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/hashicorp/consul/api"
 	"github.com/stvp/rendezvous"
@@ -43,14 +42,14 @@ var (
 // tls - Use TLS if "true".
 // certFile - Certificate file location for TLS.
 // admin - Cluster adminitration API and health checks.
-// clientConn - GRPC client connection wrapper.
+// ClientConn - GRPC client connection wrapper.
 // err - Error channel for administration API failures.
 // stop - Channel for signaling cluster stop event.
 // consul - Handle to Consul cluster.
-// hashTable - Rendezvous hash table containing cluster members for sharding.
+// HashTable - Rendezvous hash table containing cluster members for sharding.
 // pollWait - Wait interval for node membership polling events.
 // nodes - List of nodes as currently registered with Consul.
-// nodeMap - Map cluster node keys to connection/client arrays.
+// NodeMap - Map cluster node keys to connection/client arrays.
 //
 type Conn struct {
 	ServiceName        string
@@ -122,7 +121,7 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 		m.clientConn = make([]*grpc.ClientConn, 1)
 		m.admin = make([]pb.ClusterAdminClient, 1)
 		m.clientConn[0], err = grpc.DialContext(ctx, "bufnet",
-			grpc.WithDialer(shared.TestDialer), grpc.WithInsecure())
+			grpc.WithDialer(TestDialer), grpc.WithInsecure())
 		if err != nil {
 			err = fmt.Errorf("Failed to dial bufnet: %v", err)
 		}
@@ -147,15 +146,15 @@ func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.Client
 	if m.ServicePort == 0 { // Test harness
 		ctx := context.Background()
 		nodeConns[0], err = grpc.DialContext(ctx, "bufnet",
-			grpc.WithDialer(shared.TestDialer), grpc.WithInsecure())
+			grpc.WithDialer(TestDialer), grpc.WithInsecure())
 		return
 	}
 
 	for i := 0; i < len(m.nodes); i++ {
 		if largeBuffer {
 			opts = append(opts,
-				grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(shared.GRPCRecvBufsize),
-					grpc.MaxCallSendMsgSize(shared.GRPCSendBufsize)))
+				grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(GRPCRecvBufsize),
+					grpc.MaxCallSendMsgSize(GRPCSendBufsize)))
 		}
 		if m.tls {
 			if m.certFile == "" {
@@ -180,24 +179,32 @@ func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.Client
 	return
 }
 
-/*
- * Return a list of nodes for a given shard key.  The returned node list is sorted in descending order
- * highest random weight first.
- */
-func (m *Conn) selectNodes(key interface{}) []pb.ClusterAdminClient {
+
+// SelectNodes - Return a list of nodes for a given shard key.  The returned node list is sorted in descending order
+// highest random weight first.
+// Resolve the node location(s) of a single key. If 'all' == true than all nodes are selected.
+func (m *Conn) SelectNodes(key interface{}, onlyPrimary, all bool) []int {
 
 	m.nodeMapLock.RLock()
 	defer m.nodeMapLock.RUnlock()
 
-	nodeKeys := m.hashTable.GetN(m.Replicas, shared.ToString(key))
-	selected := make([]pb.ClusterAdminClient, len(nodeKeys))
+	replicas := m.Replicas
+	if all && len(m.nodes) > 0 {
+		replicas = len(m.nodes)
+	}
+	if onlyPrimary {
+		replicas = 1
+	}
+
+	nodeKeys := m.hashTable.GetN(replicas, ToString(key))
+	indices := make([]int, replicas)
 
 	for i, v := range nodeKeys {
 		if j, ok := m.nodeMap[v]; ok {
-			selected[i] = m.admin[j]
+			indices[i] = j
 		}
 	}
-	return selected
+	return indices
 }
 
 // Disconnect - Terminate admin connections to all cluster nodes.
@@ -305,4 +312,8 @@ func (m *Conn) update() (err error) {
 // Nodes - Return list of active nodes.
 func (m *Conn) Nodes() []*api.ServiceEntry {
 	return m.nodes
+}
+
+func (m *Conn) ClientConnections() []*grpc.ClientConn {
+    return m.clientConn
 }

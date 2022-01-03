@@ -8,7 +8,6 @@ import (
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/schema"
 	"github.com/araddon/qlbridge/value"
-	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
@@ -58,7 +57,7 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort int) (*QuantaSource
 		}
 	}
 
-	clientConn := quanta.NewDefaultConnection()
+	clientConn := shared.NewDefaultConnection()
 	clientConn.ServicePort = servicePort
 	clientConn.Quorum = 3
 	if err := clientConn.Connect(consulClient); err != nil {

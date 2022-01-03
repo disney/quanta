@@ -147,7 +147,7 @@ func performCreate(consul *api.Client, table *shared.BasicTable, port int) error
 	defer shared.Unlock(consul, lock)
 
 	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
-	conn := quanta.NewDefaultConnection()
+	conn := shared.NewDefaultConnection()
 	conn.ServicePort = port
 	conn.Quorum = 3
 	if err := conn.Connect(consul); err != nil {
@@ -203,7 +203,7 @@ func (s *StatusCmd) Run(ctx *Context) error {
 		return fmt.Errorf("Error connecting to consul %v", err)
 	}
 	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", ctx.Port)
-	conn := quanta.NewDefaultConnection()
+	conn := shared.NewDefaultConnection()
 	conn.ServicePort = ctx.Port
 	conn.Quorum = 0
 	if err := conn.Connect(consulClient); err != nil {
@@ -275,14 +275,14 @@ func checkForChildDependencies(consul *api.Client, tableName, operation string) 
 func nukeData(consul *api.Client, port int, tableName, operation string, retainEnums bool) error {
 
 	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
-	conn := quanta.NewDefaultConnection()
+	conn := shared.NewDefaultConnection()
 	conn.ServicePort = port
 	conn.Quorum = 3
 	if err := conn.Connect(consul); err != nil {
 		log.Fatal(err)
 	}
 	services := quanta.NewBitmapIndex(conn, 3000000)
-	kvStore := quanta.NewKVStore(conn)
+	kvStore := shared.NewKVStore(conn)
 	err := services.TableOperation(tableName, operation)
 	if err != nil {
 		return fmt.Errorf("TableOperation error %v", err)

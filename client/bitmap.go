@@ -37,8 +37,8 @@ const (
 // batchMutex - Concurrency guard for batch state mutations.
 //
 type BitmapIndex struct {
-	*Conn
-	KVStore             *KVStore
+	*shared.Conn
+	KVStore             *shared.KVStore
 	client              []pb.BitmapIndexClient
 	batchSets           map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
 	batchClears         map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
@@ -56,11 +56,11 @@ type BitmapIndex struct {
 }
 
 // NewBitmapIndex - Initializer for client side API wrappers.
-func NewBitmapIndex(conn *Conn, batchSize int) *BitmapIndex {
+func NewBitmapIndex(conn *shared.Conn, batchSize int) *BitmapIndex {
 
-	clients := make([]pb.BitmapIndexClient, len(conn.clientConn))
-	for i := 0; i < len(conn.clientConn); i++ {
-		clients[i] = pb.NewBitmapIndexClient(conn.clientConn[i])
+	clients := make([]pb.BitmapIndexClient, len(conn.ClientConnections()))
+	for i := 0; i < len(conn.ClientConnections()); i++ {
+		clients[i] = pb.NewBitmapIndexClient(conn.ClientConnections()[i])
 	}
 	return &BitmapIndex{Conn: conn, batchSize: batchSize, client: clients}
 }
@@ -162,12 +162,12 @@ func (c *BitmapIndex) Update(index, field string, columnID uint64, rowIDOrValue 
 func (c *BitmapIndex) updateClient(client pb.BitmapIndexClient, req *pb.UpdateRequest,
 	clientIndex int) error {
 
-	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	ctx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
 	defer cancel()
 
 	if _, err := client.Update(ctx, req); err != nil {
 		return fmt.Errorf("%v.Update(_) = _, %v, node = %s", client, err,
-			c.Conn.clientConn[clientIndex].Target())
+			c.Conn.ClientConnections()[clientIndex].Target())
 	}
 	return nil
 }
@@ -294,7 +294,7 @@ func (c *BitmapIndex) SetValue(index, field string, columnID uint64, value int64
 func (c *BitmapIndex) BatchMutate(batch map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap,
 	clear bool) error {
 
-	batches := c.splitBitmapBatch(batch, c.Conn.Replicas)
+	batches := c.splitBitmapBatch(batch)
 	var eg errgroup.Group
 
 	for i, v := range batches {
@@ -314,7 +314,7 @@ func (c *BitmapIndex) BatchMutate(batch map[string]map[string]map[uint64]map[int
 func (c *BitmapIndex) batchMutate(clear bool, client pb.BitmapIndexClient,
 	batch map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap) error {
 
-	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	ctx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
 	defer cancel()
 	b := make([]*pb.IndexKVPair, 0)
 	i := 0
@@ -363,10 +363,10 @@ func (c *BitmapIndex) batchMutate(clear bool, client pb.BitmapIndexClient,
 // respective nodes.  For standard bitmaps, this shard key consists of [index/field/rowid/timestamp].
 //
 func (c *BitmapIndex) splitBitmapBatch(batch map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap,
-	replicas int) []map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap {
+		) []map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap {
 
-	c.Conn.nodeMapLock.RLock()
-	defer c.Conn.nodeMapLock.RUnlock()
+	//c.Conn.nodeMapLock.RLock()
+	//defer c.Conn.nodeMapLock.RUnlock()
 
 	batches := make([]map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap, len(c.client))
 	for i := range batches {
@@ -378,24 +378,22 @@ func (c *BitmapIndex) splitBitmapBatch(batch map[string]map[string]map[uint64]ma
 			for rowID, ts := range field {
 				for t, bitmap := range ts {
 					tm := time.Unix(0, t)
-					nodeKeys := c.Conn.hashTable.GetN(replicas, fmt.Sprintf("%s/%s/%d/%s",
-						indexName, fieldName, rowID, tm.Format(timeFmt)))
-					for _, nodeKey := range nodeKeys {
-						if i, ok := c.Conn.nodeMap[nodeKey]; ok {
-							if batches[i] == nil {
-								batches[i] = make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap)
-							}
-							if _, ok := batches[i][indexName]; !ok {
-								batches[i][indexName] = make(map[string]map[uint64]map[int64]*roaring64.Bitmap)
-							}
-							if _, ok := batches[i][indexName][fieldName]; !ok {
-								batches[i][indexName][fieldName] = make(map[uint64]map[int64]*roaring64.Bitmap)
-							}
-							if _, ok := batches[i][indexName][fieldName][rowID]; !ok {
-								batches[i][indexName][fieldName][rowID] = make(map[int64]*roaring64.Bitmap)
-							}
-							batches[i][indexName][fieldName][rowID][t] = bitmap
+					indices := c.SelectNodes(fmt.Sprintf("%s/%s/%d/%s", indexName, fieldName, rowID, tm.Format(timeFmt)),
+							false, false)
+					for _, i := range indices {
+						if batches[i] == nil {
+							batches[i] = make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap)
 						}
+						if _, ok := batches[i][indexName]; !ok {
+							batches[i][indexName] = make(map[string]map[uint64]map[int64]*roaring64.Bitmap)
+						}
+						if _, ok := batches[i][indexName][fieldName]; !ok {
+							batches[i][indexName][fieldName] = make(map[uint64]map[int64]*roaring64.Bitmap)
+						}
+						if _, ok := batches[i][indexName][fieldName][rowID]; !ok {
+							batches[i][indexName][fieldName][rowID] = make(map[int64]*roaring64.Bitmap)
+						}
+						batches[i][indexName][fieldName][rowID][t] = bitmap
 					}
 				}
 			}
@@ -410,7 +408,7 @@ func (c *BitmapIndex) splitBitmapBatch(batch map[string]map[string]map[uint64]ma
 //
 func (c *BitmapIndex) BatchSetValue(batch map[string]map[string]map[int64]*roaring64.BSI) error {
 
-	batches := c.splitBSIBatch(batch, c.Conn.Replicas)
+	batches := c.splitBSIBatch(batch)
 	var eg errgroup.Group
 	for i, v := range batches {
 		cl := c.client[i]
@@ -429,7 +427,7 @@ func (c *BitmapIndex) BatchSetValue(batch map[string]map[string]map[int64]*roari
 func (c *BitmapIndex) batchSetValue(client pb.BitmapIndexClient,
 	batch map[string]map[string]map[int64]*roaring64.BSI) error {
 
-	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	ctx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
 	defer cancel()
 	b := make([]*pb.IndexKVPair, 0)
 	i := 0
@@ -480,10 +478,10 @@ func (c *BitmapIndex) batchSetValue(client pb.BitmapIndexClient,
 // for a given field are co-located.
 //
 func (c *BitmapIndex) splitBSIBatch(batch map[string]map[string]map[int64]*roaring64.BSI,
-	replicas int) []map[string]map[string]map[int64]*roaring64.BSI {
+		) []map[string]map[string]map[int64]*roaring64.BSI {
 
-	c.Conn.nodeMapLock.RLock()
-	defer c.Conn.nodeMapLock.RUnlock()
+	//c.Conn.nodeMapLock.RLock()
+	//defer c.Conn.nodeMapLock.RUnlock()
 
 	batches := make([]map[string]map[string]map[int64]*roaring64.BSI, len(c.client))
 	for i := range batches {
@@ -494,21 +492,18 @@ func (c *BitmapIndex) splitBSIBatch(batch map[string]map[string]map[int64]*roari
 		for fieldName, field := range index {
 			for t, bsi := range field {
 				tm := time.Unix(0, t)
-				nodeKeys := c.Conn.hashTable.GetN(replicas, fmt.Sprintf("%s/%s/%s", indexName,
-					fieldName, tm.Format(timeFmt)))
-				for _, nodeKey := range nodeKeys {
-					if i, ok := c.Conn.nodeMap[nodeKey]; ok {
-						if batches[i] == nil {
-							batches[i] = make(map[string]map[string]map[int64]*roaring64.BSI)
-						}
-						if _, ok := batches[i][indexName]; !ok {
-							batches[i][indexName] = make(map[string]map[int64]*roaring64.BSI)
-						}
-						if _, ok := batches[i][indexName][fieldName]; !ok {
-							batches[i][indexName][fieldName] = make(map[int64]*roaring64.BSI)
-						}
-						batches[i][indexName][fieldName][t] = bsi
+				indices := c.SelectNodes(fmt.Sprintf("%s/%s/%s", indexName, fieldName, tm.Format(timeFmt)), false, false)
+				for _, i := range indices {
+					if batches[i] == nil {
+						batches[i] = make(map[string]map[string]map[int64]*roaring64.BSI)
 					}
+					if _, ok := batches[i][indexName]; !ok {
+						batches[i][indexName] = make(map[string]map[int64]*roaring64.BSI)
+					}
+					if _, ok := batches[i][indexName][fieldName]; !ok {
+						batches[i][indexName][fieldName] = make(map[int64]*roaring64.BSI)
+					}
+					batches[i][indexName][fieldName][t] = bsi
 				}
 			}
 		}
@@ -564,12 +559,12 @@ func (c *BitmapIndex) BulkClear(index, fromTime, toTime string,
 func (c *BitmapIndex) clearClient(client pb.BitmapIndexClient, req *pb.BulkClearRequest,
 	clientIndex int) error {
 
-	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	ctx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
 	defer cancel()
 
 	if _, err := client.BulkClear(ctx, req); err != nil {
 		return fmt.Errorf("%v.BulkClear(_) = _, %v, node = %s", client, err,
-			c.Conn.clientConn[clientIndex].Target())
+			c.ClientConnections()[clientIndex].Target())
 	}
 	return nil
 }
@@ -583,8 +578,7 @@ func (c *BitmapIndex) CheckoutSequence(indexName, pkField string, ts time.Time,
 	req := &pb.CheckoutSequenceRequest{Index: indexName, PkField: pkField, Time: ts.UnixNano(),
 		ReservationSize: uint32(reservationSize)}
 
-	nodeKeys := c.Conn.hashTable.GetN(c.Conn.Replicas, fmt.Sprintf("%s/%s/%s", indexName,
-		pkField, ts.Format(timeFmt)))
+	indices := c.SelectNodes(fmt.Sprintf("%s/%s/%s", indexName, pkField, ts.Format(timeFmt)), true, false)
 
 	/*
 	 * Make sure to target the node with the true maximum column ID for the table.
@@ -593,26 +587,23 @@ func (c *BitmapIndex) CheckoutSequence(indexName, pkField string, ts time.Time,
 	 * In this case, the timestamp is truncated with timeFmt and it's nano value is
 	 * added to the sequence start value on the server and returned to the client..
 	 */
-	if clientIdx, ok := c.Conn.nodeMap[nodeKeys[0]]; ok {
-		res, err := c.sequencerClient(c.client[clientIdx], req, clientIdx)
-		if err != nil {
-			return nil, err
-		}
-		return shared.NewSequencer(res.Start, int(res.Count)), nil
+	res, err := c.sequencerClient(c.client[indices[0]], req, indices[0])
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("Could not locate node for key %v", nodeKeys[0])
+	return shared.NewSequencer(res.Start, int(res.Count)), nil
 }
 
 // Send projection processing request to a specific node.
 func (c *BitmapIndex) sequencerClient(client pb.BitmapIndexClient, req *pb.CheckoutSequenceRequest,
 	clientIndex int) (result *pb.CheckoutSequenceResponse, err error) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	ctx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
 	defer cancel()
 
 	if result, err = client.CheckoutSequence(ctx, req); err != nil {
 		return nil, fmt.Errorf("%v.CheckoutSequence(_) = _, %v, node = %s", client, err,
-			c.Conn.clientConn[clientIndex].Target())
+			c.ClientConnections()[clientIndex].Target())
 	}
 	return result, nil
 }
@@ -743,12 +734,12 @@ func (c *BitmapIndex) TableOperation(table, operation string) error {
 func (c *BitmapIndex) tableOperationClient(client pb.BitmapIndexClient, req *pb.TableOperationRequest,
 	clientIndex int) error {
 
-	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	ctx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
 	defer cancel()
 
 	if _, err := client.TableOperation(ctx, req); err != nil {
 		return fmt.Errorf("%v.TableOperation(_) = _, %v, node = %s", client, err,
-			c.Conn.clientConn[clientIndex].Target())
+			c.ClientConnections()[clientIndex].Target())
 	}
 	return nil
 }

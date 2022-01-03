@@ -5,7 +5,7 @@ import (
 	"fmt"
 	u "github.com/araddon/gou"
 	sch "github.com/araddon/qlbridge/schema"
-    "github.com/disney/quanta/shared"
+	"github.com/disney/quanta/shared"
 	"runtime"
 	"sync"
 	"time"

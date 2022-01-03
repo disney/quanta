@@ -19,7 +19,7 @@ type StringHashBSIMapper struct {
 	DefaultMapper
 }
 
-// NewStringHashBSIMapper - Construct a High cardinality, partitioned string mapping.  Strings are stored on the same 
+// NewStringHashBSIMapper - Construct a High cardinality, partitioned string mapping.  Strings are stored on the same
 // node as their corresponding BSI.
 func NewStringHashBSIMapper(conf map[string]string) (Mapper, error) {
 	return StringHashBSIMapper{DefaultMapper: DefaultMapper{StringHashBSI}}, nil

@@ -66,7 +66,7 @@ func (c *KVStore) splitBatch(batch map[interface{}]interface{}) []map[interface{
 	}
 	for k, v := range batch {
 		indices := c.SelectNodes(ToString(k), false, false)
-		for _, i := range indices  {
+		for _, i := range indices {
 			batches[i][k] = v
 		}
 	}
@@ -142,7 +142,7 @@ func (c *KVStore) Lookup(indexPath string, k interface{}, valueType reflect.Kind
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
-	
+
 	key := k
 	if pathIsKey {
 		key = indexPath
@@ -213,7 +213,7 @@ func (c *KVStore) BatchLookup(indexPath string, batch map[interface{}]interface{
 }
 
 func (c *KVStore) batchLookup(client pb.KVStoreClient, index string,
-		batch map[interface{}]interface{}) (map[interface{}]interface{}, error) {
+	batch map[interface{}]interface{}) (map[interface{}]interface{}, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()

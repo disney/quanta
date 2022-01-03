@@ -8,7 +8,6 @@ import (
 	"github.com/araddon/qlbridge/expr"
 	"github.com/araddon/qlbridge/value"
 	"github.com/araddon/qlbridge/vm"
-	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/shared"
 	"github.com/json-iterator/go"
 	"github.com/xitongsys/parquet-go/reader"
@@ -37,7 +36,7 @@ const (
 // Session - State for session (non-threadsafe)
 type Session struct {
 	BasePath     string // path to schema directory
-	Client       *quanta.BitmapIndex
+	Client       *shared.BitmapIndex
 	StringIndex  *shared.StringSearch
 	KVStore      *shared.KVStore
 	TableBuffers map[string]*TableBuffer
@@ -131,7 +130,7 @@ func OpenSession(path, name string, nested bool, conn *shared.Conn) (*Session, e
 	s := &Session{BasePath: path, TableBuffers: tableBuffers, Nested: nested}
 	s.StringIndex = shared.NewStringSearch(conn, 1000)
 	s.KVStore = kvStore
-	s.Client = quanta.NewBitmapIndex(conn, 3000000)
+	s.Client = shared.NewBitmapIndex(conn, 3000000)
 
 	s.Client.KVStore = s.KVStore
 	s.CreatedAt = time.Now().UTC()

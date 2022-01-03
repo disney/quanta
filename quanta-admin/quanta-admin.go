@@ -4,7 +4,6 @@ package main
 import (
 	"fmt"
 	"github.com/alecthomas/kong"
-	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	"log"
@@ -153,7 +152,7 @@ func performCreate(consul *api.Client, table *shared.BasicTable, port int) error
 	if err := conn.Connect(consul); err != nil {
 		log.Fatal(err)
 	}
-	services := quanta.NewBitmapIndex(conn, 3000000)
+	services := shared.NewBitmapIndex(conn, 3000000)
 
 	err := shared.DeleteTable(consul, table.Name)
 	if err != nil {
@@ -281,7 +280,7 @@ func nukeData(consul *api.Client, port int, tableName, operation string, retainE
 	if err := conn.Connect(consul); err != nil {
 		log.Fatal(err)
 	}
-	services := quanta.NewBitmapIndex(conn, 3000000)
+	services := shared.NewBitmapIndex(conn, 3000000)
 	kvStore := shared.NewKVStore(conn)
 	err := services.TableOperation(tableName, operation)
 	if err != nil {

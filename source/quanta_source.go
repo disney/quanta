@@ -38,7 +38,6 @@ type QuantaSource struct {
 	colIndex       map[string]int
 
 	// Quanta specific after here
-	//result         *pcli.QueryResult
 	lastResultPos int
 	baseDir       string
 	sessionPool   *core.SessionPool

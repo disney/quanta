@@ -1,7 +1,7 @@
-package quanta
+package shared
 
 //
-// Query interface API.
+// Query interface API contains methods called "client side".
 //
 
 import (
@@ -10,7 +10,6 @@ import (
 	"github.com/RoaringBitmap/roaring/roaring64"
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
-	"github.com/disney/quanta/shared"
 	"golang.org/x/sync/errgroup"
 	"time"
 )
@@ -49,15 +48,15 @@ func (c *BitmapIndex) query(query *pb.BitmapQuery) (*roaring64.Bitmap, error) {
 		}
 	}
 
-	resultChan := make(chan *shared.IntermediateResult, 100)
-	resultsMap := make(map[string]*shared.IntermediateResult)
+	resultChan := make(chan *IntermediateResult, 100)
+	resultsMap := make(map[string]*IntermediateResult)
 
 	var eg errgroup.Group
 
 	// Break up the query and group fragments by index
 	indexGroups := c.groupQueryFragmentsByIndex(query)
 	for k, v := range indexGroups {
-		ir := shared.NewIntermediateResult(k)
+		ir := NewIntermediateResult(k)
 		// Iterate query fragments looking for join criteria
 		for _, f := range v.Query {
 			if f.Operation == pb.QueryFragment_INNER_JOIN {
@@ -182,12 +181,12 @@ func (c *BitmapIndex) query(query *pb.BitmapQuery) (*roaring64.Bitmap, error) {
 // Perform query processing for a group of query predicates (fragments) for a given index.
 // Processing is parallelized across nodes.
 //
-func (c *BitmapIndex) queryGroup(index string, query *pb.BitmapQuery) (*shared.IntermediateResult, error) {
+func (c *BitmapIndex) queryGroup(index string, query *pb.BitmapQuery) (*IntermediateResult, error) {
 
 	resultChan := make(chan *pb.QueryResult, 100)
 	var eg errgroup.Group
 
-	gr := shared.NewIntermediateResult(index)
+	gr := NewIntermediateResult(index)
 
 	// Send the same query to each node
 	for i, n := range c.client {
@@ -208,10 +207,10 @@ func (c *BitmapIndex) queryGroup(index string, query *pb.BitmapQuery) (*shared.I
 	}
 	close(resultChan)
 
-	ra := make([]*shared.IntermediateResult, 0)
+	ra := make([]*IntermediateResult, 0)
 	sa := make(map[string][]*roaring64.Bitmap)
 	for rs := range resultChan {
-		ir := shared.NewIntermediateResult(index)
+		ir := NewIntermediateResult(index)
 		if err := ir.UnmarshalAndAdd(rs); err != nil {
 			return nil, err
 		}
@@ -253,7 +252,7 @@ func (c *BitmapIndex) queryGroup(index string, query *pb.BitmapQuery) (*shared.I
 	for i, v := range ra {
 		// Perform stratified sampling (if applicable) and add to operational list.  Samples are collapsed client side.
 		if v.SamplePct > 0 {
-			samples = shared.PerformStratifiedSampling(samples, v.SamplePct)
+			samples = PerformStratifiedSampling(samples, v.SamplePct)
 			for _, x := range samples {
 				if v.SampleIsUnion {
 					v.AddUnion(x)
@@ -314,7 +313,7 @@ func (c *BitmapIndex) queryClient(client pb.BitmapIndexClient, q *pb.BitmapQuery
 	   u.Debugf("vvv query dump:\n%s\n\n", string(d))
 	*/
 
-	ctx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
+	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
 
 	result, err := client.Query(ctx, q)
@@ -325,19 +324,10 @@ func (c *BitmapIndex) queryClient(client pb.BitmapIndexClient, q *pb.BitmapQuery
 	return result, nil
 }
 
-// BitmapQueryResponse - Contains query results
-type BitmapQueryResponse struct {
-	Success      bool
-	ErrorMessage string
-	Value        int64
-	Count        uint64
-	Results      *roaring64.Bitmap
-}
-
 // Query - Entrypoint for count/result queries
-func (c *BitmapIndex) Query(query *shared.BitmapQuery) (*shared.BitmapQueryResponse, error) {
+func (c *BitmapIndex) Query(query *BitmapQuery) (*BitmapQueryResponse, error) {
 
-	response := &shared.BitmapQueryResponse{}
+	response := &BitmapQueryResponse{}
 	var err error
 	if response.Results, err = c.query(query.ToProto()); err != nil {
 		response.ErrorMessage = fmt.Sprintf("%v", err)
@@ -438,113 +428,12 @@ func (c *BitmapIndex) Join(driverIndex string, fklist []string, fromTime, toTime
 func (c *BitmapIndex) joinClient(client pb.BitmapIndexClient, req *pb.JoinRequest,
 	clientIndex int) (*pb.JoinResponse, error) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
+	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
 
 	result, err := client.Join(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("%v.Join(_) = _, %v, node = %s", client, err,
-			c.ClientConnections()[clientIndex].Target())
-	}
-	return result, nil
-}
-
-//
-// Projection - Send fields and target set for a given index to cluster for projection processing.
-//
-func (c *BitmapIndex) Projection(index string, fields []string, fromTime, toTime int64,
-	foundSet *roaring64.Bitmap) (map[string]*roaring64.BSI, map[string]map[uint64]*roaring64.Bitmap, error) {
-
-	bsiResults := make(map[string][]*roaring64.BSI, 0)
-	bitmapResults := make(map[string]map[uint64][]*roaring64.Bitmap, 0)
-
-	data, err := foundSet.MarshalBinary()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	req := &pb.ProjectionRequest{Index: index, Fields: fields, FromTime: fromTime,
-		ToTime: toTime, FoundSet: data}
-
-	resultChan := make(chan *pb.ProjectionResponse, 100)
-	var eg errgroup.Group
-
-	// Send the same projection request to each node
-	for i, n := range c.client {
-		client := n
-		clientIndex := i
-		eg.Go(func() error {
-			pr, err := c.projectionClient(client, req, clientIndex)
-			if err != nil {
-				return err
-			}
-			resultChan <- pr
-			return nil
-		})
-	}
-
-	if err := eg.Wait(); err != nil {
-		return nil, nil, err
-	}
-	close(resultChan)
-
-	for rs := range resultChan {
-		for _, v := range rs.GetBsiResults() {
-			bsi, ok := bsiResults[v.Field]
-			if !ok {
-				bsi = make([]*roaring64.BSI, 0)
-			}
-
-			newBsi := roaring64.NewDefaultBSI()
-			if err := newBsi.UnmarshalBinary(v.Bitmaps); err != nil {
-				return nil, nil, fmt.Errorf("Error unmarshalling BSI projection results - %v", err)
-			}
-			bsiResults[v.Field] = append(bsi, newBsi)
-		}
-		for _, v := range rs.GetBitmapResults() {
-			if _, ok := bitmapResults[v.Field]; !ok {
-				bitmapResults[v.Field] = make(map[uint64][]*roaring64.Bitmap, 0)
-			}
-			field := bitmapResults[v.Field]
-			bm, ok := field[v.RowId]
-			if !ok {
-				bm = make([]*roaring64.Bitmap, 0)
-			}
-			newBm := roaring64.NewBitmap()
-			if err := newBm.UnmarshalBinary(v.Bitmap); err != nil {
-				return nil, nil, fmt.Errorf("Error unmarshalling bitmap projection results - %v", err)
-			}
-			field[v.RowId] = append(bm, newBm)
-		}
-	}
-
-	// Aggregate the per node results
-	aggbsiResults := make(map[string]*roaring64.BSI)
-	for k, v := range bsiResults {
-		bsi := roaring64.NewDefaultBSI()
-		bsi.ParOr(0, v...)
-		aggbsiResults[k] = bsi
-	}
-	aggbitmapResults := make(map[string]map[uint64]*roaring64.Bitmap)
-	for k, v := range bitmapResults {
-		aggbitmapResults[k] = make(map[uint64]*roaring64.Bitmap)
-		for k2, v2 := range v {
-			aggbitmapResults[k][k2] = roaring64.ParOr(0, v2...)
-		}
-	}
-	return aggbsiResults, aggbitmapResults, nil
-}
-
-// Send projection processing request to a specific node.
-func (c *BitmapIndex) projectionClient(client pb.BitmapIndexClient, req *pb.ProjectionRequest,
-	clientIndex int) (*pb.ProjectionResponse, error) {
-
-	ctx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
-	defer cancel()
-
-	result, err := client.Projection(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("%v.Projection(_) = _, %v, node = %s", client, err,
 			c.ClientConnections()[clientIndex].Target())
 	}
 	return result, nil

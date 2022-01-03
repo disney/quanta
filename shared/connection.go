@@ -179,7 +179,6 @@ func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.Client
 	return
 }
 
-
 // SelectNodes - Return a list of nodes for a given shard key.  The returned node list is sorted in descending order
 // highest random weight first.
 // Resolve the node location(s) of a single key. If 'all' == true than all nodes are selected.
@@ -314,6 +313,7 @@ func (m *Conn) Nodes() []*api.ServiceEntry {
 	return m.nodes
 }
 
+// ClientConnections - Return client connections.
 func (m *Conn) ClientConnections() []*grpc.ClientConn {
-    return m.clientConn
+	return m.clientConn
 }

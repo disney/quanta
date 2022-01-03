@@ -15,7 +15,6 @@ import (
 	"github.com/araddon/qlbridge/lex"
 	"github.com/araddon/qlbridge/plan"
 	"github.com/araddon/qlbridge/rel"
-	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 )
@@ -381,7 +380,7 @@ func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitma
 		return nil, false, err
 	}
 
-	client := quanta.NewBitmapIndex(conn, 3000000)
+	client := shared.NewBitmapIndex(conn, 3000000)
 	defer cleanup(client)
 
 	joinCols := make([]string, 0)
@@ -408,7 +407,7 @@ func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitma
 
 }
 
-func cleanup(client *quanta.BitmapIndex) error {
+func cleanup(client *shared.BitmapIndex) error {
 
 	if err := client.Flush(); err != nil {
 		u.Errorf("%v", err)

@@ -1467,7 +1467,7 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 
 // Call Client.Update - TODO, This fuctionality should be merged with PutRow()
 func (m *SQLToQuanta) updateRow(table string, columnID uint64, updValueMap map[string]*rel.ValueColumn,
-		timePartition time.Time) (int64, error) {
+	timePartition time.Time) (int64, error) {
 
 	tbuf, ok := m.conn.TableBuffers[table]
 	if !ok {

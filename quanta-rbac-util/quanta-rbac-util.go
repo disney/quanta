@@ -3,11 +3,12 @@ package main
 import (
 	"fmt"
 	"github.com/disney/quanta/client"
-	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/rbac"
+	"github.com/disney/quanta/shared"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
 	"os"
+	"strings"
 )
 
 // Variables to identify the build
@@ -45,7 +46,7 @@ func main() {
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	main := NewMain()
-	main.UserID = *userID
+	main.UserID = strings.ToUpper(*userID)
 	main.Port = int(*port)
 
 	fmt.Printf("User ID %v.\n", main.UserID)

@@ -11,6 +11,10 @@ if [ -n "$NO_CHECKPOINTER" ]
 then
     BOOL_FLAGS=${BOOL_FLAGS}" --no-checkpoint-db"
 fi
+if [ -n "$CHECKPOINT_TABLE" ]
+then
+    BOOL_FLAGS=${BOOL_FLAGS}" --checkpoint-table=${CHECKPOINT_TABLE}"
+fi
 if [ -n "$LOG_LEVEL" ]
 then
     BOOL_FLAGS=${BOOL_FLAGS}" --log-level=${LOG_LEVEL}"
@@ -30,5 +34,9 @@ fi
 if [ -n "$ASSUME_ROLE_ARN" ]
 then
     BOOL_FLAGS=${BOOL_FLAGS}" --assume-role-arn=${ASSUME_ROLE_ARN}"
+	if [ -n "$ASSUME_ROLE_ARN_REGION" ]
+	then
+    	BOOL_FLAGS=${BOOL_FLAGS}" --assume-role-arn-region=${ASSUME_ROLE_ARN_REGION}"
+	fi
 fi
 exec /usr/bin/quanta-kinesis-consumer ${STREAM} ${INDEX} ${REGION} ${BOOL_FLAGS}

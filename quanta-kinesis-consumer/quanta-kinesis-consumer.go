@@ -15,9 +15,9 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/kinesis"
-	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
+	"github.com/disney/quanta/client"
 	"github.com/hamba/avro"
 	"github.com/harlow/kinesis-consumer"
 	store "github.com/harlow/kinesis-consumer/store/ddb"
@@ -44,6 +44,7 @@ const (
 	//partitionChannelSize = 10000
 	partitionChannelSize = 2000000
 	batchSize            = 100000
+	appName				 = "Kinesis-Consumer"
 )
 
 // Main strct defines command line arguments variables and various global meta-data associated with record loads.
@@ -68,7 +69,9 @@ type Main struct {
 	InitialPos    string
 	IsAvro        bool
 	CheckpointDB  bool
+	CheckpointTable string
 	AssumeRoleArn string
+	AssumeRoleArnRegion string
 	Deaggregate   bool
 	partitionMap  map[string]*Partition
 	partitionLock sync.Mutex
@@ -108,17 +111,19 @@ func main() {
 	port := app.Flag("port", "Port number for service").Default("4000").Int32()
 	bufSize := app.Flag("buf-size", "Buffer size").Default("1000000").Int32()
 	withAssumeRoleArn := app.Flag("assume-role-arn", "Assume role ARN.").String()
+	withAssumeRoleArnRegion := app.Flag("assume-role-arn-region", "Assume role ARN region.").String()
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 	trimHorizon := app.Flag("trim-horizon", "Set initial position to TRIM_HORIZON").Bool()
 	noCheckpointer := app.Flag("no-checkpoint-db", "Disable DynamoDB checkpointer.").Bool()
+	checkpointTable := app.Flag("checkpoint-table", "DynamoDB checkpoint table name.").String()
 	avroPayload := app.Flag("avro-payload", "Payload is Avro.").Bool()
 	deaggregate := app.Flag("deaggregate", "Incoming payload records are aggregated.").Bool()
 	logLevel := app.Flag("log-level", "Log Level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
-	shared.InitLogging(*logLevel, *environment, "Kinesis-Consumer", Version, "Quanta")
+	shared.InitLogging(*logLevel, *environment, appName, Version, "Quanta")
 
 	builtins.LoadAllBuiltins()
 
@@ -150,10 +155,23 @@ func main() {
 	} else {
 		main.CheckpointDB = true
 		log.Printf("Checkpoint DB enabled.")
+		if *checkpointTable != "" {
+			main.CheckpointTable = *checkpointTable
+		} else {
+			main.CheckpointTable = main.Index
+		}
+		log.Printf("DynamoDB checkpoin table name [%s]", main.CheckpointTable)
 	}
 	if *withAssumeRoleArn != "" {
 		main.AssumeRoleArn = *withAssumeRoleArn
 		log.Printf("With assume role ARN [%s]", main.AssumeRoleArn)
+		if *withAssumeRoleArnRegion != "" {
+			main.AssumeRoleArnRegion = *withAssumeRoleArnRegion
+			log.Printf("With assume role ARN region [%s]", main.AssumeRoleArnRegion)
+		} else {
+			main.AssumeRoleArnRegion = *region
+			log.Printf("With assume role ARN region [%s]", main.AssumeRoleArnRegion)
+		}
 	}
 	if *avroPayload {
 		main.IsAvro = true
@@ -357,7 +375,7 @@ func (m *Main) Init() (int, error) {
 		creds := stscreds.NewCredentials(sess, m.AssumeRoleArn)
 		config := aws.NewConfig().
 			WithCredentials(creds).
-			WithRegion(m.Region).
+			WithRegion(m.AssumeRoleArnRegion).
 			WithMaxRetries(10)
 		kc = kinesis.New(sess, config)
 	} else {
@@ -372,7 +390,7 @@ func (m *Main) Init() (int, error) {
 	shardCount := len(shout.Shards)
 	dynamoDbClient := dynamodb.New(sess)
 
-	db, err := store.New(m.Index, m.Index, store.WithDynamoClient(dynamoDbClient), store.WithRetryer(&QuantaRetryer{}))
+	db, err := store.New(appName, m.CheckpointTable, store.WithDynamoClient(dynamoDbClient), store.WithRetryer(&QuantaRetryer{}))
 	if err != nil {
 		u.Errorf("checkpoint storage initialization error: %v", err)
 		os.Exit(1)

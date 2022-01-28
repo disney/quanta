@@ -79,12 +79,6 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort int) (*QuantaSource
 	return m, nil
 }
 
-// GetSessionPool - Return underlying session pool
-func (m *QuantaSource) GetSessionPool() *core.SessionPool {
-
-	return m.sessionPool
-}
-
 // Init initilize this db
 func (m *QuantaSource) Init() {
 }
@@ -114,12 +108,7 @@ func (m *QuantaSource) Open(tableName string) (schema.Conn, error) {
 		u.Errorf("Could not find table for '%s'.'%s'", m.Schema.Name, tableName)
 		return nil, fmt.Errorf("Could not find '%v'.'%v' schema)", m.Schema.Name, tableName)
 	}
-
-	conn, err := m.sessionPool.Borrow(tableName)
-	if err != nil {
-		return nil, fmt.Errorf("Error opening Quanta session %v", err)
-	}
-	return NewSQLToQuanta(m, tbl, conn), nil
+	return NewSQLToQuanta(m, tbl), nil
 }
 
 // Table by name
@@ -129,6 +118,7 @@ func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error opening connection for table %s - %v", table, err)
 	}
+	defer m.sessionPool.Return(table, conn)
 	tb, found := conn.TableBuffers[table]
 	if !found {
 		return nil, fmt.Errorf("cannot find table buffer for %s", table)
@@ -179,7 +169,6 @@ func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 		rows = append(rows, m.AsRow(v))
 	}
 	tbl.SetRows(rows)
-	m.sessionPool.Return(table, conn)
 	return tbl, nil
 }
 

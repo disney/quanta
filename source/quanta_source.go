@@ -79,6 +79,11 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort int) (*QuantaSource
 	return m, nil
 }
 
+// GetSessionPool - Return the underlying session pool instance.
+func (m *QuantaSource) GetSessionPool() *core.SessionPool  {
+	return m.sessionPool
+}
+
 // Init initilize this db
 func (m *QuantaSource) Init() {
 }

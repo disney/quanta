@@ -17,7 +17,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
-	"github.com/disney/quanta/client"
 	"github.com/hamba/avro"
 	"github.com/harlow/kinesis-consumer"
 	store "github.com/harlow/kinesis-consumer/store/ddb"

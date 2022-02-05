@@ -6,7 +6,10 @@ package shared
 // in the cluster and other administrative functions.  It does not implement a specific
 // business API but provides a "base class" of functionality for doing so.  It supports the
 // concept of a "masterless" architecture where each node is an active peer.  Cluster
-// coordination is provided by a separate 3-5 node Consul cluster.
+// coordination is provided by a separate 3 node Consul cluster.  Is is important to note
+// that a Conn instance represents a group of connections to all of the data nodes in the
+// corresponding cluster.  A Conn can be used not only for communication from external 
+// sources to the cluster, but for inter-node communication as well.
 //
 
 import (
@@ -65,7 +68,7 @@ type Conn struct {
 	err                chan error
 	stop               chan struct{}
 	Consul             *api.Client
-	hashTable          *rendezvous.Table
+	HashTable          *rendezvous.Table
 	waitIndex          uint64
 	pollWait           time.Duration
 	nodes              []*api.ServiceEntry
@@ -97,12 +100,12 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 				return fmt.Errorf("client: can't create Consul API client: %s", err)
 			}
 		}
-		err = m.update()
+		err = m.Update()
 		if err != nil {
 			return fmt.Errorf("node: can't fetch %s services list: %s", m.ServiceName, err)
 		}
 
-		if m.hashTable == nil {
+		if m.HashTable == nil {
 			return fmt.Errorf("node: uninitialized %s services list: %s", m.ServiceName, err)
 		}
 
@@ -112,9 +115,9 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 		}
 		m.clientConn, err = m.CreateNodeConnections(true)
 		m.admin = make([]pb.ClusterAdminClient, len(m.nodes))
-		go m.poll()
+		go m.Poll()
 	} else {
-		m.hashTable = rendezvous.New([]string{"test"})
+		m.HashTable = rendezvous.New([]string{"test"})
 		m.nodeMap = make(map[string]int, 1)
 		m.nodeMap["test"] = 0
 		ctx := context.Background()
@@ -195,7 +198,7 @@ func (m *Conn) SelectNodes(key interface{}, onlyPrimary, all bool) []int {
 		replicas = 1
 	}
 
-	nodeKeys := m.hashTable.GetN(replicas, ToString(key))
+	nodeKeys := m.HashTable.GetN(replicas, ToString(key))
 	indices := make([]int, replicas)
 
 	for i, v := range nodeKeys {
@@ -243,7 +246,7 @@ func printStatus(client pb.ClusterAdminClient) {
 }
 
 // Poll Consul for node membership list.
-func (m *Conn) poll() {
+func (m *Conn) Poll() {
 	var err error
 
 	for {
@@ -256,7 +259,7 @@ func (m *Conn) poll() {
 			}
 			return
 		case <-time.After(m.pollWait):
-			err = m.update()
+			err = m.Update()
 			if err != nil {
 				u.Errorf("[client %s] error: %s", m.ServiceName, err)
 			}
@@ -264,9 +267,9 @@ func (m *Conn) poll() {
 	}
 }
 
-// update blocks until the service list changes or until the Consul agent's
+// Update blocks until the service list changes or until the Consul agent's
 // timeout is reached (10 minutes by default).
-func (m *Conn) update() (err error) {
+func (m *Conn) Update() (err error) {
 
 	opts := &api.QueryOptions{WaitIndex: m.waitIndex}
 	serviceEntries, meta, err := m.Consul.Health().Service(m.ServiceName, "", true, opts)
@@ -302,7 +305,7 @@ func (m *Conn) update() (err error) {
 			}
 		}
 	}
-	m.hashTable = rendezvous.New(ids)
+	m.HashTable = rendezvous.New(ids)
 	m.waitIndex = meta.LastIndex
 
 	return nil

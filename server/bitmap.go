@@ -40,7 +40,7 @@ const (
 // tableCache - Schema metadata cache (essentially same YAML file used by loader).
 //
 type BitmapIndex struct {
-	*EndPoint
+	*Node
 	expireDays      int
 	bitmapCache     map[string]map[string]map[uint64]map[int64]*StandardBitmap
 	bitmapCacheLock sync.RWMutex
@@ -56,14 +56,14 @@ type BitmapIndex struct {
 }
 
 // NewBitmapIndex - Construct and initialize bitmap server state.
-func NewBitmapIndex(endPoint *EndPoint, expireDays int) *BitmapIndex {
+func NewBitmapIndex(node *Node, expireDays int) *BitmapIndex {
 
-	e := &BitmapIndex{EndPoint: endPoint}
+	e := &BitmapIndex{Node: node}
 	e.expireDays = expireDays
 	e.tableCache = make(map[string]*shared.BasicTable)
-	configPath := e.EndPoint.dataDir + sep + "config"
+	configPath := e.dataDir + sep + "config"
 	schemaPath := ""          // this is normally an empty string forcing schema to come from Consul
-	if e.EndPoint.Port == 0 { // In-memory test harness
+	if e.ServicePort == 0 { // In-memory test harness
 		schemaPath = configPath // read schema from local config yaml
 		_ = filepath.Walk(configPath,
 			func(path string, info os.FileInfo, err error) error {
@@ -88,7 +88,7 @@ func NewBitmapIndex(endPoint *EndPoint, expireDays int) *BitmapIndex {
 	} else { // Normal (from Consul) initialization
 		var tables []string
 		err := shared.Retry(5, 2*time.Second, func() (err error) {
-			tables, err = shared.GetTables(e.EndPoint.consul)
+			tables, err = shared.GetTables(e.consul)
 			return
 		})
 		if err != nil {
@@ -96,7 +96,7 @@ func NewBitmapIndex(endPoint *EndPoint, expireDays int) *BitmapIndex {
 			os.Exit(1)
 		}
 		for _, table := range tables {
-			if t, err := shared.LoadSchema(schemaPath, table, e.EndPoint.consul); err != nil {
+			if t, err := shared.LoadSchema(schemaPath, table, e.consul); err != nil {
 				u.Errorf("could not load schema for %s - %v", table, err)
 				os.Exit(1)
 			} else {
@@ -106,7 +106,7 @@ func NewBitmapIndex(endPoint *EndPoint, expireDays int) *BitmapIndex {
 		}
 	}
 
-	pb.RegisterBitmapIndexServer(e.EndPoint.server, e)
+	pb.RegisterBitmapIndexServer(e.server, e)
 	return e
 }
 
@@ -650,7 +650,7 @@ func (m *BitmapIndex) truncateCaches(index string) {
 // Iterate standard bitmap cache looking for potential writes (dirty data)
 func (m *BitmapIndex) checkPersistBitmapCache(forceSync bool) {
 
-	if m.Port == 0 {
+	if m.ServicePort == 0 {
 		return // test mode, persistence disabled
 	}
 
@@ -693,7 +693,7 @@ func (m *BitmapIndex) checkPersistBitmapCache(forceSync bool) {
 // Iterate BSI cache looking for potential writes (dirty data)
 func (m *BitmapIndex) checkPersistBSICache(forceSync bool) {
 
-	if m.Port == 0 {
+	if m.ServicePort == 0 {
 		return // test mode persistence disabled
 	}
 
@@ -909,7 +909,7 @@ func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperation
 
 	switch req.Operation {
 	case pb.TableOperationRequest_DEPLOY:
-		if table, err := shared.LoadSchema("", req.Table, m.EndPoint.consul); err != nil {
+		if table, err := shared.LoadSchema("", req.Table, m.consul); err != nil {
 			u.Errorf("could not load schema for %s - %v", req.Table, err)
 			os.Exit(1)
 		} else {

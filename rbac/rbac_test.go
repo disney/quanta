@@ -24,15 +24,13 @@ func (suite *RBACTestSuite) SetupSuite() {
 	var err error
 	u.SetupLogging("debug")
 
-	endpoint, err := server.NewEndPoint("./testdata", nil)
+	node, err := server.NewNode(0, "", "./testdata", nil)
 	assert.NoError(suite.T(), err)
-	assert.NotNil(suite.T(), endpoint)
-	endpoint.Port = 0 // Enable in memory instance
-	endpoint.SetNode(server.NewDummyNode(endpoint))
-	suite.server, err = server.NewKVStore(endpoint)
+	assert.NotNil(suite.T(), node)
+	suite.server, err = server.NewKVStore(node)
 	assert.NoError(suite.T(), err)
 	go func() {
-		endpoint.Start()
+		node.Start()
 	}()
 
 	conn := shared.NewDefaultConnection()

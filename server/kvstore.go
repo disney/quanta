@@ -20,18 +20,18 @@ import (
 
 // KVStore - Server side state for KVStore service.
 type KVStore struct {
-	*EndPoint
+	*Node
 	storeCache     map[string]*pogreb.DB
 	storeCacheLock sync.RWMutex
 	enumGuard      singleflight.Group
 }
 
 // NewKVStore - Construct server side state.
-func NewKVStore(endPoint *EndPoint) (*KVStore, error) {
+func NewKVStore(node *Node) (*KVStore, error) {
 
-	e := &KVStore{EndPoint: endPoint}
+	e := &KVStore{Node: node}
 	e.storeCache = make(map[string]*pogreb.DB)
-	pb.RegisterKVStoreServer(endPoint.server, e)
+	pb.RegisterKVStoreServer(node.server, e)
 	return e, nil
 }
 
@@ -39,7 +39,7 @@ func NewKVStore(endPoint *EndPoint) (*KVStore, error) {
 func (m *KVStore) Init() error {
 
 	dbList := make([]string, 0)
-	err := filepath.Walk(m.EndPoint.dataDir,
+	err := filepath.Walk(m.Node.dataDir,
 		func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
@@ -94,7 +94,7 @@ func (m *KVStore) getStore(index string) (db *pogreb.DB, err error) {
 
 	m.storeCacheLock.Lock()
 	defer m.storeCacheLock.Unlock()
-	db, err = pogreb.Open(m.EndPoint.dataDir+sep+"index"+sep+index, nil)
+	db, err = pogreb.Open(m.Node.dataDir+sep+"index"+sep+index, nil)
 	if err == nil {
 		m.storeCache[index] = db
 	} else {
@@ -336,14 +336,14 @@ func (m *KVStore) DeleteIndicesWithPrefix(ctx context.Context,
 				u.Infof("Sync and close [%s]", k)
 				continue
 			}
-			if err := os.RemoveAll(m.EndPoint.dataDir + sep + "index" + sep + k); err != nil {
+			if err := os.RemoveAll(m.Node.dataDir + sep + "index" + sep + k); err != nil {
 				return &empty.Empty{}, fmt.Errorf("DeleteIndicesWithPrefix error [%v]", err)
 			}
 			u.Infof("Sync, close, and delete [%s]", k)
 		}
 	}
 	if !req.RetainEnums {
-		if err := os.RemoveAll(m.EndPoint.dataDir + sep + "index" + sep + req.Prefix); err != nil {
+		if err := os.RemoveAll(m.Node.dataDir + sep + "index" + sep + req.Prefix); err != nil {
 			return &empty.Empty{}, fmt.Errorf("DeleteIndicesWithPrefix error [%v]", err)
 		}
 	}

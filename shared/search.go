@@ -61,7 +61,7 @@ func (c *StringSearch) splitStringBatch(batch map[string]struct{}, replicas int)
 		batches[i] = make(map[string]struct{}, 0)
 	}
 	for k, v := range batch {
-		nodeKeys := c.Conn.hashTable.GetN(replicas, ToString(k))
+		nodeKeys := c.Conn.HashTable.GetN(replicas, ToString(k))
 		// Iterate over node key list and collate into batches
 		for _, nodeKey := range nodeKeys {
 			if i, ok := c.Conn.nodeMap[nodeKey]; ok {

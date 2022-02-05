@@ -25,13 +25,13 @@ import (
 
 type QuantaTestSuite struct {
 	suite.Suite
-	endpoint *server.EndPoint
+	node *server.Node
 	store    *shared.KVStore
 }
 
 func (suite *QuantaTestSuite) SetupSuite() {
 	var err error
-	suite.endpoint, err = Setup() // harness setup
+	suite.node, err = Setup() // harness setup
 	assert.NoError(suite.T(), err)
 
 	core.ClearTableCache()

@@ -9,31 +9,30 @@ import (
 )
 
 // Setup - Initialize test harness
-func Setup() (*server.EndPoint, error) {
+func Setup() (*server.Node, error) {
 
-	endpoint, err := server.NewEndPoint("./testdata", nil)
+	// Enable in memory instance
+	node, err := server.NewNode(0, "", "./testdata", nil)
 	if err != nil {
 		return nil, err
 	}
-	endpoint.Port = 0 // Enable in memory instance
-	endpoint.SetNode(server.NewDummyNode(endpoint))
-	bitmapIndex := server.NewBitmapIndex(endpoint, 0)
+	bitmapIndex := server.NewBitmapIndex(node, 0)
 	err = bitmapIndex.Init()
 	if err != nil {
 		return nil, err
 	}
-	_, err = server.NewStringSearch(endpoint)
+	_, err = server.NewStringSearch(node)
 	if err != nil {
 		return nil, err
 	}
-	_, err = server.NewKVStore(endpoint)
+	_, err = server.NewKVStore(node)
 	if err != nil {
 		return nil, err
 	}
 	go func() {
-		endpoint.Start()
+		node.Start()
 	}()
-	return endpoint, nil
+	return node, nil
 }
 
 // RemoveContents - Remove local data files.

@@ -48,12 +48,10 @@ func main() {
 		log.Fatalf("[node: Cannot initialize endpoint config: error: %s", err)
 	}
 
-	m, err := server.NewEndPoint(*dataDir, consulClient)
+	m, err := server.NewNode(int(*port), *bindAddr, *dataDir, consulClient)
 	if err != nil {
 		u.Errorf("[node: Cannot initialize endpoint config: error: %s", err)
 	}
-	m.BindAddr = *bindAddr
-	m.Port = uint(*port)
 	_ = *tls
 	_ = *certFile
 	_ = *keyFile
@@ -92,13 +90,13 @@ func main() {
 		}
 	}()
 
-	node, err := server.Join("quanta", m)
+	err = m.Join("quanta")
 	if err != nil {
 		u.Errorf("[node: Cannot initialize endpoint config: error: %s", err)
 	}
 
-	<-node.Stop
-	err = <-node.Err
+	<-m.Stop
+	err = <-m.Err
 	if err != nil {
 		u.Errorf("[node: Cannot initialize endpoint config: error: %s", err)
 	}

@@ -345,7 +345,7 @@ func (m *Main) Init() (int, error) {
 		return 0, err
 	}
 
-	clientConn := quanta.NewDefaultConnection()
+	clientConn := shared.NewDefaultConnection()
 	clientConn.ServicePort = m.Port
 	clientConn.Quorum = 3
 	if err := clientConn.Connect(consulClient); err != nil {

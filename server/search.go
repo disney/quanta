@@ -31,14 +31,14 @@ var (
 
 // StringSearch service state.
 type StringSearch struct {
-	*EndPoint
+	*Node
 	store *pogreb.DB
 }
 
 // NewStringSearch - Construct server side state for search service.
-func NewStringSearch(endPoint *EndPoint) (*StringSearch, error) {
+func NewStringSearch(node *Node) (*StringSearch, error) {
 
-	db, err := pogreb.Open(endPoint.dataDir+"/index/"+"search.dat", nil)
+	db, err := pogreb.Open(node.dataDir+"/index/"+"search.dat", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -60,8 +60,8 @@ func NewStringSearch(endPoint *EndPoint) (*StringSearch, error) {
 	elapsed := time.Since(start)
 	u.Infof("Cache initialization complete %d items loaded in %s.\n", count, elapsed)
 
-	e := &StringSearch{EndPoint: endPoint, store: db}
-	pb.RegisterStringSearchServer(endPoint.server, e)
+	e := &StringSearch{Node: node, store: db}
+	pb.RegisterStringSearchServer(node.server, e)
 	return e, nil
 }
 

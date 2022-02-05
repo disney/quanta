@@ -1,4 +1,4 @@
-package quanta
+package shared
 
 //
 // Distributed high cardinality string indexing and search API.  Used by Quanta 'LIKE'
@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	pb "github.com/disney/quanta/grpc"
-	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"io"
 	"sync"
@@ -29,9 +28,9 @@ type StringSearch struct {
 func NewStringSearch(conn *Conn, batchSize int) *StringSearch {
 
 	// Search utilizes the admin connections for the service
-	clients := make([]pb.StringSearchClient, len(conn.clientConn))
-	for i := 0; i < len(conn.clientConn); i++ {
-		clients[i] = pb.NewStringSearchClient(conn.clientConn[i])
+	clients := make([]pb.StringSearchClient, len(conn.ClientConnections()))
+	for i := 0; i < len(conn.ClientConnections()); i++ {
+		clients[i] = pb.NewStringSearchClient(conn.ClientConnections()[i])
 	}
 	return &StringSearch{Conn: conn, batchSize: batchSize, client: clients}
 }
@@ -54,15 +53,15 @@ func (c *StringSearch) Flush() error {
 // Separate a batch of strings to be indexed by consistant hashing by node key.
 func (c *StringSearch) splitStringBatch(batch map[string]struct{}, replicas int) []map[string]struct{} {
 
-	c.Conn.nodeMapLock.RLock()
-	defer c.Conn.nodeMapLock.RUnlock()
+	//c.Conn.NodeMapLock.RLock()
+	//defer c.Conn.NodeMapLock.RUnlock()
 
 	batches := make([]map[string]struct{}, len(c.client))
 	for i := range batches {
 		batches[i] = make(map[string]struct{}, 0)
 	}
 	for k, v := range batch {
-		nodeKeys := c.Conn.hashTable.GetN(replicas, shared.ToString(k))
+		nodeKeys := c.Conn.HashTable.GetN(replicas, ToString(k))
 		// Iterate over node key list and collate into batches
 		for _, nodeKey := range nodeKeys {
 			if i, ok := c.Conn.nodeMap[nodeKey]; ok {

@@ -1,5 +1,6 @@
-// map path - functions to retrieve values from map dags
 package shared
+
+// map path - functions to retrieve values from map dags
 
 import (
 	"fmt"

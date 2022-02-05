@@ -8,7 +8,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
@@ -59,7 +58,7 @@ type Main struct {
 	ConsulClient *api.Client
 	DateFilter   *time.Time
 	lock         *api.Lock
-	apiHost      *quanta.Conn
+	apiHost      *shared.Conn
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -302,7 +301,7 @@ func (m *Main) Init() error {
 		return err
 	}
 
-	m.apiHost = quanta.NewDefaultConnection()
+	m.apiHost = shared.NewDefaultConnection()
 	m.apiHost.ServicePort = m.Port
 	m.apiHost.Quorum = 3
 	if err = m.apiHost.Connect(consul); err != nil {

@@ -1,4 +1,4 @@
-package quanta
+package shared
 
 import (
 	"github.com/RoaringBitmap/roaring/roaring64"
@@ -29,13 +29,13 @@ func TestStratifiedSampling(t *testing.T) {
 	err = input[2].UnmarshalBinary(dat3)
 	require.Nil(t, err)
 
-	output := performStratifiedSampling(input, 1)
+	output := PerformStratifiedSampling(input, 1)
 	assert.NotNil(t, output)
 	assert.Equal(t, output[0].GetCardinality(), uint64(279853))
 	assert.Equal(t, output[1].GetCardinality(), uint64(60502))
 	assert.Equal(t, output[2].GetCardinality(), uint64(238708))
 
 	// OR the bitmaps together to perform a simple random sample
-	output2 := performStratifiedSampling([]*roaring64.Bitmap{roaring64.ParOr(0, input...)}, 1)
+	output2 := PerformStratifiedSampling([]*roaring64.Bitmap{roaring64.ParOr(0, input...)}, 1)
 	assert.Equal(t, output2[0].GetCardinality(), uint64(579064))
 }

@@ -8,13 +8,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/disney/quanta/client"
+	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/server"
 )
 
 type RBACTestSuite struct {
 	suite.Suite
-	client *quanta.KVStore
+	client *shared.KVStore
 	server *server.KVStore
 }
 
@@ -24,23 +24,21 @@ func (suite *RBACTestSuite) SetupSuite() {
 	var err error
 	u.SetupLogging("debug")
 
-	endpoint, err := server.NewEndPoint("./testdata", nil)
+	node, err := server.NewNode(0, "", "./testdata", nil)
 	assert.NoError(suite.T(), err)
-	assert.NotNil(suite.T(), endpoint)
-	endpoint.Port = 0 // Enable in memory instance
-	endpoint.SetNode(server.NewDummyNode(endpoint))
-	suite.server, err = server.NewKVStore(endpoint)
+	assert.NotNil(suite.T(), node)
+	suite.server, err = server.NewKVStore(node)
 	assert.NoError(suite.T(), err)
 	go func() {
-		endpoint.Start()
+		node.Start()
 	}()
 
-	conn := quanta.NewDefaultConnection()
+	conn := shared.NewDefaultConnection()
 	conn.ServicePort = 0
 	err = conn.Connect(nil)
 	assert.NoError(suite.T(), err)
 
-	suite.client = quanta.NewKVStore(conn)
+	suite.client = shared.NewKVStore(conn)
 	assert.NotNil(suite.T(), suite.client)
 }
 

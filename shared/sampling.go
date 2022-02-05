@@ -1,4 +1,4 @@
-package quanta
+package shared
 
 import (
 	"github.com/RoaringBitmap/roaring/roaring64"
@@ -8,14 +8,14 @@ import (
 )
 
 //
-// Perform sampling on a group of bitmaps representing a data attribute.
+// PerformStratifiedSampling - Perform sampling on a group of bitmaps representing a data attribute.
 // Each bitmap in the input represents a subgroup.  Per the stratified methodology, a percentage
 // of each subgroup is sampled proportionally to the overall desired sample size.
 // At the moment, only enumerated data attribute types are supported.
 //
 // Returns the sample set.
 //
-func performStratifiedSampling(input []*roaring64.Bitmap, samplePct float32) []*roaring64.Bitmap {
+func PerformStratifiedSampling(input []*roaring64.Bitmap, samplePct float32) []*roaring64.Bitmap {
 
 	result := make([]*roaring64.Bitmap, len(input))
 	rg := make([]*rand.Rand, len(input))

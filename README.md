@@ -63,14 +63,14 @@ The current version is 0.8 and is currently in "alpha" state.
 
 ## Version 0.9
 This version once release will be considered "beta" and will include the following:
-* RBAC interfaces.
+* Cluster administration/monitoring tools and API.
 * Ability to add/remove data nodes in a running cluster.
+* RBAC interfaces.
 * Support for SQL Subqueries.
 * Support for temporary tables.
 
 
 ## Version 1.0
-* Cluster administration/monitoring tools and API.
 * Support for SQL Views.
 * Hierarchic (non-Star Schema) joins.
 * Intermediate results caching.

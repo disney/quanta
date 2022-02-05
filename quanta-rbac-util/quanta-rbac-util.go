@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/rbac"
 	"github.com/disney/quanta/shared"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -52,13 +51,13 @@ func main() {
 	fmt.Printf("User ID %v.\n", main.UserID)
 	fmt.Printf("Service port %d.\n", main.Port)
 
-	conn := quanta.NewDefaultConnection()
+	conn := shared.NewDefaultConnection()
 	conn.ServicePort = main.Port
 	conn.Quorum = 3
 	if err := conn.Connect(nil); err != nil {
 		log.Fatal(err)
 	}
-	store := quanta.NewKVStore(conn)
+	store := shared.NewKVStore(conn)
 	ctx, err2 := rbac.NewAuthContext(store, main.UserID, true)
 	if err2 != nil {
 		log.Fatal(err2)

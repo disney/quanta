@@ -764,9 +764,9 @@ func (p *Projector) getPartitionedStrings(attr *Attribute, colIDs []uint64) (map
 
 	lBatch := make(map[interface{}]interface{}, len(colIDs))
 	startPartition := time.Unix(0, int64(colIDs[0])).Format(timeFmt)
-	endPartition := time.Unix(0, int64(colIDs[len(colIDs) - 1])).Format(timeFmt)
+	endPartition := time.Unix(0, int64(colIDs[len(colIDs)-1])).Format(timeFmt)
 
-    if startPartition == endPartition {  // Everything in one partition
+	if startPartition == endPartition { // Everything in one partition
 		lookupIndex := fmt.Sprintf("%s/%s/%s", attr.Parent.Name, attr.FieldName, startPartition)
 		for _, colID := range colIDs {
 			lBatch[colID] = ""

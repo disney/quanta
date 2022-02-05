@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/disney/quanta/client"
+	"github.com/disney/quanta/shared"
 	"github.com/stretchr/testify/assert"
 	_ "github.com/stretchr/testify/require"
 	"testing"
@@ -9,7 +9,7 @@ import (
 
 func TestCreateSession(t *testing.T) {
 
-	conn := quanta.NewDefaultConnection()
+	conn := shared.NewDefaultConnection()
 	conn.ServicePort = 0
 	errx := conn.Connect(nil)
 	assert.Nil(t, errx)

@@ -159,7 +159,7 @@ func main() {
 
 	// Start metrics publisher
 	var ticker *time.Ticker
-	ticker = metricsTicker()
+	ticker = metricsTicker(src)
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	go func() {
@@ -551,21 +551,22 @@ func (c *Counter) Set(n int64) {
 	return
 }
 
-func metricsTicker() *time.Ticker {
+func metricsTicker(src *source.QuantaSource) *time.Ticker {
 	t := time.NewTicker(time.Second * 10)
 	start := time.Now()
 	lastTime := time.Now()
 	go func() {
 		for range t.C {
 			duration := time.Since(start)
-			lastTime = publishMetrics(duration, lastTime)
+			lastTime = publishMetrics(duration, lastTime, src)
 		}
 	}()
 	return t
 }
 
-func publishMetrics(upTime time.Duration, lastPublishedAt time.Time) time.Time {
+func publishMetrics(upTime time.Duration, lastPublishedAt time.Time, src *source.QuantaSource) time.Time {
 
+	connectionPoolSize, connectionsInUse := src.GetSessionPool().Metrics()
 	interval := time.Since(lastPublishedAt).Seconds()
 	avgQueryLatency := queryTime.Get()
 	if queryCount.Get() > 0 {
@@ -587,9 +588,14 @@ func publishMetrics(upTime time.Duration, lastPublishedAt time.Time) time.Time {
 		Namespace: aws.String("Quanta-Proxy"),
 		MetricData: []*cloudwatch.MetricDatum{
 			{
-				MetricName: aws.String("Connections"),
+				MetricName: aws.String("ConnectionPoolSize"),
 				Unit:       aws.String("Count"),
-				Value:      aws.Float64(float64(connectCount.Get())),
+				Value:      aws.Float64(float64(connectionPoolSize)),
+			},
+			{
+				MetricName: aws.String("ConnectionsInUse"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(connectionsInUse)),
 			},
 			{
 				MetricName: aws.String("ConnectionsPerSec"),

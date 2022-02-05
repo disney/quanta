@@ -77,12 +77,11 @@ type SQLToQuanta struct {
 }
 
 // NewSQLToQuanta - Construct a new SQLToQuanta query translator.
-func NewSQLToQuanta(s *QuantaSource, t *schema.Table, conn *core.Session) *SQLToQuanta {
+func NewSQLToQuanta(s *QuantaSource, t *schema.Table) *SQLToQuanta {
 	m := &SQLToQuanta{
 		tbl:    t,
 		schema: t.Schema,
 		s:      s,
-		conn:   conn,
 	}
 	return m
 }
@@ -105,7 +104,7 @@ func (m *SQLToQuanta) ResolveField(name string) (field *core.Attribute, isBSI bo
 	return
 }
 
-// WalkSourceSelect An interface implemented by this connection allowing the planner
+// WalkSourceSelect An interface implemented by this session allowing the planner
 // to push down as much logic into this source as possible
 func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (plan.Task, error) {
 
@@ -117,6 +116,13 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	if len(p.Custom) == 0 {
 		p.Custom = make(u.JsonHelper)
 	}
+
+	var err error
+    m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
+    if err != nil {
+        return nil, fmt.Errorf("Error opening Quanta session %v", err)
+    }
+    defer m.s.sessionPool.Return(m.tbl.Name, m.conn)
 
 	// Create a session if one doesn't exist and add the join strategy indicator
 	// Add indicators to create no-op tasks for where clauses and groupby
@@ -157,7 +163,6 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 
 	m.TaskBase = exec.NewTaskBase(p.Context())
 
-	var err error
 	p.SourceExec = true
 	m.p = p
 	m.q = shared.NewBitmapQuery()
@@ -1144,8 +1149,14 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 		   }
 		*/
 	}
+
+	var err error
+	m.conn, err = m.s.sessionPool.Borrow(m.q.GetRootIndex())
+	if err != nil {
+		return nil, fmt.Errorf("Error opening Quanta session %v", err)
+	}
+	defer m.s.sessionPool.Return(m.q.GetRootIndex(), m.conn)
 	ctx := p.Context()
-	var err error = nil
 	//hasJoin := len(p.Stmt.Source.From) > 0
 	//u.Infof("Projection:  %T:%p   %T:%p", proj, proj, proj.Proj, proj.Proj)
 	hasAliasedStar := len(ctx.Projection.Proj.Columns) == 1 &&
@@ -1280,6 +1291,12 @@ func (m *SQLToQuanta) PatchWhere(ctx context.Context, where expr.Node, patch int
 	m.endDate = ""
 
 	var err error
+    m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
+    if err != nil {
+        return 0, fmt.Errorf("Error opening Quanta session %v", err)
+    }
+    defer m.s.sessionPool.Return(m.tbl.Name, m.conn)
+
 	if where != nil {
 		_, err = m.walkNode(where, frag)
 		if err != nil {
@@ -1344,6 +1361,12 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 		return nil, fmt.Errorf("must have stmts to infer columns ")
 	}
 
+	conn, err := m.s.sessionPool.Borrow(m.tbl.Name)
+	if err != nil {
+		return nil, fmt.Errorf("Error opening Quanta session %v", err)
+	}
+	defer m.s.sessionPool.Return(m.tbl.Name, conn)
+    m.conn = conn
 	//u.Infof("STMT = %v, VALS = %v\n", m.stmt, val)
 	//u.Infof("INITIAL COLS = %v\n", cols)
 
@@ -1452,7 +1475,7 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 	}
 
 	// Begin critical section
-	err := m.conn.PutRow(table.Name, vMap, colID)
+	err = m.conn.PutRow(table.Name, vMap, colID)
 	if err != nil {
 		return nil, err
 	}
@@ -1520,6 +1543,12 @@ func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, err
 	frag := m.q.NewQueryFragment()
 
 	var err error
+	m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
+	if err != nil {
+		return 0, fmt.Errorf("Error opening Quanta session %v", err)
+	}
+	defer m.s.sessionPool.Return(m.tbl.Name, m.conn)
+
 	if where != nil {
 		_, err = m.walkNode(where, frag)
 		if err != nil {
@@ -1548,7 +1577,6 @@ func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, err
 		return 0, err
 	}
 	m.conn.Flush()
-	m.s.sessionPool.Return(m.q.GetRootIndex(), m.conn)
 
 	return int(response.Results.GetCardinality()), nil
 }

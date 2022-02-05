@@ -59,6 +59,9 @@ func (s *TokenExchangeService) HandleRequest(w http.ResponseWriter, r *http.Requ
 	case http.MethodPost:
 		s.CreateAccount(w, r)
 		break
+	case http.MethodGet:
+		SuccessResponse(&w, struct{}{})
+		break
 	default:
 		ErrorResponse(&w, 405, "Method not allowed", "Method not allowed", nil)
 		break

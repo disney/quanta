@@ -60,8 +60,6 @@ func NewResultReader(conn *core.Session, req *SQLToQuanta, q *shared.BitmapQuery
 
 // Close the result reader.
 func (m *ResultReader) Close() error {
-
-	m.sql.s.sessionPool.Return(m.sql.tbl.Name, m.conn)
 	return nil
 }
 

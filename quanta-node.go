@@ -48,13 +48,19 @@ func main() {
 		log.Fatalf("[node: Cannot initialize endpoint config: error: %s", err)
 	}
 
-	m, err := server.NewNode(int(*port), *bindAddr, *dataDir, consulClient)
-	if err != nil {
-		u.Errorf("[node: Cannot initialize endpoint config: error: %s", err)
-	}
 	_ = *tls
 	_ = *certFile
 	_ = *keyFile
+
+	m, err := server.NewNode(int(*port), *bindAddr, *dataDir, consulClient)
+	if err != nil {
+		u.Errorf("[node: Cannot initialize node config: error: %s", err)
+	}
+
+	err = m.Connect(consulClient)
+	if err != nil {
+		u.Errorf("[node: Cannot establish peer connections: error: %s", err)
+	}
 
 	kvStore, err2 := server.NewKVStore(m)
 	if err2 != nil {

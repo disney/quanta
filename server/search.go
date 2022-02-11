@@ -20,6 +20,12 @@ import (
 	"time"
 )
 
+var (
+    // Ensure StringSearch implements NodeService
+    _ NodeService = (*StringSearch)(nil)
+)
+
+
 const (
 	maxElements = 100
 	probCollide = 0.0000001
@@ -28,6 +34,7 @@ const (
 var (
 	wordSegmenter = regexp.MustCompile(`[\pL\p{Mc}\p{Mn}\p{Nd}-_']+`)
 )
+
 
 // StringSearch service state.
 type StringSearch struct {
@@ -64,6 +71,7 @@ func NewStringSearch(node *Node) (*StringSearch, error) {
 	pb.RegisterStringSearchServer(node.server, e)
 	return e, nil
 }
+
 
 // Shutdown search service.
 func (m *StringSearch) Shutdown() {

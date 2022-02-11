@@ -2,9 +2,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"github.com/alecthomas/kong"
 	"github.com/disney/quanta/shared"
+    "github.com/golang/protobuf/ptypes/empty"
 	"github.com/hashicorp/consul/api"
 	"log"
 )
@@ -52,6 +54,11 @@ type TruncateCmd struct {
 type TablesCmd struct {
 }
 
+// ShutdownCmd - Shutdown command
+type ShutdownCmd struct {
+	NodeIP string `arg name:"node-ip" help:"IP address of node to shutdown or ALL."`
+}
+
 var cli struct {
 	ConsulAddr string      `default:"127.0.0.1:8500"`
 	Port       int         `default:"4000"`
@@ -61,6 +68,7 @@ var cli struct {
 	Status     StatusCmd   `cmd help:"Show status."`
 	Version    VersionCmd  `cmd help:"Show version."`
 	Tables     TablesCmd   `cmd help:"Show tables."`
+	Shutdown   ShutdownCmd `cmd help:"Shutdown cluster or one node.."`
 }
 
 func main() {
@@ -212,6 +220,33 @@ func (s *StatusCmd) Run(ctx *Context) error {
 	fmt.Println("================   ==============   ==========================")
 	for _, node := range conn.Nodes() {
 		fmt.Printf("%-16s   %-14s   %s\n", node.Node.Address, node.Node.Datacenter, node.Node.ID)
+	}
+	return nil
+}
+
+// Run - Shutdown command implementation
+func (s *ShutdownCmd) Run(ctx *Context) error {
+	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
+	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
+	if err != nil {
+		fmt.Println("Is the consul agent running?")
+		return fmt.Errorf("Error connecting to consul %v", err)
+	}
+	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", ctx.Port)
+	conn := shared.NewDefaultConnection()
+	conn.ServicePort = ctx.Port
+	conn.Quorum = 0
+	if err := conn.Connect(consulClient); err != nil {
+		log.Fatal(err)
+	}
+    cx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
+    defer cancel()
+	for i, v := range conn.Admin {
+        if _, err := v.Shutdown(cx, &empty.Empty{}); err != nil {
+            fmt.Printf(fmt.Sprintf("%v.Shutdown(_) = _, %v, node = %s\n", v, err, conn.ClientConnections()[i].Target()))
+        } else {
+            fmt.Printf("Node %s shutdown triggered.\n", conn.ClientConnections()[i].Target())
+        }
 	}
 	return nil
 }

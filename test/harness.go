@@ -12,7 +12,7 @@ import (
 func Setup() (*server.Node, error) {
 
 	// Enable in memory instance
-	node, err := server.NewNode(0, "", "./testdata", nil)
+	node, err := server.NewNode("TEST", 0, "", "./testdata", nil)
 	if err != nil {
 		return nil, err
 	}

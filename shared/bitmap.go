@@ -16,6 +16,11 @@ import (
 	"time"
 )
 
+var (
+    // Ensure BitmapIndex implements shared.Service
+    _ Service = (*BitmapIndex)(nil)
+)
+
 const (
 	timeFmt = "2006-01-02T15"
 	ifDelim = "/"

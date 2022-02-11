@@ -28,6 +28,11 @@ const (
 	timeFmt = "2006-01-02T15"
 )
 
+var (
+    // Ensure BitmapIndex implements shared.Service
+    _ NodeService = (*BitmapIndex)(nil)
+)
+
 //
 // BitmapIndex - Main state structure for bitmap indices.
 //
@@ -134,11 +139,13 @@ func (m *BitmapIndex) Init() error {
 	} else {
 		u.Info("Data expiration thread disabled.")
 	}
+
 	return nil
 }
 
 // Shutdown - Shut down and clean up.
 func (m *BitmapIndex) Shutdown() {
+    u.Warnf("Shutting down bitmap server.")
 }
 
 // BatchMutate API call (used by client SetBit call for bulk loading data)
@@ -324,6 +331,14 @@ func (m *BitmapIndex) batchProcessLoop(threadID int) {
 			}
 			continue
 		default: // Don't block
+			if m.State == Pending {
+				// Node is up and frag queue is empty.  Start verify thread.
+				m.State = Joining
+				// Kick off verify thread
+				u.Warnf("Node is in Joining state, launching verify processing loop ...")
+				m.verifyNode()
+    			go m.verifyProcessLoop()
+			}
 		}
 
 		select {
@@ -341,6 +356,13 @@ func (m *BitmapIndex) batchProcessLoop(threadID int) {
 		case <-time.After(time.Second * 10):
 			m.checkPersistBitmapCache(true)
 			m.checkPersistBSICache(true)
+/*
+		case _, ok := <- m.Stop:
+			if !ok {
+				m.Shutdown()
+				break
+			}
+*/
 		}
 	}
 }
@@ -355,6 +377,35 @@ func (m *BitmapIndex) expireProcessLoop(days int) {
 	select {
 	case <-time.After(time.Minute * 10):
 		m.expireOrTruncate(days, false)
+	}
+}
+
+/*
+ * Verify process thread.
+ *
+ * Wake up on interval and run node verification process.
+ */
+func (m *BitmapIndex) verifyProcessLoop() {
+
+	select {
+	case <-time.After(time.Second * 10):
+		m.verifyNode()
+	}
+}
+
+func (m *BitmapIndex) verifyNode() {
+
+	ctx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
+    defer cancel()
+
+ip, errx := shared.GetLocalHostIP()
+u.Errorf("LOCALHOST = %v - %v", ip, errx)
+	for i, v := range m.Conn.Admin {
+		if result, err := v.Status(ctx, &empty.Empty{}); err != nil {
+			u.Errorf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s", v, err, m.Conn.ClientConnections()[i].Target()))
+    	} else {
+			u.Errorf("Node %s, status = %v", m.Conn.ClientConnections()[i].Target(), result)
+		}
 	}
 }
 

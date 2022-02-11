@@ -30,6 +30,36 @@ const (
     sep 		  = string(os.PathSeparator)
 )
 
+// StateType - LifeCycle States of a Node.
+type StateType int
+
+const (
+    Pending = StateType(iota)
+	Joining
+	Active
+	Shutdown
+)
+
+// String - Returns a string representation of StateType
+func (st StateType) String() string {
+
+    switch st {
+    case Pending:
+        return "Pending"
+    case Joining:
+        return "Joining"
+    case Active:
+        return "Active"
+    case Shutdown:
+        return "Shutdown"
+	}
+	return ""
+}
+
+type NodeService interface {
+    Shutdown()
+}
+
 // Node is a single node in a distributed hash table, coordinated using
 // services registered in Consul. Key membership is determined using rendezvous
 // hashing to ensure even distribution of keys and minimal key membership
@@ -47,6 +77,7 @@ type Node struct {
     server   			*grpc.Server
     consul   			*api.Client
 	hashKey				string
+	version				string
 
 	// TLS options
     tls      			bool
@@ -59,12 +90,19 @@ type Node struct {
 	// Shutdown channels
 	Stop 				chan bool
 	Err  				chan error
+
+	State				StateType
+
+    localServices		[]NodeService
+	peerServices		[]shared.Service
 }
 
-func NewNode(port int, bindAddr, dataDir string, consul *api.Client) (*Node, error) {
+func NewNode(version string, port int, bindAddr, dataDir string, consul *api.Client) (*Node, error) {
 
 	conn := shared.NewDefaultConnection()
-    m := &Node{Conn: conn}
+    m := &Node{Conn: conn, version: version}
+	m.localServices = make([]NodeService, 0)
+	m.peerServices = make([]shared.Service, 0)
 	m.ServicePort = port
     m.hashKey = path.Base(dataDir) // leaf directory name is consistent hash key
     if m.hashKey == "" || m.hashKey == "/" {
@@ -111,7 +149,7 @@ func (n *Node) Join(name string) error {
 	n.Err = make(chan error)
 
 	go func() {
-		defer close(n.Stop)
+		//defer close(n.Stop)
 		n.Err <- n.Start()
 	}()
 
@@ -124,8 +162,6 @@ func (n *Node) Join(name string) error {
 	if err != nil {
 		return fmt.Errorf("node: can't fetch %s services list: %s", n.serviceName, err)
 	}
-
-	// create and start connection as client
 
 	go n.Poll()
 
@@ -153,6 +189,17 @@ func (n *Node) Start() error {
         if err != nil {
             return err
         }
+		go func() {
+			for {
+				select {
+				case _, ok := <- n.Stop:
+					if !ok  {
+						n.server.GracefulStop()
+						os.Exit(0)
+					}
+				}
+			}
+		}()
         n.server.Serve(lis)
     } else {
         n.server.Serve(shared.TestListener)
@@ -176,9 +223,11 @@ func (n *Node) Member(key string) bool {
 // returned if the Node is unable to successfully deregister itself from
 // Consul. In that case, Consul's health check for the Node will fail
 func (n *Node) Leave() (err error) {
-	close(n.Stop) // stop polling for state
+
+    n.State = Shutdown
 	err = n.consul.Agent().ServiceDeregister(n.hashKey)
-	//close(n.stop) FIXME: stop the server
+    n.ShutdownServices()
+	close(n.Stop)
 	return err
 }
 
@@ -200,6 +249,38 @@ func (h *HealthImpl) Watch(req *grpc_health_v1.HealthCheckRequest, w grpc_health
 
 // Status - Status API.
 func (n *Node) Status(ctx context.Context, e *empty.Empty) (*pb.StatusMessage, error) {
-    u.Info("Status ping returning OK.\n")
-    return &pb.StatusMessage{Status: "OK"}, nil
+
+	ip, err := shared.GetLocalHostIP()
+	if err != nil {
+		return nil, err
+	}
+    return &pb.StatusMessage{
+		NodeState: n.State.String(),
+		LocalIP: ip.String(),
+		LocalPort: uint32(n.ServicePort),
+		Version: n.version,
+		Replicas: uint32(n.Replicas),
+	}, nil
+}
+
+// Shutdown - Shut the node down.
+func (n *Node) Shutdown(ctx context.Context, e *empty.Empty) (*empty.Empty, error) {
+
+    u.Warn("Received Shutdown call via API.")
+	err := n.Leave()
+	return e, err
+}
+
+// AddNodeService - Add a new node level service.
+func (n *Node) AddNodeService(api NodeService) {
+
+    n.localServices = append(n.localServices, api)
+}
+
+func (n *Node) ShutdownServices() {
+
+    u.Warn("Shutting down services.")
+	for _, v := range n.localServices {
+		v.Shutdown()
+	}
 }

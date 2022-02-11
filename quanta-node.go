@@ -4,6 +4,7 @@
 package main
 
 import (
+	"fmt"
 	u "github.com/araddon/gou"
 	"github.com/disney/quanta/server"
 	"github.com/disney/quanta/shared"
@@ -52,7 +53,7 @@ func main() {
 	_ = *certFile
 	_ = *keyFile
 
-	m, err := server.NewNode(int(*port), *bindAddr, *dataDir, consulClient)
+	m, err := server.NewNode(fmt.Sprintf("%v:%v", Version, Build), int(*port), *bindAddr, *dataDir, consulClient)
 	if err != nil {
 		u.Errorf("[node: Cannot initialize node config: error: %s", err)
 	}
@@ -71,26 +72,27 @@ func main() {
 	if err3 != nil {
 		u.Errorf("[node: Cannot initialized kv store error: %s", err3)
 	}
+	m.AddNodeService(kvStore)
 
 	search, err4 := server.NewStringSearch(m)
 	if err4 != nil {
 		u.Errorf("[node: Cannot initialize search config: error: %s", err4)
 	}
+	m.AddNodeService(search)
 
 	start := time.Now()
 	bitmapIndex := server.NewBitmapIndex(m, int(*expireDays))
 	bitmapIndex.Init()
 	elapsed := time.Since(start)
 	log.Printf("Bitmap data server initialized in %v.", elapsed)
+	m.AddNodeService(bitmapIndex)
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
 	go func() {
 		for range c {
 			u.Errorf("Interrupt signal received.  Starting Shutdown...")
-			kvStore.Shutdown()
-			search.Shutdown()
-			bitmapIndex.Shutdown()
+			m.Leave()
 			time.Sleep(5)
 			os.Exit(0)
 		}

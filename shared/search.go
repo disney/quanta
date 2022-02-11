@@ -15,6 +15,11 @@ import (
 	"time"
 )
 
+var (
+    // Ensure StringSearch implements shared.Service
+    _ Service = (*StringSearch)(nil)
+)
+
 // StringSearch API state
 type StringSearch struct {
 	*Conn

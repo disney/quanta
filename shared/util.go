@@ -7,6 +7,7 @@ import (
 	"fmt"
 	u "github.com/araddon/gou"
 	"github.com/hashicorp/consul/api"
+	"net"
 	"os"
 	"os/signal"
 	filepath "path"
@@ -451,3 +452,35 @@ func Retry(attempts int, sleep time.Duration, f func() error) (err error) {
 	}
 	return fmt.Errorf("after %d attempts, last error: %s", attempts, err)
 }
+
+func GetLocalHostIP() (net.IP, error) {
+
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	for _, i := range ifaces {
+	    addrs, err := i.Addrs()
+		if err != nil {
+			return nil, err
+		}
+	    for _, addr := range addrs {
+	        var ip net.IP
+	        switch v := addr.(type) {
+	        case *net.IPNet:
+	                ip = v.IP
+	        case *net.IPAddr:
+	                ip = v.IP
+	        }
+			if ip.IsLoopback() {
+				continue
+			}
+	        // process IP address
+			if ip != nil {
+				return ip, nil
+			}
+	    }
+	}
+	return nil, fmt.Errorf("local IP address could not be determined")
+}
+

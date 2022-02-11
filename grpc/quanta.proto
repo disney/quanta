@@ -11,6 +11,7 @@ import "google/protobuf/wrappers.proto";
 
 service ClusterAdmin {
   rpc Status(google.protobuf.Empty) returns (StatusMessage) {}
+  rpc Shutdown(google.protobuf.Empty) returns (google.protobuf.Empty) {}
 }
 
 service KVStore {
@@ -39,12 +40,12 @@ service BitmapIndex {
   rpc TableOperation(TableOperationRequest) returns (google.protobuf.Empty) {}
 }
 
-message Success {
-  bool ok = 1;
-}
-
 message StatusMessage {
-  string status = 1;
+  string nodeState = 1;
+  string localIP = 2;
+  uint32 localPort = 3;
+  string version = 4;
+  uint32 replicas = 5;
 }
 
 message IndexKVPair {

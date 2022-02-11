@@ -15,6 +15,11 @@ import (
 	"reflect"
 )
 
+var (
+    // Ensure KVStore implements shared.Service
+    _ Service = (*KVStore)(nil)
+)
+
 // KVStore API wrapper
 type KVStore struct {
 	*Conn

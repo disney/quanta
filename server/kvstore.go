@@ -18,6 +18,12 @@ import (
 	"sync"
 )
 
+var (
+    // Ensure KVStore implements NodeService
+    _ NodeService = (*BitmapIndex)(nil)
+)
+
+
 // KVStore - Server side state for KVStore service.
 type KVStore struct {
 	*Node

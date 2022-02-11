@@ -63,7 +63,7 @@ type Conn struct {
 	ServerHostOverride string
 	tls                bool
 	certFile           string
-	admin              []pb.ClusterAdminClient
+	Admin              []pb.ClusterAdminClient
 	clientConn         []*grpc.ClientConn
 	err                chan error
 	stop               chan struct{}
@@ -80,11 +80,11 @@ type Conn struct {
 func NewDefaultConnection() *Conn {
 	m := &Conn{}
 	m.ServiceName = "quanta"
-	m.ServicePort = 5000
+	m.ServicePort = 4000
 	m.ServerHostOverride = "x.test.youtube.com"
 	m.pollWait = time.Second * 5
-	m.Quorum = 1
-	m.Replicas = 1
+	m.Quorum = 3
+	m.Replicas = 2
 	return m
 }
 
@@ -114,7 +114,10 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 				len(m.nodes), m.Quorum, m.ServiceName)
 		}
 		m.clientConn, err = m.CreateNodeConnections(true)
-		m.admin = make([]pb.ClusterAdminClient, len(m.nodes))
+		m.Admin = make([]pb.ClusterAdminClient, len(m.clientConn))
+    	for i := 0; i < len(m.clientConn); i++ {
+        	m.Admin[i] = pb.NewClusterAdminClient(m.clientConn[i])
+    	}
 		go m.Poll()
 	} else {
 		m.HashTable = rendezvous.New([]string{"test"})
@@ -122,7 +125,8 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 		m.nodeMap["test"] = 0
 		ctx := context.Background()
 		m.clientConn = make([]*grpc.ClientConn, 1)
-		m.admin = make([]pb.ClusterAdminClient, 1)
+		m.Admin = make([]pb.ClusterAdminClient, 1)
+        m.Admin[0] = pb.NewClusterAdminClient(m.clientConn[0])
 		m.clientConn[0], err = grpc.DialContext(ctx, "bufnet",
 			grpc.WithDialer(TestDialer), grpc.WithInsecure())
 		if err != nil {
@@ -217,7 +221,6 @@ func (m *Conn) Disconnect() error {
 			return fmt.Errorf("client: error - attempt to close nil clientConn")
 		}
 		m.clientConn[i].Close()
-		m.admin[i] = nil
 	}
 	select {
 	case _, open := <-m.stop:

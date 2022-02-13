@@ -59,6 +59,14 @@ type ShutdownCmd struct {
 	NodeIP string `arg name:"node-ip" help:"IP address of node to shutdown or ALL."`
 }
 
+// FindKeyCmd - Find key command
+type FindKeyCmd struct {
+	Table string `arg name:"table" help:"Table name."`
+	Field string `arg name:"field" help:"Field name."`
+	Rowid int64  `help:"Row id. (Omit for BSI)"`
+	Timestamp string  `help:"Time quantum value. (Omit for no quantum)"`
+}
+
 var cli struct {
 	ConsulAddr string      `default:"127.0.0.1:8500"`
 	Port       int         `default:"4000"`
@@ -68,7 +76,8 @@ var cli struct {
 	Status     StatusCmd   `cmd help:"Show status."`
 	Version    VersionCmd  `cmd help:"Show version."`
 	Tables     TablesCmd   `cmd help:"Show tables."`
-	Shutdown   ShutdownCmd `cmd help:"Shutdown cluster or one node.."`
+	Shutdown   ShutdownCmd `cmd help:"Shutdown cluster or one node."`
+	FindKey    FindKeyCmd  `cmd help:"Find nodes for key debug tool."`
 }
 
 func main() {
@@ -216,10 +225,28 @@ func (s *StatusCmd) Run(ctx *Context) error {
 	if err := conn.Connect(consulClient); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("ADDRESS            DATA CENTER      CONSUL NODE ID")
-	fmt.Println("================   ==============   ==========================")
-	for _, node := range conn.Nodes() {
-		fmt.Printf("%-16s   %-14s   %s\n", node.Node.Address, node.Node.Datacenter, node.Node.ID)
+    cx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
+    defer cancel()
+
+	fmt.Println("ADDRESS            STATUS   DATA CENTER      CONSUL NODE ID                        VERSION")
+	fmt.Println("================   ======   ==============   ====================================  =========================")
+	for i, node := range conn.Nodes() {
+		status := "Left"
+		version := ""
+		if node.Checks[0].Status == "passing" {
+			status = "Crashed"
+			if node.Checks[1].Status == "passing" {
+				// Invoike Status API
+        		if result, err := conn.Admin[i].Status(cx, &empty.Empty{}); err != nil {
+            		fmt.Printf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", conn.Admin[i], err, 
+							conn.ClientConnections()[i].Target()))
+				} else {
+					status = result.NodeState
+					version = result.Version
+				}
+			}
+		}
+		fmt.Printf("%-16s   %-7s  %-14s   %-25s  %s\n", node.Node.Address, status, node.Node.Datacenter, node.Node.ID, version)
 	}
 	return nil
 }
@@ -386,3 +413,79 @@ func (t *TablesCmd) Run(ctx *Context) error {
 	}
 	return nil
 }
+
+func getClientConnection (consulAddr string, port int) *shared.Conn {
+
+	fmt.Printf("Connecting to Consul at: [%s] ...\n", consulAddr)
+	consulClient, err := api.NewClient(&api.Config{Address: consulAddr})
+	if err != nil {
+		fmt.Println("Is the consul agent running?")
+		log.Fatal(err)
+	}
+	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
+	conn := shared.NewDefaultConnection()
+	conn.ServicePort = port
+	conn.Quorum = 0
+	if err := conn.Connect(consulClient); err != nil {
+		log.Fatal(err)
+	}
+	return conn
+}
+
+// Run - Shutdown command implementation
+func (f *FindKeyCmd) Run(ctx *Context) error {
+
+	conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
+    table, err := shared.LoadSchema("", f.Table, conn.Consul)
+    if err != nil {
+        return fmt.Errorf("Error loading table %s - %v", f.Table, err)
+    }
+    field, err2 := table.GetAttribute(f.Field)
+    if err2 != nil {
+        return fmt.Errorf("Error getting field  %s - %v", f.Field, err2)
+    }
+	if f.Rowid > 0 && field.IsBSI() {
+		return fmt.Errorf("Field is a BSI and Rowid was specified, ignoring Rowid")
+	}
+	if f.Timestamp != "" && table.TimeQuantumType == "" {
+		return fmt.Errorf("Table does not have time quantum, ignoring timestamp.\n")
+	}
+    if table.TimeQuantumType != "" && f.Timestamp == "" {
+		return fmt.Errorf("Table has time quantum type %s but timestamp not provided.", table.TimeQuantumType)
+	}
+	_, tf,  err3 := shared.ToTQTimestamp(table.TimeQuantumType, f.Timestamp)
+    if err3 != nil {
+        return fmt.Errorf("Error ToTQTimestamp %v - TQType = %s, Timestamp = %s", err3, table.TimeQuantumType, f.Timestamp)
+    }
+	if f.Rowid == 0 {
+		f.Rowid = 1
+	}
+	var key string
+	if field.IsBSI() {
+		key = fmt.Sprintf("%s/%s/%s", f.Table, f.Field, tf)
+	} else {
+		key = fmt.Sprintf("%s/%s/%d/%s", f.Table, f.Field, f.Rowid, tf)
+	}
+	
+    fmt.Println("")
+	fmt.Printf("KEY = %s\n", key)
+    cx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
+    defer cancel()
+    indices := conn.SelectNodes(key, false, false)
+    fmt.Println("")
+    fmt.Println("REPLICA   ADDRESS            STATUS")
+    fmt.Println("=======   ================   ======")
+	for i, index := range indices {
+		var status, ip string
+        if result, err := conn.Admin[index].Status(cx, &empty.Empty{}); err != nil {
+            fmt.Printf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", conn.Admin[index], err, 
+                    conn.ClientConnections()[index].Target()))
+        } else {
+            status = result.NodeState
+			ip = result.LocalIP
+        }
+        fmt.Printf("%-7d   %-16s   %-7s\n", i + 1, ip, status)
+	}
+	return nil
+}
+

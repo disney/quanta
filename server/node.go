@@ -37,7 +37,7 @@ const (
     Pending = StateType(iota)
 	Joining
 	Active
-	Shutdown
+	Stopped
 )
 
 // String - Returns a string representation of StateType
@@ -50,8 +50,8 @@ func (st StateType) String() string {
         return "Joining"
     case Active:
         return "Active"
-    case Shutdown:
-        return "Shutdown"
+    case Stopped:
+        return "Stopped"
 	}
 	return ""
 }
@@ -224,7 +224,7 @@ func (n *Node) Member(key string) bool {
 // Consul. In that case, Consul's health check for the Node will fail
 func (n *Node) Leave() (err error) {
 
-    n.State = Shutdown
+    n.State = Stopped
 	err = n.consul.Agent().ServiceDeregister(n.hashKey)
     n.ShutdownServices()
 	close(n.Stop)

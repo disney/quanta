@@ -5,6 +5,7 @@ package shared
 import (
 	"encoding/binary"
 	"fmt"
+    "github.com/araddon/dateparse"
 	u "github.com/araddon/gou"
 	"github.com/hashicorp/consul/api"
 	"net"
@@ -453,6 +454,7 @@ func Retry(attempts int, sleep time.Duration, f func() error) (err error) {
 	return fmt.Errorf("after %d attempts, last error: %s", attempts, err)
 }
 
+// GetLocalHostIP - return the hosts IP address.
 func GetLocalHostIP() (net.IP, error) {
 
 	ifaces, err := net.Interfaces()
@@ -482,5 +484,25 @@ func GetLocalHostIP() (net.IP, error) {
 	    }
 	}
 	return nil, fmt.Errorf("local IP address could not be determined")
+}
+
+func ToTQTimestamp(tqType, timestamp string) (time.Time, string, error) {
+
+	ts := time.Unix(0, 0)
+	var err error
+	if tqType != "" {
+		loc, _ := time.LoadLocation("Local")
+		ts, err = dateparse.ParseIn(timestamp, loc)
+		if err != nil {
+			return ts, "", err
+		}
+	}
+	tFormat := YMDTimeFmt
+	if tqType == "YMDH" {
+		tFormat = YMDHTimeFmt
+	}
+	sf := ts.Format(tFormat)
+	tq, _ := time.Parse(tFormat, sf)
+	return tq, ts.Format(YMDHTimeFmt), nil
 }
 

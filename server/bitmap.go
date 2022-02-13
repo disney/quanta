@@ -333,6 +333,7 @@ func (m *BitmapIndex) batchProcessLoop(threadID int) {
 		default: // Don't block
 			if m.State == Pending {
 				// Node is up and frag queue is empty.  Start verify thread.
+				time.Sleep(10)
 				m.State = Joining
 				// Kick off verify thread
 				u.Warnf("Node is in Joining state, launching verify processing loop ...")
@@ -356,13 +357,6 @@ func (m *BitmapIndex) batchProcessLoop(threadID int) {
 		case <-time.After(time.Second * 10):
 			m.checkPersistBitmapCache(true)
 			m.checkPersistBSICache(true)
-/*
-		case _, ok := <- m.Stop:
-			if !ok {
-				m.Shutdown()
-				break
-			}
-*/
 		}
 	}
 }

@@ -275,7 +275,7 @@ func (m *Conn) Poll() {
 func (m *Conn) Update() (err error) {
 
 	opts := &api.QueryOptions{WaitIndex: m.waitIndex}
-	serviceEntries, meta, err := m.Consul.Health().Service(m.ServiceName, "", true, opts)
+	serviceEntries, meta, err := m.Consul.Health().Service(m.ServiceName, "", false, opts)
 	if err != nil {
 		return err
 	}
@@ -289,8 +289,10 @@ func (m *Conn) Update() (err error) {
 	ids := make([]string, 0)
 	idMap := make(map[string]struct{})
 	for _, entry := range serviceEntries {
-		node := strings.Split(entry.Node.Node, ".")[0]
-		idMap[node] = struct{}{}
+		if entry.Checks[0].Status == "passing" && entry.Checks[1].Status == "passing" {
+			node := strings.Split(entry.Node.Node, ".")[0]
+			idMap[node] = struct{}{}
+		}
 	}
 	for k := range idMap {
 		ids = append(ids, k)
@@ -298,13 +300,11 @@ func (m *Conn) Update() (err error) {
 
 	m.nodes = make([]*api.ServiceEntry, 0)
 	m.nodeMap = make(map[string]int)
-	i := 0
-	for _, entry := range serviceEntries {
+	for i, entry := range serviceEntries {
+		m.nodes = append(m.nodes, entry)
 		if _, found := idMap[entry.Service.ID]; found {
 			if _, found := m.nodeMap[entry.Service.ID]; !found {
-				m.nodes = append(m.nodes, entry)
 				m.nodeMap[entry.Service.ID] = i
-				i++
 			}
 		}
 	}

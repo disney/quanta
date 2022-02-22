@@ -36,6 +36,7 @@ func (suite *QuantaTestSuite) SetupSuite() {
 
 	core.ClearTableCache()
 	RemoveContents("./testdata/index")
+	RemoveContents("./testdata/bitmap")
 
 	// Server side components already started and available in package level variables in harness.go
 	conn := shared.NewDefaultConnection()

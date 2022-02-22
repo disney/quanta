@@ -154,6 +154,9 @@ func (m *BitmapIndex) Shutdown() {
 
 // JoinCluster - Join the cluster
 func (m *BitmapIndex) JoinCluster() {
+	if m.Conn.ServicePort == 0 {
+		return    // Skip this for test harness mode.
+	}
     u.Infof("Bitmap server is joining the cluster.")
 	m.verifyNode()
 }

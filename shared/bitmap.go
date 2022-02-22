@@ -66,7 +66,33 @@ func NewBitmapIndex(conn *Conn, batchSize int) *BitmapIndex {
 	for i := 0; i < len(conn.ClientConnections()); i++ {
 		clients[i] = pb.NewBitmapIndexClient(conn.ClientConnections()[i])
 	}
-	return &BitmapIndex{Conn: conn, batchSize: batchSize, client: clients}
+	c :=  &BitmapIndex{Conn: conn, batchSize: batchSize, client: clients}
+	conn.RegisterService(c)
+	return c
+}
+
+// MemberJoined - A new node joined the cluster.
+func (c *BitmapIndex) MemberJoined(nodeId, ipAddress string, index int) {
+
+	c.client = append(c.client, nil)
+	copy(c.client[index + 1:], c.client[index:])
+	c.client[index] = pb.NewBitmapIndexClient(c.Conn.clientConn[index])
+}
+
+// MemberLeft - A node left the cluster.
+func (c *BitmapIndex) MemberLeft(nodeId string, index int) {
+
+	if len(c.client) <= 1 {
+		c.client = make([]pb.BitmapIndexClient, 0)
+		return
+	}
+	c.client = append(c.client[:index], c.client[index + 1:]...)
+}
+
+// Client - Get a client by index.
+func (c *BitmapIndex) Client(index int) pb.BitmapIndexClient {
+
+	return c.client[index]
 }
 
 // Flush outstanding batch before.

@@ -727,6 +727,8 @@ type BitmapIndexClient interface {
 	Projection(ctx context.Context, in *ProjectionRequest, opts ...grpc.CallOption) (*ProjectionResponse, error)
 	CheckoutSequence(ctx context.Context, in *CheckoutSequenceRequest, opts ...grpc.CallOption) (*CheckoutSequenceResponse, error)
 	TableOperation(ctx context.Context, in *TableOperationRequest, opts ...grpc.CallOption) (*empty.Empty, error)
+	Synchronize(ctx context.Context, in *wrappers.StringValue, opts ...grpc.CallOption) (*empty.Empty, error)
+	SyncStatus(ctx context.Context, in *SyncStatusRequest, opts ...grpc.CallOption) (*SyncStatusResponse, error)
 }
 
 type bitmapIndexClient struct {
@@ -834,6 +836,24 @@ func (c *bitmapIndexClient) TableOperation(ctx context.Context, in *TableOperati
 	return out, nil
 }
 
+func (c *bitmapIndexClient) Synchronize(ctx context.Context, in *wrappers.StringValue, opts ...grpc.CallOption) (*empty.Empty, error) {
+	out := new(empty.Empty)
+	err := c.cc.Invoke(ctx, "/shared.BitmapIndex/Synchronize", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bitmapIndexClient) SyncStatus(ctx context.Context, in *SyncStatusRequest, opts ...grpc.CallOption) (*SyncStatusResponse, error) {
+	out := new(SyncStatusResponse)
+	err := c.cc.Invoke(ctx, "/shared.BitmapIndex/SyncStatus", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BitmapIndexServer is the server API for BitmapIndex service.
 // All implementations should embed UnimplementedBitmapIndexServer
 // for forward compatibility
@@ -846,6 +866,8 @@ type BitmapIndexServer interface {
 	Projection(context.Context, *ProjectionRequest) (*ProjectionResponse, error)
 	CheckoutSequence(context.Context, *CheckoutSequenceRequest) (*CheckoutSequenceResponse, error)
 	TableOperation(context.Context, *TableOperationRequest) (*empty.Empty, error)
+	Synchronize(context.Context, *wrappers.StringValue) (*empty.Empty, error)
+	SyncStatus(context.Context, *SyncStatusRequest) (*SyncStatusResponse, error)
 }
 
 // UnimplementedBitmapIndexServer should be embedded to have forward compatible implementations.
@@ -875,6 +897,12 @@ func (UnimplementedBitmapIndexServer) CheckoutSequence(context.Context, *Checkou
 }
 func (UnimplementedBitmapIndexServer) TableOperation(context.Context, *TableOperationRequest) (*empty.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TableOperation not implemented")
+}
+func (UnimplementedBitmapIndexServer) Synchronize(context.Context, *wrappers.StringValue) (*empty.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Synchronize not implemented")
+}
+func (UnimplementedBitmapIndexServer) SyncStatus(context.Context, *SyncStatusRequest) (*SyncStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SyncStatus not implemented")
 }
 
 // UnsafeBitmapIndexServer may be embedded to opt out of forward compatibility for this service.
@@ -1040,6 +1068,42 @@ func _BitmapIndex_TableOperation_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BitmapIndex_Synchronize_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(wrappers.StringValue)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BitmapIndexServer).Synchronize(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/shared.BitmapIndex/Synchronize",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BitmapIndexServer).Synchronize(ctx, req.(*wrappers.StringValue))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BitmapIndex_SyncStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SyncStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BitmapIndexServer).SyncStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/shared.BitmapIndex/SyncStatus",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BitmapIndexServer).SyncStatus(ctx, req.(*SyncStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // BitmapIndex_ServiceDesc is the grpc.ServiceDesc for BitmapIndex service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1074,6 +1138,14 @@ var BitmapIndex_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TableOperation",
 			Handler:    _BitmapIndex_TableOperation_Handler,
+		},
+		{
+			MethodName: "Synchronize",
+			Handler:    _BitmapIndex_Synchronize_Handler,
+		},
+		{
+			MethodName: "SyncStatus",
+			Handler:    _BitmapIndex_SyncStatus_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

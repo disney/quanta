@@ -33,7 +33,27 @@ func NewKVStore(conn *Conn) *KVStore {
 	for i := 0; i < len(conn.ClientConnections()); i++ {
 		clients[i] = pb.NewKVStoreClient(conn.ClientConnections()[i])
 	}
-	return &KVStore{Conn: conn, client: clients}
+	c := &KVStore{Conn: conn, client: clients}
+	conn.RegisterService(c)
+	return c
+}
+
+// MemberJoined - A new node joined the cluster.
+func (c *KVStore) MemberJoined(nodeId, ipAddress string, index int) {
+
+    c.client = append(c.client, nil)
+    copy(c.client[index + 1:], c.client[index:])
+    c.client[index] = pb.NewKVStoreClient(c.Conn.clientConn[index])
+}
+
+// MemberLeft - A node left the cluster.
+func (c *KVStore) MemberLeft(nodeId string, index int) {
+
+    if len(c.client) <= 1 {
+        c.client = make([]pb.KVStoreClient, 0)
+        return
+    }
+    c.client = append(c.client[:index], c.client[index + 1:]...)
 }
 
 // Put a new attribute
@@ -246,7 +266,7 @@ func (c *KVStore) batchLookup(client pb.KVStoreClient, index string,
 				return
 			}
 			if err != nil {
-				c.err <- fmt.Errorf("Failed to receive a KV pair : %v", err)
+				err = fmt.Errorf("Failed to receive a KV pair : %v", err)
 				return
 			}
 			k := UnmarshalValue(keyType, kv.Key)

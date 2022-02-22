@@ -38,6 +38,8 @@ service BitmapIndex {
   rpc Projection(ProjectionRequest) returns (ProjectionResponse) {}
   rpc CheckoutSequence(CheckoutSequenceRequest) returns (CheckoutSequenceResponse) {}
   rpc TableOperation(TableOperationRequest) returns (google.protobuf.Empty) {}
+  rpc Synchronize(google.protobuf.StringValue) returns (google.protobuf.Empty) {}
+  rpc SyncStatus(SyncStatusRequest) returns (SyncStatusResponse) {}
 }
 
 message StatusMessage {
@@ -54,6 +56,7 @@ message IndexKVPair {
   repeated bytes value = 3;
   int64 	time = 4;
   bool      isClear = 5;
+  bool      sync = 6;
 }
 
 message StringEnum {
@@ -150,6 +153,25 @@ message UpdateRequest {
   uint64    columnId = 3;
   int64     rowIdOrValue = 4;
   int64 	time = 5;
+}
+
+message SyncStatusRequest {
+  string 	index = 1;
+  string 	field = 2;
+  uint64    rowId = 3;
+  int64 	time = 4;
+  uint64    cardinality = 5;
+  int64     bSIChecksum = 6;
+  int64     modTime = 7;
+  bool      sendData = 8;
+}
+
+message SyncStatusResponse {
+  bool      ok = 1;
+  uint64    cardinality = 2;
+  int64     BSIChecksum = 3;
+  int64     modTime = 4;
+  repeated bytes data = 5;
 }
 
 message ProjectionRequest {

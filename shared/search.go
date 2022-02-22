@@ -37,7 +37,27 @@ func NewStringSearch(conn *Conn, batchSize int) *StringSearch {
 	for i := 0; i < len(conn.ClientConnections()); i++ {
 		clients[i] = pb.NewStringSearchClient(conn.ClientConnections()[i])
 	}
-	return &StringSearch{Conn: conn, batchSize: batchSize, client: clients}
+	c := &StringSearch{Conn: conn, batchSize: batchSize, client: clients}
+	conn.RegisterService(c)
+	return c
+}
+
+// MemberJoined - A new node joined the cluster.
+func (c *StringSearch) MemberJoined(nodeId, ipAddress string, index int) {
+
+    c.client = append(c.client, nil)
+    copy(c.client[index + 1:], c.client[index:])
+    c.client[index] = pb.NewStringSearchClient(c.Conn.clientConn[index])
+}
+
+// MemberLeft - A node left the cluster.
+func (c *StringSearch) MemberLeft(nodeId string, index int) {
+
+    if len(c.client) <= 1 {
+        c.client = make([]pb.StringSearchClient, 0)
+        return
+    }
+    c.client = append(c.client[:index], c.client[index + 1:]...)
 }
 
 // Flush - Commit remaining string batch

@@ -33,12 +33,12 @@ type KVStore struct {
 }
 
 // NewKVStore - Construct server side state.
-func NewKVStore(node *Node) (*KVStore, error) {
+func NewKVStore(node *Node) *KVStore {
 
 	e := &KVStore{Node: node}
 	e.storeCache = make(map[string]*pogreb.DB)
 	pb.RegisterKVStoreServer(node.server, e)
-	return e, nil
+	return e
 }
 
 // Init - Initialize.
@@ -65,13 +65,13 @@ func (m *KVStore) Init() error {
 			return nil
 		})
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot initialize kv store service: %v", err)
 	}
 
 	for _, v := range dbList {
 		u.Infof("Opening [%s]", v)
 		if _, err := m.getStore(v); err != nil {
-			return err
+			return fmt.Errorf("cannot initialize kv store service: %v", err)
 		}
 	}
 	return nil
@@ -86,6 +86,10 @@ func (m *KVStore) Shutdown() {
 		v.Sync()
 		v.Close()
 	}
+}
+
+// JoinCluster - Join the cluster
+func (m *KVStore) JoinCluster() {
 }
 
 func (m *KVStore) getStore(index string) (db *pogreb.DB, err error) {

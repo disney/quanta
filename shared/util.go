@@ -43,6 +43,10 @@ func ToBytes(v interface{}) []byte {
 		b := make([]byte, 8)
 		binary.LittleEndian.PutUint64(b, uint64(v.(int64)))
 		return b
+	case int:
+		b := make([]byte, 8)
+		binary.LittleEndian.PutUint64(b, uint64(v.(int)))
+		return b
 	}
 	msg := fmt.Sprintf("Unsupported type %T", v)
 	panic(msg)
@@ -56,7 +60,8 @@ func UnmarshalValue(kind reflect.Kind, buf []byte) interface{} {
 		return string(buf)
 	case reflect.Uint64:
 		return binary.LittleEndian.Uint64(buf)
-
+	case reflect.Int:
+		return int(binary.LittleEndian.Uint64(buf))
 	}
 	msg := fmt.Sprintf("Should not be here for kind [%s]!", kind.String())
 	panic(msg)
@@ -506,3 +511,33 @@ func ToTQTimestamp(tqType, timestamp string) (time.Time, string, error) {
 	return tq, ts.Format(YMDHTimeFmt), nil
 }
 
+// GetTargetClusterSize - Get the target cluster size.
+func GetClusterSizeTarget(consul *api.Client) (int, error) {
+
+    if consul == nil {
+        return -1, fmt.Errorf("consul client is not provided")
+    }
+
+    path := "config/clusterSizeTarget"
+    kvPair, _, err := consul.KV().Get(path, nil)
+    if err != nil {
+        return -1, err
+    }
+    if kvPair == nil {
+        return 0, nil
+    }
+	v := UnmarshalValue(reflect.Int, kvPair.Value)
+	return v.(int), nil
+}
+
+// SetTargetClusterSize - Set the target cluster size.
+func SetClusterSizeTarget(consul *api.Client, size int) error {
+
+	var kvPair api.KVPair
+    kvPair.Key = "config/clusterSizeTarget"
+    kvPair.Value = ToBytes(size)
+    if _, err := consul.KV().Put(&kvPair, nil); err != nil {
+        return err
+    }
+	return nil
+}

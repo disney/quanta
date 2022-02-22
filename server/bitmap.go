@@ -15,6 +15,7 @@ import (
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
 	"io"
+	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -131,7 +132,10 @@ func (m *BitmapIndex) Init() error {
 	}
 
 	// Read files from disk
-	m.readBitmapFiles(m.fragQueue)
+	err := m.readBitmapFiles(m.fragQueue)
+	if err != nil {
+		return fmt.Errorf("cannot initialize bitmap server error: %v", err)
+	}
 
 	if m.expireDays > 0 {
 		u.Infof("Starting data expiration thread - expiration after %d days.", m.expireDays)
@@ -139,13 +143,19 @@ func (m *BitmapIndex) Init() error {
 	} else {
 		u.Info("Data expiration thread disabled.")
 	}
-
 	return nil
 }
 
 // Shutdown - Shut down and clean up.
 func (m *BitmapIndex) Shutdown() {
     u.Warnf("Shutting down bitmap server.")
+	// TODO:  Anything to do here?  
+}
+
+// JoinCluster - Join the cluster
+func (m *BitmapIndex) JoinCluster() {
+    u.Infof("Bitmap server is joining the cluster.")
+	m.verifyNode()
 }
 
 // BatchMutate API call (used by client SetBit call for bulk loading data)
@@ -188,12 +198,23 @@ func (m *BitmapIndex) BatchMutate(stream pb.BitmapIndex_BatchMutateServer) error
 		isBSI := m.isBSI(indexName, fieldName)
 		ts := time.Unix(0, kv.Time)
 
+		frag := newBitmapFragment(indexName, fieldName, rowIDOrBits, ts, kv.Value,
+			isBSI, kv.IsClear, false)
+
+		if kv.Sync {
+			if frag.IsBSI {
+				m.updateBSICache(frag)
+			} else {
+				m.updateBitmapCache(frag)
+			}
+		    return nil
+		}
+
 		select {
-		case m.fragQueue <- newBitmapFragment(indexName, fieldName, rowIDOrBits, ts, kv.Value,
-			isBSI, kv.IsClear, false):
+		case m.fragQueue <- frag:
 		default:
 			// Fragment queue is full
-			u.Errorf("BatchMutate: fragment queue is full!")
+			return fmt.Errorf("BatchMutate: fragment queue is full!")
 		}
 	}
 }
@@ -331,15 +352,6 @@ func (m *BitmapIndex) batchProcessLoop(threadID int) {
 			}
 			continue
 		default: // Don't block
-			if m.State == Pending {
-				// Node is up and frag queue is empty.  Start verify thread.
-				time.Sleep(10)
-				m.State = Joining
-				// Kick off verify thread
-				u.Warnf("Node is in Joining state, launching verify processing loop ...")
-				m.verifyNode()
-    			go m.verifyProcessLoop()
-			}
 		}
 
 		select {
@@ -389,17 +401,10 @@ func (m *BitmapIndex) verifyProcessLoop() {
 
 func (m *BitmapIndex) verifyNode() {
 
-	ctx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
-    defer cancel()
-
-ip, errx := shared.GetLocalHostIP()
-u.Errorf("LOCALHOST = %v - %v", ip, errx)
-	for i, v := range m.Conn.Admin {
-		if result, err := v.Status(ctx, &empty.Empty{}); err != nil {
-			u.Errorf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s", v, err, m.Conn.ClientConnections()[i].Target()))
-    	} else {
-			u.Errorf("Node %s, status = %v", m.Conn.ClientConnections()[i].Target(), result)
-		}
+	peerClient := m.Conn.GetService("BitmapIndex").(*shared.BitmapIndex)
+	err := peerClient.Synchronize(m.GetNodeID())
+	if err != nil {
+		log.Fatal(fmt.Errorf("Node synchronization/verification failed - %v", err))
 	}
 }
 
@@ -840,7 +845,7 @@ func (m *BitmapIndex) Update(ctx context.Context, req *pb.UpdateRequest) (*empty
 	case m.fragQueue <- frag:
 	default:
 		// Fragment queue is full
-		u.Errorf("Update: fragment queue is full!")
+		return &empty.Empty{}, fmt.Errorf("Update: fragment queue is full!")
 	}
 	return &empty.Empty{}, nil
 }

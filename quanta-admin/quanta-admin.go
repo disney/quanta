@@ -5,10 +5,13 @@ import (
 	"context"
 	"fmt"
 	"github.com/alecthomas/kong"
+     pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
     "github.com/golang/protobuf/ptypes/empty"
 	"github.com/hashicorp/consul/api"
 	"log"
+	"strconv"
+	"time"
 )
 
 // Variables to identify the build
@@ -63,8 +66,14 @@ type ShutdownCmd struct {
 type FindKeyCmd struct {
 	Table string `arg name:"table" help:"Table name."`
 	Field string `arg name:"field" help:"Field name."`
-	Rowid int64  `help:"Row id. (Omit for BSI)"`
+	RowId uint64  `help:"Row id. (Omit for BSI)"`
 	Timestamp string  `help:"Time quantum value. (Omit for no quantum)"`
+}
+
+// ConfigCmd - Configuration  command
+type ConfigCmd struct {
+	Key string `help:"Parameter name."`
+	Value string `help:"Parameter value."`
 }
 
 var cli struct {
@@ -78,6 +87,7 @@ var cli struct {
 	Tables     TablesCmd   `cmd help:"Show tables."`
 	Shutdown   ShutdownCmd `cmd help:"Shutdown cluster or one node."`
 	FindKey    FindKeyCmd  `cmd help:"Find nodes for key debug tool."`
+	Config     ConfigCmd   `cmd help:"Configuration key/value pair."`
 }
 
 func main() {
@@ -212,34 +222,20 @@ func (v *VersionCmd) Run(ctx *Context) error {
 // Run - Status command implementation
 func (s *StatusCmd) Run(ctx *Context) error {
 
-	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
-	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
-	if err != nil {
-		fmt.Println("Is the consul agent running?")
-		return fmt.Errorf("Error connecting to consul %v", err)
-	}
-	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", ctx.Port)
-	conn := shared.NewDefaultConnection()
-	conn.ServicePort = ctx.Port
-	conn.Quorum = 0
-	if err := conn.Connect(consulClient); err != nil {
-		log.Fatal(err)
-	}
-    cx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
-    defer cancel()
+    conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
 
 	fmt.Println("ADDRESS            STATUS   DATA CENTER      CONSUL NODE ID                        VERSION")
 	fmt.Println("================   ======   ==============   ====================================  =========================")
-	for i, node := range conn.Nodes() {
+	for _, node := range conn.Nodes() {
 		status := "Left"
 		version := ""
 		if node.Checks[0].Status == "passing" {
 			status = "Crashed"
 			if node.Checks[1].Status == "passing" {
-				// Invoike Status API
-        		if result, err := conn.Admin[i].Status(cx, &empty.Empty{}); err != nil {
-            		fmt.Printf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", conn.Admin[i], err, 
-							conn.ClientConnections()[i].Target()))
+				// Invoke Status API
+				if result, err := shared.GetNodeStatusForID(conn, node.Service.ID); err != nil {
+					fmt.Printf("Error: %v\n", err)
+					continue
 				} else {
 					status = result.NodeState
 					version = result.Version
@@ -253,19 +249,8 @@ func (s *StatusCmd) Run(ctx *Context) error {
 
 // Run - Shutdown command implementation
 func (s *ShutdownCmd) Run(ctx *Context) error {
-	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
-	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
-	if err != nil {
-		fmt.Println("Is the consul agent running?")
-		return fmt.Errorf("Error connecting to consul %v", err)
-	}
-	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", ctx.Port)
-	conn := shared.NewDefaultConnection()
-	conn.ServicePort = ctx.Port
-	conn.Quorum = 0
-	if err := conn.Connect(consulClient); err != nil {
-		log.Fatal(err)
-	}
+
+    conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
     cx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
     defer cancel()
 	for i, v := range conn.Admin {
@@ -444,7 +429,7 @@ func (f *FindKeyCmd) Run(ctx *Context) error {
     if err2 != nil {
         return fmt.Errorf("Error getting field  %s - %v", f.Field, err2)
     }
-	if f.Rowid > 0 && field.IsBSI() {
+	if f.RowId > 0 && field.IsBSI() {
 		return fmt.Errorf("Field is a BSI and Rowid was specified, ignoring Rowid")
 	}
 	if f.Timestamp != "" && table.TimeQuantumType == "" {
@@ -453,18 +438,18 @@ func (f *FindKeyCmd) Run(ctx *Context) error {
     if table.TimeQuantumType != "" && f.Timestamp == "" {
 		return fmt.Errorf("Table has time quantum type %s but timestamp not provided.", table.TimeQuantumType)
 	}
-	_, tf,  err3 := shared.ToTQTimestamp(table.TimeQuantumType, f.Timestamp)
+	ts, tf,  err3 := shared.ToTQTimestamp(table.TimeQuantumType, f.Timestamp)
     if err3 != nil {
         return fmt.Errorf("Error ToTQTimestamp %v - TQType = %s, Timestamp = %s", err3, table.TimeQuantumType, f.Timestamp)
     }
-	if f.Rowid == 0 {
-		f.Rowid = 1
+	if f.RowId == 0 {
+		f.RowId = 1
 	}
 	var key string
 	if field.IsBSI() {
 		key = fmt.Sprintf("%s/%s/%s", f.Table, f.Field, tf)
 	} else {
-		key = fmt.Sprintf("%s/%s/%d/%s", f.Table, f.Field, f.Rowid, tf)
+		key = fmt.Sprintf("%s/%s/%d/%s", f.Table, f.Field, f.RowId, tf)
 	}
 	
     fmt.Println("")
@@ -472,11 +457,14 @@ func (f *FindKeyCmd) Run(ctx *Context) error {
     cx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
     defer cancel()
     indices := conn.SelectNodes(key, false, false)
+	bitClient := shared.NewBitmapIndex(conn, 0)
+	req := &pb.SyncStatusRequest{Index: f.Table, Field: f.Field, RowId: f.RowId, Time: ts.UnixNano()}
     fmt.Println("")
-    fmt.Println("REPLICA   ADDRESS            STATUS")
-    fmt.Println("=======   ================   ======")
+    fmt.Println("REPLICA   ADDRESS            STATUS   CARDINALITY   MODTIME")
+    fmt.Println("=======   ================   ======   ===========   =======")
 	for i, index := range indices {
-		var status, ip string
+		var status, ip, modTime string
+		var card uint64
         if result, err := conn.Admin[index].Status(cx, &empty.Empty{}); err != nil {
             fmt.Printf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", conn.Admin[index], err, 
                     conn.ClientConnections()[index].Target()))
@@ -484,7 +472,56 @@ func (f *FindKeyCmd) Run(ctx *Context) error {
             status = result.NodeState
 			ip = result.LocalIP
         }
-        fmt.Printf("%-7d   %-16s   %-7s\n", i + 1, ip, status)
+        if res, err2 := bitClient.Client(index).SyncStatus(cx, req); err2 != nil {
+            fmt.Printf(fmt.Sprintf("%v.SyncStatus(_) = _, %v, node = %s\n", bitClient.Client(index), err2, 
+                    conn.ClientConnections()[index].Target()))
+        } else {
+			if res.Cardinality == 0 && res.ModTime == 0 {
+				status = "Missing"
+			} else {
+				status = "OK"
+				card = res.Cardinality
+				ts := time.Unix(0, res.ModTime)
+				modTime = ts.Format(time.RFC3339)
+			}
+        }
+        fmt.Printf("%-7d   %-16s   %-7s  %-11d   %s\n", i + 1, ip, status, card, modTime)
+	}
+	return nil
+}
+
+// Run - Config command implemetation.
+func (c *ConfigCmd) Run(ctx *Context) error {
+
+    fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
+    consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
+    if err != nil {
+        fmt.Println("Is the consul agent running?")
+        return fmt.Errorf("Error connecting to consul %v", err)
+    }
+	if c.Key == "" {
+		return fmt.Errorf("--key should be one of cluster-size-target, etc.")
+	}
+    if c.Key == "cluster-size-target" {
+		if c.Value != "" {
+			val, err := strconv.Atoi(c.Value)
+			if err != nil {
+        		return fmt.Errorf("cant parse config value %s for key %s - %v", c.Value, c.Key, err)
+			}
+			err = shared.SetClusterSizeTarget(consulClient, val)
+			if err != nil {
+        		return fmt.Errorf("error setting value %s for key %s - %v", c.Value, c.Key, err)
+			}
+		}
+		val, err := shared.GetClusterSizeTarget(consulClient)
+		if err != nil {
+        	return fmt.Errorf("Error getting configuration value %v - %v", c.Key, err)
+		}
+		if c.Value == "" {
+			fmt.Printf("cluster-size-target = %v\n", val)
+		} else {
+			fmt.Printf("cluster-size-target is now set = %v\n", val)
+		}
 	}
 	return nil
 }

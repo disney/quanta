@@ -21,11 +21,13 @@ func Setup() (*server.Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, err = server.NewStringSearch(node)
+	search := server.NewStringSearch(node)
+	err = search.Init()
 	if err != nil {
 		return nil, err
 	}
-	_, err = server.NewKVStore(node)
+	kvStore := server.NewKVStore(node)
+	err = kvStore.Init()
 	if err != nil {
 		return nil, err
 	}

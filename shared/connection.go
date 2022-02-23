@@ -8,7 +8,7 @@ package shared
 // concept of a "masterless" architecture where each node is an active peer.  Cluster
 // coordination is provided by a separate 3 node Consul cluster.  Is is important to note
 // that a Conn instance represents a group of connections to all of the data nodes in the
-// corresponding cluster.  A Conn can be used not only for communication from external 
+// corresponding cluster.  A Conn can be used not only for communication from external
 // sources to the cluster, but for inter-node communication as well.
 //
 
@@ -124,12 +124,12 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 		}
 		m.clientConn, err = m.CreateNodeConnections(true)
 		m.Admin = make([]pb.ClusterAdminClient, len(m.clientConn))
-    	for i := 0; i < len(m.clientConn); i++ {
-        	m.Admin[i] = pb.NewClusterAdminClient(m.clientConn[i])
+		for i := 0; i < len(m.clientConn); i++ {
+			m.Admin[i] = pb.NewClusterAdminClient(m.clientConn[i])
 			id := m.ids[i]
 			entry := m.idMap[id]
 			m.SendMemberJoined(id, entry.Node.Address, i)
-    	}
+		}
 		go m.poll()
 	} else {
 		m.HashTable = rendezvous.New([]string{"test"})
@@ -138,7 +138,7 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 		ctx := context.Background()
 		m.clientConn = make([]*grpc.ClientConn, 1)
 		m.Admin = make([]pb.ClusterAdminClient, 1)
-        m.Admin[0] = pb.NewClusterAdminClient(m.clientConn[0])
+		m.Admin[0] = pb.NewClusterAdminClient(m.clientConn[0])
 		m.clientConn[0], err = grpc.DialContext(ctx, "bufnet",
 			grpc.WithDialer(TestDialer), grpc.WithInsecure())
 		if err != nil {
@@ -318,19 +318,19 @@ func (m *Conn) update() (err error) {
 
 	// Identify new member joins
 	for index, id := range ids {
-		if m.waitIndex > 0 {  // not initial update
+		if m.waitIndex > 0 { // not initial update
 			if _, ok := m.nodeMap[id]; !ok {
 				entry := idMap[id]
 				// insert new connection and admin stub
 				m.clientConn = append(m.clientConn, nil)
-                copy(m.clientConn[index + 1:], m.clientConn[index:])
+				copy(m.clientConn[index+1:], m.clientConn[index:])
 				m.clientConn[index], err = grpc.Dial(fmt.Sprintf("%s:%d", entry.Node.Address,
 					m.ServicePort), m.grpcOpts...)
 				if err != nil {
 					return err
 				}
 				m.Admin = append(m.Admin, nil)
-                copy(m.Admin[index + 1:], m.Admin[index:])
+				copy(m.Admin[index+1:], m.Admin[index:])
 				m.Admin[index] = pb.NewClusterAdminClient(m.clientConn[index])
 				u.Infof("NODE %s joined at index %d\n", id, index)
 				m.SendMemberJoined(id, entry.Node.Address, index)
@@ -343,12 +343,12 @@ func (m *Conn) update() (err error) {
 			// delete connection and admin stub
 			m.clientConn[index].Close()
 			if len(m.clientConn) > 1 {
-				m.clientConn = append(m.clientConn[:index], m.clientConn[index + 1:]...)
+				m.clientConn = append(m.clientConn[:index], m.clientConn[index+1:]...)
 			} else {
 				m.clientConn = make([]*grpc.ClientConn, 0)
 			}
 			if len(m.Admin) > 1 {
-				m.Admin = append(m.Admin[:index], m.Admin[index + 1:]...)
+				m.Admin = append(m.Admin[:index], m.Admin[index+1:]...)
 			} else {
 				m.Admin = make([]pb.ClusterAdminClient, 0)
 			}
@@ -393,7 +393,7 @@ func (m *Conn) ClientConnections() []*grpc.ClientConn {
 	return m.clientConn
 }
 
-// GetNodeMap - Return list of members 
+// GetNodeMap - Return list of members
 func (m *Conn) GetNodeMap() map[string]int {
 
 	m.nodeMapLock.RLock()
@@ -406,29 +406,27 @@ func (m *Conn) GetHashTableWithNewNodes(newIds []string) *rendezvous.Table {
 
 	m.nodeMapLock.RLock()
 	defer m.nodeMapLock.RUnlock()
-    return rendezvous.New(append(m.ids, newIds...))
+	return rendezvous.New(append(m.ids, newIds...))
 }
-
-
 
 // SendMemberLeft - Notify listening service of MemberLeft event.
 func (m *Conn) SendMemberLeft(nodeId string, index int) {
-    
-    for _, svc := range m.registeredServices {
+
+	for _, svc := range m.registeredServices {
 		svc.MemberLeft(nodeId, index)
 	}
 }
 
 // SendMemberJoined - Notify listening service of MemberLeft event.
 func (m *Conn) SendMemberJoined(nodeId, ipAddress string, index int) {
-    
-    for _, svc := range m.registeredServices {
-        svc.MemberJoined(nodeId, ipAddress, index)
-    }
+
+	for _, svc := range m.registeredServices {
+		svc.MemberJoined(nodeId, ipAddress, index)
+	}
 }
 
 // GetService - Get a service by its name.
 func (m *Conn) GetService(name string) Service {
-	
+
 	return m.registeredServices[name]
 }

@@ -6,15 +6,15 @@ package shared
 //
 
 import (
-    "context"
-    "fmt"
-    u "github.com/araddon/gou"
-    pb "github.com/disney/quanta/grpc"
-    "github.com/golang/protobuf/ptypes/empty"
-    "github.com/golang/protobuf/ptypes/wrappers"
-    "golang.org/x/sync/errgroup"
+	"context"
+	"fmt"
+	u "github.com/araddon/gou"
+	pb "github.com/disney/quanta/grpc"
+	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/golang/protobuf/ptypes/wrappers"
+	"golang.org/x/sync/errgroup"
 	"os"
-    "time"
+	"time"
 )
 
 // Synchronize flow.
@@ -37,13 +37,13 @@ func (c *BitmapIndex) Synchronize(nodeKey string) error {
 		var startingCount, readyCount, unknownCount int
 		nodeMap := c.Conn.GetNodeMap()
 		select {
-		case _, open := <- c.Conn.Stop:
+		case _, open := <-c.Conn.Stop:
 			if !open {
 				err := fmt.Errorf("Shutdown initiated while waiting to start synchronization.")
 				return err
 			}
-        case <-time.After(DefaultPollInterval):
-			for id, _ := range nodeMap {
+		case <-time.After(DefaultPollInterval):
+			for id := range nodeMap {
 				status, err := GetNodeStatusForID(c.Conn, id)
 				if err != nil {
 					u.Warnf("error %v\n", err)
@@ -71,17 +71,17 @@ func (c *BitmapIndex) Synchronize(nodeKey string) error {
 		if unknownCount > 0 {
 			u.Infof("%d nodes in unknown state.", unknownCount)
 		}
-		u.Infof("Join status nodemap len = %d, starting = %d, ready = %d, unknown = %d\n", 
-				len(nodeMap), startingCount, readyCount, unknownCount)
+		u.Infof("Join status nodemap len = %d, starting = %d, ready = %d, unknown = %d\n",
+			len(nodeMap), startingCount, readyCount, unknownCount)
 	}
 
 	time.Sleep(DefaultPollInterval)
 	u.Warnf("All %d cluster members are ready to push data to me (sync).", memberCount)
 
 	var eg errgroup.Group
-    // Connect to all peers (except myself) and kick off a syncronization push process.
+	// Connect to all peers (except myself) and kick off a syncronization push process.
 	for i, n := range c.client {
-    	myIndex := c.Conn.GetClientIndexForNodeID(nodeKey)
+		myIndex := c.Conn.GetClientIndexForNodeID(nodeKey)
 		if myIndex == -1 {
 			u.Errorf("Client index not valid exiting.")
 			os.Exit(1)
@@ -114,7 +114,7 @@ func (c *BitmapIndex) syncClient(client pb.BitmapIndexClient, nodeKey string, cl
 	ctx, cancel := context.WithTimeout(context.Background(), SyncDeadline)
 	defer cancel()
 
-    nKey := &wrappers.StringValue{Value: nodeKey}
+	nKey := &wrappers.StringValue{Value: nodeKey}
 	if client == nil {
 		u.Errorf("client is nil for nodekey = %s, index = %d", nodeKey, clientIndex)
 		return nil
@@ -129,34 +129,32 @@ func (c *BitmapIndex) syncClient(client pb.BitmapIndexClient, nodeKey string, cl
 
 // Send a sync status  request.
 func (c *BitmapIndex) syncStatusClient(client pb.BitmapIndexClient, req *pb.SyncStatusRequest,
-		clientIndex int) (*pb.SyncStatusResponse, error) {
+	clientIndex int) (*pb.SyncStatusResponse, error) {
 
-    ctx, cancel := context.WithTimeout(context.Background(), Deadline)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	defer cancel()
 
-    response, err := client.SyncStatus(ctx, req)
+	response, err := client.SyncStatus(ctx, req)
 	if err != nil {
-        return nil,  fmt.Errorf("%v.SyncStatus(_) = _, %v, node = %s", client, err,
-            c.Conn.ClientConnections()[clientIndex].Target())
+		return nil, fmt.Errorf("%v.SyncStatus(_) = _, %v, node = %s", client, err,
+			c.Conn.ClientConnections()[clientIndex].Target())
 	}
 	return response, nil
 }
 
 func GetNodeStatusForID(conn *Conn, nodeID string) (*pb.StatusMessage, error) {
 
-    ctx, cancel := context.WithTimeout(context.Background(), Deadline)
-    defer cancel()
-    // Invoke Status API
-    clientIndex := conn.GetClientIndexForNodeID(nodeID)
+	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	defer cancel()
+	// Invoke Status API
+	clientIndex := conn.GetClientIndexForNodeID(nodeID)
 	if clientIndex == -1 {
 		return nil, fmt.Errorf("node id %s has left.", nodeID)
 	}
-    result, err := conn.Admin[clientIndex].Status(ctx, &empty.Empty{})
+	result, err := conn.Admin[clientIndex].Status(ctx, &empty.Empty{})
 	if err != nil {
-        return nil, fmt.Errorf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", conn.Admin[clientIndex], err, 
-                conn.ClientConnections()[clientIndex].Target()))
-    }
+		return nil, fmt.Errorf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", conn.Admin[clientIndex], err,
+			conn.ClientConnections()[clientIndex].Target()))
+	}
 	return result, nil
 }
-
-

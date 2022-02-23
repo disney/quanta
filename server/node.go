@@ -10,17 +10,17 @@ import (
 	"context"
 	"fmt"
 	u "github.com/araddon/gou"
-    pb "github.com/disney/quanta/grpc"
+	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
-    "github.com/golang/protobuf/ptypes/empty"
+	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/hashicorp/consul/api"
-    "google.golang.org/grpc"
-    "google.golang.org/grpc/credentials"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health/grpc_health_v1"
-    "google.golang.org/grpc/testdata"
-    "net"
-    "os"
-    "path"
+	"google.golang.org/grpc/testdata"
+	"net"
+	"os"
+	"path"
 	"reflect"
 	"strings"
 	"time"
@@ -29,14 +29,14 @@ import (
 const (
 	checkInterval = 5 * time.Second
 	pollWait      = time.Second
-    sep 		  = string(os.PathSeparator)
+	sep           = string(os.PathSeparator)
 )
 
 // StateType - LifeCycle States of a Node.
 type StateType int
 
 const (
-    Starting = StateType(iota)
+	Starting = StateType(iota)
 	Joining
 	Active
 	Stopped
@@ -45,23 +45,23 @@ const (
 // String - Returns a string representation of StateType
 func (st StateType) String() string {
 
-    switch st {
-    case Starting:
-        return "Starting"
-    case Joining:
-        return "Joining"
-    case Active:
-        return "Active"
-    case Stopped:
-        return "Stopped"
+	switch st {
+	case Starting:
+		return "Starting"
+	case Joining:
+		return "Joining"
+	case Active:
+		return "Active"
+	case Stopped:
+		return "Stopped"
 	}
 	return ""
 }
 
 type NodeService interface {
-    Init() error
+	Init() error
 	JoinCluster()
-    Shutdown()
+	Shutdown()
 }
 
 // Node is a single node in a distributed hash table, coordinated using
@@ -75,80 +75,79 @@ type Node struct {
 	// Outbound connections to peer nodes
 	*shared.Conn
 
-	BindAddr 			string
-	serviceName 		string
-    dataDir  			string
-    server   			*grpc.Server
-    consul   			*api.Client
-	hashKey				string
-	version				string
+	BindAddr    string
+	serviceName string
+	dataDir     string
+	server      *grpc.Server
+	consul      *api.Client
+	hashKey     string
+	version     string
 
 	// TLS options
-    tls      			bool
-    certFile 			string
-    keyFile  			string
+	tls      bool
+	certFile string
+	keyFile  string
 
 	// Health check endpoint
-	checkURL 			string
+	checkURL string
 
 	// Shutdown channels
-	Stop 				chan bool
-	Err  				chan error
+	Stop chan bool
+	Err  chan error
 
-	State				StateType
-    localServices		map[string]NodeService
+	State         StateType
+	localServices map[string]NodeService
 }
 
 func NewNode(version string, port int, bindAddr, dataDir string, consul *api.Client) (*Node, error) {
 
 	conn := shared.NewDefaultConnection()
-    m := &Node{Conn: conn, version: version}
+	m := &Node{Conn: conn, version: version}
 	m.localServices = make(map[string]NodeService, 0)
 	m.ServicePort = port
 	m.Quorum = 0
-    m.hashKey = path.Base(dataDir) // leaf directory name is consistent hash key
-    if m.hashKey == "" || m.hashKey == "/" {
-        return nil, fmt.Errorf("data dir must not be root")
-    }   
-    
+	m.hashKey = path.Base(dataDir) // leaf directory name is consistent hash key
+	if m.hashKey == "" || m.hashKey == "/" {
+		return nil, fmt.Errorf("data dir must not be root")
+	}
+
 	m.BindAddr = bindAddr
-    m.dataDir = dataDir
-    m.consul = consul
-    var opts []grpc.ServerOption
-    opts = append(opts, grpc.MaxRecvMsgSize(shared.GRPCRecvBufsize),
-        grpc.MaxSendMsgSize(shared.GRPCSendBufsize))
-        
-    if m.tls {
-        if m.certFile == "" {
-            m.certFile = testdata.Path("server1.pem")
-        }   
-        if m.keyFile == "" {
-            m.keyFile = testdata.Path("server1.key")
-        }   
-        creds, err := credentials.NewServerTLSFromFile(m.certFile, m.keyFile)
-        if err != nil {
-            return nil, fmt.Errorf("Failed to generate credentials %v", err)
-        }   
-        opts = append(opts, grpc.Creds(creds))
-    }   
-    
-    m.server = grpc.NewServer(opts...)
-    pb.RegisterClusterAdminServer(m.server, m)
-    grpc_health_v1.RegisterHealthServer(m.server, &HealthImpl{})
+	m.dataDir = dataDir
+	m.consul = consul
+	var opts []grpc.ServerOption
+	opts = append(opts, grpc.MaxRecvMsgSize(shared.GRPCRecvBufsize),
+		grpc.MaxSendMsgSize(shared.GRPCSendBufsize))
+
+	if m.tls {
+		if m.certFile == "" {
+			m.certFile = testdata.Path("server1.pem")
+		}
+		if m.keyFile == "" {
+			m.keyFile = testdata.Path("server1.key")
+		}
+		creds, err := credentials.NewServerTLSFromFile(m.certFile, m.keyFile)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to generate credentials %v", err)
+		}
+		opts = append(opts, grpc.Creds(creds))
+	}
+
+	m.server = grpc.NewServer(opts...)
+	pb.RegisterClusterAdminServer(m.server, m)
+	grpc_health_v1.RegisterHealthServer(m.server, &HealthImpl{})
 
 	// Register peer services with connection
 	_ = shared.NewBitmapIndex(conn, 20000)
 	_ = shared.NewKVStore(conn)
 	_ = shared.NewStringSearch(conn, 20000)
 
-    return m, nil
+	return m, nil
 }
 
 // GetNodeID - returns node identifier
 func (n *Node) GetNodeID() string {
 	return n.hashKey
 }
-
 
 // Join creates a new Node and adds it to the distributed hash table specified
 // by the given name. This name should be unique among all Nodes in the hash
@@ -193,16 +192,16 @@ func (n *Node) register() (err error) {
 func (n *Node) Start() {
 
 	go func() {
-	    if n.ServicePort > 0 {
-	        lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", n.BindAddr, n.ServicePort))
-	        if err != nil {
+		if n.ServicePort > 0 {
+			lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", n.BindAddr, n.ServicePort))
+			if err != nil {
 				u.Errorf("error starting node listening endpoint: %v", err)
 				n.Err <- err
-	        }
+			}
 			go func() {
 				for {
 					select {
-					case <- n.Stop:
+					case <-n.Stop:
 						u.Info("Stopping GRPC server.")
 						n.server.Stop()
 						u.Info("Exiting.")
@@ -210,10 +209,10 @@ func (n *Node) Start() {
 					}
 				}
 			}()
-	        n.server.Serve(lis)
-	    } else {
-	        n.server.Serve(shared.TestListener)
-	    }
+			n.server.Serve(lis)
+		} else {
+			n.server.Serve(shared.TestListener)
+		}
 	}()
 }
 
@@ -234,8 +233,8 @@ func (n *Node) Member(key string) bool {
 func (n *Node) Leave() (err error) {
 
 	err = n.Disconnect()
-    n.ShutdownServices()
-    n.State = Stopped
+	n.ShutdownServices()
+	n.State = Stopped
 	if err == nil {
 		err = n.consul.Agent().ServiceDeregister(n.hashKey)
 	}
@@ -266,19 +265,19 @@ func (n *Node) Status(ctx context.Context, e *empty.Empty) (*pb.StatusMessage, e
 	if err != nil {
 		return nil, err
 	}
-    return &pb.StatusMessage{
+	return &pb.StatusMessage{
 		NodeState: n.State.String(),
-		LocalIP: ip.String(),
+		LocalIP:   ip.String(),
 		LocalPort: uint32(n.ServicePort),
-		Version: n.version,
-		Replicas: uint32(n.Replicas),
+		Version:   n.version,
+		Replicas:  uint32(n.Replicas),
 	}, nil
 }
 
 // Shutdown - Shut the node down.
 func (n *Node) Shutdown(ctx context.Context, e *empty.Empty) (*empty.Empty, error) {
 
-    u.Warn("Received Shutdown call via API.")
+	u.Warn("Received Shutdown call via API.")
 	err := n.Leave()
 	return e, err
 }
@@ -286,15 +285,15 @@ func (n *Node) Shutdown(ctx context.Context, e *empty.Empty) (*empty.Empty, erro
 // AddNodeService - Add a new node level service.
 func (n *Node) AddNodeService(api NodeService) {
 
-    s := reflect.TypeOf(api).String()
-    name := strings.Split(s, ".")[1]
-    n.localServices[name] = api
+	s := reflect.TypeOf(api).String()
+	name := strings.Split(s, ".")[1]
+	n.localServices[name] = api
 }
 
 // ShutdownServices - Invoke service interface for Shudown event
 func (n *Node) ShutdownServices() {
 
-    u.Warn("Shutting down services.")
+	u.Warn("Shutting down services.")
 	for _, v := range n.localServices {
 		v.Shutdown()
 	}
@@ -303,27 +302,26 @@ func (n *Node) ShutdownServices() {
 // JoinServices - Invoke service interface for Join event
 func (n *Node) JoinServices() {
 
-    u.Info("Services are joining.")
+	u.Info("Services are joining.")
 	for _, v := range n.localServices {
 		v.JoinCluster()
 	}
 }
 
-
 // InitServices - Initialize server side services.
 func (n *Node) InitServices() error {
 
-    u.Info("Services are initializing.")
-    for _, v := range n.localServices {
-        if err := v.Init(); err != nil {
+	u.Info("Services are initializing.")
+	for _, v := range n.localServices {
+		if err := v.Init(); err != nil {
 			return err
 		}
-    }
+	}
 	return nil
 }
 
 // GetNodeService - Get a service by its name.
 func (n *Node) GetNodeService(name string) NodeService {
-   
-    return n.localServices[name]
+
+	return n.localServices[name]
 }

@@ -21,10 +21,9 @@ import (
 )
 
 var (
-    // Ensure StringSearch implements NodeService
-    _ NodeService = (*StringSearch)(nil)
+	// Ensure StringSearch implements NodeService
+	_ NodeService = (*StringSearch)(nil)
 )
-
 
 const (
 	maxElements = 100
@@ -35,7 +34,6 @@ var (
 	wordSegmenter = regexp.MustCompile(`[\pL\p{Mc}\p{Mn}\p{Nd}-_']+`)
 )
 
-
 // StringSearch service state.
 type StringSearch struct {
 	*Node
@@ -43,7 +41,7 @@ type StringSearch struct {
 }
 
 // NewStringSearch - Construct server side state for search service.
-func NewStringSearch(node *Node) (*StringSearch) {
+func NewStringSearch(node *Node) *StringSearch {
 
 	e := &StringSearch{Node: node}
 	pb.RegisterStringSearchServer(node.server, e)
@@ -55,26 +53,26 @@ func (m *StringSearch) Init() error {
 
 	db, err := pogreb.Open(m.dataDir+"/index/"+"search.dat", nil)
 	if err != nil {
-        return fmt.Errorf("cannot initialize string search service: %v", err)
+		return fmt.Errorf("cannot initialize string search service: %v", err)
 	}
 	m.store = db
 
-    u.Info("Pre-warming  string search cache.")
-    start := time.Now()
-    count := 0
-    it := db.Items()
-    for {
-        _, _, err := it.Next()
-        if err != nil {
-            if err != pogreb.ErrIterationDone {
-                return fmt.Errorf("cannot initialize string search service: %v", err)
-            }
-            break
-        }
-        count++
-    }
-    elapsed := time.Since(start)
-    u.Infof("Cache initialization complete %d items loaded in %s.\n", count, elapsed)
+	u.Info("Pre-warming  string search cache.")
+	start := time.Now()
+	count := 0
+	it := db.Items()
+	for {
+		_, _, err := it.Next()
+		if err != nil {
+			if err != pogreb.ErrIterationDone {
+				return fmt.Errorf("cannot initialize string search service: %v", err)
+			}
+			break
+		}
+		count++
+	}
+	elapsed := time.Since(start)
+	u.Infof("Cache initialization complete %d items loaded in %s.\n", count, elapsed)
 	return nil
 }
 

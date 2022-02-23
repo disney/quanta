@@ -5,9 +5,9 @@ import (
 )
 
 var (
-    // Deadline - gRPC calls should complete within 500 seconds.
-    Deadline time.Duration = 500 * time.Second
-    SyncDeadline time.Duration = 20 * time.Minute
+	// Deadline - gRPC calls should complete within 500 seconds.
+	Deadline            time.Duration = 500 * time.Second
+	SyncDeadline        time.Duration = 20 * time.Minute
 	DefaultPollInterval time.Duration = 5 * time.Second
 )
 

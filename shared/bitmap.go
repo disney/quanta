@@ -17,8 +17,8 @@ import (
 )
 
 var (
-    // Ensure BitmapIndex implements shared.Service
-    _ Service = (*BitmapIndex)(nil)
+	// Ensure BitmapIndex implements shared.Service
+	_ Service = (*BitmapIndex)(nil)
 )
 
 const (
@@ -66,7 +66,7 @@ func NewBitmapIndex(conn *Conn, batchSize int) *BitmapIndex {
 	for i := 0; i < len(conn.ClientConnections()); i++ {
 		clients[i] = pb.NewBitmapIndexClient(conn.ClientConnections()[i])
 	}
-	c :=  &BitmapIndex{Conn: conn, batchSize: batchSize, client: clients}
+	c := &BitmapIndex{Conn: conn, batchSize: batchSize, client: clients}
 	conn.RegisterService(c)
 	return c
 }
@@ -75,7 +75,7 @@ func NewBitmapIndex(conn *Conn, batchSize int) *BitmapIndex {
 func (c *BitmapIndex) MemberJoined(nodeId, ipAddress string, index int) {
 
 	c.client = append(c.client, nil)
-	copy(c.client[index + 1:], c.client[index:])
+	copy(c.client[index+1:], c.client[index:])
 	c.client[index] = pb.NewBitmapIndexClient(c.Conn.clientConn[index])
 }
 
@@ -86,7 +86,7 @@ func (c *BitmapIndex) MemberLeft(nodeId string, index int) {
 		c.client = make([]pb.BitmapIndexClient, 0)
 		return
 	}
-	c.client = append(c.client[:index], c.client[index + 1:]...)
+	c.client = append(c.client[:index], c.client[index+1:]...)
 }
 
 // Client - Get a client by index.
@@ -319,7 +319,7 @@ func (c *BitmapIndex) SetValue(index, field string, columnID uint64, value int64
 
 //
 // BatchMutate - Send a batch of standard bitmap mutations to the server cluster for processing.
-// Does this by calling batchMutate in parallel for optimal throughput.
+// Does this by calling BatchMutateNode in parallel for optimal throughput.
 //
 func (c *BitmapIndex) BatchMutate(batch map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap,
 	clear bool) error {
@@ -331,7 +331,7 @@ func (c *BitmapIndex) BatchMutate(batch map[string]map[string]map[uint64]map[int
 		cl := c.client[i]
 		batch := v
 		eg.Go(func() error {
-			return c.batchMutate(clear, cl, batch)
+			return c.BatchMutateNode(clear, cl, batch)
 		})
 	}
 	if err := eg.Wait(); err != nil {
@@ -341,7 +341,7 @@ func (c *BitmapIndex) BatchMutate(batch map[string]map[string]map[uint64]map[int
 }
 
 // Send batch to its respective node.
-func (c *BitmapIndex) batchMutate(clear bool, client pb.BitmapIndexClient,
+func (c *BitmapIndex) BatchMutateNode(clear bool, client pb.BitmapIndexClient,
 	batch map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
@@ -434,7 +434,7 @@ func (c *BitmapIndex) splitBitmapBatch(batch map[string]map[string]map[uint64]ma
 
 //
 // BatchSetValue - Send a batch of BSI mutations to the server cluster for processing.  Does this by calling
-// batchSetValue in parallel for optimal throughput.
+// BatchSetValueNode in parallel for optimal throughput.
 //
 func (c *BitmapIndex) BatchSetValue(batch map[string]map[string]map[int64]*roaring64.BSI) error {
 
@@ -444,7 +444,7 @@ func (c *BitmapIndex) BatchSetValue(batch map[string]map[string]map[int64]*roari
 		cl := c.client[i]
 		batch := v
 		eg.Go(func() error {
-			return c.batchSetValue(cl, batch)
+			return c.BatchSetValueNode(cl, batch)
 		})
 	}
 	if err := eg.Wait(); err != nil {
@@ -454,7 +454,7 @@ func (c *BitmapIndex) BatchSetValue(batch map[string]map[string]map[int64]*roari
 }
 
 // Send a batch of BSI values to a specific node.
-func (c *BitmapIndex) batchSetValue(client pb.BitmapIndexClient,
+func (c *BitmapIndex) BatchSetValueNode(client pb.BitmapIndexClient,
 	batch map[string]map[string]map[int64]*roaring64.BSI) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)

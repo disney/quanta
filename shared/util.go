@@ -5,7 +5,7 @@ package shared
 import (
 	"encoding/binary"
 	"fmt"
-    "github.com/araddon/dateparse"
+	"github.com/araddon/dateparse"
 	u "github.com/araddon/gou"
 	"github.com/hashicorp/consul/api"
 	"net"
@@ -467,26 +467,26 @@ func GetLocalHostIP() (net.IP, error) {
 		return nil, err
 	}
 	for _, i := range ifaces {
-	    addrs, err := i.Addrs()
+		addrs, err := i.Addrs()
 		if err != nil {
 			return nil, err
 		}
-	    for _, addr := range addrs {
-	        var ip net.IP
-	        switch v := addr.(type) {
-	        case *net.IPNet:
-	                ip = v.IP
-	        case *net.IPAddr:
-	                ip = v.IP
-	        }
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
 			if ip.IsLoopback() {
 				continue
 			}
-	        // process IP address
+			// process IP address
 			if ip != nil {
 				return ip, nil
 			}
-	    }
+		}
 	}
 	return nil, fmt.Errorf("local IP address could not be determined")
 }
@@ -514,18 +514,18 @@ func ToTQTimestamp(tqType, timestamp string) (time.Time, string, error) {
 // GetTargetClusterSize - Get the target cluster size.
 func GetClusterSizeTarget(consul *api.Client) (int, error) {
 
-    if consul == nil {
-        return -1, fmt.Errorf("consul client is not provided")
-    }
+	if consul == nil {
+		return -1, fmt.Errorf("consul client is not provided")
+	}
 
-    path := "config/clusterSizeTarget"
-    kvPair, _, err := consul.KV().Get(path, nil)
-    if err != nil {
-        return -1, err
-    }
-    if kvPair == nil {
-        return 0, nil
-    }
+	path := "config/clusterSizeTarget"
+	kvPair, _, err := consul.KV().Get(path, nil)
+	if err != nil {
+		return -1, err
+	}
+	if kvPair == nil {
+		return 0, nil
+	}
 	v := UnmarshalValue(reflect.Int, kvPair.Value)
 	return v.(int), nil
 }
@@ -534,10 +534,10 @@ func GetClusterSizeTarget(consul *api.Client) (int, error) {
 func SetClusterSizeTarget(consul *api.Client, size int) error {
 
 	var kvPair api.KVPair
-    kvPair.Key = "config/clusterSizeTarget"
-    kvPair.Value = ToBytes(size)
-    if _, err := consul.KV().Put(&kvPair, nil); err != nil {
-        return err
-    }
+	kvPair.Key = "config/clusterSizeTarget"
+	kvPair.Value = ToBytes(size)
+	if _, err := consul.KV().Put(&kvPair, nil); err != nil {
+		return err
+	}
 	return nil
 }

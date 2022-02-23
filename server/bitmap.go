@@ -30,8 +30,8 @@ const (
 )
 
 var (
-    // Ensure BitmapIndex implements shared.Service
-    _ NodeService = (*BitmapIndex)(nil)
+	// Ensure BitmapIndex implements shared.Service
+	_ NodeService = (*BitmapIndex)(nil)
 )
 
 //
@@ -68,7 +68,7 @@ func NewBitmapIndex(node *Node, expireDays int) *BitmapIndex {
 	e.expireDays = expireDays
 	e.tableCache = make(map[string]*shared.BasicTable)
 	configPath := e.dataDir + sep + "config"
-	schemaPath := ""          // this is normally an empty string forcing schema to come from Consul
+	schemaPath := ""        // this is normally an empty string forcing schema to come from Consul
 	if e.ServicePort == 0 { // In-memory test harness
 		schemaPath = configPath // read schema from local config yaml
 		_ = filepath.Walk(configPath,
@@ -148,16 +148,16 @@ func (m *BitmapIndex) Init() error {
 
 // Shutdown - Shut down and clean up.
 func (m *BitmapIndex) Shutdown() {
-    u.Warnf("Shutting down bitmap server.")
-	// TODO:  Anything to do here?  
+	u.Warnf("Shutting down bitmap server.")
+	// TODO:  Anything to do here?
 }
 
 // JoinCluster - Join the cluster
 func (m *BitmapIndex) JoinCluster() {
 	if m.Conn.ServicePort == 0 {
-		return    // Skip this for test harness mode.
+		return // Skip this for test harness mode.
 	}
-    u.Infof("Bitmap server is joining the cluster.")
+	u.Infof("Bitmap server is joining the cluster.")
 	m.verifyNode()
 }
 
@@ -210,7 +210,7 @@ func (m *BitmapIndex) BatchMutate(stream pb.BitmapIndex_BatchMutateServer) error
 			} else {
 				m.updateBitmapCache(frag)
 			}
-		    return nil
+			return nil
 		}
 
 		select {
@@ -589,6 +589,8 @@ func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 		// Lock de-escalation
 		existBm.Lock.Lock()
 		m.bsiCacheLock.Unlock()
+		clearSet := roaring64.FastAnd(existBm.GetExistenceBitmap(), newBSI.GetExistenceBitmap())
+		existBm.ClearValues(clearSet)
 		existBm.ParOr(0, newBSI.BSI)
 		existBm.ModTime = f.ModTime
 		if f.IsInit {

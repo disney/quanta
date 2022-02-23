@@ -16,8 +16,8 @@ import (
 )
 
 var (
-    // Ensure KVStore implements shared.Service
-    _ Service = (*KVStore)(nil)
+	// Ensure KVStore implements shared.Service
+	_ Service = (*KVStore)(nil)
 )
 
 // KVStore API wrapper
@@ -41,25 +41,25 @@ func NewKVStore(conn *Conn) *KVStore {
 // MemberJoined - A new node joined the cluster.
 func (c *KVStore) MemberJoined(nodeId, ipAddress string, index int) {
 
-    c.client = append(c.client, nil)
-    copy(c.client[index + 1:], c.client[index:])
-    c.client[index] = pb.NewKVStoreClient(c.Conn.clientConn[index])
+	c.client = append(c.client, nil)
+	copy(c.client[index+1:], c.client[index:])
+	c.client[index] = pb.NewKVStoreClient(c.Conn.clientConn[index])
 }
 
 // MemberLeft - A node left the cluster.
 func (c *KVStore) MemberLeft(nodeId string, index int) {
 
-    if len(c.client) <= 1 {
-        c.client = make([]pb.KVStoreClient, 0)
-        return
-    }
-    c.client = append(c.client[:index], c.client[index + 1:]...)
+	if len(c.client) <= 1 {
+		c.client = make([]pb.KVStoreClient, 0)
+		return
+	}
+	c.client = append(c.client[:index], c.client[index+1:]...)
 }
 
 // Client - Get a client by index.
 func (c *KVStore) Client(index int) pb.KVStoreClient {
 
-    return c.client[index]
+	return c.client[index]
 }
 
 // Put a new attribute
@@ -330,7 +330,7 @@ func (c *KVStore) Items(index string, keyType, valueType reflect.Kind) (map[inte
 
 // NodeItems - Iterate over all  items on a single node.
 func (c *KVStore) NodeItems(client pb.KVStoreClient, index string, keyType,
-		valueType reflect.Kind) (map[interface{}]interface{}, error) {
+	valueType reflect.Kind) (map[interface{}]interface{}, error) {
 
 	batch := make(map[interface{}]interface{}, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)

@@ -60,6 +60,12 @@ func (c *StringSearch) MemberLeft(nodeId string, index int) {
     c.client = append(c.client[:index], c.client[index + 1:]...)
 }
 
+// Client - Get a client by index.
+func (c *StringSearch) Client(index int) pb.StringSearchClient {
+
+    return c.client[index]
+}
+
 // Flush - Commit remaining string batch
 func (c *StringSearch) Flush() error {
 

@@ -21,6 +21,8 @@ import (
     "net"
     "os"
     "path"
+	"reflect"
+	"strings"
 	"time"
 )
 
@@ -94,15 +96,14 @@ type Node struct {
 	Err  				chan error
 
 	State				StateType
-
-    localServices		[]NodeService
+    localServices		map[string]NodeService
 }
 
 func NewNode(version string, port int, bindAddr, dataDir string, consul *api.Client) (*Node, error) {
 
 	conn := shared.NewDefaultConnection()
     m := &Node{Conn: conn, version: version}
-	m.localServices = make([]NodeService, 0)
+	m.localServices = make(map[string]NodeService, 0)
 	m.ServicePort = port
 	m.Quorum = 0
     m.hashKey = path.Base(dataDir) // leaf directory name is consistent hash key
@@ -285,7 +286,9 @@ func (n *Node) Shutdown(ctx context.Context, e *empty.Empty) (*empty.Empty, erro
 // AddNodeService - Add a new node level service.
 func (n *Node) AddNodeService(api NodeService) {
 
-    n.localServices = append(n.localServices, api)
+    s := reflect.TypeOf(api).String()
+    name := strings.Split(s, ".")[1]
+    n.localServices[name] = api
 }
 
 // ShutdownServices - Invoke service interface for Shudown event
@@ -317,4 +320,10 @@ func (n *Node) InitServices() error {
 		}
     }
 	return nil
+}
+
+// GetNodeService - Get a service by its name.
+func (n *Node) GetNodeService(name string) NodeService {
+   
+    return n.localServices[name]
 }

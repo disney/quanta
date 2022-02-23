@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
+    "github.com/akrylysov/pogreb"
     u "github.com/araddon/gou"
     pb "github.com/disney/quanta/grpc"
     "github.com/disney/quanta/shared"
@@ -10,6 +12,7 @@ import (
     "github.com/golang/protobuf/ptypes/wrappers"
     "github.com/RoaringBitmap/roaring/roaring64"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -34,7 +37,7 @@ func (m *BitmapIndex) SyncStatus(ctx context.Context, req *pb.SyncStatusRequest)
         return nil, fmt.Errorf("field not specified for sync status.")
     }
 
-    // Silently ignore non-existing fields for now
+    // Silently ignore non-existing fields for now.  TODO: Re-evaluate this.
     attr, err := m.getFieldConfig(req.Index, req.Field)
     if err != nil {
         return nil, err
@@ -119,7 +122,7 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
     // This is the entire synchronization flow.  Connect to new node and push data.
 	newNodeID := req.Value
 
-	// FIXME - this will break
+	// TODO: Re-evaluate
 	ci := m.GetClientIndexForNodeID(newNodeID)
 	if ci == -1 {
         u.Errorf("GetClientForNodeID = %s failed.", newNodeID)
@@ -145,11 +148,20 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 
 	peerClient := m.Conn.GetService("BitmapIndex").(*shared.BitmapIndex)
 	newNode := peerClient.Client(ci) // <- bitmap peer client for new node.
+	peerKVClient := m.Conn.GetService("KVStore").(*shared.KVStore)
+	newKVClient := peerKVClient.Client(ci) // <- kvStore peer client for new node.
 
 	// Iterate over bitmap cache.  
     for indexName, index := range m.bitmapCache {
         for fieldName, field := range index {
-			// TODO: If field is StringEnum, push metadata
+			// If field is StringEnum, sync metadata
+    		if attr, err := m.getFieldConfig(indexName, fieldName); err == nil {
+				if attr.MappingStrategy == "StringEnum" {
+					if err := m.syncEnumMetadata(peerKVClient, newKVClient, indexName, fieldName); err != nil {
+						u.Errorf("StringEnum metadata sync failed for '%s.%s' - %v", indexName, fieldName, err)
+					}
+				}
+			}
             for rowID, ts := range field {
                 for t, bitmap := range ts {
 					// Should this item be pushed to new node?
@@ -176,7 +188,7 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 					    u.Infof("No differences for key %s.", key)
 						continue   // data matches
 					}
-					// TODO: Unmarshal data from response
+					// Unmarshal data from response
 					resBm := roaring64.NewBitmap()
 					if len(res.Data) != 1 && res.Cardinality > 0 {
 						return &empty.Empty{}, 
@@ -219,3 +231,70 @@ func (m *BitmapIndex) getNodeMapForKey(newNodeID, key string) map[string]int {
 	return nodeMap
 }
 
+// synchronize StringEnum metadata with remote.
+func (m *BitmapIndex) syncEnumMetadata(peerKV *shared.KVStore, remoteKV pb.KVStoreClient, index, field string) error {
+
+	localKV := m.Node.GetNodeService("KVStore").(*KVStore)
+	kvPath := fmt.Sprintf("%s%s%s.StringEnum", index, sep, field)
+	db, err := localKV.getStore(kvPath)
+	if err != nil {
+		return fmt.Errorf("syncEnumMetadata:getStore failed for %s.%s - %v", index, field, err)
+	}
+
+    localBatch := make(map[interface{}]interface{}, 0)
+    it := db.Items()
+    for {
+        key, val, err := it.Next()
+        if err != nil {
+            if err != pogreb.ErrIterationDone {
+				return fmt.Errorf("syncEnumMetadata:db.Items failed for %s.%s - %v", index, field, err)
+            }
+            break
+        }
+		localBatch[string(key)] = binary.LittleEndian.Uint64(val)
+    }
+
+	var remoteBatch, pushBatch, pullBatch map[interface{}]interface{}
+	remoteBatch, err = peerKV.NodeItems(remoteKV, kvPath, reflect.String, reflect.Uint64)
+	if err != nil {
+		return fmt.Errorf("syncEnumMetadata:remoteKV.Items failed for %s.%s - %v", index, field, err)
+	}
+	
+	// Iterate local batch and create push batch
+	for k, v := range localBatch {
+		if _, found := remoteBatch[k]; found {
+			// TODO: Make sure rowIDs match
+			continue
+		}
+		u.Infof("StringEnum metadata For %s.%s remote is missing %s:%d", index, field, k, v)
+		pushBatch[k] = v
+	}
+
+	// Iterate remote batch and create pull batch
+	for k, v := range remoteBatch {
+		if _, found := localBatch[k]; found {
+			// TODO: Make sure rowIDs match
+			continue
+		}
+		u.Infof("StringEnum metadata For %s.%s local is missing %s:%d", index, field, k, v)
+		pullBatch[k] = v
+	}
+
+	// Begin writes
+
+	// Push to remote
+	err = peerKV.BatchPutNode(remoteKV, kvPath, pushBatch)
+	if err != nil {
+		return fmt.Errorf("syncEnumMetadata:remoteKV.BatchPut failed for %s.%s - %v", index, field, err)
+	}
+
+	// Update local
+	defer db.Sync()
+	for k, v := range pullBatch {
+		if err := db.Put(shared.ToBytes(k), shared.ToBytes(v)); err != nil {
+			return fmt.Errorf("syncEnumMetadata:db.Put failed for %s.%s - %v", index, field, err)
+		}
+	}
+
+	return nil
+}

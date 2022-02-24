@@ -150,7 +150,6 @@ func (m *KVStore) Lookup(ctx context.Context, kv *pb.IndexKVPair) (*pb.IndexKVPa
 	if err != nil {
 		b := make([]byte, 8)
 		binary.LittleEndian.PutUint64(b, 0)
-		//kv.Value[0] = b
 		kv.Value = [][]byte{b}
 		return kv, fmt.Errorf("Error opening %s - %v", kv.IndexPath, err)
 	}
@@ -164,11 +163,9 @@ func (m *KVStore) Lookup(ctx context.Context, kv *pb.IndexKVPair) (*pb.IndexKVPa
 	if err != nil {
 		b := make([]byte, 8)
 		binary.LittleEndian.PutUint64(b, 0)
-		//kv.Value[0] = b
 		kv.Value = [][]byte{b}
 		return kv, err
 	}
-	//kv.Value[0] = val
 	kv.Value = [][]byte{val}
 	return kv, nil
 }

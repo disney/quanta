@@ -217,7 +217,7 @@ func (m *BitmapIndex) BatchMutate(stream pb.BitmapIndex_BatchMutateServer) error
 		case m.fragQueue <- frag:
 		default:
 			// Fragment queue is full
-			return fmt.Errorf("BatchMutate: fragment queue is full!")
+			return fmt.Errorf("BatchMutate: fragment queue is full")
 		}
 	}
 }
@@ -850,7 +850,7 @@ func (m *BitmapIndex) Update(ctx context.Context, req *pb.UpdateRequest) (*empty
 	case m.fragQueue <- frag:
 	default:
 		// Fragment queue is full
-		return &empty.Empty{}, fmt.Errorf("Update: fragment queue is full!")
+		return &empty.Empty{}, fmt.Errorf("Update: fragment queue is full")
 	}
 	return &empty.Empty{}, nil
 }

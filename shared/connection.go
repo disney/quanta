@@ -17,7 +17,6 @@ import (
 	"fmt"
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
-	_ "github.com/golang/protobuf/ptypes/empty"
 	"github.com/hashicorp/consul/api"
 	"github.com/stvp/rendezvous"
 	"google.golang.org/grpc"
@@ -223,6 +222,7 @@ func (m *Conn) SelectNodes(key interface{}, onlyPrimary, all bool) []int {
 	return indices
 }
 
+// GetClientIndexForNodeID - The the index into m.clientConn for a node ID.
 func (m *Conn) GetClientIndexForNodeID(nodeID string) int {
 
 	m.nodeMapLock.RLock()
@@ -233,6 +233,7 @@ func (m *Conn) GetClientIndexForNodeID(nodeID string) int {
 	return -1
 }
 
+// GetNodeForID - Return the Consul ServiceEntry for a given node ID.
 func (m *Conn) GetNodeForID(nodeID string) (*api.ServiceEntry, bool) {
 
 	m.nodeMapLock.RLock()
@@ -410,18 +411,18 @@ func (m *Conn) GetHashTableWithNewNodes(newIds []string) *rendezvous.Table {
 }
 
 // SendMemberLeft - Notify listening service of MemberLeft event.
-func (m *Conn) SendMemberLeft(nodeId string, index int) {
+func (m *Conn) SendMemberLeft(nodeID string, index int) {
 
 	for _, svc := range m.registeredServices {
-		svc.MemberLeft(nodeId, index)
+		svc.MemberLeft(nodeID, index)
 	}
 }
 
 // SendMemberJoined - Notify listening service of MemberLeft event.
-func (m *Conn) SendMemberJoined(nodeId, ipAddress string, index int) {
+func (m *Conn) SendMemberJoined(nodeID, ipAddress string, index int) {
 
 	for _, svc := range m.registeredServices {
-		svc.MemberJoined(nodeId, ipAddress, index)
+		svc.MemberJoined(nodeID, ipAddress, index)
 	}
 }
 

@@ -491,6 +491,7 @@ func GetLocalHostIP() (net.IP, error) {
 	return nil, fmt.Errorf("local IP address could not be determined")
 }
 
+// ToTQTimestamp - Return a partition key timestamp as time.Time and string
 func ToTQTimestamp(tqType, timestamp string) (time.Time, string, error) {
 
 	ts := time.Unix(0, 0)
@@ -511,7 +512,7 @@ func ToTQTimestamp(tqType, timestamp string) (time.Time, string, error) {
 	return tq, ts.Format(YMDHTimeFmt), nil
 }
 
-// GetTargetClusterSize - Get the target cluster size.
+// GetClusterSizeTarget - Get the target cluster size.
 func GetClusterSizeTarget(consul *api.Client) (int, error) {
 
 	if consul == nil {
@@ -530,7 +531,7 @@ func GetClusterSizeTarget(consul *api.Client) (int, error) {
 	return v.(int), nil
 }
 
-// SetTargetClusterSize - Set the target cluster size.
+// SetClusterSizeTarget - Set the target cluster size.
 func SetClusterSizeTarget(consul *api.Client, size int) error {
 
 	var kvPair api.KVPair

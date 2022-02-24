@@ -18,15 +18,15 @@ func Setup() (*server.Node, error) {
 		return nil, err
 	}
 	kvStore := server.NewKVStore(node)
-    node.AddNodeService(kvStore)
+	node.AddNodeService(kvStore)
 	search := server.NewStringSearch(node)
-    node.AddNodeService(search)
+	node.AddNodeService(search)
 	bitmapIndex := server.NewBitmapIndex(node, 0)
-    node.AddNodeService(bitmapIndex)
+	node.AddNodeService(bitmapIndex)
 	go func() {
 		node.Start()
 	}()
-    err = node.InitServices()
+	err = node.InitServices()
 	if err != nil {
 		return nil, err
 	}

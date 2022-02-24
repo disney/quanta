@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/server"
+	"github.com/disney/quanta/shared"
 )
 
 type RBACTestSuite struct {

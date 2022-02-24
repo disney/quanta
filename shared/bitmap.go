@@ -72,7 +72,7 @@ func NewBitmapIndex(conn *Conn, batchSize int) *BitmapIndex {
 }
 
 // MemberJoined - A new node joined the cluster.
-func (c *BitmapIndex) MemberJoined(nodeId, ipAddress string, index int) {
+func (c *BitmapIndex) MemberJoined(nodeID, ipAddress string, index int) {
 
 	c.client = append(c.client, nil)
 	copy(c.client[index+1:], c.client[index:])
@@ -80,7 +80,7 @@ func (c *BitmapIndex) MemberJoined(nodeId, ipAddress string, index int) {
 }
 
 // MemberLeft - A node left the cluster.
-func (c *BitmapIndex) MemberLeft(nodeId string, index int) {
+func (c *BitmapIndex) MemberLeft(nodeID string, index int) {
 
 	if len(c.client) <= 1 {
 		c.client = make([]pb.BitmapIndexClient, 0)
@@ -340,7 +340,7 @@ func (c *BitmapIndex) BatchMutate(batch map[string]map[string]map[uint64]map[int
 	return nil
 }
 
-// Send batch to its respective node.
+// BatchMutateNode - Send batch to its respective node.
 func (c *BitmapIndex) BatchMutateNode(clear bool, client pb.BitmapIndexClient,
 	batch map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap) error {
 
@@ -453,7 +453,7 @@ func (c *BitmapIndex) BatchSetValue(batch map[string]map[string]map[int64]*roari
 	return nil
 }
 
-// Send a batch of BSI values to a specific node.
+// BatchSetValueNode - Send a batch of BSI values to a specific node.
 func (c *BitmapIndex) BatchSetValueNode(client pb.BitmapIndexClient,
 	batch map[string]map[string]map[int64]*roaring64.BSI) error {
 

@@ -36,9 +36,13 @@ const (
 type StateType int
 
 const (
+	// Starting - Node is initializing
 	Starting = StateType(iota)
+	// Joining - Node is synchronizing its state with peers.
 	Joining
+	// Active - Node is actively taking traffic.
 	Active
+	// Stopped - Node was stopped gracefully.
 	Stopped
 )
 
@@ -58,6 +62,7 @@ func (st StateType) String() string {
 	return ""
 }
 
+// NodeService - server side service lifecycle management interface.
 type NodeService interface {
 	Init() error
 	JoinCluster()
@@ -99,6 +104,7 @@ type Node struct {
 	localServices map[string]NodeService
 }
 
+// NewNode - Construct a new node instance.
 func NewNode(version string, port int, bindAddr, dataDir string, consul *api.Client) (*Node, error) {
 
 	conn := shared.NewDefaultConnection()

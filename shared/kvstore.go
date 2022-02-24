@@ -39,7 +39,7 @@ func NewKVStore(conn *Conn) *KVStore {
 }
 
 // MemberJoined - A new node joined the cluster.
-func (c *KVStore) MemberJoined(nodeId, ipAddress string, index int) {
+func (c *KVStore) MemberJoined(nodeID, ipAddress string, index int) {
 
 	c.client = append(c.client, nil)
 	copy(c.client[index+1:], c.client[index:])
@@ -47,7 +47,7 @@ func (c *KVStore) MemberJoined(nodeId, ipAddress string, index int) {
 }
 
 // MemberLeft - A node left the cluster.
-func (c *KVStore) MemberLeft(nodeId string, index int) {
+func (c *KVStore) MemberLeft(nodeID string, index int) {
 
 	if len(c.client) <= 1 {
 		c.client = make([]pb.KVStoreClient, 0)

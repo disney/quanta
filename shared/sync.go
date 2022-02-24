@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-// Synchronize flow.
+// Synchronize flow.  Remote nodes call this when starting.  Peer nodes respond my pushing data.
 func (c *BitmapIndex) Synchronize(nodeKey string) error {
 
 	var memberCount int
@@ -39,7 +39,7 @@ func (c *BitmapIndex) Synchronize(nodeKey string) error {
 		select {
 		case _, open := <-c.Conn.Stop:
 			if !open {
-				err := fmt.Errorf("Shutdown initiated while waiting to start synchronization.")
+				err := fmt.Errorf("Shutdown initiated while waiting to start synchronization")
 				return err
 			}
 		case <-time.After(DefaultPollInterval):
@@ -142,6 +142,7 @@ func (c *BitmapIndex) syncStatusClient(client pb.BitmapIndexClient, req *pb.Sync
 	return response, nil
 }
 
+// GetNodeStatusForID - Returns the node status for a given node ID.
 func GetNodeStatusForID(conn *Conn, nodeID string) (*pb.StatusMessage, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
@@ -149,7 +150,7 @@ func GetNodeStatusForID(conn *Conn, nodeID string) (*pb.StatusMessage, error) {
 	// Invoke Status API
 	clientIndex := conn.GetClientIndexForNodeID(nodeID)
 	if clientIndex == -1 {
-		return nil, fmt.Errorf("node id %s has left.", nodeID)
+		return nil, fmt.Errorf("clientIndex == -1 node id %s has left", nodeID)
 	}
 	result, err := conn.Admin[clientIndex].Status(ctx, &empty.Empty{})
 	if err != nil {

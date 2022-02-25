@@ -25,7 +25,6 @@ RUN chmod 755 /usr/bin/entrypoint.sh
 
 # Expose default port, but can take in docker run --expose flag as additive port to expose
 # Port mapping of MySQL Proxy server. Default("127.0.0.1:4000")
-
-#VOLUME /data
+EXPOSE 2112
 
 ENTRYPOINT ["/usr/bin/entrypoint.sh"]

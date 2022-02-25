@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/server"
+	"github.com/disney/quanta/shared"
 )
 
 type RBACTestSuite struct {
@@ -24,10 +24,11 @@ func (suite *RBACTestSuite) SetupSuite() {
 	var err error
 	u.SetupLogging("debug")
 
-	node, err := server.NewNode(0, "", "./testdata", nil)
+	node, err := server.NewNode("TEST", 0, "", "./testdata", nil)
 	assert.NoError(suite.T(), err)
 	assert.NotNil(suite.T(), node)
-	suite.server, err = server.NewKVStore(node)
+	suite.server = server.NewKVStore(node)
+	err = suite.server.Init()
 	assert.NoError(suite.T(), err)
 	go func() {
 		node.Start()

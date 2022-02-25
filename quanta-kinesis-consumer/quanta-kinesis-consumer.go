@@ -17,7 +17,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
-	"github.com/disney/quanta/client"
 	"github.com/hamba/avro"
 	"github.com/harlow/kinesis-consumer"
 	store "github.com/harlow/kinesis-consumer/store/ddb"
@@ -44,42 +43,42 @@ const (
 	//partitionChannelSize = 10000
 	partitionChannelSize = 2000000
 	batchSize            = 100000
-	appName				 = "Kinesis-Consumer"
+	appName              = "Kinesis-Consumer"
 )
 
 // Main strct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
-	Stream        string
-	Region        string
-	Index         string
-	BufferSize    uint
-	totalBytes    *Counter
-	totalBytesL   *Counter
-	totalRecs     *Counter
-	totalRecsL    *Counter
-	errorCount    *Counter
-	poolPercent   *Counter
-	Port          int
-	ConsulAddr    string
-	ShardCount    int
-	lock          *api.Lock
-	consumer      *consumer.Consumer
-	Table         *shared.BasicTable
-	Schema        avro.Schema
-	InitialPos    string
-	IsAvro        bool
-	CheckpointDB  bool
-	CheckpointTable string
-	AssumeRoleArn string
+	Stream              string
+	Region              string
+	Index               string
+	BufferSize          uint
+	totalBytes          *Counter
+	totalBytesL         *Counter
+	totalRecs           *Counter
+	totalRecsL          *Counter
+	errorCount          *Counter
+	poolPercent         *Counter
+	Port                int
+	ConsulAddr          string
+	ShardCount          int
+	lock                *api.Lock
+	consumer            *consumer.Consumer
+	Table               *shared.BasicTable
+	Schema              avro.Schema
+	InitialPos          string
+	IsAvro              bool
+	CheckpointDB        bool
+	CheckpointTable     string
+	AssumeRoleArn       string
 	AssumeRoleArnRegion string
-	Deaggregate   bool
-	partitionMap  map[string]*Partition
-	partitionLock sync.Mutex
-	timeLocation  *time.Location
-	processedRecs *Counter
-	processedRecL *Counter
-	sessionPool   *core.SessionPool
-	metrics       *cloudwatch.CloudWatch
+	Deaggregate         bool
+	partitionMap        map[string]*Partition
+	partitionLock       sync.Mutex
+	timeLocation        *time.Location
+	processedRecs       *Counter
+	processedRecL       *Counter
+	sessionPool         *core.SessionPool
+	metrics             *cloudwatch.CloudWatch
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter

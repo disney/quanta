@@ -11,27 +11,25 @@ import (
 // Setup - Initialize test harness
 func Setup() (*server.Node, error) {
 
+	os.Mkdir("./testdata/bitmap", 0755)
 	// Enable in memory instance
-	node, err := server.NewNode(0, "", "./testdata", nil)
+	node, err := server.NewNode("TEST", 0, "", "./testdata", nil)
 	if err != nil {
 		return nil, err
 	}
+	kvStore := server.NewKVStore(node)
+	node.AddNodeService(kvStore)
+	search := server.NewStringSearch(node)
+	node.AddNodeService(search)
 	bitmapIndex := server.NewBitmapIndex(node, 0)
-	err = bitmapIndex.Init()
-	if err != nil {
-		return nil, err
-	}
-	_, err = server.NewStringSearch(node)
-	if err != nil {
-		return nil, err
-	}
-	_, err = server.NewKVStore(node)
-	if err != nil {
-		return nil, err
-	}
+	node.AddNodeService(bitmapIndex)
 	go func() {
 		node.Start()
 	}()
+	err = node.InitServices()
+	if err != nil {
+		return nil, err
+	}
 	return node, nil
 }
 

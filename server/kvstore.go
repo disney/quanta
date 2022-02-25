@@ -18,6 +18,11 @@ import (
 	"sync"
 )
 
+var (
+	// Ensure KVStore implements NodeService
+	_ NodeService = (*BitmapIndex)(nil)
+)
+
 // KVStore - Server side state for KVStore service.
 type KVStore struct {
 	*Node
@@ -27,12 +32,12 @@ type KVStore struct {
 }
 
 // NewKVStore - Construct server side state.
-func NewKVStore(node *Node) (*KVStore, error) {
+func NewKVStore(node *Node) *KVStore {
 
 	e := &KVStore{Node: node}
 	e.storeCache = make(map[string]*pogreb.DB)
 	pb.RegisterKVStoreServer(node.server, e)
-	return e, nil
+	return e
 }
 
 // Init - Initialize.
@@ -59,13 +64,13 @@ func (m *KVStore) Init() error {
 			return nil
 		})
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot initialize kv store service: %v", err)
 	}
 
 	for _, v := range dbList {
 		u.Infof("Opening [%s]", v)
 		if _, err := m.getStore(v); err != nil {
-			return err
+			return fmt.Errorf("cannot initialize kv store service: %v", err)
 		}
 	}
 	return nil
@@ -80,6 +85,10 @@ func (m *KVStore) Shutdown() {
 		v.Sync()
 		v.Close()
 	}
+}
+
+// JoinCluster - Join the cluster
+func (m *KVStore) JoinCluster() {
 }
 
 func (m *KVStore) getStore(index string) (db *pogreb.DB, err error) {
@@ -141,7 +150,6 @@ func (m *KVStore) Lookup(ctx context.Context, kv *pb.IndexKVPair) (*pb.IndexKVPa
 	if err != nil {
 		b := make([]byte, 8)
 		binary.LittleEndian.PutUint64(b, 0)
-		//kv.Value[0] = b
 		kv.Value = [][]byte{b}
 		return kv, fmt.Errorf("Error opening %s - %v", kv.IndexPath, err)
 	}
@@ -155,11 +163,9 @@ func (m *KVStore) Lookup(ctx context.Context, kv *pb.IndexKVPair) (*pb.IndexKVPa
 	if err != nil {
 		b := make([]byte, 8)
 		binary.LittleEndian.PutUint64(b, 0)
-		//kv.Value[0] = b
 		kv.Value = [][]byte{b}
 		return kv, err
 	}
-	//kv.Value[0] = val
 	kv.Value = [][]byte{val}
 	return kv, nil
 }

@@ -11,11 +11,11 @@ import (
 	"github.com/araddon/qlbridge/expr/builtins"
 	_ "github.com/araddon/qlbridge/qlbdriver"
 	"github.com/araddon/qlbridge/schema"
-	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/custom/functions"
 	"github.com/disney/quanta/rbac"
 	"github.com/disney/quanta/server"
+	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/source"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
@@ -25,8 +25,8 @@ import (
 
 type QuantaTestSuite struct {
 	suite.Suite
-	node *server.Node
-	store    *shared.KVStore
+	node  *server.Node
+	store *shared.KVStore
 }
 
 func (suite *QuantaTestSuite) SetupSuite() {
@@ -36,6 +36,7 @@ func (suite *QuantaTestSuite) SetupSuite() {
 
 	core.ClearTableCache()
 	RemoveContents("./testdata/index")
+	RemoveContents("./testdata/bitmap")
 
 	// Server side components already started and available in package level variables in harness.go
 	conn := shared.NewDefaultConnection()

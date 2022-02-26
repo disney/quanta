@@ -117,12 +117,14 @@ func (m *BitmapIndex) SyncStatus(ctx context.Context, req *pb.SyncStatusRequest)
 }
 
 // Synchronize - Connect to peer to push deltas (new nodes receive data)
-func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue) (*empty.Empty, error) {
+func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue) (*wrappers.Int64Value, error) {
 
 	// This is the entire synchronization flow.  Connect to new node and push data.
 	newNodeID := req.Value
 
-	// TODO: Re-evaluate
+	// Count of the number of key differences found
+	syncDifferences := 0
+
 	ci := m.GetClientIndexForNodeID(newNodeID)
 	if ci == -1 {
 		u.Errorf("GetClientForNodeID = %s failed.", newNodeID)
@@ -136,12 +138,14 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 	// Invoke status IP on new node.
 	status, err := m.Admin[ci].Status(cx, &empty.Empty{})
 	if err != nil {
-		return &empty.Empty{}, fmt.Errorf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", m.Admin[ci], err, targetIP))
+		return &wrappers.Int64Value{Value: int64(-1)},
+			fmt.Errorf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", m.Admin[ci], err, targetIP))
 	}
 
 	// Verify that client stub IP (targetIP) is the same as the new nodes IP returned by status.
 	if !strings.HasPrefix(targetIP, status.LocalIP) {
-		return &empty.Empty{}, fmt.Errorf("Stub IP %v does not match new node (remote) = %v", targetIP, status.LocalIP)
+		return &wrappers.Int64Value{Value: int64(-1)},
+			fmt.Errorf("Stub IP %v does not match new node (remote) = %v", targetIP, status.LocalIP)
 	}
 
 	u.Infof("New joining node %s is requesting a sync push.", newNodeID)
@@ -163,7 +167,7 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 		for fieldName, field := range index {
 			attr, err := m.getFieldConfig(indexName, fieldName)
 			if err != nil {
-				return &empty.Empty{},
+				return &wrappers.Int64Value{Value: int64(-1)},
 					fmt.Errorf("Synchronize field metadata lookup failed for %s.%s", indexName, fieldName)
 			}
 			for t, bsi := range field {
@@ -174,7 +178,7 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 				if !found {
 					continue // nope soldier on
 				}
-				u.Infof("Key %s should be replica %d on node %s.", key, replica, newNodeID)
+				//u.Infof("Key %s should be replica %d on node %s.", key, replica + 1, newNodeID)
 				// invoke status check
 				bsi.Lock.RLock()
 				sum, card := bsi.Sum(bsi.GetExistenceBitmap())
@@ -186,41 +190,58 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 				res, err := newNode.SyncStatus(cx, reqs)
 				bsi.Lock.RUnlock()
 				if err != nil {
-					return &empty.Empty{},
+					return &wrappers.Int64Value{Value: int64(-1)},
 						fmt.Errorf(fmt.Sprintf("%v.SyncStatus(_) = _, %v, node = %s\n", newNode, err, targetIP))
 				}
 				if res.Ok {
 					u.Infof("No differences for key %s.", key)
 					continue // data matches
 				}
+
 				// Unmarshal data from response
 				resBsi := roaring64.NewBSI(int64(attr.MaxValue), int64(attr.MinValue))
-				if len(res.Data) != 1 && res.Cardinality > 0 {
-					return &empty.Empty{},
+				if len(res.Data) == 0 && res.Cardinality > 0 {
+					return &wrappers.Int64Value{Value: int64(-1)},
 						fmt.Errorf("deserialize sync response - BSI index out of range %d, Index = %s, Field = %s",
 							len(res.Data), indexName, fieldName)
 				}
-				if len(res.Data) == 1 && res.Cardinality > 0 {
+				if res.Cardinality > 0 {
 					if err := resBsi.UnmarshalBinary(res.Data); err != nil {
-						return &empty.Empty{},
+						return &wrappers.Int64Value{Value: int64(-1)},
 							fmt.Errorf("deserialize sync reponse - BSI UnmarshalBinary error - %v", err)
 					}
 				}
 				// Calculate the diff
 				// TODO: How do we handle sequencer queue?
 				// What about value differences where BSIs intersect?
+
 				pushDiff := roaring64.AndNot(bsi.GetExistenceBitmap(), resBsi.GetExistenceBitmap())
 				pullDiff := roaring64.AndNot(resBsi.GetExistenceBitmap(), bsi.GetExistenceBitmap())
-				pushBSI := bsi.NewBSIRetainSet(pushDiff)
-				pullBSI := resBsi.NewBSIRetainSet(pullDiff)
+
+				// New joining nodes key modification time should be earlier than me. if so push diffs
+				remoteModTime := time.Unix(0, res.ModTime).UTC()
+				if remoteModTime.Before(bsi.ModTime) {
+					pullDiff = roaring64.NewBitmap()  // Ignore differences on remote
+				} else {
+					if pullDiff.GetCardinality() > 0 {
+						u.Infof("Ignoring remote diff for key %s, local = %d, remote (new) = %d, delta = %d.\n", key,
+							bsi.GetExistenceBitmap().GetCardinality(), resBsi.GetExistenceBitmap().GetCardinality(),
+							pullDiff.GetCardinality())
+						pullDiff = roaring64.NewBitmap()  // Ignore differences on remote, TODO: Re-evaluate
+					}
+
+				}
 
 				if pushDiff.GetCardinality() > 0 {
+					syncDifferences++
+					u.Infof("Key %s should be replica %d on node %s.", key, replica + 1, newNodeID)
 					u.Infof("Pushing server diff for key %s, local = %d, remote (new) = %d, delta = %d.\n", key,
 						bsi.GetExistenceBitmap().GetCardinality(), resBsi.GetExistenceBitmap().GetCardinality(),
 						pushDiff.GetCardinality())
+					pushBSI := bsi.NewBSIRetainSet(pushDiff)
 					err := m.pushBSIDiff(peerClient, newNode, indexName, fieldName, t, pushBSI)
 					if err != nil {
-						return &empty.Empty{}, fmt.Errorf("pushBSIDiff failed - %v", err)
+						return &wrappers.Int64Value{Value: int64(-1)}, fmt.Errorf("pushBSIDiff failed - %v", err)
 					}
 				}
 				// "OR" in the localDiff
@@ -228,9 +249,10 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 					u.Infof("Merging remote diff for key %s, local = %d, remote (new) = %d, delta = %d.\n", key,
 						bsi.GetExistenceBitmap().GetCardinality(), resBsi.GetExistenceBitmap().GetCardinality(),
 						pullDiff.GetCardinality())
+					pullBSI := resBsi.NewBSIRetainSet(pullDiff)
 					err := m.mergeBSIDiff(indexName, fieldName, t, pullBSI)
 					if err != nil {
-						return &empty.Empty{}, fmt.Errorf("mergeBSIDiff failed - %v", err)
+						return &wrappers.Int64Value{Value: int64(-1)}, fmt.Errorf("mergeBSIDiff failed - %v", err)
 					}
 				}
 				// Process backing strings for StringHashBSI
@@ -254,11 +276,13 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 		}
 		m.tableCacheLock.RUnlock()
 		// Process PK Index
+/*
 		pkIndex := fmt.Sprintf("%s%s%s.PK", indexName, sep, table.PrimaryKey)
 		err := m.simpleKVPush(peerKVClient, newKVClient, pkIndex, reflect.String, reflect.Uint64)
 		if err != nil {
 			u.Errorf("simpleKVPush: error pushing PK %s for table %s - %v", pkIndex, indexName, err)
 		}
+*/
 		// Process SK Indices if any
 		for _, v := range strings.Split(table.SecondaryKeys, ",") {
 			skIndex := fmt.Sprintf("%s%s%s.SK", indexName, sep, v)
@@ -267,7 +291,6 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 				u.Errorf("simpleKVPush: error pushing SK %s for table %s - %v", skIndex, indexName, err)
 			}
 		}
-
 	}
 
 	// Iterate over standard bitmap cache.
@@ -290,7 +313,7 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 					if !found {
 						continue // nope soldier on
 					}
-					u.Infof("Key %s should be replica %d on node %s.", key, replica, newNodeID)
+					//u.Infof("Key %s should be replica %d on node %s.", key, replica + 1, newNodeID)
 					// invoke status check
 					bitmap.Lock.RLock()
 					reqs := &pb.SyncStatusRequest{Index: indexName, Field: fieldName, RowId: rowID, Time: t, SendData: true,
@@ -300,7 +323,7 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 					res, err := newNode.SyncStatus(cx, reqs)
 					bitmap.Lock.RUnlock()
 					if err != nil {
-						return &empty.Empty{},
+						return &wrappers.Int64Value{Value: int64(-1)},
 							fmt.Errorf(fmt.Sprintf("%v.SyncStatus(_) = _, %v, node = %s\n", newNode, err, targetIP))
 					}
 					if res.Ok {
@@ -310,13 +333,13 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 					// Unmarshal data from response
 					resBm := roaring64.NewBitmap()
 					if len(res.Data) != 1 && res.Cardinality > 0 {
-						return &empty.Empty{},
+						return &wrappers.Int64Value{Value: int64(-1)},
 							fmt.Errorf("deserialize sync response - Index out of range %d, Index = %s, Field = %s, rowID = %d",
 								len(res.Data), indexName, fieldName, rowID)
 					}
 					if len(res.Data) == 1 && res.Cardinality > 0 {
 						if err := resBm.UnmarshalBinary(res.Data[0]); err != nil {
-							return &empty.Empty{},
+							return &wrappers.Int64Value{Value: int64(-1)},
 								fmt.Errorf("deserialize sync reponse - UnmarshalBinary error - %v", err)
 						}
 					}
@@ -324,12 +347,27 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 					pushDiff := roaring64.AndNot(bitmap.Bits, resBm)
 					pullDiff := roaring64.AndNot(resBm, bitmap.Bits)
 
+	                // New joining nodes key modification time should be earlier than me. if so push diffs
+					remoteModTime := time.Unix(0, res.ModTime).UTC()
+	                if remoteModTime.Before(bitmap.ModTime) {
+	                    pullDiff = roaring64.NewBitmap()  // Ignore differences on remote
+	                } else {
+	                    if pullDiff.GetCardinality() > 0 {
+							u.Infof("Ignoring remote diff for key %s, local = %d, remote (new) = %d, delta = %d.\n", key,
+								bitmap.Bits.GetCardinality(), resBm.GetCardinality(), pullDiff.GetCardinality())
+	                        pullDiff = roaring64.NewBitmap()  // Ignore differences on remote, TODO: Re-evaluate
+	                    }
+	
+	                }
+
 					if pushDiff.GetCardinality() > 0 {
+	                    syncDifferences++
+						u.Infof("Key %s should be replica %d on node %s.", key, replica + 1, newNodeID)
 						u.Infof("Pushing server diff for key %s, local = %d, remote (new) = %d, delta = %d.\n", key,
 							bitmap.Bits.GetCardinality(), resBm.GetCardinality(), pushDiff.GetCardinality())
 						err := m.pushBitmapDiff(peerClient, newNode, indexName, fieldName, rowID, t, pushDiff)
 						if err != nil {
-							return &empty.Empty{}, fmt.Errorf("pushBitmapDiff failed - %v", err)
+							return &wrappers.Int64Value{Value: int64(-1)}, fmt.Errorf("pushBitmapDiff failed - %v", err)
 						}
 					}
 					// "OR" in the localDiff
@@ -338,7 +376,7 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 							bitmap.Bits.GetCardinality(), resBm.GetCardinality(), pullDiff.GetCardinality())
 						err := m.mergeBitmapDiff(indexName, fieldName, rowID, t, pullDiff)
 						if err != nil {
-							return &empty.Empty{}, fmt.Errorf("pullBitmapDiff failed - %v", err)
+							return &wrappers.Int64Value{Value: int64(-1)}, fmt.Errorf("pullBitmapDiff failed - %v", err)
 						}
 					}
 				}
@@ -346,7 +384,7 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 		}
 	}
 
-	return &empty.Empty{}, nil
+	return &wrappers.Int64Value{Value: int64(syncDifferences)}, nil
 }
 
 // Return a map of weighted nodes for a given lookup key
@@ -412,10 +450,18 @@ func (m *BitmapIndex) syncEnumMetadata(peerKV *shared.KVStore, remoteKV pb.KVSto
 
 	localKV := m.Node.GetNodeService("KVStore").(*KVStore)
 	kvPath := fmt.Sprintf("%s%s%s.StringEnum", index, sep, field)
-	db, err := localKV.getStore(kvPath)
-	if err != nil {
+    var db *pogreb.DB
+    err := shared.Retry(5, 20 * time.Second, func() (err error) {
+        var errx error
+        db, errx = localKV.getStore(kvPath)
+        if errx != nil {
+            err = errx
+        }
+        return
+    })
+    if err != nil {
 		return fmt.Errorf("syncEnumMetadata:getStore failed for %s.%s - %v", index, field, err)
-	}
+    }
 
 	localBatch := make(map[interface{}]interface{}, 0)
 	it := db.Items()
@@ -430,7 +476,7 @@ func (m *BitmapIndex) syncEnumMetadata(peerKV *shared.KVStore, remoteKV pb.KVSto
 		localBatch[string(key)] = binary.LittleEndian.Uint64(val)
 	}
 
-	var remoteBatch, pushBatch, pullBatch map[interface{}]interface{}
+	var remoteBatch map[interface{}]interface{}
 	remoteBatch, err = peerKV.NodeItems(remoteKV, kvPath, reflect.String, reflect.Uint64)
 	if err != nil {
 		return fmt.Errorf("syncEnumMetadata:remoteKV.Items failed for %s.%s - %v", index, field, err)
@@ -438,6 +484,7 @@ func (m *BitmapIndex) syncEnumMetadata(peerKV *shared.KVStore, remoteKV pb.KVSto
 
 	// Iterate local batch and create push batch
 	// This creates new values where they are missing but what happens if key/value pairs have different values?
+	pushBatch := make(map[interface{}]interface{}, 0)
 	for k, v := range localBatch {
 		if rval, found := remoteBatch[k]; found {
 			// TODO: Make sure rowIDs match
@@ -451,6 +498,7 @@ func (m *BitmapIndex) syncEnumMetadata(peerKV *shared.KVStore, remoteKV pb.KVSto
 	}
 
 	// Iterate remote batch and create pull batch
+	pullBatch := make(map[interface{}]interface{}, 0)
 	for k, v := range remoteBatch {
 		if lval, found := localBatch[k]; found {
 			// TODO: Make sure rowIDs match
@@ -464,7 +512,7 @@ func (m *BitmapIndex) syncEnumMetadata(peerKV *shared.KVStore, remoteKV pb.KVSto
 	}
 
 	// TODO: Pass this as a parameter
-	verifyOnly := true
+	verifyOnly := false
 	if verifyOnly {
 		return nil
 	}
@@ -539,45 +587,58 @@ func (m *BitmapIndex) syncStringBackingStore(peerKV *shared.KVStore, remoteKV pb
 
 	localKV := m.Node.GetNodeService("KVStore").(*KVStore)
 	kvPath := fmt.Sprintf("%s%s%s%s%s", index, sep, field, sep, timeStr)
-	db, err := localKV.getStore(kvPath)
+	var db *pogreb.DB
+	err := shared.Retry(5, 20 * time.Second, func() (err error) {
+		var errx error
+		db, errx = localKV.getStore(kvPath)
+		if errx != nil {
+			err = errx
+		}
+		return
+	})
 	if err != nil {
 		return fmt.Errorf("syncStringBackingStore:getStore failed for %s.%s.%s - %v", index, field, timeStr, err)
 	}
 
 	// TODO: Pass this as a parameter
-	verifyOnly := true
+	verifyOnly := false
 
 	// Iterate over columnID values in the remote existence bitmap diff and lookup values in local backing store
 	pushBatch := make(map[interface{}]interface{}, pushDiff.GetCardinality())
 	foundCount := 0
-	for _, v := range pushDiff.ToArray() {
-		val, err := db.Get(shared.ToBytes(v))
-		if err != nil {
-			return fmt.Errorf("syncStringBackingStore:db.Get - %v", err)
-		}
-		if val != nil {
-			foundCount++
-			pushBatch[v] = string(val)
+	if pushDiff != nil {
+		for _, v := range pushDiff.ToArray() {
+			val, err := db.Get(shared.ToBytes(v))
+			if err != nil {
+				return fmt.Errorf("syncStringBackingStore:db.Get - %v", err)
+			}
+			if val != nil {
+				foundCount++
+				pushBatch[v] = string(val)
+			}
 		}
 	}
 
 	// Iterate over columnID values in the local existence bitmap diff and lookup values in the remote backing store
-	pullBatch := make(map[interface{}]interface{}, pullDiff.GetCardinality())
-	for _, v := range pullDiff.ToArray() {
-		pullBatch[v] = ""
+	var pullBatch map[interface{}]interface{}
+    if pullDiff != nil {
+		pullBatch := make(map[interface{}]interface{}, pullDiff.GetCardinality())
+		for _, v := range pullDiff.ToArray() {
+			pullBatch[v] = ""
+		}
+		pullBatch, err = peerKV.BatchLookupNode(remoteKV, kvPath, pullBatch)
+		if err != nil {
+			return fmt.Errorf("syncStringBackingStore:remoteKV.BatchLookupNode failed for %s.%s.%s - %v", index, field,
+					timeStr, err)
+		}
 	}
 
-	pullBatch, err = peerKV.BatchLookupNode(remoteKV, kvPath, pullBatch)
-	if err != nil {
-		return fmt.Errorf("syncStringBackingStore:remoteKV.BatchLookupNode failed for %s.%s.%s - %v", index, field,
-			timeStr, err)
-	}
 
 	if verifyOnly {
 		if foundCount > 0 {
 			u.Infof("Remote is missing %d backing strings for %s.%s.%s.", foundCount, index, field, timeStr)
 		}
-		if len(pullBatch) > 0 {
+		if pullBatch != nil && len(pullBatch) > 0 {
 			u.Infof("Local is missing %d backing strings for %s.%s.%s.", len(pullBatch),
 				index, field, timeStr)
 		}
@@ -595,7 +656,7 @@ func (m *BitmapIndex) syncStringBackingStore(peerKV *shared.KVStore, remoteKV pb
 	}
 
 	// Update local
-	if len(pullBatch) > 0 {
+	if pullBatch != nil && len(pullBatch) > 0 {
 		defer db.Sync()
 		for k, v := range pullBatch {
 			if err := db.Put(shared.ToBytes(k), shared.ToBytes(v)); err != nil {
@@ -612,10 +673,18 @@ func (m *BitmapIndex) simpleKVPush(peerKV *shared.KVStore, remoteKV pb.KVStoreCl
 	keyType, valType reflect.Kind) error {
 
 	localKV := m.Node.GetNodeService("KVStore").(*KVStore)
-	db, err := localKV.getStore(kvPath)
-	if err != nil {
+    var db *pogreb.DB
+    err := shared.Retry(5, 20 * time.Second, func() (err error) {
+        var errx error
+        db, errx = localKV.getStore(kvPath)
+        if errx != nil {
+            err = errx
+        }
+        return
+    })
+    if err != nil {
 		return fmt.Errorf("simpleKVPush:getStore failed for %s - %v", kvPath, err)
-	}
+    }
 
 	pushBatch := make(map[interface{}]interface{}, 0)
 	it := db.Items()

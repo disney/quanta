@@ -727,7 +727,7 @@ type BitmapIndexClient interface {
 	Projection(ctx context.Context, in *ProjectionRequest, opts ...grpc.CallOption) (*ProjectionResponse, error)
 	CheckoutSequence(ctx context.Context, in *CheckoutSequenceRequest, opts ...grpc.CallOption) (*CheckoutSequenceResponse, error)
 	TableOperation(ctx context.Context, in *TableOperationRequest, opts ...grpc.CallOption) (*empty.Empty, error)
-	Synchronize(ctx context.Context, in *wrappers.StringValue, opts ...grpc.CallOption) (*empty.Empty, error)
+	Synchronize(ctx context.Context, in *wrappers.StringValue, opts ...grpc.CallOption) (*wrappers.Int64Value, error)
 	SyncStatus(ctx context.Context, in *SyncStatusRequest, opts ...grpc.CallOption) (*SyncStatusResponse, error)
 }
 
@@ -836,8 +836,8 @@ func (c *bitmapIndexClient) TableOperation(ctx context.Context, in *TableOperati
 	return out, nil
 }
 
-func (c *bitmapIndexClient) Synchronize(ctx context.Context, in *wrappers.StringValue, opts ...grpc.CallOption) (*empty.Empty, error) {
-	out := new(empty.Empty)
+func (c *bitmapIndexClient) Synchronize(ctx context.Context, in *wrappers.StringValue, opts ...grpc.CallOption) (*wrappers.Int64Value, error) {
+	out := new(wrappers.Int64Value)
 	err := c.cc.Invoke(ctx, "/shared.BitmapIndex/Synchronize", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -866,7 +866,7 @@ type BitmapIndexServer interface {
 	Projection(context.Context, *ProjectionRequest) (*ProjectionResponse, error)
 	CheckoutSequence(context.Context, *CheckoutSequenceRequest) (*CheckoutSequenceResponse, error)
 	TableOperation(context.Context, *TableOperationRequest) (*empty.Empty, error)
-	Synchronize(context.Context, *wrappers.StringValue) (*empty.Empty, error)
+	Synchronize(context.Context, *wrappers.StringValue) (*wrappers.Int64Value, error)
 	SyncStatus(context.Context, *SyncStatusRequest) (*SyncStatusResponse, error)
 }
 
@@ -898,7 +898,7 @@ func (UnimplementedBitmapIndexServer) CheckoutSequence(context.Context, *Checkou
 func (UnimplementedBitmapIndexServer) TableOperation(context.Context, *TableOperationRequest) (*empty.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TableOperation not implemented")
 }
-func (UnimplementedBitmapIndexServer) Synchronize(context.Context, *wrappers.StringValue) (*empty.Empty, error) {
+func (UnimplementedBitmapIndexServer) Synchronize(context.Context, *wrappers.StringValue) (*wrappers.Int64Value, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Synchronize not implemented")
 }
 func (UnimplementedBitmapIndexServer) SyncStatus(context.Context, *SyncStatusRequest) (*SyncStatusResponse, error) {

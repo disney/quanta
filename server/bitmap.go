@@ -405,9 +405,23 @@ func (m *BitmapIndex) verifyProcessLoop() {
 func (m *BitmapIndex) verifyNode() {
 
 	peerClient := m.Conn.GetService("BitmapIndex").(*shared.BitmapIndex)
-	err := peerClient.Synchronize(m.GetNodeID())
-	if err != nil {
-		log.Fatal(fmt.Errorf("Node synchronization/verification failed - %v", err))
+
+	m.State = Syncing
+	u.Warnf("Setting node state to Syncing")
+	tryCount := 1
+	for {
+		diffCount, err := peerClient.Synchronize(m.GetNodeID())
+		if err != nil {
+			log.Fatal(fmt.Errorf("Node synchronization/verification failed - %v", err))
+		}
+		if diffCount == 0 {
+			m.State = Active
+			u.Warnf("Setting node state to Active")
+			break
+		}
+		time.Sleep(shared.SyncRetryInterval)
+		tryCount++
+		u.Warnf("%d Differences detected, retrying Synchronization (attempt %d)", diffCount, tryCount)
 	}
 }
 

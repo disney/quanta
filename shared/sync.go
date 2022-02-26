@@ -18,12 +18,12 @@ import (
 )
 
 // Synchronize flow.  Remote nodes call this when starting.  Peer nodes respond my pushing data.
-func (c *BitmapIndex) Synchronize(nodeKey string) error {
+func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 
 	var memberCount int
 	clusterSizeTarget, err := GetClusterSizeTarget(c.Conn.Consul)
 	if err != nil {
-		return err
+		return -1, err
 	}
 	quorumSize := c.Conn.Replicas + 1
 	if clusterSizeTarget > quorumSize {
@@ -32,7 +32,7 @@ func (c *BitmapIndex) Synchronize(nodeKey string) error {
 
 	// Are we even ready to launch this process yet?
 	// Do we have a quorum?
-	// Are all participants (other nodes except me) in a state of readiness (Active or Joining)?
+	// Are all participants (other nodes except me) in a state of readiness (Active, Syncing  or Joining)?
 	for {
 		var startingCount, readyCount, unknownCount int
 		nodeMap := c.Conn.GetNodeMap()
@@ -40,7 +40,7 @@ func (c *BitmapIndex) Synchronize(nodeKey string) error {
 		case _, open := <-c.Conn.Stop:
 			if !open {
 				err := fmt.Errorf("Shutdown initiated while waiting to start synchronization")
-				return err
+				return -1, err
 			}
 		case <-time.After(DefaultPollInterval):
 			for id := range nodeMap {
@@ -52,9 +52,12 @@ func (c *BitmapIndex) Synchronize(nodeKey string) error {
 				}
 				switch status.NodeState {
 				case "Joining":
-					readyCount++
+					//readyCount++
+					startingCount++
 				case "Starting":
 					startingCount++
+				case "Syncing":
+					readyCount++
 				case "Active":
 					readyCount++
 				default:
@@ -76,14 +79,16 @@ func (c *BitmapIndex) Synchronize(nodeKey string) error {
 	}
 
 	time.Sleep(DefaultPollInterval)
-	u.Warnf("All %d cluster members are ready to push data to me (sync).", memberCount)
+	u.Warnf("All %d cluster members are ready to push data to me, I am now in Syncing State.", memberCount)
 
+	resultChan := make(chan int64, memberCount - 1)
+	var diffCount int
 	var eg errgroup.Group
 	// Connect to all peers (except myself) and kick off a syncronization push process.
 	for i, n := range c.client {
 		myIndex := c.Conn.GetClientIndexForNodeID(nodeKey)
 		if myIndex == -1 {
-			u.Errorf("Client index not valid exiting.")
+			u.Errorf("shared/sync:GetClientIndexForNodeID(%s) failed", nodeKey)
 			os.Exit(1)
 		}
 		if myIndex == i {
@@ -92,39 +97,51 @@ func (c *BitmapIndex) Synchronize(nodeKey string) error {
 		client := n
 		clientIndex := i
 		eg.Go(func() error {
-			if err := c.syncClient(client, nodeKey, clientIndex); err != nil {
+			if diffc, err := c.syncClient(client, nodeKey, clientIndex); err != nil {
 				return err
+			} else {
+				resultChan <- diffc
 			}
 			return nil
 		})
 	}
 
 	if err := eg.Wait(); err != nil {
-		return err
+		return -1, err
+	}
+	close(resultChan)
+
+	for dr := range resultChan {
+		diffCount += int(dr)
 	}
 
-	u.Warnf("Synchronization complete.")
+	if diffCount == 0 {
+		u.Warnf("Synchronization complete for node %s, no differences detected", nodeKey)
+	} else {
+		u.Warnf("Synchronization complete for node %s, %d differences detected", nodeKey, diffCount)
+	}
 
-	return nil
+	return diffCount, nil
 }
 
 // Send a sync request.
-func (c *BitmapIndex) syncClient(client pb.BitmapIndexClient, nodeKey string, clientIndex int) error {
+func (c *BitmapIndex) syncClient(client pb.BitmapIndexClient, nodeKey string, clientIndex int) (int64, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), SyncDeadline)
 	defer cancel()
 
 	nKey := &wrappers.StringValue{Value: nodeKey}
 	if client == nil {
-		u.Errorf("client is nil for nodekey = %s, index = %d", nodeKey, clientIndex)
-		return nil
+		err := fmt.Errorf("client is nil for nodekey = %s, index = %d", nodeKey, clientIndex)
+		return int64(-1), err
 	}
 
-	if _, err := client.Synchronize(ctx, nKey); err != nil {
-		return fmt.Errorf("%v.Synchronize(_) = _, %v, node = %s", client, err,
+	diffCount, err := client.Synchronize(ctx, nKey)
+	if err != nil {
+		return int64(-1), fmt.Errorf("%v.Synchronize(_) = _, %v, node = %s", client, err,
 			c.Conn.ClientConnections()[clientIndex].Target())
 	}
-	return nil
+	return diffCount.Value, nil
 }
 
 // Send a sync status  request.

@@ -21,6 +21,7 @@ type RBACTestSuite struct {
 func (suite *RBACTestSuite) SetupSuite() {
 
 	os.RemoveAll("./testdata/index")
+	os.Mkdir("./testdata/index", 0755)
 	var err error
 	u.SetupLogging("debug")
 

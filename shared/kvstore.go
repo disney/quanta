@@ -394,7 +394,7 @@ func (c *KVStore) PutStringEnum(index, value string) (uint64, error) {
 func (c *KVStore) DeleteIndicesWithPrefix(prefix string, retainEnums bool) error {
 
 	var eg errgroup.Group
-	indices := c.SelectNodes(prefix, true, false)
+	indices := c.SelectNodes(prefix, false, true)
 	if len(indices) == 0 {
 		return fmt.Errorf("no available nodes")
 	}

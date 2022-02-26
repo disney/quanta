@@ -40,7 +40,9 @@ const (
 	Starting = StateType(iota)
 	// Joining - Node is synchronizing its state with peers.
 	Joining
-	// Active - Node is actively taking traffic.
+	// Syncing - Node is actively taking write traffic only.
+	Syncing
+	// Active - Node is actively taking all (R/W) traffic.
 	Active
 	// Stopped - Node was stopped gracefully.
 	Stopped
@@ -54,6 +56,8 @@ func (st StateType) String() string {
 		return "Starting"
 	case Joining:
 		return "Joining"
+	case Syncing:
+		return "Syncing"
 	case Active:
 		return "Active"
 	case Stopped:

@@ -44,7 +44,7 @@ func NewKVStore(node *Node) *KVStore {
 func (m *KVStore) Init() error {
 
 	dbList := make([]string, 0)
-	err := filepath.Walk(m.Node.dataDir,
+	err := filepath.Walk(m.Node.dataDir + sep + "index",
 		func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
@@ -173,6 +173,14 @@ func (m *KVStore) Lookup(ctx context.Context, kv *pb.IndexKVPair) (*pb.IndexKVPa
 // BatchPut - Insert a batch of entries.
 func (m *KVStore) BatchPut(stream pb.KVStore_BatchPutServer) error {
 
+	updatedMap := make(map[string]*pogreb.DB, 0)    // local cache of DBs updated
+
+	defer func() {
+		for _, v := range updatedMap {
+			v.Sync()
+		}
+	}()
+
 	var putCount int32
 	for {
 		kv, err := stream.Recv()
@@ -188,6 +196,9 @@ func (m *KVStore) BatchPut(stream pb.KVStore_BatchPutServer) error {
 		db, err2 := m.getStore(kv.IndexPath)
 		if err2 != nil {
 			return err2
+		}
+		if _, found := updatedMap[kv.IndexPath]; !found {
+			updatedMap[kv.IndexPath] = db
 		}
 		if kv.Key == nil || len(kv.Key) == 0 {
 			return fmt.Errorf("Key must be specified")

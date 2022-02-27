@@ -200,12 +200,14 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 			m.Admin[i] = pb.NewClusterAdminClient(m.clientConn[i])
 			id := m.ids[i]
 			entry := m.idMap[id]
-			status, err := m.getNodeStatusForID(id)
+			status, err := m.getNodeStatusForIndex(i)
 			if err == nil {
 				m.nodeStatusMap[id] = status
 				if status.NodeState == "Active" {
 					m.activeCount++
 				}
+			} else {
+				u.Errorf("getNodeStatusForIndex: %v", err)
 			}
 			m.SendMemberJoined(id, entry.Node.Address, i)
 		}
@@ -462,10 +464,6 @@ func (m *Conn) update() (err error) {
 				m.Admin = append(m.Admin, nil)
 				copy(m.Admin[index+1:], m.Admin[index:])
 				m.Admin[index] = pb.NewClusterAdminClient(m.clientConn[index])
-				status, err := m.getNodeStatusForID(id)
-				if err == nil {
-					m.nodeStatusMap[id] = status
-				}
 				u.Infof("NODE %s joined at index %d\n", id, index)
 				m.SendMemberJoined(id, entry.Node.Address, index)
 			}
@@ -512,13 +510,21 @@ func (m *Conn) update() (err error) {
 
 	// Refresh statuses
 	m.activeCount = 0
-	for k := range m.nodeStatusMap {
-		status, err := m.getNodeStatusForID(k)
+
+	// if Admin connections are not initialized then skip this until next update, we are being called from Connect
+	if len(m.Admin) == 0 {
+		return nil
+	}
+
+	for k, v := range m.nodeMap {
+		status, err := m.getNodeStatusForIndex(v)
 		if err == nil {
 			m.nodeStatusMap[k] = status
 			if status.NodeState == "Active" {
 				m.activeCount++
 			}
+		} else {
+			u.Errorf("getNodeStatusForIndex: k = %s, i = %d - %v", k, v, err)
 		}
 	}
 	return nil
@@ -592,13 +598,18 @@ func (m *Conn) GetNodeStatusForID(nodeID string) (*pb.StatusMessage, error) {
 
 func (m *Conn) getNodeStatusForID(nodeID string) (*pb.StatusMessage, error) {
 
+	clientIndex, ok := m.nodeMap[nodeID]
+	if !ok {
+		return nil, fmt.Errorf("clientIndex == -1 node id %s missing: [%#v]", nodeID, m.nodeMap)
+	}
+	return m.getNodeStatusForIndex(clientIndex)
+}
+
+func (m *Conn) getNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error) {
+
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
 
-	clientIndex, ok := m.nodeMap[nodeID]
-	if !ok {
-		return nil, fmt.Errorf("clientIndex == -1 node id %s has left", nodeID)
-	}
 	result, err := m.Admin[clientIndex].Status(ctx, &empty.Empty{})
 	if err != nil {
 		return nil, fmt.Errorf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", m.Admin[clientIndex], err,

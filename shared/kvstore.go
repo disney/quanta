@@ -8,6 +8,7 @@ package shared
 import (
 	"context"
 	"fmt"
+	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"golang.org/x/sync/errgroup"
@@ -71,7 +72,10 @@ func (c *KVStore) Put(indexPath string, k interface{}, v interface{}, pathIsKey 
 	if pathIsKey {
 		key = indexPath
 	}
-	indices := c.SelectNodes(key, false, false)
+	indices, err := c.SelectNodes(key, WriteIntent)
+	if err != nil {
+		fmt.Errorf("Put: %v", err)
+	}
 	if len(indices) == 0 {
 		return fmt.Errorf("%v.Put(_) = _, %v: ", c.client, " no available nodes!")
 	}
@@ -86,17 +90,18 @@ func (c *KVStore) Put(indexPath string, k interface{}, v interface{}, pathIsKey 
 	return nil
 }
 
-func (c *KVStore) splitBatch(batch map[interface{}]interface{}) []map[interface{}]interface{} {
-
-	//c.Conn.nodeMapLock.RLock()
-	//defer c.Conn.nodeMapLock.RUnlock()
+func (c *KVStore) splitBatch(batch map[interface{}]interface{}, op OpType) []map[interface{}]interface{} {
 
 	batches := make([]map[interface{}]interface{}, len(c.client))
 	for i := range batches {
 		batches[i] = make(map[interface{}]interface{}, 0)
 	}
 	for k, v := range batch {
-		indices := c.SelectNodes(ToString(k), false, false)
+		indices, err := c.SelectNodes(ToString(k), op)
+		if err != nil {
+			u.Errorf("splitBatch: %v", err)
+			continue
+		}
 		for _, i := range indices {
 			batches[i][k] = v
 		}
@@ -112,14 +117,18 @@ func (c *KVStore) BatchPut(indexPath string, batch map[interface{}]interface{}, 
 		batches[i] = make(map[interface{}]interface{}, 0)
 	}
 	if pathIsKey {
-		indices := c.SelectNodes(indexPath, false, false)
+		indices, err := c.SelectNodes(indexPath, WriteIntent)
+		if err != nil {
+			return fmt.Errorf("BatchPut: %v", err)
+		}
 		for _, i := range indices {
 			batches[i] = batch
 		}
 	} else {
-		batches = c.splitBatch(batch)
+		batches = c.splitBatch(batch, WriteIntent)
 	}
 
+	// TODO: This should use errgroup
 	done := make(chan error)
 	defer close(done)
 	count := len(batches)
@@ -179,7 +188,10 @@ func (c *KVStore) Lookup(indexPath string, k interface{}, valueType reflect.Kind
 	if pathIsKey {
 		key = indexPath
 	}
-	indices := c.SelectNodes(key, true, false)
+	indices, err := c.SelectNodes(key, ReadIntent)
+	if err != nil {
+		return nil, fmt.Errorf("Lookup: %v", err)
+	}
 	if len(indices) == 0 {
 		return nil, fmt.Errorf("%v.Lookup(_) = _, %v: ", c.client, " no available nodes")
 	}
@@ -200,7 +212,10 @@ func (c *KVStore) Lookup(indexPath string, k interface{}, valueType reflect.Kind
 func (c *KVStore) BatchLookup(indexPath string, batch map[interface{}]interface{}, pathIsKey bool) (map[interface{}]interface{}, error) {
 
 	if pathIsKey {
-		indices := c.SelectNodes(indexPath, true, false)
+		indices, err := c.SelectNodes(indexPath, ReadIntent)
+		if err != nil {
+			return nil, fmt.Errorf("BatchLookup: %v", err)
+		}
 		if len(indices) == 0 {
 			return nil, fmt.Errorf("no nodes available")
 		}
@@ -208,8 +223,9 @@ func (c *KVStore) BatchLookup(indexPath string, batch map[interface{}]interface{
 	}
 
 	// We dont want to iterate over replicas for lookups so count is 1, first replica is primary
-	batches := c.splitBatch(batch)
+	batches := c.splitBatch(batch, ReadIntent)
 
+	// TODO: use errorgroup
 	results := make(map[interface{}]interface{}, 0)
 	rchan := make(chan map[interface{}]interface{})
 	defer close(rchan)
@@ -301,7 +317,11 @@ func (c *KVStore) Items(index string, keyType, valueType reflect.Kind) (map[inte
 
 	var eg errgroup.Group
 
-	for i := range c.client {
+	indices, err := c.SelectNodes(index, ReadIntentAll)
+	if err != nil {
+		return results, fmt.Errorf("Items: %v", err)
+	}
+	for _, i := range indices {
 		x := c.client[i]
 		eg.Go(func() error {
 			r, err := c.NodeItems(x, index, keyType, valueType)
@@ -313,7 +333,7 @@ func (c *KVStore) Items(index string, keyType, valueType reflect.Kind) (map[inte
 		})
 	}
 
-	if err := eg.Wait(); err != nil {
+	if err = eg.Wait(); err != nil {
 		return results, err
 	}
 	close(rchan)
@@ -359,7 +379,10 @@ func (c *KVStore) PutStringEnum(index, value string) (uint64, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
-	indices := c.SelectNodes(index, false, true)
+	indices, err1 := c.SelectNodes(index, WriteIntentAll)
+	if err1 != nil {
+		return 0, fmt.Errorf("PutStringEnum: %v", err1)
+	}
 	if len(indices) == 0 {
 		return 0, fmt.Errorf("PutStringEnum(_) = _, %v: ", " no available nodes!")
 	}
@@ -394,7 +417,10 @@ func (c *KVStore) PutStringEnum(index, value string) (uint64, error) {
 func (c *KVStore) DeleteIndicesWithPrefix(prefix string, retainEnums bool) error {
 
 	var eg errgroup.Group
-	indices := c.SelectNodes(prefix, false, true)
+	indices, err := c.SelectNodes(prefix, AllActive)
+	if err != nil {
+		return fmt.Errorf("DeleteIndicesWithPrefix %v", err)
+	}
 	if len(indices) == 0 {
 		return fmt.Errorf("no available nodes")
 	}
@@ -404,7 +430,7 @@ func (c *KVStore) DeleteIndicesWithPrefix(prefix string, retainEnums bool) error
 			return c.deleteIndicesWithPrefix(x, prefix, retainEnums)
 		})
 	}
-	if err := eg.Wait(); err != nil {
+	if err = eg.Wait(); err != nil {
 		return err
 	}
 	return nil

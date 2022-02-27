@@ -1505,7 +1505,7 @@ func (m *SQLToQuanta) updateRow(table string, columnID uint64, updValueMap map[s
 		if err != nil {
 			return 0, err
 		}
-		err = m.conn.Client.Update(table, a.FieldName, columnID, int64(rowID), timePartition)
+		err = m.conn.Client.Update(table, a.FieldName, columnID, int64(rowID), timePartition, a.IsBSI(), a.Exclusive)
 		if err != nil {
 			return 0, err
 		}

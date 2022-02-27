@@ -8,6 +8,7 @@ package shared
 import (
 	"context"
 	"fmt"
+	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"io"
@@ -84,20 +85,18 @@ func (c *StringSearch) Flush() error {
 // Separate a batch of strings to be indexed by consistant hashing by node key.
 func (c *StringSearch) splitStringBatch(batch map[string]struct{}, replicas int) []map[string]struct{} {
 
-	//c.Conn.NodeMapLock.RLock()
-	//defer c.Conn.NodeMapLock.RUnlock()
-
 	batches := make([]map[string]struct{}, len(c.client))
 	for i := range batches {
 		batches[i] = make(map[string]struct{}, 0)
 	}
 	for k, v := range batch {
-		nodeKeys := c.Conn.HashTable.GetN(replicas, ToString(k))
-		// Iterate over node key list and collate into batches
-		for _, nodeKey := range nodeKeys {
-			if i, ok := c.Conn.nodeMap[nodeKey]; ok {
-				batches[i][k] = v
-			}
+		indices, err := c.SelectNodes(ToString(k), WriteIntent)
+		if err != nil {
+			u.Errorf("splitBitmapBatch: %v", err)
+			continue
+		}
+		for _, i := range indices {
+			batches[i][k] = v
 		}
 	}
 	return batches
@@ -203,7 +202,11 @@ func (c *StringSearch) Search(searchTerms string) (map[uint64]struct{}, error) {
 	defer close(done)
 	count := len(c.client)
 
-	for i := range c.client {
+	indices, err := c.SelectNodes(searchTerms, ReadIntentAll)
+	if err != nil {
+		return results, fmt.Errorf("Search: %v", err)
+	}
+	for _, i := range indices {
 		go func(client pb.StringSearchClient) {
 			r, e := c.search(client, searchTerms)
 			rchan <- r

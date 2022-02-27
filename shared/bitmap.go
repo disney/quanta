@@ -159,7 +159,7 @@ func (c *BitmapIndex) Flush() error {
 
 // Update - Handle Updates
 func (c *BitmapIndex) Update(index, field string, columnID uint64, rowIDOrValue int64,
-	ts time.Time) error {
+	ts time.Time, isBSI, isExclusive bool) error {
 
 	req := &pb.UpdateRequest{Index: index, Field: field, ColumnId: columnID,
 		RowIdOrValue: rowIDOrValue, Time: ts.UnixNano()}
@@ -171,9 +171,23 @@ func (c *BitmapIndex) Update(index, field string, columnID uint64, rowIDOrValue 
 	 * handled (clear of previous rowIds).  Update requests for non-existent data is
 	 * silently ignored.
 	 */
-	for i, n := range c.client {
-		client := n
-		clientIndex := i
+	var indices []int
+	var err error
+	op := WriteIntent
+	if isBSI {
+		indices, err = c.SelectNodes(fmt.Sprintf("%s/%s/%s", index, field, ts.Format(timeFmt)), op)
+	} else {
+		if isExclusive {
+			op = WriteIntentAll
+		}
+		indices, err = c.SelectNodes(fmt.Sprintf("%s/%s/%d/%s", index, field, rowIDOrValue, ts.Format(timeFmt)), op)
+	}
+	if err != nil {
+		return fmt.Errorf("Update: %v", err)
+	}
+	for _, n := range indices {
+		client := c.client[n]
+		clientIndex := n
 		eg.Go(func() error {
 			if err := c.updateClient(client, req, clientIndex); err != nil {
 				return err
@@ -395,9 +409,6 @@ func (c *BitmapIndex) BatchMutateNode(clear bool, client pb.BitmapIndexClient,
 func (c *BitmapIndex) splitBitmapBatch(batch map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap,
 ) []map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap {
 
-	//c.Conn.nodeMapLock.RLock()
-	//defer c.Conn.nodeMapLock.RUnlock()
-
 	batches := make([]map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap, len(c.client))
 	for i := range batches {
 		batches[i] = make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap)
@@ -408,8 +419,12 @@ func (c *BitmapIndex) splitBitmapBatch(batch map[string]map[string]map[uint64]ma
 			for rowID, ts := range field {
 				for t, bitmap := range ts {
 					tm := time.Unix(0, t)
-					indices := c.SelectNodes(fmt.Sprintf("%s/%s/%d/%s", indexName, fieldName, rowID, tm.Format(timeFmt)),
-						false, false)
+					indices, err := c.SelectNodes(fmt.Sprintf("%s/%s/%d/%s", indexName, fieldName, rowID, tm.Format(timeFmt)),
+						WriteIntent)
+					if err != nil {
+						u.Errorf("splitBitmapBatch: %v", err)
+						continue
+					}
 					for _, i := range indices {
 						if batches[i] == nil {
 							batches[i] = make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap)
@@ -510,9 +525,6 @@ func (c *BitmapIndex) BatchSetValueNode(client pb.BitmapIndexClient,
 func (c *BitmapIndex) splitBSIBatch(batch map[string]map[string]map[int64]*roaring64.BSI,
 ) []map[string]map[string]map[int64]*roaring64.BSI {
 
-	//c.Conn.nodeMapLock.RLock()
-	//defer c.Conn.nodeMapLock.RUnlock()
-
 	batches := make([]map[string]map[string]map[int64]*roaring64.BSI, len(c.client))
 	for i := range batches {
 		batches[i] = make(map[string]map[string]map[int64]*roaring64.BSI)
@@ -522,7 +534,11 @@ func (c *BitmapIndex) splitBSIBatch(batch map[string]map[string]map[int64]*roari
 		for fieldName, field := range index {
 			for t, bsi := range field {
 				tm := time.Unix(0, t)
-				indices := c.SelectNodes(fmt.Sprintf("%s/%s/%s", indexName, fieldName, tm.Format(timeFmt)), false, false)
+				indices, err := c.SelectNodes(fmt.Sprintf("%s/%s/%s", indexName, fieldName, tm.Format(timeFmt)), WriteIntent)
+				if err != nil {
+					u.Errorf("splitBSIBatch: %v", err)
+					continue
+				}
 				for _, i := range indices {
 					if batches[i] == nil {
 						batches[i] = make(map[string]map[string]map[int64]*roaring64.BSI)
@@ -568,9 +584,13 @@ func (c *BitmapIndex) BulkClear(index, fromTime, toTime string,
 	var eg errgroup.Group
 
 	// Send the same clear request to each node
-	for i, n := range c.client {
-		client := n
-		clientIndex := i
+	indices, err := c.SelectNodes(index, WriteIntentAll)
+	if err != nil {
+		return fmt.Errorf("BulkClear: %v", err)
+	}
+	for _, n := range indices {
+		client := c.client[n]
+		clientIndex := n
 		eg.Go(func() error {
 			if err := c.clearClient(client, req, clientIndex); err != nil {
 				return err
@@ -608,7 +628,11 @@ func (c *BitmapIndex) CheckoutSequence(indexName, pkField string, ts time.Time,
 	req := &pb.CheckoutSequenceRequest{Index: indexName, PkField: pkField, Time: ts.UnixNano(),
 		ReservationSize: uint32(reservationSize)}
 
-	indices := c.SelectNodes(fmt.Sprintf("%s/%s/%s", indexName, pkField, ts.Format(timeFmt)), true, false)
+	// We are checking out a sequence with the intent to write, but we only want the Active primary hence ReadIntent
+	indices, err1 := c.SelectNodes(fmt.Sprintf("%s/%s/%s", indexName, pkField, ts.Format(timeFmt)), ReadIntent)
+	if err1 != nil {
+		return nil, fmt.Errorf("CheckoutSequence: %v", err1)
+	}
 
 	/*
 	 * Make sure to target the node with the true maximum column ID for the table.
@@ -744,10 +768,14 @@ func (c *BitmapIndex) Projection(index string, fields []string, fromTime, toTime
 	resultChan := make(chan *pb.ProjectionResponse, 100)
 	var eg errgroup.Group
 
-	// Send the same projection request to each node
-	for i, n := range c.client {
-		client := n
-		clientIndex := i
+	// Send the same projection request to each readable node.
+	indices, err2 := c.SelectNodes(index, ReadIntentAll)
+	if err2 != nil {
+		return nil, nil, fmt.Errorf("Projection: %v", err2)
+	}
+	for _, n := range indices {
+		client := c.client[n]
+		clientIndex := n
 		eg.Go(func() error {
 			pr, err := c.projectionClient(client, req, clientIndex)
 			if err != nil {
@@ -828,9 +856,11 @@ func (c *BitmapIndex) projectionClient(client pb.BitmapIndexClient, req *pb.Proj
 // TableOperation - Handle TableOperations
 func (c *BitmapIndex) TableOperation(table, operation string) error {
 
+	sop := AllActive
 	var op pb.TableOperationRequest_OpType
 	switch operation {
 	case "deploy":
+		sop = Admin
 		op = pb.TableOperationRequest_DEPLOY
 	case "drop":
 		op = pb.TableOperationRequest_DROP
@@ -843,10 +873,14 @@ func (c *BitmapIndex) TableOperation(table, operation string) error {
 
 	var eg errgroup.Group
 
-	// Send the same tableOperation request to each node.
-	for i, n := range c.client {
-		client := n
-		clientIndex := i
+	// Send the same tableOperation request to each node.  They must be all Active
+	indices, err := c.SelectNodes(table, sop)
+	if err != nil {
+		return fmt.Errorf("table %s operation: %v", operation, err)
+	}
+	for _, n := range indices {
+		client := c.client[n]
+		clientIndex := n
 		eg.Go(func() error {
 			if err := c.tableOperationClient(client, req, clientIndex); err != nil {
 				return err

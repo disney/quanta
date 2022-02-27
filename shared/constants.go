@@ -11,7 +11,7 @@ var (
 	SyncDeadline time.Duration = 20 * time.Minute
 	// DefaultPollInterval - 5 seconds between poll operations
 	DefaultPollInterval time.Duration = 5 * time.Second
-	SyncRetryInterval time.Duration = time.Second
+	SyncRetryInterval   time.Duration = time.Second
 )
 
 // Service - Client side services.

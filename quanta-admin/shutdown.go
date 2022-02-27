@@ -18,6 +18,13 @@ func (s *ShutdownCmd) Run(ctx *Context) error {
 	conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
 	cx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
 	defer cancel()
+	indices, err := conn.SelectNodes("", shared.Admin)
+	if err != nil {
+		return fmt.Errorf("admin tool - Shutdown failed: %v", err)
+	}
+	if len(indices) != len(conn.Admin) {
+		return fmt.Errorf("SelectNodes returned %d indices, not %d", len(indices), len(conn.Admin))
+	}
 	for i, v := range conn.Admin {
 		if _, err := v.Shutdown(cx, &empty.Empty{}); err != nil {
 			fmt.Printf(fmt.Sprintf("%v.Shutdown(_) = _, %v, node = %s\n", v, err, conn.ClientConnections()[i].Target()))

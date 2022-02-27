@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/disney/quanta/shared"
 )
 
 // StatusCmd - Status command
@@ -14,8 +13,9 @@ func (s *StatusCmd) Run(ctx *Context) error {
 
 	conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
 
-	fmt.Println("ADDRESS            STATUS   DATA CENTER      CONSUL NODE ID                        VERSION")
-	fmt.Println("================   ======   ==============   ====================================  =========================")
+	fmt.Println()
+	fmt.Println("ADDRESS            STATUS    DATA CENTER      CONSUL NODE ID                        VERSION")
+	fmt.Println("================   ======    ==============   ====================================  =========================")
 	for _, node := range conn.Nodes() {
 		status := "Left"
 		version := ""
@@ -23,7 +23,7 @@ func (s *StatusCmd) Run(ctx *Context) error {
 			status = "Crashed"
 			if node.Checks[1].Status == "passing" {
 				// Invoke Status API
-				if result, err := shared.GetNodeStatusForID(conn, node.Service.ID); err != nil {
+				if result, err := conn.GetNodeStatusForID(node.Service.ID); err != nil {
 					fmt.Printf("Error: %v\n", err)
 					continue
 				} else {
@@ -32,7 +32,15 @@ func (s *StatusCmd) Run(ctx *Context) error {
 				}
 			}
 		}
-		fmt.Printf("%-16s   %-7s  %-14s   %-25s  %s\n", node.Node.Address, status, node.Node.Datacenter, node.Node.ID, version)
+		fmt.Printf("%-16s   %-8s  %-14s   %-25s  %s\n", node.Node.Address, status, node.Node.Datacenter, node.Node.ID, version)
 	}
+	fmt.Println()
+	status, active, size := conn.GetClusterState()
+	if active == 0 {
+		fmt.Printf("Cluster is DOWN,  Target Cluster Size = %d\n", size)
+	} else {
+		fmt.Printf("Cluster State = %s, Active nodes = %d, Target Cluster Size = %d\n", status.String(), active, size)
+	}
+	fmt.Println()
 	return nil
 }

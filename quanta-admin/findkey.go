@@ -56,7 +56,11 @@ func (f *FindKeyCmd) Run(ctx *Context) error {
 	fmt.Printf("KEY = %s\n", key)
 	cx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
 	defer cancel()
-	indices := conn.SelectNodes(key, false, false)
+	// Not realy intending to write here but we want all qualifying nodes.
+	indices, err4 := conn.SelectNodes(key, shared.WriteIntent)
+	if err4 != nil {
+		return err4
+	}
 	bitClient := shared.NewBitmapIndex(conn, 0)
 	req := &pb.SyncStatusRequest{Index: f.Table, Field: f.Field, RowId: f.RowID, Time: ts.UnixNano()}
 	fmt.Println("")

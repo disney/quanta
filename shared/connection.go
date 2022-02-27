@@ -17,6 +17,7 @@ import (
 	"fmt"
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
+	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/hashicorp/consul/api"
 	"github.com/stvp/rendezvous"
 	"google.golang.org/grpc"
@@ -73,6 +74,9 @@ type Conn struct {
 	registeredServices map[string]Service
 	idMap              map[string]*api.ServiceEntry
 	ids                []string
+	clusterSizeTarget  int
+	nodeStatusMap      map[string]*pb.StatusMessage
+	activeCount        int
 }
 
 // NewDefaultConnection - Configure a connection with default values.
@@ -85,7 +89,76 @@ func NewDefaultConnection() *Conn {
 	m.Quorum = 3
 	m.Replicas = 2
 	m.registeredServices = make(map[string]Service)
+	m.nodeStatusMap = make(map[string]*pb.StatusMessage, 0)
 	return m
+}
+
+// OpType - Operation type
+type OpType int
+
+const (
+	// NoQuorum - A quorum is not required for this operation.
+	NoQuorum = OpType(iota)
+	// Admin - Administrative operation to be applied to all nodes regardless of node status
+	Admin
+	// AllActive - All nodes must be in Active state.
+	AllActive
+	// ReadIntent - Read intent - A quorum is required, Syncing nodes are excluded.
+	ReadIntent
+	// ReadIntentAll - Write intent - A quorum is required, Syncing nodes excluded.
+	ReadIntentAll
+	// WriteIntent - Write intent - A quorum is required, Syncing nodes are included.
+	WriteIntent
+	// WriteIntentAll - Write intent - A quorum is required, Syncing nodes included.
+	WriteIntentAll
+)
+
+// String - Returns a string representation of OpType
+func (ot OpType) String() string {
+
+	switch ot {
+	case NoQuorum:
+		return "NoQuorum"
+	case Admin:
+		return "Admin"
+	case AllActive:
+		return "AllActive"
+	case ReadIntent:
+		return "ReadIntent"
+	case ReadIntentAll:
+		return "ReadIntentAll"
+	case WriteIntent:
+		return "WriteIntent"
+	case WriteIntentAll:
+		return "WriteIntentAll"
+	}
+	return ""
+}
+
+// ClusterState - Overall cluster state indicators.
+type ClusterState int
+
+const (
+	// Red - A quorum is not reached.  Cluster is down or in inactive state.
+	Red = ClusterState(iota)
+	// Orange - One or more nodes are down but cluster is serving requests.
+	Orange
+	// Green - All nodes are actively serving data.
+	Green
+)
+
+// String - Returns a string representation of ClusterState
+func (st ClusterState) String() string {
+
+	switch st {
+	case Red:
+		return "RED"
+	case Orange:
+		return "ORANGE"
+	case Green:
+		return "GREEN"
+	}
+	return ""
 }
 
 // RegisterService - Add a new service registration for member events.
@@ -127,6 +200,13 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 			m.Admin[i] = pb.NewClusterAdminClient(m.clientConn[i])
 			id := m.ids[i]
 			entry := m.idMap[id]
+			status, err := m.getNodeStatusForID(id)
+			if err == nil {
+				m.nodeStatusMap[id] = status
+				if status.NodeState == "Active" {
+					m.activeCount++
+				}
+			}
 			m.SendMemberJoined(id, entry.Node.Address, i)
 		}
 		go m.poll()
@@ -197,29 +277,69 @@ func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.Client
 
 // SelectNodes - Return a list of nodes for a given shard key.  The returned node list is sorted in descending order
 // highest random weight first.
-// Resolve the node location(s) of a single key. If 'all' == true than all nodes are selected.
-func (m *Conn) SelectNodes(key interface{}, onlyPrimary, all bool) []int {
+// Resolve the node location(s) of a single key. If 'Admin' or 'AllActive' then many nodes selected.
+/*
+   // NoQuorum - A quorum is not required for this operation.
+   NoQuorum = OpType(iota)
+   // Admin - Administrative operation to be applied to all nodes regardless of node status
+   Admin
+   // AllActive - All nodes must be in Active state.
+   AllActive
+   // ReadIntent - Read intent - A quorum is required, Syncing nodes excluded.
+   ReadIntent
+   // WriteIntent - Write intent - A quorum is required, Syncing nodes included.
+   WriteIntent
+   // WriteIntentAll - Write intent - A quorum is required, Syncing nodes included.
+   WriteIntentAll
+*/
+func (m *Conn) SelectNodes(key interface{}, op OpType) ([]int, error) {
 
 	m.nodeMapLock.RLock()
 	defer m.nodeMapLock.RUnlock()
 
+	// test harness mode
+	if m.ServicePort == 0 {
+		return []int{0}, nil
+	}
+
+	clusterState, _, _ := m.GetClusterState()
+	if clusterState != Green && op == AllActive {
+		return nil, fmt.Errorf("This operation requires [%v], but the cluster state is [%v]", op, clusterState)
+	}
+
+	all := (op == AllActive || op == Admin || op == WriteIntentAll || op == ReadIntentAll)
 	replicas := m.Replicas
 	if all && len(m.nodeMap) > 0 {
 		replicas = len(m.nodeMap)
 	}
-	if onlyPrimary {
-		replicas = 1
-	}
 
 	nodeKeys := m.HashTable.GetN(replicas, ToString(key))
-	indices := make([]int, replicas)
+	indices := make([]int, 0)
 
-	for i, v := range nodeKeys {
+	for _, v := range nodeKeys {
+		status, found := m.nodeStatusMap[v]
+		if !found {
+			return nil, fmt.Errorf("SelectNodes: assert fail for key [%v], node %v not found in nodeStatusMap",
+				ToString(key), v)
+		}
+		if status.NodeState != "Active" && status.NodeState != "Syncing" && !all {
+			continue
+		}
+		if status.NodeState != "Active" && (op == ReadIntent || op == ReadIntentAll) {
+			continue // Don't read from a node in Syncing state.
+		}
 		if j, ok := m.nodeMap[v]; ok {
-			indices[i] = j
+			indices = append(indices, j)
+			if op == ReadIntent { // Only need one
+				break
+			}
 		}
 	}
-	return indices
+	if len(indices) == 0 { // Shouldn't happen
+		return nil, fmt.Errorf("SelectNodes assert fail: none selected: nodeKeys [%v], nodeStatusMap [%#v], op [%s]",
+			nodeKeys, m.nodeStatusMap, op)
+	}
+	return indices, nil
 }
 
 // GetClientIndexForNodeID - The the index into m.clientConn for a node ID.
@@ -244,7 +364,7 @@ func (m *Conn) GetNodeForID(nodeID string) (*api.ServiceEntry, bool) {
 	return nil, false
 }
 
-// Disconnect - Terminate admin connections to all cluster nodes.
+// Disconnect - Terminate connections to all cluster nodes.
 func (m *Conn) Disconnect() error {
 
 	for i := 0; i < len(m.clientConn); i++ {
@@ -252,6 +372,7 @@ func (m *Conn) Disconnect() error {
 			m.clientConn[i].Close()
 		}
 	}
+	m.clientConn = make([]*grpc.ClientConn, 0)
 	select {
 	case _, open := <-m.Stop:
 		if open {
@@ -300,6 +421,14 @@ func (m *Conn) update() (err error) {
 	if serviceEntries == nil {
 		return nil
 	}
+	m.clusterSizeTarget, err = GetClusterSizeTarget(m.Consul)
+	if err != nil {
+		return err
+	}
+	if m.clusterSizeTarget == 0 {
+		m.clusterSizeTarget = m.Replicas + 1
+		u.Warnf("ClusterSizeTarget not set, defaulting target to replicas + 1, currently %d", m.clusterSizeTarget)
+	}
 
 	m.nodeMapLock.Lock()
 	defer m.nodeMapLock.Unlock()
@@ -333,6 +462,10 @@ func (m *Conn) update() (err error) {
 				m.Admin = append(m.Admin, nil)
 				copy(m.Admin[index+1:], m.Admin[index:])
 				m.Admin[index] = pb.NewClusterAdminClient(m.clientConn[index])
+				status, err := m.getNodeStatusForID(id)
+				if err == nil {
+					m.nodeStatusMap[id] = status
+				}
 				u.Infof("NODE %s joined at index %d\n", id, index)
 				m.SendMemberJoined(id, entry.Node.Address, index)
 			}
@@ -353,6 +486,7 @@ func (m *Conn) update() (err error) {
 			} else {
 				m.Admin = make([]pb.ClusterAdminClient, 0)
 			}
+			delete(m.nodeStatusMap, id)
 			u.Infof("NODE %s left at index %d\n", id, index)
 			m.SendMemberLeft(id, index)
 		}
@@ -375,6 +509,18 @@ func (m *Conn) update() (err error) {
 
 	m.HashTable = rendezvous.New(ids)
 	m.waitIndex = meta.LastIndex
+
+	// Refresh statuses
+	m.activeCount = 0
+	for k := range m.nodeStatusMap {
+		status, err := m.getNodeStatusForID(k)
+		if err == nil {
+			m.nodeStatusMap[k] = status
+			if status.NodeState == "Active" {
+				m.activeCount++
+			}
+		}
+	}
 	return nil
 }
 
@@ -430,4 +576,52 @@ func (m *Conn) SendMemberJoined(nodeID, ipAddress string, index int) {
 func (m *Conn) GetService(name string) Service {
 
 	return m.registeredServices[name]
+}
+
+// GetNodeStatusForID - Returns the node status for a given node ID.
+func (m *Conn) GetNodeStatusForID(nodeID string) (*pb.StatusMessage, error) {
+
+	m.nodeMapLock.RLock()
+	defer m.nodeMapLock.RUnlock()
+	s, ok := m.nodeStatusMap[nodeID]
+	if !ok {
+		return nil, fmt.Errorf("no node status for %s", nodeID)
+	}
+	return s, nil
+}
+
+func (m *Conn) getNodeStatusForID(nodeID string) (*pb.StatusMessage, error) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	defer cancel()
+
+	clientIndex, ok := m.nodeMap[nodeID]
+	if !ok {
+		return nil, fmt.Errorf("clientIndex == -1 node id %s has left", nodeID)
+	}
+	result, err := m.Admin[clientIndex].Status(ctx, &empty.Empty{})
+	if err != nil {
+		return nil, fmt.Errorf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", m.Admin[clientIndex], err,
+			m.clientConn[clientIndex].Target()))
+	}
+	return result, nil
+}
+
+func (m *Conn) GetClusterState() (status ClusterState, activeCount, clusterSizeTarget int) {
+
+	m.nodeMapLock.RLock()
+	defer m.nodeMapLock.RUnlock()
+
+	activeCount = m.activeCount
+	clusterSizeTarget = m.clusterSizeTarget
+	status = Red
+	if m.activeCount == m.clusterSizeTarget {
+		status = Green
+		return
+	}
+	if m.activeCount >= m.clusterSizeTarget-(m.Replicas-1) {
+		status = Orange
+		return
+	}
+	return
 }

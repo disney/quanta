@@ -10,7 +10,6 @@ import (
 	"fmt"
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"golang.org/x/sync/errgroup"
 	"os"
@@ -44,7 +43,7 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 			}
 		case <-time.After(DefaultPollInterval):
 			for id := range nodeMap {
-				status, err := GetNodeStatusForID(c.Conn, id)
+				status, err := c.Conn.GetNodeStatusForID(id)
 				if err != nil {
 					u.Warnf("error %v\n", err)
 					unknownCount++
@@ -81,7 +80,7 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 	time.Sleep(DefaultPollInterval)
 	u.Warnf("All %d cluster members are ready to push data to me, I am now in Syncing State.", memberCount)
 
-	resultChan := make(chan int64, memberCount - 1)
+	resultChan := make(chan int64, memberCount-1)
 	var diffCount int
 	var eg errgroup.Group
 	// Connect to all peers (except myself) and kick off a syncronization push process.
@@ -157,22 +156,4 @@ func (c *BitmapIndex) syncStatusClient(client pb.BitmapIndexClient, req *pb.Sync
 			c.Conn.ClientConnections()[clientIndex].Target())
 	}
 	return response, nil
-}
-
-// GetNodeStatusForID - Returns the node status for a given node ID.
-func GetNodeStatusForID(conn *Conn, nodeID string) (*pb.StatusMessage, error) {
-
-	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
-	defer cancel()
-	// Invoke Status API
-	clientIndex := conn.GetClientIndexForNodeID(nodeID)
-	if clientIndex == -1 {
-		return nil, fmt.Errorf("clientIndex == -1 node id %s has left", nodeID)
-	}
-	result, err := conn.Admin[clientIndex].Status(ctx, &empty.Empty{})
-	if err != nil {
-		return nil, fmt.Errorf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", conn.Admin[clientIndex], err,
-			conn.ClientConnections()[clientIndex].Target()))
-	}
-	return result, nil
 }

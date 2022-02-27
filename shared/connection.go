@@ -607,6 +607,7 @@ func (m *Conn) getNodeStatusForID(nodeID string) (*pb.StatusMessage, error) {
 	return result, nil
 }
 
+// GetClusterState - Returns the overall cluster state health, active nodes, cluster size.
 func (m *Conn) GetClusterState() (status ClusterState, activeCount, clusterSizeTarget int) {
 
 	m.nodeMapLock.RLock()

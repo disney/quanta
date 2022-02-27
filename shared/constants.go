@@ -11,6 +11,7 @@ var (
 	SyncDeadline time.Duration = 20 * time.Minute
 	// DefaultPollInterval - 5 seconds between poll operations
 	DefaultPollInterval time.Duration = 5 * time.Second
+	// SyncRetryInterval - 1 second between sync attempts
 	SyncRetryInterval   time.Duration = time.Second
 )
 

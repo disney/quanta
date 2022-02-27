@@ -195,9 +195,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Start Prometheus endpoint
-    http.Handle("/metrics", promhttp.Handler())
-    http.ListenAndServe(":2112", nil)
+	go func() {
+		// Start Prometheus endpoint
+    	http.Handle("/metrics", promhttp.Handler())
+    	http.ListenAndServe(":2112", nil)
+	}()
 
 	var ticker *time.Ticker
 	ticker = main.printStats()

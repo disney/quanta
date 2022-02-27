@@ -108,9 +108,11 @@ func main() {
 		shared.InitLogging(*logging, *environment, "Proxy", Version, "Quanta")
 	}
 
-	// Initialize Prometheus metrics endpoint.
-	http.Handle("/metrics", promhttp.Handler())
-	http.ListenAndServe(":2112", nil)
+	go func() {
+		// Initialize Prometheus metrics endpoint.
+		http.Handle("/metrics", promhttp.Handler())
+		http.ListenAndServe(":2112", nil)
+	}()
 
 	consulAddr := *consul
 	log.Printf("Connecting to Consul at: [%s] ...\n", consulAddr)

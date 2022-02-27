@@ -96,11 +96,11 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 		client := n
 		clientIndex := i
 		eg.Go(func() error {
-			if diffc, err := c.syncClient(client, nodeKey, clientIndex); err != nil {
+			diffc, err := c.syncClient(client, nodeKey, clientIndex)
+			if err != nil {
 				return err
-			} else {
-				resultChan <- diffc
 			}
+			resultChan <- diffc
 			return nil
 		})
 	}

@@ -64,16 +64,17 @@ func (f *FindKeyCmd) Run(ctx *Context) error {
 	bitClient := shared.NewBitmapIndex(conn, 0)
 	req := &pb.SyncStatusRequest{Index: f.Table, Field: f.Field, RowId: f.RowID, Time: ts.UnixNano()}
 	fmt.Println("")
-	fmt.Println("REPLICA   ADDRESS            STATUS   CARDINALITY   MODTIME")
-	fmt.Println("=======   ================   ======   ===========   =======")
+	fmt.Println("REPLICA   ADDRESS            STATE          STATUS        CARDINALITY   MODTIME")
+	fmt.Println("=======   ================   =========      ===========   ===========   ====================")
 	for i, index := range indices {
-		var status, ip, modTime string
+		var status, ip, modTime, nodeState string
 		var card uint64
 		if result, err := conn.Admin[index].Status(cx, &empty.Empty{}); err != nil {
 			fmt.Printf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", conn.Admin[index], err,
 				conn.ClientConnections()[index].Target()))
 		} else {
 			status = result.NodeState
+			nodeState = result.NodeState
 			ip = result.LocalIP
 		}
 		if res, err2 := bitClient.Client(index).SyncStatus(cx, req); err2 != nil {
@@ -89,7 +90,8 @@ func (f *FindKeyCmd) Run(ctx *Context) error {
 				modTime = ts.Format(time.RFC3339)
 			}
 		}
-		fmt.Printf("%-7d   %-16s   %-7s  %-11d   %s\n", i+1, ip, status, card, modTime)
+		fmt.Printf("%-7d   %-16s   %-11s    %-8s      %11d   %s\n", i+1, ip, nodeState, status, card, modTime)
 	}
+	fmt.Println("")
 	return nil
 }

@@ -16,6 +16,6 @@ fi
 SESSION_POOL_SIZE_FLAG=""
 if [ -n "$SESSION_POOL_SIZE" ]
 then
-    SESSION_POOL_SIZE_FLAG="--pool-size=${SESSION_POOL_SIZE}"
+    SESSION_POOL_SIZE_FLAG="--session-pool-size=${SESSION_POOL_SIZE}"
 fi
 exec /usr/bin/quanta-proxy ${PUBLIC_KEY_URL} ${REGION} ${USER_KEY_FLAG} ${SESSION_POOL_SIZE_FLAG} ${BOOL_FLAGS}

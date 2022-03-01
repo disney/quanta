@@ -41,6 +41,6 @@ then
 fi
 if [ -n "$SESSION_POOL_SIZE" ]
 then
-    BOOL_FLAGS=${BOOL_FLAGS}" --pool-size=${SESSION_POOL_SIZE}"
+    BOOL_FLAGS=${BOOL_FLAGS}" --session-pool-size=${SESSION_POOL_SIZE}"
 fi
 exec /usr/bin/quanta-kinesis-consumer ${STREAM} ${INDEX} ${REGION} ${BOOL_FLAGS}

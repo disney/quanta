@@ -39,4 +39,8 @@ then
     	BOOL_FLAGS=${BOOL_FLAGS}" --assume-role-arn-region=${ASSUME_ROLE_ARN_REGION}"
 	fi
 fi
+if [ -n "$SESSION_POOL_SIZE" ]
+then
+    BOOL_FLAGS=${BOOL_FLAGS}" --pool-size=${SESSION_POOL_SIZE}"
+fi
 exec /usr/bin/quanta-kinesis-consumer ${STREAM} ${INDEX} ${REGION} ${BOOL_FLAGS}

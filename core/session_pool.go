@@ -22,6 +22,7 @@ type SessionPool struct {
 	sessPoolMap  map[string]*sessionPoolEntry
 	sessPoolLock sync.Mutex
 	semaphores   chan struct{}
+	poolSize     int
 }
 
 // SessionPool - Pool of Quanta connections
@@ -30,17 +31,21 @@ type sessionPoolEntry struct {
 }
 
 // NewSessionPool - Construct a session pool to constrain resources.
-func NewSessionPool(appHost *quanta.Conn, schema *sch.Schema, baseDir string) *SessionPool {
+func NewSessionPool(appHost *quanta.Conn, schema *sch.Schema, baseDir string, poolSize int) *SessionPool {
+
+	if poolSize == 0 {
+		poolSize = runtime.NumCPU()
+	}
 	p := &SessionPool{AppHost: appHost, schema: schema, baseDir: baseDir,
-		sessPoolMap: make(map[string]*sessionPoolEntry), semaphores: make(chan struct{}, runtime.NumCPU())}
-	for i := 0; i < runtime.NumCPU(); i++ {
+		sessPoolMap: make(map[string]*sessionPoolEntry), semaphores: make(chan struct{}, poolSize), poolSize: poolSize}
+	for i := 0; i < poolSize; i++ {
 		p.semaphores <- struct{}{}
 	}
 	return p
 }
 
 func (m *SessionPool) newSessionPoolEntry() *sessionPoolEntry {
-	return &sessionPoolEntry{pool: make(chan *Session, runtime.NumCPU())}
+	return &sessionPoolEntry{pool: make(chan *Session, m.poolSize)}
 }
 
 func (m *SessionPool) getPoolByTableName(tableName string) *sessionPoolEntry {
@@ -127,7 +132,7 @@ func (m *SessionPool) Shutdown() {
 // Metrics - Return pool size and usage.
 func (m *SessionPool) Metrics() (poolSize, inUse int) {
 
-	poolSize = runtime.NumCPU()
+	poolSize = m.poolSize
 	inUse = poolSize - len(m.semaphores)
 	return
 }

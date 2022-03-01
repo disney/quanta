@@ -11,6 +11,11 @@ fi
 USER_KEY_FLAG=""
 if [ -n "$USER_KEY" ]
 then
-    USER_KEY_FLAG="--user-key $USER_KEY"
+    USER_KEY_FLAG="--user-key=${USER_KEY}"
 fi
-exec /usr/bin/quanta-proxy ${PUBLIC_KEY_URL} ${REGION} ${USER_KEY_FLAG} ${BOOL_FLAGS}
+SESSION_POOL_SIZE_FLAG=""
+if [ -n "$SESSION_POOL_SIZE" ]
+then
+    SESSION_POOL_SIZE_FLAG="--pool-size=${SESSION_POOL_SIZE}"
+fi
+exec /usr/bin/quanta-proxy ${PUBLIC_KEY_URL} ${REGION} ${USER_KEY_FLAG} ${SESSION_POOL_SIZE_FLAG} ${BOOL_FLAGS}

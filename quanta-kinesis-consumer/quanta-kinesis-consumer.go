@@ -26,7 +26,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	//"runtime"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -79,6 +79,7 @@ type Main struct {
 	processedRecs *Counter
 	processedRecL *Counter
 	sessionPool   *core.SessionPool
+	sessionPoolSize int
 	metrics       *cloudwatch.CloudWatch
 }
 
@@ -110,6 +111,7 @@ func main() {
 	region := app.Arg("region", "AWS region").Default("us-east-1").String()
 	port := app.Flag("port", "Port number for service").Default("4000").Int32()
 	bufSize := app.Flag("buf-size", "Buffer size").Default("1000000").Int32()
+    poolSize := app.Flag("session-pool-size", "Session pool size").Int()
 	withAssumeRoleArn := app.Flag("assume-role-arn", "Assume role ARN.").String()
 	withAssumeRoleArnRegion := app.Flag("assume-role-arn-region", "Assume role ARN region.").String()
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
@@ -140,6 +142,14 @@ func main() {
 	log.Printf("Kinesis region %v.", main.Region)
 	log.Printf("Index name %v.", main.Index)
 	log.Printf("Buffer size %d.", main.BufferSize)
+    // If the pool size is not configured then set it to the number of available CPUs
+    main.sessionPoolSize = *poolSize
+    if main.sessionPoolSize == 0 {
+        main.sessionPoolSize = runtime.NumCPU()
+        log.Printf("Session Pool Size not set, defaulting to number of available CPUs = %d", main.sessionPoolSize)
+    } else {
+        log.Printf("Session Pool Size = %d", main.sessionPoolSize)
+    }
 	log.Printf("Service port %d.", main.Port)
 	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
 	if *trimHorizon {
@@ -353,7 +363,7 @@ func (m *Main) Init() (int, error) {
 		os.Exit(1)
 	}
 
-	m.sessionPool = core.NewSessionPool(clientConn, nil, "")
+	m.sessionPool = core.NewSessionPool(clientConn, nil, "", m.sessionPoolSize)
 
 	m.Table, err = shared.LoadSchema("", m.Index, consulClient)
 	if err != nil {

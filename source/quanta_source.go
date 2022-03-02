@@ -44,7 +44,7 @@ type QuantaSource struct {
 }
 
 // NewQuantaSource - Construct a QuantaSource.
-func NewQuantaSource(baseDir, consulAddr string, servicePort int) (*QuantaSource, error) {
+func NewQuantaSource(baseDir, consulAddr string, servicePort, sessionPoolSize int ) (*QuantaSource, error) {
 
 	m := &QuantaSource{}
 	var err error
@@ -64,7 +64,7 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort int) (*QuantaSource
 		os.Exit(1)
 	}
 
-	m.sessionPool = core.NewSessionPool(clientConn, m.Schema, baseDir)
+	m.sessionPool = core.NewSessionPool(clientConn, m.Schema, baseDir, sessionPoolSize)
 
 	m.baseDir = baseDir
 	if m.baseDir != "" {

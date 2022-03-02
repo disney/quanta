@@ -37,6 +37,8 @@ var cli struct {
 	Shutdown   ShutdownCmd `cmd help:"Shutdown cluster or one node."`
 	FindKey    FindKeyCmd  `cmd help:"Find nodes for key debug tool."`
 	Config     ConfigCmd   `cmd help:"Configuration key/value pair."`
+	Verify     VerifyCmd   `cmd help:"Verify data for key debug tool."`
+	VerifyEnum VerifyEnumCmd  `cmd help:"Verify a string enum for key debug tool."`
 }
 
 func main() {

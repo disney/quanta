@@ -55,7 +55,7 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	functions.LoadAll() // Custom functions
 
 	// Simulate the mySQL proxy endpoint for golang dbdriver connection clients.
-	src, err2 := source.NewQuantaSource("./testdata/config", "", 0)
+	src, err2 := source.NewQuantaSource("./testdata/config", "", 0, 1)
 	assert.NoError(suite.T(), err2)
 	schema.RegisterSourceAsSchema("quanta", src)
 

@@ -31,7 +31,7 @@ type sessionPoolEntry struct {
 }
 
 // NewSessionPool - Construct a session pool to constrain resources.
-func NewSessionPool(appHost *quanta.Conn, schema *sch.Schema, baseDir string, poolSize int) *SessionPool {
+func NewSessionPool(appHost *shared.Conn, schema *sch.Schema, baseDir string, poolSize int) *SessionPool {
 
 	if poolSize == 0 {
 		poolSize = runtime.NumCPU()

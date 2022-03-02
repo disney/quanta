@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -96,6 +97,7 @@ func main() {
 	username = app.Flag("username", "User account name for MySQL DB").Default("root").String()
 	password = app.Flag("password", "Password for account for MySQL DB (just press enter for now when logging in on mysql console)").Default("").String()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
+	poolSize := app.Flag("session-pool-size", "Session pool size").Int()
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -142,6 +144,15 @@ func main() {
 	authProvider = NewAuthProvider() // this instance is global used by tokenservice
 	StartTokenService(*tokenservicePort, authProvider)
 
+	// If the pool size is not configured then set it to the number of available CPUs
+	sessionPoolSize := *poolSize
+	if sessionPoolSize == 0 {
+		sessionPoolSize = runtime.NumCPU()
+		log.Printf("Session Pool Size not set, defaulting to number of available CPUs = %d", sessionPoolSize)
+	} else {
+		log.Printf("Session Pool Size = %d", sessionPoolSize)
+	}
+
 	// Match 2 or more whitespace chars inside string
 	reWhitespace = regexp.MustCompile(`[\s\p{Zs}]{2,}`)
 
@@ -161,7 +172,7 @@ func main() {
 
 	var err error
 	var src *source.QuantaSource
-	src, err = source.NewQuantaSource("", consulAddr, *quantaPort)
+	src, err = source.NewQuantaSource("", consulAddr, *quantaPort, sessionPoolSize)
 	if err != nil {
 		u.Error(err)
 	}

@@ -19,14 +19,14 @@ type StringHashBSIMapper struct {
 	DefaultMapper
 }
 
-// NewStringHashBSIMapper - Construct a High cardinality string mapping.
+// NewStringHashBSIMapper - Construct a High cardinality, partitioned string mapping.  Strings are stored on the same
+// node as their corresponding BSI.
 func NewStringHashBSIMapper(conf map[string]string) (Mapper, error) {
 	return StringHashBSIMapper{DefaultMapper: DefaultMapper{StringHashBSI}}, nil
 }
 
 // MapValue - Map a string value to an int64
-func (m StringHashBSIMapper) MapValue(attr *Attribute, val interface{},
-	c *Session) (result uint64, err error) {
+func (m StringHashBSIMapper) MapValue(attr *Attribute, val interface{}, c *Session) (result uint64, err error) {
 
 	var strVal string
 	switch val.(type) {
@@ -45,7 +45,8 @@ func (m StringHashBSIMapper) MapValue(attr *Attribute, val interface{},
 			if attr.Searchable {
 				err = c.StringIndex.Index(strVal)
 			}
-			c.Client.SetCID2String(tbuf.Table.Name, attr.FieldName, tbuf.CurrentColumnID, val)
+			indexPath := fmt.Sprintf("%s/%s/%s", tbuf.Table.Name, attr.FieldName, tbuf.CurrentTimestamp.Format(timeFmt))
+			c.Client.SetPartitionedString(indexPath, tbuf.CurrentColumnID, val)
 			err = m.UpdateBitmap(c, attr.Parent.Name, attr.FieldName, result, attr.IsTimeSeries)
 		} else {
 			err = fmt.Errorf("table %s not open for this connection", attr.Parent.Name)

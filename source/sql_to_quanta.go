@@ -118,11 +118,11 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	}
 
 	var err error
-    m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
-    if err != nil {
-        return nil, fmt.Errorf("Error opening Quanta session %v", err)
-    }
-    defer m.s.sessionPool.Return(m.tbl.Name, m.conn)
+	m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
+	if err != nil {
+		return nil, fmt.Errorf("Error opening Quanta session %v", err)
+	}
+	defer m.s.sessionPool.Return(m.tbl.Name, m.conn)
 
 	// Create a session if one doesn't exist and add the join strategy indicator
 	// Add indicators to create no-op tasks for where clauses and groupby
@@ -1291,11 +1291,11 @@ func (m *SQLToQuanta) PatchWhere(ctx context.Context, where expr.Node, patch int
 	m.endDate = ""
 
 	var err error
-    m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
-    if err != nil {
-        return 0, fmt.Errorf("Error opening Quanta session %v", err)
-    }
-    defer m.s.sessionPool.Return(m.tbl.Name, m.conn)
+	m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
+	if err != nil {
+		return 0, fmt.Errorf("Error opening Quanta session %v", err)
+	}
+	defer m.s.sessionPool.Return(m.tbl.Name, m.conn)
 
 	if where != nil {
 		_, err = m.walkNode(where, frag)
@@ -1366,7 +1366,7 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 		return nil, fmt.Errorf("Error opening Quanta session %v", err)
 	}
 	defer m.s.sessionPool.Return(m.tbl.Name, conn)
-    m.conn = conn
+	m.conn = conn
 	//u.Infof("STMT = %v, VALS = %v\n", m.stmt, val)
 	//u.Infof("INITIAL COLS = %v\n", cols)
 
@@ -1505,7 +1505,7 @@ func (m *SQLToQuanta) updateRow(table string, columnID uint64, updValueMap map[s
 		if err != nil {
 			return 0, err
 		}
-		err = m.conn.Client.Update(table, a.FieldName, columnID, int64(rowID), timePartition)
+		err = m.conn.Client.Update(table, a.FieldName, columnID, int64(rowID), timePartition, a.IsBSI(), a.Exclusive)
 		if err != nil {
 			return 0, err
 		}

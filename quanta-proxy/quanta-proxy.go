@@ -15,12 +15,16 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/hashicorp/consul/api"
 	"github.com/lestrrat-go/jwx/jwk"
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promauto"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
 	mysql "github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/server"
 	"github.com/siddontang/go-mysql/test_util/test_keys"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"regexp"
@@ -105,6 +109,12 @@ func main() {
 	} else {
 		shared.InitLogging(*logging, *environment, "Proxy", Version, "Quanta")
 	}
+
+	go func() {
+		// Initialize Prometheus metrics endpoint.
+		http.Handle("/metrics", promhttp.Handler())
+		http.ListenAndServe(":2112", nil)
+	}()
 
 	consulAddr := *consul
 	log.Printf("Connecting to Consul at: [%s] ...\n", consulAddr)
@@ -575,6 +585,28 @@ func metricsTicker(src *source.QuantaSource) *time.Ticker {
 	return t
 }
 
+var (
+    pQueryCount = promauto.NewGauge(prometheus.GaugeOpts{
+        Name: "query_count",
+        Help: "The total number of queries processed",
+    })
+
+    pQueriesPerSec = promauto.NewGauge(prometheus.GaugeOpts{
+        Name: "queries_per_second",
+        Help: "The total number of queries processed per second",
+    })
+
+    pAvgQueryLatency = promauto.NewGauge(prometheus.GaugeOpts{
+        Name: "avg_query_latency",
+        Help: "Average query latency in milliseconds",
+    })
+
+    pUptimeHours = promauto.NewGauge(prometheus.GaugeOpts{
+        Name: "uptime_hours",
+        Help: "Hours of up time",
+    })
+)
+
 func publishMetrics(upTime time.Duration, lastPublishedAt time.Time, src *source.QuantaSource) time.Time {
 
 	connectionPoolSize, connectionsInUse := src.GetSessionPool().Metrics()
@@ -680,6 +712,12 @@ func publishMetrics(upTime time.Duration, lastPublishedAt time.Time, src *source
 			},
 		},
 	})
+	// Update Prometheus metrics 
+	pQueryCount.Set(float64(queryCount.Get()))
+	pQueriesPerSec.Set(float64(queryCount.Get()-queryCountL.Get()) / interval)
+	pAvgQueryLatency.Set(float64(avgQueryLatency))
+	pUptimeHours.Set(float64(upTime / (1000000000 * 3600)))
+
 	connectCountL.Set(connectCount.Get())
 	queryCountL.Set(queryCount.Get())
 	updateCountL.Set(updateCount.Get())

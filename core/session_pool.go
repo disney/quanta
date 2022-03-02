@@ -5,7 +5,7 @@ import (
 	"fmt"
 	u "github.com/araddon/gou"
 	sch "github.com/araddon/qlbridge/schema"
-	"github.com/disney/quanta/client"
+	"github.com/disney/quanta/shared"
 	"runtime"
 	"sync"
 	"time"
@@ -16,7 +16,7 @@ var ErrPoolDrained = errors.New("session pool drained")
 
 // SessionPool - Session pool encapsulates a Quanta session.
 type SessionPool struct {
-	AppHost      *quanta.Conn
+	AppHost      *shared.Conn
 	schema       *sch.Schema
 	baseDir      string
 	sessPoolMap  map[string]*sessionPoolEntry
@@ -36,6 +36,7 @@ func NewSessionPool(appHost *quanta.Conn, schema *sch.Schema, baseDir string, po
 	if poolSize == 0 {
 		poolSize = runtime.NumCPU()
 	}
+
 	p := &SessionPool{AppHost: appHost, schema: schema, baseDir: baseDir,
 		sessPoolMap: make(map[string]*sessionPoolEntry), semaphores: make(chan struct{}, poolSize), poolSize: poolSize}
 	for i := 0; i < poolSize; i++ {

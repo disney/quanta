@@ -1,4 +1,4 @@
-package quanta
+package shared
 
 //
 // Distributed high cardinality string indexing and search API.  Used by Quanta 'LIKE'
@@ -8,12 +8,17 @@ package quanta
 import (
 	"context"
 	"fmt"
+	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
-	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"io"
 	"sync"
 	"time"
+)
+
+var (
+	// Ensure StringSearch implements shared.Service
+	_ Service = (*StringSearch)(nil)
 )
 
 // StringSearch API state
@@ -29,11 +34,37 @@ type StringSearch struct {
 func NewStringSearch(conn *Conn, batchSize int) *StringSearch {
 
 	// Search utilizes the admin connections for the service
-	clients := make([]pb.StringSearchClient, len(conn.clientConn))
-	for i := 0; i < len(conn.clientConn); i++ {
-		clients[i] = pb.NewStringSearchClient(conn.clientConn[i])
+	clients := make([]pb.StringSearchClient, len(conn.ClientConnections()))
+	for i := 0; i < len(conn.ClientConnections()); i++ {
+		clients[i] = pb.NewStringSearchClient(conn.ClientConnections()[i])
 	}
-	return &StringSearch{Conn: conn, batchSize: batchSize, client: clients}
+	c := &StringSearch{Conn: conn, batchSize: batchSize, client: clients}
+	conn.RegisterService(c)
+	return c
+}
+
+// MemberJoined - A new node joined the cluster.
+func (c *StringSearch) MemberJoined(nodeID, ipAddress string, index int) {
+
+	c.client = append(c.client, nil)
+	copy(c.client[index+1:], c.client[index:])
+	c.client[index] = pb.NewStringSearchClient(c.Conn.clientConn[index])
+}
+
+// MemberLeft - A node left the cluster.
+func (c *StringSearch) MemberLeft(nodeID string, index int) {
+
+	if len(c.client) <= 1 {
+		c.client = make([]pb.StringSearchClient, 0)
+		return
+	}
+	c.client = append(c.client[:index], c.client[index+1:]...)
+}
+
+// Client - Get a client by index.
+func (c *StringSearch) Client(index int) pb.StringSearchClient {
+
+	return c.client[index]
 }
 
 // Flush - Commit remaining string batch
@@ -54,20 +85,18 @@ func (c *StringSearch) Flush() error {
 // Separate a batch of strings to be indexed by consistant hashing by node key.
 func (c *StringSearch) splitStringBatch(batch map[string]struct{}, replicas int) []map[string]struct{} {
 
-	c.Conn.nodeMapLock.RLock()
-	defer c.Conn.nodeMapLock.RUnlock()
-
 	batches := make([]map[string]struct{}, len(c.client))
 	for i := range batches {
 		batches[i] = make(map[string]struct{}, 0)
 	}
 	for k, v := range batch {
-		nodeKeys := c.Conn.hashTable.GetN(replicas, shared.ToString(k))
-		// Iterate over node key list and collate into batches
-		for _, nodeKey := range nodeKeys {
-			if i, ok := c.Conn.nodeMap[nodeKey]; ok {
-				batches[i][k] = v
-			}
+		indices, err := c.SelectNodes(ToString(k), WriteIntent)
+		if err != nil {
+			u.Errorf("splitBitmapBatch: %v", err)
+			continue
+		}
+		for _, i := range indices {
+			batches[i][k] = v
 		}
 	}
 	return batches
@@ -173,7 +202,11 @@ func (c *StringSearch) Search(searchTerms string) (map[uint64]struct{}, error) {
 	defer close(done)
 	count := len(c.client)
 
-	for i := range c.client {
+	indices, err := c.SelectNodes(searchTerms, ReadIntentAll)
+	if err != nil {
+		return results, fmt.Errorf("Search: %v", err)
+	}
+	for _, i := range indices {
 		go func(client pb.StringSearchClient) {
 			r, e := c.search(client, searchTerms)
 			rchan <- r

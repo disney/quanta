@@ -37,6 +37,7 @@ require (
 	github.com/mitchellh/mapstructure v1.3.3 // indirect
 	github.com/mssola/user_agent v0.5.2 // indirect
 	github.com/pborman/uuid v1.2.1
+	github.com/prometheus/client_golang v1.11.0
 	github.com/rlmcpherson/s3gof3r v0.5.0
 	github.com/siddontang/go-mysql v1.1.0
 	github.com/steakknife/bloomfilter v0.0.0-20180922174646-6819c0d2a570
@@ -54,6 +55,7 @@ require (
 	golang.org/x/text v0.3.6
 	google.golang.org/genproto v0.0.0-20200904004341-0bd0a958aa1d // indirect
 	google.golang.org/grpc v1.33.1
+	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.2.0 // indirect
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/confluentinc/confluent-kafka-go.v1 v1.4.2

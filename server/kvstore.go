@@ -18,28 +18,33 @@ import (
 	"sync"
 )
 
+var (
+	// Ensure KVStore implements NodeService
+	_ NodeService = (*BitmapIndex)(nil)
+)
+
 // KVStore - Server side state for KVStore service.
 type KVStore struct {
-	*EndPoint
+	*Node
 	storeCache     map[string]*pogreb.DB
 	storeCacheLock sync.RWMutex
 	enumGuard      singleflight.Group
 }
 
 // NewKVStore - Construct server side state.
-func NewKVStore(endPoint *EndPoint) (*KVStore, error) {
+func NewKVStore(node *Node) *KVStore {
 
-	e := &KVStore{EndPoint: endPoint}
+	e := &KVStore{Node: node}
 	e.storeCache = make(map[string]*pogreb.DB)
-	pb.RegisterKVStoreServer(endPoint.server, e)
-	return e, nil
+	pb.RegisterKVStoreServer(node.server, e)
+	return e
 }
 
 // Init - Initialize.
 func (m *KVStore) Init() error {
 
 	dbList := make([]string, 0)
-	err := filepath.Walk(m.EndPoint.dataDir,
+	err := filepath.Walk(m.Node.dataDir + sep + "index",
 		func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
@@ -59,13 +64,13 @@ func (m *KVStore) Init() error {
 			return nil
 		})
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot initialize kv store service: %v", err)
 	}
 
 	for _, v := range dbList {
 		u.Infof("Opening [%s]", v)
 		if _, err := m.getStore(v); err != nil {
-			return err
+			return fmt.Errorf("cannot initialize kv store service: %v", err)
 		}
 	}
 	return nil
@@ -82,6 +87,10 @@ func (m *KVStore) Shutdown() {
 	}
 }
 
+// JoinCluster - Join the cluster
+func (m *KVStore) JoinCluster() {
+}
+
 func (m *KVStore) getStore(index string) (db *pogreb.DB, err error) {
 
 	m.storeCacheLock.RLock()
@@ -94,7 +103,7 @@ func (m *KVStore) getStore(index string) (db *pogreb.DB, err error) {
 
 	m.storeCacheLock.Lock()
 	defer m.storeCacheLock.Unlock()
-	db, err = pogreb.Open(m.EndPoint.dataDir+sep+"index"+sep+index, nil)
+	db, err = pogreb.Open(m.Node.dataDir+sep+"index"+sep+index, nil)
 	if err == nil {
 		m.storeCache[index] = db
 	} else {
@@ -141,7 +150,6 @@ func (m *KVStore) Lookup(ctx context.Context, kv *pb.IndexKVPair) (*pb.IndexKVPa
 	if err != nil {
 		b := make([]byte, 8)
 		binary.LittleEndian.PutUint64(b, 0)
-		//kv.Value[0] = b
 		kv.Value = [][]byte{b}
 		return kv, fmt.Errorf("Error opening %s - %v", kv.IndexPath, err)
 	}
@@ -155,17 +163,23 @@ func (m *KVStore) Lookup(ctx context.Context, kv *pb.IndexKVPair) (*pb.IndexKVPa
 	if err != nil {
 		b := make([]byte, 8)
 		binary.LittleEndian.PutUint64(b, 0)
-		//kv.Value[0] = b
 		kv.Value = [][]byte{b}
 		return kv, err
 	}
-	//kv.Value[0] = val
 	kv.Value = [][]byte{val}
 	return kv, nil
 }
 
 // BatchPut - Insert a batch of entries.
 func (m *KVStore) BatchPut(stream pb.KVStore_BatchPutServer) error {
+
+	updatedMap := make(map[string]*pogreb.DB, 0)    // local cache of DBs updated
+
+	defer func() {
+		for _, v := range updatedMap {
+			v.Sync()
+		}
+	}()
 
 	var putCount int32
 	for {
@@ -182,6 +196,9 @@ func (m *KVStore) BatchPut(stream pb.KVStore_BatchPutServer) error {
 		db, err2 := m.getStore(kv.IndexPath)
 		if err2 != nil {
 			return err2
+		}
+		if _, found := updatedMap[kv.IndexPath]; !found {
+			updatedMap[kv.IndexPath] = db
 		}
 		if kv.Key == nil || len(kv.Key) == 0 {
 			return fmt.Errorf("Key must be specified")
@@ -336,14 +353,14 @@ func (m *KVStore) DeleteIndicesWithPrefix(ctx context.Context,
 				u.Infof("Sync and close [%s]", k)
 				continue
 			}
-			if err := os.RemoveAll(m.EndPoint.dataDir + sep + "index" + sep + k); err != nil {
+			if err := os.RemoveAll(m.Node.dataDir + sep + "index" + sep + k); err != nil {
 				return &empty.Empty{}, fmt.Errorf("DeleteIndicesWithPrefix error [%v]", err)
 			}
 			u.Infof("Sync, close, and delete [%s]", k)
 		}
 	}
 	if !req.RetainEnums {
-		if err := os.RemoveAll(m.EndPoint.dataDir + sep + "index" + sep + req.Prefix); err != nil {
+		if err := os.RemoveAll(m.Node.dataDir + sep + "index" + sep + req.Prefix); err != nil {
 			return &empty.Empty{}, fmt.Errorf("DeleteIndicesWithPrefix error [%v]", err)
 		}
 	}

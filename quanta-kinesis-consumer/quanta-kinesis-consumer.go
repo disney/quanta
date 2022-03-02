@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	//"expvar"
 	"fmt"
 	"github.com/araddon/dateparse"
 	u "github.com/araddon/gou"
@@ -17,13 +16,16 @@ import (
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
-	"github.com/disney/quanta/client"
 	"github.com/hamba/avro"
 	"github.com/harlow/kinesis-consumer"
 	store "github.com/harlow/kinesis-consumer/store/ddb"
 	"github.com/hashicorp/consul/api"
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promauto"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -44,33 +46,33 @@ const (
 	//partitionChannelSize = 10000
 	partitionChannelSize = 2000000
 	batchSize            = 100000
-	appName				 = "Kinesis-Consumer"
+	appName              = "Kinesis-Consumer"
 )
 
 // Main strct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
-	Stream        string
-	Region        string
-	Index         string
-	BufferSize    uint
-	totalBytes    *Counter
-	totalBytesL   *Counter
-	totalRecs     *Counter
-	totalRecsL    *Counter
-	errorCount    *Counter
-	poolPercent   *Counter
-	Port          int
-	ConsulAddr    string
-	ShardCount    int
-	lock          *api.Lock
-	consumer      *consumer.Consumer
-	Table         *shared.BasicTable
-	Schema        avro.Schema
-	InitialPos    string
-	IsAvro        bool
-	CheckpointDB  bool
-	CheckpointTable string
-	AssumeRoleArn string
+	Stream              string
+	Region              string
+	Index               string
+	BufferSize          uint
+	totalBytes          *Counter
+	totalBytesL         *Counter
+	totalRecs           *Counter
+	totalRecsL          *Counter
+	errorCount          *Counter
+	poolPercent         *Counter
+	Port                int
+	ConsulAddr          string
+	ShardCount          int
+	lock                *api.Lock
+	consumer            *consumer.Consumer
+	Table               *shared.BasicTable
+	Schema              avro.Schema
+	InitialPos          string
+	IsAvro              bool
+	CheckpointDB        bool
+	CheckpointTable     string
+	AssumeRoleArn       string
 	AssumeRoleArnRegion string
 	Deaggregate   bool
 	partitionMap  map[string]*Partition
@@ -111,7 +113,7 @@ func main() {
 	region := app.Arg("region", "AWS region").Default("us-east-1").String()
 	port := app.Flag("port", "Port number for service").Default("4000").Int32()
 	bufSize := app.Flag("buf-size", "Buffer size").Default("1000000").Int32()
-    poolSize := app.Flag("session-pool-size", "Session pool size").Int()
+  poolSize := app.Flag("session-pool-size", "Session pool size").Int()
 	withAssumeRoleArn := app.Flag("assume-role-arn", "Assume role ARN.").String()
 	withAssumeRoleArnRegion := app.Flag("assume-role-arn-region", "Assume role ARN region.").String()
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
@@ -142,14 +144,14 @@ func main() {
 	log.Printf("Kinesis region %v.", main.Region)
 	log.Printf("Index name %v.", main.Index)
 	log.Printf("Buffer size %d.", main.BufferSize)
-    // If the pool size is not configured then set it to the number of available CPUs
-    main.sessionPoolSize = *poolSize
-    if main.sessionPoolSize == 0 {
-        main.sessionPoolSize = runtime.NumCPU()
-        log.Printf("Session Pool Size not set, defaulting to number of available CPUs = %d", main.sessionPoolSize)
-    } else {
-        log.Printf("Session Pool Size = %d", main.sessionPoolSize)
-    }
+   // If the pool size is not configured then set it to the number of available CPUs
+   main.sessionPoolSize = *poolSize
+  if main.sessionPoolSize == 0 {
+       main.sessionPoolSize = runtime.NumCPU()
+       log.Printf("Session Pool Size not set, defaulting to number of available CPUs = %d", main.sessionPoolSize)
+   } else {
+       log.Printf("Session Pool Size = %d", main.sessionPoolSize)
+   }
 	log.Printf("Service port %d.", main.Port)
 	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
 	if *trimHorizon {
@@ -203,6 +205,12 @@ func main() {
 		u.Error(err)
 		os.Exit(1)
 	}
+
+	go func() {
+		// Start Prometheus endpoint
+    	http.Handle("/metrics", promhttp.Handler())
+    	http.ListenAndServe(":2112", nil)
+	}()
 
 	var ticker *time.Ticker
 	ticker = main.printStats()
@@ -355,7 +363,7 @@ func (m *Main) Init() (int, error) {
 		return 0, err
 	}
 
-	clientConn := quanta.NewDefaultConnection()
+	clientConn := shared.NewDefaultConnection()
 	clientConn.ServicePort = m.Port
 	clientConn.Quorum = 3
 	if err := clientConn.Connect(consulClient); err != nil {
@@ -507,6 +515,54 @@ func (m *Main) printStats() *time.Ticker {
 	return t
 }
 
+// Global storage for Prometheus metrics
+var (
+	totalRecs = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "consumer_records_arrived",
+		Help: "The total number of records consumed",
+	})
+
+	totalRecsPerSec = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "consumer_records_arrived_per_sec",
+		Help: "The total number of records consumed per second",
+	})
+
+	processedRecs = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "consumer_records_processed",
+		Help: "The number of records processed",
+	})
+
+	processedRecsPerSec = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "consumer_records_processed_per_sec",
+		Help: "The number of records processed per second",
+	})
+
+	totalBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "consumer_bytes_arrived",
+		Help: "The total number of bytes consumed",
+	})
+
+	errors = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "total_errors",
+		Help: "The total number of errors",
+	})
+
+	processedBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "processed_bytes",
+		Help: "The total number of processed bytes",
+	})
+
+	processedBytesPerSec = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "processed_bytes_per_second",
+		Help: "The total number of processed bytes per second",
+	})
+
+	uptimeHours = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "uptime_hours",
+		Help: "Hours of up time",
+	})
+)
+
 func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) time.Time {
 
 	interval := time.Since(lastPublishedAt).Seconds()
@@ -603,6 +659,16 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 		},
 	})
+	// Set Prometheus values
+	totalRecs.Set(float64(m.totalRecs.Get()))
+	totalRecsPerSec.Set(float64(m.totalRecs.Get()-m.totalRecsL.Get()) / interval)
+	processedRecs.Set(float64(m.processedRecs.Get()))
+	processedRecsPerSec.Set(float64(m.processedRecs.Get()-m.processedRecL.Get()) / interval)
+    errors.Set(float64(m.errorCount.Get()))
+    processedBytes.Set(float64(m.totalBytes.Get()))
+    processedBytesPerSec.Set(float64(m.totalBytes.Get()-m.totalBytesL.Get()) / interval)
+    uptimeHours.Set(float64(upTime / (1000000000 * 3600)))
+
 	m.totalRecsL.Set(m.totalRecs.Get())
 	m.processedRecL.Set(m.processedRecs.Get())
 	m.totalBytesL.Set(m.totalBytes.Get())

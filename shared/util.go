@@ -5,8 +5,10 @@ package shared
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/araddon/dateparse"
 	u "github.com/araddon/gou"
 	"github.com/hashicorp/consul/api"
+	"net"
 	"os"
 	"os/signal"
 	filepath "path"
@@ -41,6 +43,10 @@ func ToBytes(v interface{}) []byte {
 		b := make([]byte, 8)
 		binary.LittleEndian.PutUint64(b, uint64(v.(int64)))
 		return b
+	case int:
+		b := make([]byte, 8)
+		binary.LittleEndian.PutUint64(b, uint64(v.(int)))
+		return b
 	}
 	msg := fmt.Sprintf("Unsupported type %T", v)
 	panic(msg)
@@ -54,7 +60,8 @@ func UnmarshalValue(kind reflect.Kind, buf []byte) interface{} {
 		return string(buf)
 	case reflect.Uint64:
 		return binary.LittleEndian.Uint64(buf)
-
+	case reflect.Int:
+		return int(binary.LittleEndian.Uint64(buf))
 	}
 	msg := fmt.Sprintf("Should not be here for kind [%s]!", kind.String())
 	panic(msg)
@@ -450,4 +457,88 @@ func Retry(attempts int, sleep time.Duration, f func() error) (err error) {
 		u.Errorf("retrying after error: %v", err)
 	}
 	return fmt.Errorf("after %d attempts, last error: %s", attempts, err)
+}
+
+// GetLocalHostIP - return the hosts IP address.
+func GetLocalHostIP() (net.IP, error) {
+
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	for _, i := range ifaces {
+		addrs, err := i.Addrs()
+		if err != nil {
+			return nil, err
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip.IsLoopback() {
+				continue
+			}
+			// process IP address
+			if ip != nil {
+				return ip, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("local IP address could not be determined")
+}
+
+// ToTQTimestamp - Return a partition key timestamp as time.Time and string
+func ToTQTimestamp(tqType, timestamp string) (time.Time, string, error) {
+
+	ts := time.Unix(0, 0)
+	var err error
+	if tqType != "" {
+		loc, _ := time.LoadLocation("Local")
+		ts, err = dateparse.ParseIn(timestamp, loc)
+		if err != nil {
+			return ts, "", err
+		}
+	}
+	tFormat := YMDTimeFmt
+	if tqType == "YMDH" {
+		tFormat = YMDHTimeFmt
+	}
+	sf := ts.Format(tFormat)
+	tq, _ := time.Parse(tFormat, sf)
+	return tq, ts.Format(YMDHTimeFmt), nil
+}
+
+// GetClusterSizeTarget - Get the target cluster size.
+func GetClusterSizeTarget(consul *api.Client) (int, error) {
+
+	if consul == nil {
+		return -1, fmt.Errorf("consul client is not provided")
+	}
+
+	path := "config/clusterSizeTarget"
+	kvPair, _, err := consul.KV().Get(path, nil)
+	if err != nil {
+		return -1, err
+	}
+	if kvPair == nil {
+		return 0, nil
+	}
+	v := UnmarshalValue(reflect.Int, kvPair.Value)
+	return v.(int), nil
+}
+
+// SetClusterSizeTarget - Set the target cluster size.
+func SetClusterSizeTarget(consul *api.Client, size int) error {
+
+	var kvPair api.KVPair
+	kvPair.Key = "config/clusterSizeTarget"
+	kvPair.Value = ToBytes(size)
+	if _, err := consul.KV().Put(&kvPair, nil); err != nil {
+		return err
+	}
+	return nil
 }

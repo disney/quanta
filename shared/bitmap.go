@@ -1,4 +1,4 @@
-package quanta
+package shared
 
 //
 // Client side bitmap functions and API wrappers for bulk loading functions such as SetBit and
@@ -11,10 +11,14 @@ import (
 	"github.com/RoaringBitmap/roaring/roaring64"
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
-	"github.com/disney/quanta/shared"
 	"golang.org/x/sync/errgroup"
 	"sync"
 	"time"
+)
+
+var (
+	// Ensure BitmapIndex implements shared.Service
+	_ Service = (*BitmapIndex)(nil)
 )
 
 const (
@@ -38,31 +42,57 @@ const (
 //
 type BitmapIndex struct {
 	*Conn
-	KVStore             *KVStore
-	client              []pb.BitmapIndexClient
-	batchSets           map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
-	batchClears         map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
-	batchValues         map[string]map[string]map[int64]*roaring64.BSI
-	batchStringKey      map[string]map[string]map[string]map[interface{}]interface{}
-	batchColID2Str      map[string]map[string]map[interface{}]interface{}
-	batchSize           int
-	batchSetCount       int
-	batchClearCount     int
-	batchValueCount     int
-	batchStringKeyCount int
-	batchColID2StrCount int
-	batchMutex          sync.Mutex
-	batchKeyMutex       sync.RWMutex
+	KVStore                *KVStore
+	client                 []pb.BitmapIndexClient
+	batchSets              map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
+	batchClears            map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
+	batchValues            map[string]map[string]map[int64]*roaring64.BSI
+	batchStringKey         map[string]map[string]map[string]map[interface{}]interface{}
+	batchPartitionStr      map[string]map[interface{}]interface{}
+	batchSize              int
+	batchSetCount          int
+	batchClearCount        int
+	batchValueCount        int
+	batchStringKeyCount    int
+	batchPartitionStrCount int
+	batchMutex             sync.Mutex
+	batchKeyMutex          sync.RWMutex
 }
 
 // NewBitmapIndex - Initializer for client side API wrappers.
 func NewBitmapIndex(conn *Conn, batchSize int) *BitmapIndex {
 
-	clients := make([]pb.BitmapIndexClient, len(conn.clientConn))
-	for i := 0; i < len(conn.clientConn); i++ {
-		clients[i] = pb.NewBitmapIndexClient(conn.clientConn[i])
+	clients := make([]pb.BitmapIndexClient, len(conn.ClientConnections()))
+	for i := 0; i < len(conn.ClientConnections()); i++ {
+		clients[i] = pb.NewBitmapIndexClient(conn.ClientConnections()[i])
 	}
-	return &BitmapIndex{Conn: conn, batchSize: batchSize, client: clients}
+	c := &BitmapIndex{Conn: conn, batchSize: batchSize, client: clients}
+	conn.RegisterService(c)
+	return c
+}
+
+// MemberJoined - A new node joined the cluster.
+func (c *BitmapIndex) MemberJoined(nodeID, ipAddress string, index int) {
+
+	c.client = append(c.client, nil)
+	copy(c.client[index+1:], c.client[index:])
+	c.client[index] = pb.NewBitmapIndexClient(c.Conn.clientConn[index])
+}
+
+// MemberLeft - A node left the cluster.
+func (c *BitmapIndex) MemberLeft(nodeID string, index int) {
+
+	if len(c.client) <= 1 {
+		c.client = make([]pb.BitmapIndexClient, 0)
+		return
+	}
+	c.client = append(c.client[:index], c.client[index+1:]...)
+}
+
+// Client - Get a client by index.
+func (c *BitmapIndex) Client(index int) pb.BitmapIndexClient {
+
+	return c.client[index]
 }
 
 // Flush outstanding batch before.
@@ -94,19 +124,15 @@ func (c *BitmapIndex) Flush() error {
 		c.batchValues = nil
 		c.batchValueCount = 0
 	}
-	if c.batchColID2Str != nil {
-		for index, fieldMap := range c.batchColID2Str {
-			for field, valueMap := range fieldMap {
-				tableField := fmt.Sprintf("%s%s%s.CID2String", index, ifDelim, field)
-				if err := c.KVStore.BatchPut(tableField, valueMap); err != nil {
-					c.batchMutex.Unlock()
-					return err
-				}
-
+	if c.batchPartitionStr != nil {
+		for indexPath, valueMap := range c.batchPartitionStr {
+			if err := c.KVStore.BatchPut(indexPath, valueMap, true); err != nil {
+				c.batchMutex.Unlock()
+				return err
 			}
 		}
-		c.batchColID2Str = nil
-		c.batchColID2StrCount = 0
+		c.batchPartitionStr = nil
+		c.batchPartitionStrCount = 0
 	}
 	c.batchMutex.Unlock()
 
@@ -116,7 +142,7 @@ func (c *BitmapIndex) Flush() error {
 			for field, typeMap := range fieldMap {
 				for itype, valueMap := range typeMap { // itype is 'P' for Primary, 'S' for secondary
 					tableField := fmt.Sprintf("%s%s%s.%sK", index, ifDelim, field, itype)
-					if err := c.KVStore.BatchPut(tableField, valueMap); err != nil {
+					if err := c.KVStore.BatchPut(tableField, valueMap, false); err != nil {
 						c.batchKeyMutex.Unlock()
 						return err
 					}
@@ -133,7 +159,7 @@ func (c *BitmapIndex) Flush() error {
 
 // Update - Handle Updates
 func (c *BitmapIndex) Update(index, field string, columnID uint64, rowIDOrValue int64,
-	ts time.Time) error {
+	ts time.Time, isBSI, isExclusive bool) error {
 
 	req := &pb.UpdateRequest{Index: index, Field: field, ColumnId: columnID,
 		RowIdOrValue: rowIDOrValue, Time: ts.UnixNano()}
@@ -145,9 +171,23 @@ func (c *BitmapIndex) Update(index, field string, columnID uint64, rowIDOrValue 
 	 * handled (clear of previous rowIds).  Update requests for non-existent data is
 	 * silently ignored.
 	 */
-	for i, n := range c.client {
-		client := n
-		clientIndex := i
+	var indices []int
+	var err error
+	op := WriteIntent
+	if isBSI {
+		indices, err = c.SelectNodes(fmt.Sprintf("%s/%s/%s", index, field, ts.Format(timeFmt)), op)
+	} else {
+		if isExclusive {
+			op = WriteIntentAll
+		}
+		indices, err = c.SelectNodes(fmt.Sprintf("%s/%s/%d/%s", index, field, rowIDOrValue, ts.Format(timeFmt)), op)
+	}
+	if err != nil {
+		return fmt.Errorf("Update: %v", err)
+	}
+	for _, n := range indices {
+		client := c.client[n]
+		clientIndex := n
 		eg.Go(func() error {
 			if err := c.updateClient(client, req, clientIndex); err != nil {
 				return err
@@ -171,7 +211,7 @@ func (c *BitmapIndex) updateClient(client pb.BitmapIndexClient, req *pb.UpdateRe
 
 	if _, err := client.Update(ctx, req); err != nil {
 		return fmt.Errorf("%v.Update(_) = _, %v, node = %s", client, err,
-			c.Conn.clientConn[clientIndex].Target())
+			c.Conn.ClientConnections()[clientIndex].Target())
 	}
 	return nil
 }
@@ -293,19 +333,19 @@ func (c *BitmapIndex) SetValue(index, field string, columnID uint64, value int64
 
 //
 // BatchMutate - Send a batch of standard bitmap mutations to the server cluster for processing.
-// Does this by calling batchMutate in parallel for optimal throughput.
+// Does this by calling BatchMutateNode in parallel for optimal throughput.
 //
 func (c *BitmapIndex) BatchMutate(batch map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap,
 	clear bool) error {
 
-	batches := c.splitBitmapBatch(batch, c.Conn.Replicas)
+	batches := c.splitBitmapBatch(batch)
 	var eg errgroup.Group
 
 	for i, v := range batches {
 		cl := c.client[i]
 		batch := v
 		eg.Go(func() error {
-			return c.batchMutate(clear, cl, batch)
+			return c.BatchMutateNode(clear, cl, batch)
 		})
 	}
 	if err := eg.Wait(); err != nil {
@@ -314,8 +354,8 @@ func (c *BitmapIndex) BatchMutate(batch map[string]map[string]map[uint64]map[int
 	return nil
 }
 
-// Send batch to its respective node.
-func (c *BitmapIndex) batchMutate(clear bool, client pb.BitmapIndexClient,
+// BatchMutateNode - Send batch to its respective node.
+func (c *BitmapIndex) BatchMutateNode(clear bool, client pb.BitmapIndexClient,
 	batch map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
@@ -334,7 +374,7 @@ func (c *BitmapIndex) batchMutate(clear bool, client pb.BitmapIndexClient,
 					ba := make([][]byte, 1)
 					ba[0] = buf
 					b = append(b, &pb.IndexKVPair{IndexPath: indexName + "/" + fieldName,
-						Key: shared.ToBytes(int64(rowID)), Value: ba, Time: t, IsClear: clear})
+						Key: ToBytes(int64(rowID)), Value: ba, Time: t, IsClear: clear})
 					i++
 					//u.Debug("Sent batch %d for path %s\n", i, b[i].IndexPath)
 				}
@@ -367,10 +407,7 @@ func (c *BitmapIndex) batchMutate(clear bool, client pb.BitmapIndexClient,
 // respective nodes.  For standard bitmaps, this shard key consists of [index/field/rowid/timestamp].
 //
 func (c *BitmapIndex) splitBitmapBatch(batch map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap,
-	replicas int) []map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap {
-
-	c.Conn.nodeMapLock.RLock()
-	defer c.Conn.nodeMapLock.RUnlock()
+) []map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap {
 
 	batches := make([]map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap, len(c.client))
 	for i := range batches {
@@ -382,24 +419,26 @@ func (c *BitmapIndex) splitBitmapBatch(batch map[string]map[string]map[uint64]ma
 			for rowID, ts := range field {
 				for t, bitmap := range ts {
 					tm := time.Unix(0, t)
-					nodeKeys := c.Conn.hashTable.GetN(replicas, fmt.Sprintf("%s/%s/%d/%s",
-						indexName, fieldName, rowID, tm.Format(timeFmt)))
-					for _, nodeKey := range nodeKeys {
-						if i, ok := c.Conn.nodeMap[nodeKey]; ok {
-							if batches[i] == nil {
-								batches[i] = make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap)
-							}
-							if _, ok := batches[i][indexName]; !ok {
-								batches[i][indexName] = make(map[string]map[uint64]map[int64]*roaring64.Bitmap)
-							}
-							if _, ok := batches[i][indexName][fieldName]; !ok {
-								batches[i][indexName][fieldName] = make(map[uint64]map[int64]*roaring64.Bitmap)
-							}
-							if _, ok := batches[i][indexName][fieldName][rowID]; !ok {
-								batches[i][indexName][fieldName][rowID] = make(map[int64]*roaring64.Bitmap)
-							}
-							batches[i][indexName][fieldName][rowID][t] = bitmap
+					indices, err := c.SelectNodes(fmt.Sprintf("%s/%s/%d/%s", indexName, fieldName, rowID, tm.Format(timeFmt)),
+						WriteIntent)
+					if err != nil {
+						u.Errorf("splitBitmapBatch: %v", err)
+						continue
+					}
+					for _, i := range indices {
+						if batches[i] == nil {
+							batches[i] = make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap)
 						}
+						if _, ok := batches[i][indexName]; !ok {
+							batches[i][indexName] = make(map[string]map[uint64]map[int64]*roaring64.Bitmap)
+						}
+						if _, ok := batches[i][indexName][fieldName]; !ok {
+							batches[i][indexName][fieldName] = make(map[uint64]map[int64]*roaring64.Bitmap)
+						}
+						if _, ok := batches[i][indexName][fieldName][rowID]; !ok {
+							batches[i][indexName][fieldName][rowID] = make(map[int64]*roaring64.Bitmap)
+						}
+						batches[i][indexName][fieldName][rowID][t] = bitmap
 					}
 				}
 			}
@@ -410,17 +449,17 @@ func (c *BitmapIndex) splitBitmapBatch(batch map[string]map[string]map[uint64]ma
 
 //
 // BatchSetValue - Send a batch of BSI mutations to the server cluster for processing.  Does this by calling
-// batchSetValue in parallel for optimal throughput.
+// BatchSetValueNode in parallel for optimal throughput.
 //
 func (c *BitmapIndex) BatchSetValue(batch map[string]map[string]map[int64]*roaring64.BSI) error {
 
-	batches := c.splitBSIBatch(batch, c.Conn.Replicas)
+	batches := c.splitBSIBatch(batch)
 	var eg errgroup.Group
 	for i, v := range batches {
 		cl := c.client[i]
 		batch := v
 		eg.Go(func() error {
-			return c.batchSetValue(cl, batch)
+			return c.BatchSetValueNode(cl, batch)
 		})
 	}
 	if err := eg.Wait(); err != nil {
@@ -429,8 +468,8 @@ func (c *BitmapIndex) BatchSetValue(batch map[string]map[string]map[int64]*roari
 	return nil
 }
 
-// Send a batch of BSI values to a specific node.
-func (c *BitmapIndex) batchSetValue(client pb.BitmapIndexClient,
+// BatchSetValueNode - Send a batch of BSI values to a specific node.
+func (c *BitmapIndex) BatchSetValueNode(client pb.BitmapIndexClient,
 	batch map[string]map[string]map[int64]*roaring64.BSI) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
@@ -451,7 +490,7 @@ func (c *BitmapIndex) batchSetValue(client pb.BitmapIndexClient,
 					return err
 				}
 				b = append(b, &pb.IndexKVPair{IndexPath: indexName + "/" + fieldName,
-					Key: shared.ToBytes(int64(bsi.BitCount() * -1)), Value: ba, Time: t})
+					Key: ToBytes(int64(bsi.BitCount() * -1)), Value: ba, Time: t})
 				i++
 				//u.Debugf("Sent batch %d for path %s\n", i, b[i].IndexPath)
 			}
@@ -484,10 +523,7 @@ func (c *BitmapIndex) batchSetValue(client pb.BitmapIndexClient,
 // for a given field are co-located.
 //
 func (c *BitmapIndex) splitBSIBatch(batch map[string]map[string]map[int64]*roaring64.BSI,
-	replicas int) []map[string]map[string]map[int64]*roaring64.BSI {
-
-	c.Conn.nodeMapLock.RLock()
-	defer c.Conn.nodeMapLock.RUnlock()
+) []map[string]map[string]map[int64]*roaring64.BSI {
 
 	batches := make([]map[string]map[string]map[int64]*roaring64.BSI, len(c.client))
 	for i := range batches {
@@ -498,21 +534,22 @@ func (c *BitmapIndex) splitBSIBatch(batch map[string]map[string]map[int64]*roari
 		for fieldName, field := range index {
 			for t, bsi := range field {
 				tm := time.Unix(0, t)
-				nodeKeys := c.Conn.hashTable.GetN(replicas, fmt.Sprintf("%s/%s/%s", indexName,
-					fieldName, tm.Format(timeFmt)))
-				for _, nodeKey := range nodeKeys {
-					if i, ok := c.Conn.nodeMap[nodeKey]; ok {
-						if batches[i] == nil {
-							batches[i] = make(map[string]map[string]map[int64]*roaring64.BSI)
-						}
-						if _, ok := batches[i][indexName]; !ok {
-							batches[i][indexName] = make(map[string]map[int64]*roaring64.BSI)
-						}
-						if _, ok := batches[i][indexName][fieldName]; !ok {
-							batches[i][indexName][fieldName] = make(map[int64]*roaring64.BSI)
-						}
-						batches[i][indexName][fieldName][t] = bsi
+				indices, err := c.SelectNodes(fmt.Sprintf("%s/%s/%s", indexName, fieldName, tm.Format(timeFmt)), WriteIntent)
+				if err != nil {
+					u.Errorf("splitBSIBatch: %v", err)
+					continue
+				}
+				for _, i := range indices {
+					if batches[i] == nil {
+						batches[i] = make(map[string]map[string]map[int64]*roaring64.BSI)
 					}
+					if _, ok := batches[i][indexName]; !ok {
+						batches[i][indexName] = make(map[string]map[int64]*roaring64.BSI)
+					}
+					if _, ok := batches[i][indexName][fieldName]; !ok {
+						batches[i][indexName][fieldName] = make(map[int64]*roaring64.BSI)
+					}
+					batches[i][indexName][fieldName][t] = bsi
 				}
 			}
 		}
@@ -547,9 +584,13 @@ func (c *BitmapIndex) BulkClear(index, fromTime, toTime string,
 	var eg errgroup.Group
 
 	// Send the same clear request to each node
-	for i, n := range c.client {
-		client := n
-		clientIndex := i
+	indices, err := c.SelectNodes(index, WriteIntentAll)
+	if err != nil {
+		return fmt.Errorf("BulkClear: %v", err)
+	}
+	for _, n := range indices {
+		client := c.client[n]
+		clientIndex := n
 		eg.Go(func() error {
 			if err := c.clearClient(client, req, clientIndex); err != nil {
 				return err
@@ -573,7 +614,7 @@ func (c *BitmapIndex) clearClient(client pb.BitmapIndexClient, req *pb.BulkClear
 
 	if _, err := client.BulkClear(ctx, req); err != nil {
 		return fmt.Errorf("%v.BulkClear(_) = _, %v, node = %s", client, err,
-			c.Conn.clientConn[clientIndex].Target())
+			c.ClientConnections()[clientIndex].Target())
 	}
 	return nil
 }
@@ -582,13 +623,16 @@ func (c *BitmapIndex) clearClient(client pb.BitmapIndexClient, req *pb.BulkClear
 // CheckoutSequence - Request a sequence generator from owning server node.
 //
 func (c *BitmapIndex) CheckoutSequence(indexName, pkField string, ts time.Time,
-	reservationSize int) (*shared.Sequencer, error) {
+	reservationSize int) (*Sequencer, error) {
 
 	req := &pb.CheckoutSequenceRequest{Index: indexName, PkField: pkField, Time: ts.UnixNano(),
 		ReservationSize: uint32(reservationSize)}
 
-	nodeKeys := c.Conn.hashTable.GetN(c.Conn.Replicas, fmt.Sprintf("%s/%s/%s", indexName,
-		pkField, ts.Format(timeFmt)))
+	// We are checking out a sequence with the intent to write, but we only want the Active primary hence ReadIntent
+	indices, err1 := c.SelectNodes(fmt.Sprintf("%s/%s/%s", indexName, pkField, ts.Format(timeFmt)), ReadIntent)
+	if err1 != nil {
+		return nil, fmt.Errorf("CheckoutSequence: %v", err1)
+	}
 
 	/*
 	 * Make sure to target the node with the true maximum column ID for the table.
@@ -597,14 +641,11 @@ func (c *BitmapIndex) CheckoutSequence(indexName, pkField string, ts time.Time,
 	 * In this case, the timestamp is truncated with timeFmt and it's nano value is
 	 * added to the sequence start value on the server and returned to the client..
 	 */
-	if clientIdx, ok := c.Conn.nodeMap[nodeKeys[0]]; ok {
-		res, err := c.sequencerClient(c.client[clientIdx], req, clientIdx)
-		if err != nil {
-			return nil, err
-		}
-		return shared.NewSequencer(res.Start, int(res.Count)), nil
+	res, err := c.sequencerClient(c.client[indices[0]], req, indices[0])
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("Could not locate node for key %v", nodeKeys[0])
+	return NewSequencer(res.Start, int(res.Count)), nil
 }
 
 // Send projection processing request to a specific node.
@@ -616,7 +657,7 @@ func (c *BitmapIndex) sequencerClient(client pb.BitmapIndexClient, req *pb.Check
 
 	if result, err = client.CheckoutSequence(ctx, req); err != nil {
 		return nil, fmt.Errorf("%v.CheckoutSequence(_) = _, %v, node = %s", client, err,
-			c.Conn.clientConn[clientIndex].Target())
+			c.ClientConnections()[clientIndex].Target())
 	}
 	return result, nil
 }
@@ -664,7 +705,7 @@ func (c *BitmapIndex) SetKeyString(index, field, itype string, value interface{}
 			for field, typeMap := range fieldMap {
 				for itype, valueMap := range typeMap { // itype is 'P' for Primary, 'S' for secondary
 					tableField := fmt.Sprintf("%s%s%s.%sK", index, ifDelim, field, itype)
-					if err := c.KVStore.BatchPut(tableField, valueMap); err != nil {
+					if err := c.KVStore.BatchPut(tableField, valueMap, false); err != nil {
 						return err
 					}
 				}
@@ -676,49 +717,150 @@ func (c *BitmapIndex) SetKeyString(index, field, itype string, value interface{}
 	return nil
 }
 
-// SetCID2String - Create column ID to backing string index entry.
-func (c *BitmapIndex) SetCID2String(index, field string, columnID, value interface{}) error {
+// SetPartitionedString - Create column ID to backing string index entry.
+func (c *BitmapIndex) SetPartitionedString(indexPath string, columnID, value interface{}) error {
 
 	c.batchMutex.Lock()
 	defer c.batchMutex.Unlock()
 
-	if c.batchColID2Str == nil {
-		c.batchColID2Str = make(map[string]map[string]map[interface{}]interface{})
+	if c.batchPartitionStr == nil {
+		c.batchPartitionStr = make(map[string]map[interface{}]interface{})
 	}
-	if _, ok := c.batchColID2Str[index]; !ok {
-		c.batchColID2Str[index] = make(map[string]map[interface{}]interface{})
+	if _, ok := c.batchPartitionStr[indexPath]; !ok {
+		c.batchPartitionStr[indexPath] = make(map[interface{}]interface{})
 	}
-	if _, ok := c.batchColID2Str[index][field]; !ok {
-		c.batchColID2Str[index][field] = make(map[interface{}]interface{})
-	}
-	if _, ok := c.batchColID2Str[index][field][columnID]; !ok {
-		c.batchColID2Str[index][field][columnID] = value
+	if _, ok := c.batchPartitionStr[indexPath][columnID]; !ok {
+		c.batchPartitionStr[indexPath][columnID] = value
 	}
 
-	c.batchColID2StrCount++
+	c.batchPartitionStrCount++
 
-	if c.batchColID2StrCount >= c.batchSize/100 {
-		for index, fieldMap := range c.batchColID2Str {
-			for field, valueMap := range fieldMap {
-				tableField := fmt.Sprintf("%s%s%s.CID2String", index, ifDelim, field)
-				if err := c.KVStore.BatchPut(tableField, valueMap); err != nil {
-					return err
-				}
-
+	if c.batchPartitionStrCount >= c.batchSize/100 {
+		for indexPath, valueMap := range c.batchPartitionStr {
+			if err := c.KVStore.BatchPut(indexPath, valueMap, true); err != nil {
+				return err
 			}
+
 		}
-		c.batchColID2Str = nil
-		c.batchColID2StrCount = 0
+		c.batchPartitionStr = nil
+		c.batchPartitionStrCount = 0
 	}
 	return nil
+}
+
+//
+// Projection - Send fields and target set for a given index to cluster for projection processing.
+//
+func (c *BitmapIndex) Projection(index string, fields []string, fromTime, toTime int64,
+	foundSet *roaring64.Bitmap) (map[string]*roaring64.BSI, map[string]map[uint64]*roaring64.Bitmap, error) {
+
+	bsiResults := make(map[string][]*roaring64.BSI, 0)
+	bitmapResults := make(map[string]map[uint64][]*roaring64.Bitmap, 0)
+
+	data, err := foundSet.MarshalBinary()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	req := &pb.ProjectionRequest{Index: index, Fields: fields, FromTime: fromTime,
+		ToTime: toTime, FoundSet: data}
+
+	resultChan := make(chan *pb.ProjectionResponse, 100)
+	var eg errgroup.Group
+
+	// Send the same projection request to each readable node.
+	indices, err2 := c.SelectNodes(index, ReadIntentAll)
+	if err2 != nil {
+		return nil, nil, fmt.Errorf("Projection: %v", err2)
+	}
+	for _, n := range indices {
+		client := c.client[n]
+		clientIndex := n
+		eg.Go(func() error {
+			pr, err := c.projectionClient(client, req, clientIndex)
+			if err != nil {
+				return err
+			}
+			resultChan <- pr
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, nil, err
+	}
+	close(resultChan)
+
+	for rs := range resultChan {
+		for _, v := range rs.GetBsiResults() {
+			bsi, ok := bsiResults[v.Field]
+			if !ok {
+				bsi = make([]*roaring64.BSI, 0)
+			}
+
+			newBsi := roaring64.NewDefaultBSI()
+			if err := newBsi.UnmarshalBinary(v.Bitmaps); err != nil {
+				return nil, nil, fmt.Errorf("Error unmarshalling BSI projection results - %v", err)
+			}
+			bsiResults[v.Field] = append(bsi, newBsi)
+		}
+		for _, v := range rs.GetBitmapResults() {
+			if _, ok := bitmapResults[v.Field]; !ok {
+				bitmapResults[v.Field] = make(map[uint64][]*roaring64.Bitmap, 0)
+			}
+			field := bitmapResults[v.Field]
+			bm, ok := field[v.RowId]
+			if !ok {
+				bm = make([]*roaring64.Bitmap, 0)
+			}
+			newBm := roaring64.NewBitmap()
+			if err := newBm.UnmarshalBinary(v.Bitmap); err != nil {
+				return nil, nil, fmt.Errorf("Error unmarshalling bitmap projection results - %v", err)
+			}
+			field[v.RowId] = append(bm, newBm)
+		}
+	}
+
+	// Aggregate the per node results
+	aggbsiResults := make(map[string]*roaring64.BSI)
+	for k, v := range bsiResults {
+		bsi := roaring64.NewDefaultBSI()
+		bsi.ParOr(0, v...)
+		aggbsiResults[k] = bsi
+	}
+	aggbitmapResults := make(map[string]map[uint64]*roaring64.Bitmap)
+	for k, v := range bitmapResults {
+		aggbitmapResults[k] = make(map[uint64]*roaring64.Bitmap)
+		for k2, v2 := range v {
+			aggbitmapResults[k][k2] = roaring64.ParOr(0, v2...)
+		}
+	}
+	return aggbsiResults, aggbitmapResults, nil
+}
+
+// Send projection processing request to a specific node.
+func (c *BitmapIndex) projectionClient(client pb.BitmapIndexClient, req *pb.ProjectionRequest,
+	clientIndex int) (*pb.ProjectionResponse, error) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	defer cancel()
+
+	result, err := client.Projection(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("%v.Projection(_) = _, %v, node = %s", client, err,
+			c.ClientConnections()[clientIndex].Target())
+	}
+	return result, nil
 }
 
 // TableOperation - Handle TableOperations
 func (c *BitmapIndex) TableOperation(table, operation string) error {
 
+	sop := AllActive
 	var op pb.TableOperationRequest_OpType
 	switch operation {
 	case "deploy":
+		sop = Admin
 		op = pb.TableOperationRequest_DEPLOY
 	case "drop":
 		op = pb.TableOperationRequest_DROP
@@ -731,10 +873,14 @@ func (c *BitmapIndex) TableOperation(table, operation string) error {
 
 	var eg errgroup.Group
 
-	// Send the same tableOperation request to each node.
-	for i, n := range c.client {
-		client := n
-		clientIndex := i
+	// Send the same tableOperation request to each node.  They must be all Active
+	indices, err := c.SelectNodes(table, sop)
+	if err != nil {
+		return fmt.Errorf("table %s operation: %v", operation, err)
+	}
+	for _, n := range indices {
+		client := c.client[n]
+		clientIndex := n
 		eg.Go(func() error {
 			if err := c.tableOperationClient(client, req, clientIndex); err != nil {
 				return err
@@ -758,7 +904,7 @@ func (c *BitmapIndex) tableOperationClient(client pb.BitmapIndexClient, req *pb.
 
 	if _, err := client.TableOperation(ctx, req); err != nil {
 		return fmt.Errorf("%v.TableOperation(_) = _, %v, node = %s", client, err,
-			c.Conn.clientConn[clientIndex].Target())
+			c.ClientConnections()[clientIndex].Target())
 	}
 	return nil
 }

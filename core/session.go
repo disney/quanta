@@ -8,7 +8,6 @@ import (
 	"github.com/araddon/qlbridge/expr"
 	"github.com/araddon/qlbridge/value"
 	"github.com/araddon/qlbridge/vm"
-	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/shared"
 	"github.com/json-iterator/go"
 	"github.com/xitongsys/parquet-go/reader"
@@ -37,9 +36,9 @@ const (
 // Session - State for session (non-threadsafe)
 type Session struct {
 	BasePath     string // path to schema directory
-	Client       *quanta.BitmapIndex
-	StringIndex  *quanta.StringSearch
-	KVStore      *quanta.KVStore
+	Client       *shared.BitmapIndex
+	StringIndex  *shared.StringSearch
+	KVStore      *shared.KVStore
 	TableBuffers map[string]*TableBuffer
 	Nested       bool
 	DateFilter   *time.Time // optional filter to only include records matching timestamp
@@ -88,14 +87,14 @@ func NewTableBuffer(table *Table) (*TableBuffer, error) {
 // OpenSession - Creates a connected session to the underlying core.
 // (This is intentionally not thread-safe for maximum throughput.)
 //
-func OpenSession(path, name string, nested bool, conn *quanta.Conn) (*Session, error) {
+func OpenSession(path, name string, nested bool, conn *shared.Conn) (*Session, error) {
 
 	if name == "" {
 		return nil, fmt.Errorf("table name is nil")
 	}
 
 	consul := conn.Consul
-	kvStore := quanta.NewKVStore(conn)
+	kvStore := shared.NewKVStore(conn)
 
 	tableBuffers := make(map[string]*TableBuffer, 0)
 	tab, err := LoadTable(path, kvStore, name, consul)
@@ -129,9 +128,9 @@ func OpenSession(path, name string, nested bool, conn *quanta.Conn) (*Session, e
 		return nil, fmt.Errorf("OpenSession error - %v", err)
 	}
 	s := &Session{BasePath: path, TableBuffers: tableBuffers, Nested: nested}
-	s.StringIndex = quanta.NewStringSearch(conn, 1000)
+	s.StringIndex = shared.NewStringSearch(conn, 1000)
 	s.KVStore = kvStore
-	s.Client = quanta.NewBitmapIndex(conn, 3000000)
+	s.Client = shared.NewBitmapIndex(conn, 3000000)
 
 	s.Client.KVStore = s.KVStore
 	s.CreatedAt = time.Now().UTC()
@@ -144,7 +143,7 @@ func (s *Session) SetDateFilter(filter *time.Time) {
 	s.DateFilter = filter
 }
 
-func recurseAndLoadTable(basePath string, kvStore *quanta.KVStore, tableBuffers map[string]*TableBuffer, curTable *Table) error {
+func recurseAndLoadTable(basePath string, kvStore *shared.KVStore, tableBuffers map[string]*TableBuffer, curTable *Table) error {
 
 	for _, v := range curTable.Attributes {
 		_, ok := tableBuffers[v.ChildTable]
@@ -664,7 +663,7 @@ func (s *Session) lookupColumnID(tbuf *TableBuffer, lookupVal, fkFieldSpec strin
 		// Use the secondary/alternate key specification
 		kvIndex = fmt.Sprintf("%s%s%s.SK", tbuf.Table.Name, ifDelim, fkFieldSpec)
 	}
-	kvResult, err := s.KVStore.Lookup(kvIndex, lookupVal, reflect.Uint64)
+	kvResult, err := s.KVStore.Lookup(kvIndex, lookupVal, reflect.Uint64, false)
 	if err != nil {
 		return 0, false, fmt.Errorf("KVStore error for [%s] = [%s], [%v]", kvIndex, lookupVal, err)
 	}
@@ -683,7 +682,7 @@ func (s *Session) LookupKeyBatch(tbuf *TableBuffer, lookupVals map[interface{}]i
 		// Use the secondary/alternate key specification
 		kvIndex = fmt.Sprintf("%s%s%s.SK", tbuf.Table.Name, ifDelim, fkFieldSpec)
 	}
-	lookupVals, err := s.KVStore.BatchLookup(kvIndex, lookupVals)
+	lookupVals, err := s.KVStore.BatchLookup(kvIndex, lookupVals, false)
 	if err != nil {
 		return nil, fmt.Errorf("KVStore.LookupBatch error for [%s] - [%v]", kvIndex, err)
 	}

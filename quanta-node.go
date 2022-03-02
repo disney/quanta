@@ -4,6 +4,7 @@
 package main
 
 import (
+	"fmt"
 	u "github.com/araddon/gou"
 	"github.com/disney/quanta/server"
 	"github.com/disney/quanta/shared"
@@ -48,57 +49,55 @@ func main() {
 		log.Fatalf("[node: Cannot initialize endpoint config: error: %s", err)
 	}
 
-	m, err := server.NewEndPoint(*dataDir, consulClient)
-	if err != nil {
-		u.Errorf("[node: Cannot initialize endpoint config: error: %s", err)
-	}
-	m.BindAddr = *bindAddr
-	m.Port = uint(*port)
 	_ = *tls
 	_ = *certFile
 	_ = *keyFile
 
-	kvStore, err2 := server.NewKVStore(m)
-	if err2 != nil {
-		u.Errorf("[node: Cannot create kv store config: error: %s", err2)
+	m, err := server.NewNode(fmt.Sprintf("%v:%v", Version, Build), int(*port), *bindAddr, *dataDir, consulClient)
+	if err != nil {
+		u.Errorf("[node: Cannot initialize node config: error: %s", err)
 	}
 
-	err3 := kvStore.Init()
-	if err3 != nil {
-		u.Errorf("[node: Cannot initialized kv store error: %s", err3)
-	}
+	kvStore := server.NewKVStore(m)
+	m.AddNodeService(kvStore)
 
-	search, err4 := server.NewStringSearch(m)
-	if err4 != nil {
-		u.Errorf("[node: Cannot initialize search config: error: %s", err4)
-	}
+	search := server.NewStringSearch(m)
+	m.AddNodeService(search)
 
-	start := time.Now()
 	bitmapIndex := server.NewBitmapIndex(m, int(*expireDays))
-	bitmapIndex.Init()
-	elapsed := time.Since(start)
-	log.Printf("Bitmap data server initialized in %v.", elapsed)
+	m.AddNodeService(bitmapIndex)
 
+	// Start listening endpoint
+	m.Start()
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
 	go func() {
 		for range c {
 			u.Errorf("Interrupt signal received.  Starting Shutdown...")
-			kvStore.Shutdown()
-			search.Shutdown()
-			bitmapIndex.Shutdown()
+			m.Leave()
 			time.Sleep(5)
 			os.Exit(0)
 		}
 	}()
 
-	node, err := server.Join("quanta", m)
+	start := time.Now()
+	err = m.InitServices()
+	elapsed := time.Since(start)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("Data node initialized in %v.", elapsed)
+
+	err = m.Join("quanta")
 	if err != nil {
 		u.Errorf("[node: Cannot initialize endpoint config: error: %s", err)
 	}
 
-	<-node.Stop
-	err = <-node.Err
+	<-m.Stop
+	select {
+	case err = <-m.Err:
+	default:
+	}
 	if err != nil {
 		u.Errorf("[node: Cannot initialize endpoint config: error: %s", err)
 	}

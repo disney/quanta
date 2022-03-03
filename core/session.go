@@ -483,7 +483,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 					sf := ts.Format(tFormat)
 					tq, _ := time.Parse(tFormat, sf)
 					if s.DateFilter != nil && *s.DateFilter != tq {
-						// Fitler is set and dates don't match so continue on.
+						// Filter is set and dates don't match so continue on.
 						return false, nil
 					}
 					if tbuf.CurrentTimestamp.UnixNano() > 0 && tbuf.CurrentTimestamp != tq {
@@ -674,6 +674,7 @@ func (s *Session) lookupColumnID(tbuf *TableBuffer, lookupVal, fkFieldSpec strin
 }
 
 // LookupKeyBatch - Process a batch of keys.
+/*
 func (s *Session) LookupKeyBatch(tbuf *TableBuffer, lookupVals map[interface{}]interface{},
 	fkFieldSpec string) (map[interface{}]interface{}, error) {
 
@@ -688,6 +689,7 @@ func (s *Session) LookupKeyBatch(tbuf *TableBuffer, lookupVals map[interface{}]i
 	}
 	return lookupVals, nil
 }
+*/
 
 func (s *Session) resolveFKLookupKey(v *Attribute, tbuf *TableBuffer, row interface{}) (string, error) {
 

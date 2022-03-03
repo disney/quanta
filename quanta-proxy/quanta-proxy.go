@@ -601,9 +601,69 @@ var (
         Help: "Average query latency in milliseconds",
     })
 
+    pUpdateCount = promauto.NewGauge(prometheus.GaugeOpts{
+        Name: "update_count",
+        Help: "The total number of updates processed",
+    })
+
+    pUpdatesPerSec = promauto.NewGauge(prometheus.GaugeOpts{
+        Name: "updates_per_second",
+        Help: "The total number of updates processed per second",
+    })
+
+    pAvgUpdateLatency = promauto.NewGauge(prometheus.GaugeOpts{
+        Name: "avg_update_latency",
+        Help: "Average update latency in milliseconds",
+    })
+
+    pInsertCount = promauto.NewGauge(prometheus.GaugeOpts{
+        Name: "insert_count",
+        Help: "The total number of inserts processed",
+    })
+
+    pInsertsPerSec = promauto.NewGauge(prometheus.GaugeOpts{
+        Name: "inserts_per_second",
+        Help: "The total number of inserts processed per second",
+    })
+
+    pAvgInsertLatency = promauto.NewGauge(prometheus.GaugeOpts{
+        Name: "avg_insert_latency",
+        Help: "Average insert latency in milliseconds",
+    })
+
+    pDeleteCount = promauto.NewGauge(prometheus.GaugeOpts{
+        Name: "delete_count",
+        Help: "The total number of deletes processed",
+    })
+
+    pDeletesPerSec = promauto.NewGauge(prometheus.GaugeOpts{
+        Name: "deletes_per_second",
+        Help: "The total number of deletes processed per second",
+    })
+
+    pAvgDeleteLatency = promauto.NewGauge(prometheus.GaugeOpts{
+        Name: "avg_delete_latency",
+        Help: "Average delete latency in milliseconds",
+    })
+
     pUptimeHours = promauto.NewGauge(prometheus.GaugeOpts{
         Name: "uptime_hours",
         Help: "Hours of up time",
+    })
+
+    pConnPoolSize = promauto.NewGauge(prometheus.GaugeOpts{
+        Name: "connection_pool_size",
+        Help: "The size of the Quanta session pool",
+    })
+
+    pConnInUse = promauto.NewGauge(prometheus.GaugeOpts{
+        Name: "connections_in_use",
+        Help: "Number of Quanta sessions currently (actively) in use.",
+    })
+
+    pConnPerSec = promauto.NewGauge(prometheus.GaugeOpts{
+        Name: "connections_per_sec",
+        Help: "Number of Quanta sessions requested per second.",
     })
 )
 
@@ -717,6 +777,18 @@ func publishMetrics(upTime time.Duration, lastPublishedAt time.Time, src *source
 	pQueriesPerSec.Set(float64(queryCount.Get()-queryCountL.Get()) / interval)
 	pAvgQueryLatency.Set(float64(avgQueryLatency))
 	pUptimeHours.Set(float64(upTime / (1000000000 * 3600)))
+	pConnPoolSize.Set(float64(connectionPoolSize))
+	pConnInUse.Set(float64(connectionsInUse))
+	pConnPerSec.Set(float64(connectCount.Get()-connectCountL.Get()) / interval)
+	pUpdateCount.Set(float64(updateCount.Get()))
+	pUpdatesPerSec.Set(float64(updateCount.Get()-updateCountL.Get()) / interval)
+	pAvgUpdateLatency.Set(float64(avgUpdateLatency))
+	pInsertCount.Set(float64(insertCount.Get()))
+	pInsertsPerSec.Set(float64(insertCount.Get()-insertCountL.Get()) / interval)
+	pAvgInsertLatency.Set(float64(avgInsertLatency))
+	pDeleteCount.Set(float64(deleteCount.Get()))
+	pDeletesPerSec.Set(float64(deleteCount.Get()-deleteCountL.Get()) / interval)
+	pAvgDeleteLatency.Set(float64(avgDeleteLatency))
 
 	connectCountL.Set(connectCount.Get())
 	queryCountL.Set(queryCount.Get())

@@ -65,6 +65,7 @@ func NewTableBuffer(table *Table) (*TableBuffer, error) {
 	tb := &TableBuffer{Table: table}
 	tb.PKMap = make(map[string]*Attribute)
 	tb.PKAttributes = make([]*Attribute, 0)
+    tb.CurrentTimestamp = time.Unix(0, 0)
 	if table.PrimaryKey != "" {
 		pka, err := table.GetPrimaryKeyInfo()
 		if err != nil {
@@ -540,7 +541,11 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 	}
 
 	// Can't use batch operation here unfortunately, but at least we have local batch cache
-	if lColID, ok := s.Client.LookupLocalPKString(tbuf.Table.Name, tbuf.Table.PrimaryKey, pkLookupVal.String()); !ok {
+	localKey := fmt.Sprintf("%s/%s/%s,%s.PK", tbuf.Table.Name, tbuf.PKAttributes[0].FieldName, 
+		tbuf.CurrentTimestamp.Format(timeFmt), tbuf.Table.PrimaryKey)
+
+	//if lColID, ok := s.Client.LookupLocalPKString(tbuf.Table.Name, tbuf.Table.PrimaryKey, pkLookupVal.String()); !ok {
+	if lColID, ok := s.Client.LookupLocalCIDForString(localKey, pkLookupVal.String()); !ok {
 		var colID uint64
 		var errx error
 		var found bool
@@ -569,8 +574,9 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 				tbuf.CurrentColumnID = providedColID
 			}
 			// Add the PK via local cache batch operation
-			s.Client.SetKeyString(tbuf.Table.Name, tbuf.Table.PrimaryKey, primaryKey, pkLookupVal.String(),
-				tbuf.CurrentColumnID)
+			key := fmt.Sprintf("%s/%s/%s,%s.PK", tbuf.Table.Name, tbuf.PKAttributes[0].FieldName, 
+				tbuf.CurrentTimestamp.Format(timeFmt), tbuf.Table.PrimaryKey)
+			s.Client.SetPartitionedString(key, pkLookupVal.String(), tbuf.CurrentColumnID)
 		}
 	} else {
 		if tbuf.Table.DisableDedup {
@@ -649,8 +655,11 @@ func (s *Session) processAlternateKeys(tbuf *TableBuffer, row interface{}, pqTab
 				skLookupVal.WriteString(fmt.Sprintf("+%s", cval.(string)))
 			}
 		}
-		s.Client.SetKeyString(tbuf.Table.Name, k, secondaryKey, skLookupVal.String(),
-			tbuf.CurrentColumnID)
+		//s.Client.SetKeyString(tbuf.Table.Name, k, secondaryKey, skLookupVal.String(),
+		//	tbuf.CurrentColumnID)
+        key := fmt.Sprintf("%s/%s/%s,%s.SK", tbuf.Table.Name, tbuf.PKAttributes[0].FieldName, 
+            tbuf.CurrentTimestamp.Format(timeFmt), k)
+        s.Client.SetPartitionedString(key, skLookupVal.String(), tbuf.CurrentColumnID)
 		i++
 	}
 	return nil
@@ -658,12 +667,15 @@ func (s *Session) processAlternateKeys(tbuf *TableBuffer, row interface{}, pqTab
 
 func (s *Session) lookupColumnID(tbuf *TableBuffer, lookupVal, fkFieldSpec string) (uint64, bool, error) {
 
-	kvIndex := fmt.Sprintf("%s%s%s.PK", tbuf.Table.Name, ifDelim, tbuf.Table.PrimaryKey)
+	kvIndex := fmt.Sprintf("%s/%s/%s,%s.PK", tbuf.Table.Name, tbuf.PKAttributes[0].FieldName, 
+		tbuf.CurrentTimestamp.Format(timeFmt), tbuf.Table.PrimaryKey)
+	
 	if fkFieldSpec != "" {
-		// Use the secondary/alternate key specification
-		kvIndex = fmt.Sprintf("%s%s%s.SK", tbuf.Table.Name, ifDelim, fkFieldSpec)
+		// Use the secondary/alternate key specification.  In this case tbuf is the FK table
+		kvIndex = fmt.Sprintf("%s/%s/%s,%s.SK", tbuf.Table.Name, tbuf.PKAttributes[0].FieldName, 
+			tbuf.CurrentTimestamp.Format(timeFmt), fkFieldSpec)
 	}
-	kvResult, err := s.KVStore.Lookup(kvIndex, lookupVal, reflect.Uint64, false)
+	kvResult, err := s.KVStore.Lookup(kvIndex, lookupVal, reflect.Uint64, true)
 	if err != nil {
 		return 0, false, fmt.Errorf("KVStore error for [%s] = [%s], [%v]", kvIndex, lookupVal, err)
 	}

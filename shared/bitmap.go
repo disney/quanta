@@ -53,10 +53,10 @@ type BitmapIndex struct {
 	batchSetCount          int
 	batchClearCount        int
 	batchValueCount        int
-	batchStringKeyCount    int
+	//batchStringKeyCount    int
 	batchPartitionStrCount int
-	batchMutex             sync.Mutex
-	batchKeyMutex          sync.RWMutex
+	batchMutex             sync.RWMutex
+	//batchKeyMutex          sync.RWMutex
 }
 
 // NewBitmapIndex - Initializer for client side API wrappers.
@@ -136,6 +136,7 @@ func (c *BitmapIndex) Flush() error {
 	}
 	c.batchMutex.Unlock()
 
+/*
 	c.batchKeyMutex.Lock()
 	if c.batchStringKey != nil {
 		for index, fieldMap := range c.batchStringKey {
@@ -154,6 +155,7 @@ func (c *BitmapIndex) Flush() error {
 		c.batchStringKeyCount = 0
 	}
 	c.batchKeyMutex.Unlock()
+*/
 	return nil
 }
 
@@ -662,7 +664,23 @@ func (c *BitmapIndex) sequencerClient(client pb.BitmapIndexClient, req *pb.Check
 	return result, nil
 }
 
+// LookupLocalCIDForString - Lookup possible columnID in local batch cache
+func (c *BitmapIndex) LookupLocalCIDForString(index, lookup string) (columnID uint64, ok bool) {
+
+	c.batchMutex.RLock()
+	defer c.batchMutex.RUnlock()
+
+	var colIDVal interface{}
+	colIDVal, ok = c.batchPartitionStr[index][lookup]
+	if ok {
+		columnID = colIDVal.(uint64)
+	}
+	return
+}
+
+
 // LookupLocalPKString - Lookup PK from local cache.
+/*
 func (c *BitmapIndex) LookupLocalPKString(index, field string, value interface{}) (columnID uint64, ok bool) {
 
 	c.batchKeyMutex.RLock()
@@ -675,8 +693,10 @@ func (c *BitmapIndex) LookupLocalPKString(index, field string, value interface{}
 	}
 	return
 }
+*/
 
 // SetKeyString - Set a Key
+/*
 func (c *BitmapIndex) SetKeyString(index, field, itype string, value interface{}, columnID uint64) error {
 
 	c.batchKeyMutex.Lock()
@@ -716,9 +736,10 @@ func (c *BitmapIndex) SetKeyString(index, field, itype string, value interface{}
 	}
 	return nil
 }
+*/
 
 // SetPartitionedString - Create column ID to backing string index entry.
-func (c *BitmapIndex) SetPartitionedString(indexPath string, columnID, value interface{}) error {
+func (c *BitmapIndex) SetPartitionedString(indexPath string, key, value interface{}) error {
 
 	c.batchMutex.Lock()
 	defer c.batchMutex.Unlock()
@@ -729,8 +750,8 @@ func (c *BitmapIndex) SetPartitionedString(indexPath string, columnID, value int
 	if _, ok := c.batchPartitionStr[indexPath]; !ok {
 		c.batchPartitionStr[indexPath] = make(map[interface{}]interface{})
 	}
-	if _, ok := c.batchPartitionStr[indexPath][columnID]; !ok {
-		c.batchPartitionStr[indexPath][columnID] = value
+	if _, ok := c.batchPartitionStr[indexPath][key]; !ok {
+		c.batchPartitionStr[indexPath][key] = value
 	}
 
 	c.batchPartitionStrCount++

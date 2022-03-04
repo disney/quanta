@@ -29,22 +29,22 @@ func (f *VerifyEnumCmd) Run(ctx *Context) error {
 	if err2 != nil {
 		return fmt.Errorf("Error getting field  %s - %v", f.Field, err2)
 	}
-_ = field
-/*
-	if f.RowID > 0 && field.IsBSI() {
-		return fmt.Errorf("Field is a BSI and Rowid was specified, ignoring Rowid")
-	}
-	if f.Timestamp != "" && table.TimeQuantumType == "" {
-		return fmt.Errorf("Table does not have time quantum, ignoring timestamp")
-	}
-	if table.TimeQuantumType != "" && f.Timestamp == "" {
-		return fmt.Errorf("Table has time quantum type %s but timestamp not provided", table.TimeQuantumType)
-	}
-	ts, tf, err3 := shared.ToTQTimestamp(table.TimeQuantumType, f.Timestamp)
-	if err3 != nil {
-		return fmt.Errorf("Error ToTQTimestamp %v - TQType = %s, Timestamp = %s", err3, table.TimeQuantumType, f.Timestamp)
-	}
-*/
+	_ = field
+	/*
+		if f.RowID > 0 && field.IsBSI() {
+			return fmt.Errorf("Field is a BSI and Rowid was specified, ignoring Rowid")
+		}
+		if f.Timestamp != "" && table.TimeQuantumType == "" {
+			return fmt.Errorf("Table does not have time quantum, ignoring timestamp")
+		}
+		if table.TimeQuantumType != "" && f.Timestamp == "" {
+			return fmt.Errorf("Table has time quantum type %s but timestamp not provided", table.TimeQuantumType)
+		}
+		ts, tf, err3 := shared.ToTQTimestamp(table.TimeQuantumType, f.Timestamp)
+		if err3 != nil {
+			return fmt.Errorf("Error ToTQTimestamp %v - TQType = %s, Timestamp = %s", err3, table.TimeQuantumType, f.Timestamp)
+		}
+	*/
 	if f.RowID == 0 {
 		f.RowID = 1
 	}
@@ -58,7 +58,7 @@ _ = field
 	if err4 != nil {
 		return err4
 	}
-    fmt.Printf("SelectNodes returned %d node Active state for reading.\n", len(indices))
+	fmt.Printf("SelectNodes returned %d node Active state for reading.\n", len(indices))
 
 	intersectMap := make(map[interface{}]interface{}, 0)
 
@@ -100,13 +100,13 @@ _ = field
 
 func getAllEnumsForField(conn *shared.Conn, key string, index int) (map[interface{}]interface{}, error) {
 
-    kvStore := shared.NewKVStore(conn)
+	kvStore := shared.NewKVStore(conn)
 	kvClient := kvStore.Client(index)
 
-    getBatch, err := kvStore.NodeItems(kvClient, key, reflect.String, reflect.Uint64)
-    if err != nil {
-        return nil, fmt.Errorf("kvStore.NodeItems failed for %s - %v", key, err)
-    }
+	getBatch, err := kvStore.NodeItems(kvClient, key, reflect.String, reflect.Uint64)
+	if err != nil {
+		return nil, fmt.Errorf("kvStore.NodeItems failed for %s - %v", key, err)
+	}
 
 	return getBatch, nil
 }

@@ -20,9 +20,9 @@ import (
 	"github.com/harlow/kinesis-consumer"
 	store "github.com/harlow/kinesis-consumer/store/ddb"
 	"github.com/hashicorp/consul/api"
-    "github.com/prometheus/client_golang/prometheus"
-    "github.com/prometheus/client_golang/prometheus/promauto"
-    "github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
 	"net/http"
@@ -74,15 +74,15 @@ type Main struct {
 	CheckpointTable     string
 	AssumeRoleArn       string
 	AssumeRoleArnRegion string
-	Deaggregate   bool
-	partitionMap  map[string]*Partition
-	partitionLock sync.Mutex
-	timeLocation  *time.Location
-	processedRecs *Counter
-	processedRecL *Counter
-	sessionPool   *core.SessionPool
-	sessionPoolSize int
-	metrics       *cloudwatch.CloudWatch
+	Deaggregate         bool
+	partitionMap        map[string]*Partition
+	partitionLock       sync.Mutex
+	timeLocation        *time.Location
+	processedRecs       *Counter
+	processedRecL       *Counter
+	sessionPool         *core.SessionPool
+	sessionPoolSize     int
+	metrics             *cloudwatch.CloudWatch
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -113,7 +113,7 @@ func main() {
 	region := app.Arg("region", "AWS region").Default("us-east-1").String()
 	port := app.Flag("port", "Port number for service").Default("4000").Int32()
 	bufSize := app.Flag("buf-size", "Buffer size").Default("1000000").Int32()
-  poolSize := app.Flag("session-pool-size", "Session pool size").Int()
+	poolSize := app.Flag("session-pool-size", "Session pool size").Int()
 	withAssumeRoleArn := app.Flag("assume-role-arn", "Assume role ARN.").String()
 	withAssumeRoleArnRegion := app.Flag("assume-role-arn-region", "Assume role ARN region.").String()
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
@@ -144,14 +144,14 @@ func main() {
 	log.Printf("Kinesis region %v.", main.Region)
 	log.Printf("Index name %v.", main.Index)
 	log.Printf("Buffer size %d.", main.BufferSize)
-   // If the pool size is not configured then set it to the number of available CPUs
-   main.sessionPoolSize = *poolSize
-  if main.sessionPoolSize == 0 {
-       main.sessionPoolSize = runtime.NumCPU()
-       log.Printf("Session Pool Size not set, defaulting to number of available CPUs = %d", main.sessionPoolSize)
-   } else {
-       log.Printf("Session Pool Size = %d", main.sessionPoolSize)
-   }
+	// If the pool size is not configured then set it to the number of available CPUs
+	main.sessionPoolSize = *poolSize
+	if main.sessionPoolSize == 0 {
+		main.sessionPoolSize = runtime.NumCPU()
+		log.Printf("Session Pool Size not set, defaulting to number of available CPUs = %d", main.sessionPoolSize)
+	} else {
+		log.Printf("Session Pool Size = %d", main.sessionPoolSize)
+	}
 	log.Printf("Service port %d.", main.Port)
 	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
 	if *trimHorizon {
@@ -208,8 +208,8 @@ func main() {
 
 	go func() {
 		// Start Prometheus endpoint
-    	http.Handle("/metrics", promhttp.Handler())
-    	http.ListenAndServe(":2112", nil)
+		http.Handle("/metrics", promhttp.Handler())
+		http.ListenAndServe(":2112", nil)
 	}()
 
 	var ticker *time.Ticker
@@ -561,10 +561,21 @@ var (
 		Name: "uptime_hours",
 		Help: "Hours of up time",
 	})
+
+	connPoolSize = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "connection_pool_size",
+		Help: "The size of the Quanta session pool",
+	})
+
+	connInUse = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "connections_in_use",
+		Help: "Number of Quanta sessions currently (actively) in use.",
+	})
 )
 
 func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) time.Time {
 
+	connectionPoolSize, connectionsInUse := m.sessionPool.Metrics()
 	interval := time.Since(lastPublishedAt).Seconds()
 	_, err := m.metrics.PutMetricData(&cloudwatch.PutMetricDataInput{
 		Namespace: aws.String("Quanta-Consumer/Records"),
@@ -664,10 +675,12 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 	totalRecsPerSec.Set(float64(m.totalRecs.Get()-m.totalRecsL.Get()) / interval)
 	processedRecs.Set(float64(m.processedRecs.Get()))
 	processedRecsPerSec.Set(float64(m.processedRecs.Get()-m.processedRecL.Get()) / interval)
-    errors.Set(float64(m.errorCount.Get()))
-    processedBytes.Set(float64(m.totalBytes.Get()))
-    processedBytesPerSec.Set(float64(m.totalBytes.Get()-m.totalBytesL.Get()) / interval)
-    uptimeHours.Set(float64(upTime / (1000000000 * 3600)))
+	errors.Set(float64(m.errorCount.Get()))
+	processedBytes.Set(float64(m.totalBytes.Get()))
+	processedBytesPerSec.Set(float64(m.totalBytes.Get()-m.totalBytesL.Get()) / interval)
+	uptimeHours.Set(float64(upTime / (1000000000 * 3600)))
+	connPoolSize.Set(float64(connectionPoolSize))
+	connInUse.Set(float64(connectionsInUse))
 
 	m.totalRecsL.Set(m.totalRecs.Get())
 	m.processedRecL.Set(m.processedRecs.Get())

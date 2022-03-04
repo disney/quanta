@@ -44,7 +44,7 @@ type QuantaSource struct {
 }
 
 // NewQuantaSource - Construct a QuantaSource.
-func NewQuantaSource(baseDir, consulAddr string, servicePort, sessionPoolSize int ) (*QuantaSource, error) {
+func NewQuantaSource(baseDir, consulAddr string, servicePort, sessionPoolSize int) (*QuantaSource, error) {
 
 	m := &QuantaSource{}
 	var err error

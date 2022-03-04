@@ -42,17 +42,17 @@ const (
 //
 type BitmapIndex struct {
 	*Conn
-	KVStore                *KVStore
-	client                 []pb.BitmapIndexClient
-	batchSets              map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
-	batchClears            map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
-	batchValues            map[string]map[string]map[int64]*roaring64.BSI
-	batchStringKey         map[string]map[string]map[string]map[interface{}]interface{}
-	batchPartitionStr      map[string]map[interface{}]interface{}
-	batchSize              int
-	batchSetCount          int
-	batchClearCount        int
-	batchValueCount        int
+	KVStore           *KVStore
+	client            []pb.BitmapIndexClient
+	batchSets         map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
+	batchClears       map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
+	batchValues       map[string]map[string]map[int64]*roaring64.BSI
+	batchStringKey    map[string]map[string]map[string]map[interface{}]interface{}
+	batchPartitionStr map[string]map[interface{}]interface{}
+	batchSize         int
+	batchSetCount     int
+	batchClearCount   int
+	batchValueCount   int
 	//batchStringKeyCount    int
 	batchPartitionStrCount int
 	batchMutex             sync.RWMutex
@@ -136,26 +136,26 @@ func (c *BitmapIndex) Flush() error {
 	}
 	c.batchMutex.Unlock()
 
-/*
-	c.batchKeyMutex.Lock()
-	if c.batchStringKey != nil {
-		for index, fieldMap := range c.batchStringKey {
-			for field, typeMap := range fieldMap {
-				for itype, valueMap := range typeMap { // itype is 'P' for Primary, 'S' for secondary
-					tableField := fmt.Sprintf("%s%s%s.%sK", index, ifDelim, field, itype)
-					if err := c.KVStore.BatchPut(tableField, valueMap, false); err != nil {
-						c.batchKeyMutex.Unlock()
-						return err
+	/*
+		c.batchKeyMutex.Lock()
+		if c.batchStringKey != nil {
+			for index, fieldMap := range c.batchStringKey {
+				for field, typeMap := range fieldMap {
+					for itype, valueMap := range typeMap { // itype is 'P' for Primary, 'S' for secondary
+						tableField := fmt.Sprintf("%s%s%s.%sK", index, ifDelim, field, itype)
+						if err := c.KVStore.BatchPut(tableField, valueMap, false); err != nil {
+							c.batchKeyMutex.Unlock()
+							return err
+						}
 					}
-				}
 
+				}
 			}
+			c.batchStringKey = nil
+			c.batchStringKeyCount = 0
 		}
-		c.batchStringKey = nil
-		c.batchStringKeyCount = 0
-	}
-	c.batchKeyMutex.Unlock()
-*/
+		c.batchKeyMutex.Unlock()
+	*/
 	return nil
 }
 
@@ -677,7 +677,6 @@ func (c *BitmapIndex) LookupLocalCIDForString(index, lookup string) (columnID ui
 	}
 	return
 }
-
 
 // LookupLocalPKString - Lookup PK from local cache.
 /*

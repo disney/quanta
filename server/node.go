@@ -14,6 +14,8 @@ import (
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/hashicorp/consul/api"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -334,4 +336,27 @@ func (n *Node) InitServices() error {
 func (n *Node) GetNodeService(name string) NodeService {
 
 	return n.localServices[name]
+}
+
+// Global storage for Prometheus metrics
+var (
+	pUptimeHours = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "uptime_hours",
+		Help: "Hours of up time",
+	})
+
+	pState = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "node_state",
+		Help: "The State of the node [Starting = 0, Joining = 1, Syncing = 2, Active = 3]",
+	})
+)
+
+// PublishMetrics - Update Prometheus metrics
+func (n *Node) PublishMetrics(upTime time.Duration, lastPublishedAt time.Time) time.Time {
+
+	// Update Prometheus metrics
+	pUptimeHours.Set(float64(upTime) / float64(1000000000*3600))
+	pState.Set(float64(n.State))
+
+	return time.Now()
 }

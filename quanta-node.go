@@ -9,8 +9,10 @@ import (
 	"github.com/disney/quanta/server"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -42,6 +44,12 @@ func main() {
 
 	shared.InitLogging(*logLevel, *environment, "Data-Node", Version, "Quanta")
 
+	go func() {
+		// Initialize Prometheus metrics endpoint.
+		http.Handle("/metrics", promhttp.Handler())
+		http.ListenAndServe(":2112", nil)
+	}()
+
 	u.Infof("Connecting to Consul at: [%s] ...\n", *consul)
 	consulClient, err := api.NewClient(&api.Config{Address: *consul})
 	if err != nil {
@@ -69,11 +77,16 @@ func main() {
 
 	// Start listening endpoint
 	m.Start()
+
+	// Start metrics publisher thread
+	ticker := metricsTicker(m)
+
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
 	go func() {
 		for range c {
 			u.Errorf("Interrupt signal received.  Starting Shutdown...")
+			ticker.Stop()
 			m.Leave()
 			time.Sleep(5)
 			os.Exit(0)
@@ -101,4 +114,18 @@ func main() {
 	if err != nil {
 		u.Errorf("[node: Cannot initialize endpoint config: error: %s", err)
 	}
+}
+
+func metricsTicker(node *server.Node) *time.Ticker {
+
+	t := time.NewTicker(time.Second * 10)
+	start := time.Now()
+	lastTime := time.Now()
+	go func() {
+		for range t.C {
+			duration := time.Since(start)
+			lastTime = node.PublishMetrics(duration, lastTime)
+		}
+	}()
+	return t
 }

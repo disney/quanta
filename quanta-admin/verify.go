@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/RoaringBitmap/roaring/roaring64"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
-    "github.com/RoaringBitmap/roaring/roaring64"
 	//"time"
 )
 
@@ -65,14 +65,14 @@ func (f *VerifyCmd) Run(ctx *Context) error {
 	bitClient := shared.NewBitmapIndex(conn, 0)
 	req := &pb.SyncStatusRequest{
 		SendData: true,
-		ModTime: int64(-1),
-		Index: f.Table, 
-		Field: f.Field, 
-		//RowId: f.RowID, 
+		ModTime:  int64(-1),
+		Index:    f.Table,
+		Field:    f.Field,
+		//RowId: f.RowID,
 		Time: ts.UnixNano(),
 	}
 
-    fmt.Printf("SelectNodes returned %d node Active state for reading.\n", len(indices))
+	fmt.Printf("SelectNodes returned %d node Active state for reading.\n", len(indices))
 
 	if len(indices) >= 1 {
 		var ip, nodeState string
@@ -83,23 +83,23 @@ func (f *VerifyCmd) Run(ctx *Context) error {
 			nodeState = result.NodeState
 			ip = result.LocalIP
 		}
-		res, err2 := bitClient.Client(indices[0]).SyncStatus(cx, req) 
+		res, err2 := bitClient.Client(indices[0]).SyncStatus(cx, req)
 		if err2 != nil {
 			fmt.Printf(fmt.Sprintf("%v.SyncStatus(_) = _, %v, node = %s\n", bitClient.Client(indices[0]), err2,
 				conn.ClientConnections()[indices[0]].Target()))
 		}
 
 		// Deserialize
-        // Unmarshal data from response
-        resBsi := roaring64.NewBSI(int64(field.MaxValue), int64(field.MinValue))
-        if len(res.Data) == 0 && res.Cardinality > 0 {
-            return fmt.Errorf("deserialize sync response - BSI index out of range %d, Index = %s, Field = %s",
-                    len(res.Data), f.Table, f.Field)
-        }
-        if res.Cardinality > 0 {
-            if err := resBsi.UnmarshalBinary(res.Data); err != nil {
-                return fmt.Errorf("deserialize sync reponse - BSI UnmarshalBinary error - %v", err)
-            }
+		// Unmarshal data from response
+		resBsi := roaring64.NewBSI(int64(field.MaxValue), int64(field.MinValue))
+		if len(res.Data) == 0 && res.Cardinality > 0 {
+			return fmt.Errorf("deserialize sync response - BSI index out of range %d, Index = %s, Field = %s",
+				len(res.Data), f.Table, f.Field)
+		}
+		if res.Cardinality > 0 {
+			if err := resBsi.UnmarshalBinary(res.Data); err != nil {
+				return fmt.Errorf("deserialize sync reponse - BSI UnmarshalBinary error - %v", err)
+			}
 		}
 		lookup, err3 := getStringBackingStore(conn, key, resBsi.GetExistenceBitmap())
 		if err3 != nil {
@@ -121,17 +121,17 @@ func (f *VerifyCmd) Run(ctx *Context) error {
 
 func getStringBackingStore(conn *shared.Conn, key string, bm *roaring64.Bitmap) (map[interface{}]interface{}, error) {
 
-    kvStore := shared.NewKVStore(conn)
+	kvStore := shared.NewKVStore(conn)
 
-    getBatch := make(map[interface{}]interface{}, bm.GetCardinality())
-    for _, v := range bm.ToArray() {
-        getBatch[v] = ""
-    }
+	getBatch := make(map[interface{}]interface{}, bm.GetCardinality())
+	for _, v := range bm.ToArray() {
+		getBatch[v] = ""
+	}
 	var err error
-    getBatch, err = kvStore.BatchLookup(key, getBatch, true)
-    if err != nil {
-        return nil, fmt.Errorf("kvStore.BatchLookup failed for %s - %v", key, err)
-    }
+	getBatch, err = kvStore.BatchLookup(key, getBatch, true)
+	if err != nil {
+		return nil, fmt.Errorf("kvStore.BatchLookup failed for %s - %v", key, err)
+	}
 
 	return getBatch, nil
 }

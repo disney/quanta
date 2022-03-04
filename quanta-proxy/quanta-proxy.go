@@ -15,9 +15,9 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/hashicorp/consul/api"
 	"github.com/lestrrat-go/jwx/jwk"
-    "github.com/prometheus/client_golang/prometheus"
-    "github.com/prometheus/client_golang/prometheus/promauto"
-    "github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	mysql "github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/server"
 	"github.com/siddontang/go-mysql/test_util/test_keys"
@@ -585,86 +585,87 @@ func metricsTicker(src *source.QuantaSource) *time.Ticker {
 	return t
 }
 
+// Global storage for Prometheus metrics
 var (
-    pQueryCount = promauto.NewGauge(prometheus.GaugeOpts{
-        Name: "query_count",
-        Help: "The total number of queries processed",
-    })
+	pQueryCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "query_count",
+		Help: "The total number of queries processed",
+	})
 
-    pQueriesPerSec = promauto.NewGauge(prometheus.GaugeOpts{
-        Name: "queries_per_second",
-        Help: "The total number of queries processed per second",
-    })
+	pQueriesPerSec = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "queries_per_second",
+		Help: "The total number of queries processed per second",
+	})
 
-    pAvgQueryLatency = promauto.NewGauge(prometheus.GaugeOpts{
-        Name: "avg_query_latency",
-        Help: "Average query latency in milliseconds",
-    })
+	pAvgQueryLatency = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "avg_query_latency",
+		Help: "Average query latency in milliseconds",
+	})
 
-    pUpdateCount = promauto.NewGauge(prometheus.GaugeOpts{
-        Name: "update_count",
-        Help: "The total number of updates processed",
-    })
+	pUpdateCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "update_count",
+		Help: "The total number of updates processed",
+	})
 
-    pUpdatesPerSec = promauto.NewGauge(prometheus.GaugeOpts{
-        Name: "updates_per_second",
-        Help: "The total number of updates processed per second",
-    })
+	pUpdatesPerSec = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "updates_per_second",
+		Help: "The total number of updates processed per second",
+	})
 
-    pAvgUpdateLatency = promauto.NewGauge(prometheus.GaugeOpts{
-        Name: "avg_update_latency",
-        Help: "Average update latency in milliseconds",
-    })
+	pAvgUpdateLatency = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "avg_update_latency",
+		Help: "Average update latency in milliseconds",
+	})
 
-    pInsertCount = promauto.NewGauge(prometheus.GaugeOpts{
-        Name: "insert_count",
-        Help: "The total number of inserts processed",
-    })
+	pInsertCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "insert_count",
+		Help: "The total number of inserts processed",
+	})
 
-    pInsertsPerSec = promauto.NewGauge(prometheus.GaugeOpts{
-        Name: "inserts_per_second",
-        Help: "The total number of inserts processed per second",
-    })
+	pInsertsPerSec = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "inserts_per_second",
+		Help: "The total number of inserts processed per second",
+	})
 
-    pAvgInsertLatency = promauto.NewGauge(prometheus.GaugeOpts{
-        Name: "avg_insert_latency",
-        Help: "Average insert latency in milliseconds",
-    })
+	pAvgInsertLatency = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "avg_insert_latency",
+		Help: "Average insert latency in milliseconds",
+	})
 
-    pDeleteCount = promauto.NewGauge(prometheus.GaugeOpts{
-        Name: "delete_count",
-        Help: "The total number of deletes processed",
-    })
+	pDeleteCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "delete_count",
+		Help: "The total number of deletes processed",
+	})
 
-    pDeletesPerSec = promauto.NewGauge(prometheus.GaugeOpts{
-        Name: "deletes_per_second",
-        Help: "The total number of deletes processed per second",
-    })
+	pDeletesPerSec = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "deletes_per_second",
+		Help: "The total number of deletes processed per second",
+	})
 
-    pAvgDeleteLatency = promauto.NewGauge(prometheus.GaugeOpts{
-        Name: "avg_delete_latency",
-        Help: "Average delete latency in milliseconds",
-    })
+	pAvgDeleteLatency = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "avg_delete_latency",
+		Help: "Average delete latency in milliseconds",
+	})
 
-    pUptimeHours = promauto.NewGauge(prometheus.GaugeOpts{
-        Name: "uptime_hours",
-        Help: "Hours of up time",
-    })
+	pUptimeHours = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "uptime_hours",
+		Help: "Hours of up time",
+	})
 
-    pConnPoolSize = promauto.NewGauge(prometheus.GaugeOpts{
-        Name: "connection_pool_size",
-        Help: "The size of the Quanta session pool",
-    })
+	pConnPoolSize = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "connection_pool_size",
+		Help: "The size of the Quanta session pool",
+	})
 
-    pConnInUse = promauto.NewGauge(prometheus.GaugeOpts{
-        Name: "connections_in_use",
-        Help: "Number of Quanta sessions currently (actively) in use.",
-    })
+	pConnInUse = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "connections_in_use",
+		Help: "Number of Quanta sessions currently (actively) in use.",
+	})
 
-    pConnPerSec = promauto.NewGauge(prometheus.GaugeOpts{
-        Name: "connections_per_sec",
-        Help: "Number of Quanta sessions requested per second.",
-    })
+	pConnPerSec = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "connections_per_sec",
+		Help: "Number of Quanta sessions requested per second.",
+	})
 )
 
 func publishMetrics(upTime time.Duration, lastPublishedAt time.Time, src *source.QuantaSource) time.Time {
@@ -772,7 +773,7 @@ func publishMetrics(upTime time.Duration, lastPublishedAt time.Time, src *source
 			},
 		},
 	})
-	// Update Prometheus metrics 
+	// Update Prometheus metrics
 	pQueryCount.Set(float64(queryCount.Get()))
 	pQueriesPerSec.Set(float64(queryCount.Get()-queryCountL.Get()) / interval)
 	pAvgQueryLatency.Set(float64(avgQueryLatency))

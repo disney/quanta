@@ -354,6 +354,20 @@ func exitErrorf(msg string, args ...interface{}) {
 	os.Exit(1)
 }
 
+// MemberLeft - Implements member leave notification due to failure.
+func (m *Main) MemberLeft(nodeID string, index int) {
+
+    u.Warnf("node %v left the cluster, purging sessions", nodeID)
+    m.sessionPool.Recover()
+}
+
+// MemberJoined - A new node joined the cluster.
+func (m *Main) MemberJoined(nodeID, ipAddress string, index int) {
+
+    u.Warnf("node %v joined the cluster, purging sessions", nodeID)
+    m.sessionPool.Recover()
+}
+
 // Init function initilizations loader.
 // Establishes session with bitmap server and Kinesis
 func (m *Main) Init() (int, error) {
@@ -370,6 +384,9 @@ func (m *Main) Init() (int, error) {
 		u.Error(err)
 		os.Exit(1)
 	}
+
+	// Register member leave/join 
+	clientConn.RegisterService(m)
 
 	m.sessionPool = core.NewSessionPool(clientConn, nil, "", m.sessionPoolSize)
 

@@ -14,6 +14,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"io"
 	"reflect"
+	"strings"
 )
 
 var (
@@ -70,7 +71,7 @@ func (c *KVStore) Put(indexPath string, k interface{}, v interface{}, pathIsKey 
 	defer cancel()
 	key := k
 	if pathIsKey {
-		key = indexPath
+		key, indexPath = checkAdjustKeyAndPath(indexPath)
 	}
 	indices, err := c.SelectNodes(key, WriteIntent)
 	if err != nil {
@@ -117,7 +118,9 @@ func (c *KVStore) BatchPut(indexPath string, batch map[interface{}]interface{}, 
 		batches[i] = make(map[interface{}]interface{}, 0)
 	}
 	if pathIsKey {
-		indices, err := c.SelectNodes(indexPath, WriteIntent)
+		var key string
+		key, indexPath = checkAdjustKeyAndPath(indexPath)
+		indices, err := c.SelectNodes(key, WriteIntent)
 		if err != nil {
 			return fmt.Errorf("BatchPut: %v", err)
 		}
@@ -186,8 +189,9 @@ func (c *KVStore) Lookup(indexPath string, k interface{}, valueType reflect.Kind
 
 	key := k
 	if pathIsKey {
-		key = indexPath
+		key, indexPath = checkAdjustKeyAndPath(indexPath)
 	}
+
 	indices, err := c.SelectNodes(key, ReadIntent)
 	if err != nil {
 		return nil, fmt.Errorf("Lookup: %v", err)
@@ -212,7 +216,9 @@ func (c *KVStore) Lookup(indexPath string, k interface{}, valueType reflect.Kind
 func (c *KVStore) BatchLookup(indexPath string, batch map[interface{}]interface{}, pathIsKey bool) (map[interface{}]interface{}, error) {
 
 	if pathIsKey {
-		indices, err := c.SelectNodes(indexPath, ReadIntent)
+		var key string
+		key, indexPath = checkAdjustKeyAndPath(indexPath)
+		indices, err := c.SelectNodes(key, ReadIntent)
 		if err != nil {
 			return nil, fmt.Errorf("BatchLookup: %v", err)
 		}
@@ -446,4 +452,31 @@ func (c *KVStore) deleteIndicesWithPrefix(client pb.KVStoreClient, prefix string
 		return fmt.Errorf("%v.DeleteIndicesWithPrefix(_) = _, %v: ", c, err)
 	}
 	return nil
+}
+
+// IndexInfoNode - Get index info on a specific node
+func (c *KVStore) IndexInfoNode(client pb.KVStoreClient, indexPath string) (*pb.IndexInfoResponse, error) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	defer cancel()
+	res, err := client.IndexInfo(ctx, &pb.IndexInfoRequest{IndexPath: indexPath})
+	if err != nil {
+		return nil, fmt.Errorf("%v.IndexInfo(_) = _, %v: ", c, err)
+	}
+	return res, nil
+}
+
+// The path may be in the form "key,filePathSuffix"
+// If so, separate out key and full path becomes "key/filePathSuffix"
+func checkAdjustKeyAndPath(path string) (key, indexPath string) {
+
+	s := strings.Split(path, ",")
+	if len(s) == 1 {
+		key = indexPath
+		indexPath = path
+	} else {
+		key = s[0]
+		indexPath = fmt.Sprintf("%s/%s", s[0], s[1])
+	}
+	return
 }

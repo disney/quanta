@@ -20,7 +20,7 @@ type SessionPool struct {
 	schema       *sch.Schema
 	baseDir      string
 	sessPoolMap  map[string]*sessionPoolEntry
-	sessPoolLock sync.Mutex
+	sessPoolLock sync.RWMutex
 	semaphores   chan struct{}
 	poolSize     int
 }
@@ -50,6 +50,7 @@ func (m *SessionPool) newSessionPoolEntry() *sessionPoolEntry {
 }
 
 func (m *SessionPool) getPoolByTableName(tableName string) *sessionPoolEntry {
+
 	m.sessPoolLock.Lock()
 	defer m.sessPoolLock.Unlock()
 	var cp *sessionPoolEntry
@@ -128,6 +129,32 @@ func (m *SessionPool) Shutdown() {
 		}
 	}
 	close(m.semaphores)
+}
+
+// Recover from network event.  Purge Sessions.
+func (m *SessionPool) Recover() {
+
+	m.sessPoolLock.Lock()
+	defer m.sessPoolLock.Unlock()
+
+	for _, v := range m.sessPoolMap {
+		// Drain and close bad sessions
+		loop:
+		for {
+	        select {
+	        case r := <-v.pool:
+	            r.CloseSession()  // Hail Mary for good measure
+				// Push a replacement semaphore
+				select {
+				case m.semaphores <- struct{}{}:
+				default:
+					continue
+				}
+	        default:
+				break loop
+	        }
+		}
+	}
 }
 
 // Metrics - Return pool size and usage.

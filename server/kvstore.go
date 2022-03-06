@@ -366,3 +366,44 @@ func (m *KVStore) DeleteIndicesWithPrefix(ctx context.Context,
 	}
 	return &empty.Empty{}, nil
 }
+
+// IndexInfo - Get information about an index.
+func (m *KVStore) IndexInfo(ctx context.Context, req *pb.IndexInfoRequest) (*pb.IndexInfoResponse, error) {
+
+	res := &pb.IndexInfoResponse{}
+	if req == nil {
+		return res, fmt.Errorf("request must not be nil")
+	}
+	if req.IndexPath == "" {
+		return res, fmt.Errorf("IndexPath must be specified")
+	}
+
+	filePath := m.Node.dataDir + sep + "index" + sep + req.IndexPath
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return res, nil
+	}
+
+	var db *pogreb.DB
+	var err error
+	m.storeCacheLock.RLock()
+	db, res.WasOpen = m.storeCache[req.IndexPath]
+	m.storeCacheLock.RUnlock()
+	if db == nil {
+		db, err = pogreb.Open(filePath, nil)
+		if err != nil {
+			return res, fmt.Errorf("IndexInfo:Open err - %v", err)
+		}
+		defer db.Close()
+	}
+	res.FileSize, err = db.FileSize()
+	if err != nil {
+		return res, fmt.Errorf("IndexInfo:FileSize err - %v", err)
+	}
+	res.Count = db.Count()
+	metrics := db.Metrics()
+	res.Puts = metrics.Puts.Value()
+	res.Gets = metrics.Gets.Value()
+	res.Dels = metrics.Dels.Value()
+	res.HashCollisions = metrics.HashCollisions.Value()
+	return res, nil
+}

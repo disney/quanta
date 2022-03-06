@@ -163,22 +163,27 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 
 	// Iterate over BSI cache
 	for indexName, index := range m.bsiCache {
-		// Perform table level pre-processing here.
 		for fieldName, field := range index {
 			attr, err := m.getFieldConfig(indexName, fieldName)
 			if err != nil {
 				return &wrappers.Int64Value{Value: int64(-1)},
 					fmt.Errorf("Synchronize field metadata lookup failed for %s.%s", indexName, fieldName)
 			}
+			table := attr.Parent
+			pka, errx := table.GetPrimaryKeyInfo()
+			if errx != nil {
+				return &wrappers.Int64Value{Value: int64(-1)},
+					fmt.Errorf("Synchronize field: GetPrimaryKeyInfo() failed for %s.%s - %v", indexName, fieldName, errx)
+			}
+			fieldIsPrimaryKeyAnchor := (fieldName == pka[0].FieldName)
 			for t, bsi := range field {
 				// Should this item be pushed to new node?
 				key := fmt.Sprintf("%s/%s/%s", indexName, fieldName, time.Unix(0, t).Format(timeFmt))
-				nMap := m.getNodeMapForKey(newNodeID, key)
-				replica, found := nMap[newNodeID]
+				found, replica := m.CheckNodeForKey(key, newNodeID)
 				if !found {
 					continue // nope soldier on
 				}
-				//u.Infof("Key %s should be replica %d on node %s.", key, replica + 1, newNodeID)
+				//u.Infof("Key %s should be replica %d on node %s.", key, replica, newNodeID)
 				// invoke status check
 				bsi.Lock.RLock()
 				sum, card := bsi.Sum(bsi.GetExistenceBitmap())
@@ -212,9 +217,7 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 					}
 				}
 				// Calculate the diff
-				// TODO: How do we handle sequencer queue?
 				// What about value differences where BSIs intersect?
-
 				pushDiff := roaring64.AndNot(bsi.GetExistenceBitmap(), resBsi.GetExistenceBitmap())
 				pullDiff := roaring64.AndNot(resBsi.GetExistenceBitmap(), bsi.GetExistenceBitmap())
 
@@ -234,7 +237,7 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 
 				if pushDiff.GetCardinality() > 0 {
 					syncDifferences++
-					u.Infof("Key %s should be replica %d on node %s.", key, replica+1, newNodeID)
+					u.Infof("Key %s should be replica %d on node %s.", key, replica, newNodeID)
 					u.Infof("Pushing server diff for key %s, local = %d, remote (new) = %d, delta = %d.\n", key,
 						bsi.GetExistenceBitmap().GetCardinality(), resBsi.GetExistenceBitmap().GetCardinality(),
 						pushDiff.GetCardinality())
@@ -262,33 +265,26 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 						u.Errorf("String backing store sync failed for '%s' - %v", key, err)
 					}
 				}
-			}
-		}
-		// Perform table level post-processing after all attributes are sorted.
-		// Table level index checking.  Indices are always BSIs
-		m.tableCacheLock.RLock()
-		table := m.tableCache[indexName]
-		if table == nil {
-			// Should never end up here
-			m.tableCacheLock.RUnlock()
-			u.Errorf("Assertion failed looking up table %s, exiting.", indexName)
-			os.Exit(1)
-		}
-		m.tableCacheLock.RUnlock()
-		// Process PK Index
-		/*
-			pkIndex := fmt.Sprintf("%s%s%s.PK", indexName, sep, table.PrimaryKey)
-			err := m.simpleKVPush(peerKVClient, newKVClient, pkIndex, reflect.String, reflect.Uint64)
-			if err != nil {
-				u.Errorf("simpleKVPush: error pushing PK %s for table %s - %v", pkIndex, indexName, err)
-			}
-		*/
-		// Process SK Indices if any
-		for _, v := range strings.Split(table.SecondaryKeys, ",") {
-			skIndex := fmt.Sprintf("%s%s%s.SK", indexName, sep, v)
-			err := m.simpleKVPush(peerKVClient, newKVClient, skIndex, reflect.String, reflect.Uint64)
-			if err != nil {
-				u.Errorf("simpleKVPush: error pushing SK %s for table %s - %v", skIndex, indexName, err)
+
+				// At this point we've finished any attribute specific processing, if this is the PK anchor attribute
+				// then we need to process PK/SK indices used for ingestion.
+				if !fieldIsPrimaryKeyAnchor {
+					continue
+				}
+				// Process PK Index
+				pkIndex := fmt.Sprintf("%s%s%s.PK", key, sep, table.PrimaryKey)
+				err = m.indexKVPush(peerKVClient, newKVClient, pkIndex)
+				if err != nil {
+					u.Errorf("error pushing index %s for table %s - %v", pkIndex, indexName, err)
+				}
+				// Process SK Indices if any
+				for _, v := range strings.Split(table.SecondaryKeys, ",") {
+					skIndex := fmt.Sprintf("%s%s%s.SK", key, sep, v)
+					err := m.indexKVPush(peerKVClient, newKVClient, skIndex)
+					if err != nil {
+						u.Errorf("error pushing index %s for table %s - %v", skIndex, indexName, err)
+					}
+				}
 			}
 		}
 	}
@@ -308,12 +304,11 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 				for t, bitmap := range ts {
 					// Should this item be pushed to new node?
 					key := fmt.Sprintf("%s/%s/%d/%s", indexName, fieldName, rowID, time.Unix(0, t).Format(timeFmt))
-					nMap := m.getNodeMapForKey(newNodeID, key)
-					replica, found := nMap[newNodeID]
+					found, replica := m.CheckNodeForKey(key, newNodeID)
 					if !found {
 						continue // nope soldier on
 					}
-					//u.Infof("Key %s should be replica %d on node %s.", key, replica + 1, newNodeID)
+					//u.Infof("Key %s should be replica %d on node %s.", key, newNodeID)
 					// invoke status check
 					bitmap.Lock.RLock()
 					reqs := &pb.SyncStatusRequest{Index: indexName, Field: fieldName, RowId: rowID, Time: t, SendData: true,
@@ -362,7 +357,7 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 
 					if pushDiff.GetCardinality() > 0 {
 						syncDifferences++
-						u.Infof("Key %s should be replica %d on node %s.", key, replica+1, newNodeID)
+						u.Infof("Key %s should be replica %d on node %s.", key, replica, newNodeID)
 						u.Infof("Pushing server diff for key %s, local = %d, remote (new) = %d, delta = %d.\n", key,
 							bitmap.Bits.GetCardinality(), resBm.GetCardinality(), pushDiff.GetCardinality())
 						err := m.pushBitmapDiff(peerClient, newNode, indexName, fieldName, rowID, t, pushDiff)
@@ -385,18 +380,6 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 	}
 
 	return &wrappers.Int64Value{Value: int64(syncDifferences)}, nil
-}
-
-// Return a map of weighted nodes for a given lookup key
-func (m *BitmapIndex) getNodeMapForKey(newNodeID, key string) map[string]int {
-
-	newHashTable := m.Conn.GetHashTableWithNewNodes([]string{newNodeID})
-	nodeKeys := newHashTable.GetN(m.Conn.Replicas, newNodeID)
-	nodeMap := make(map[string]int, m.Conn.Replicas)
-	for i, v := range nodeKeys {
-		nodeMap[v] = i
-	}
-	return nodeMap
 }
 
 func (m *BitmapIndex) pushBitmapDiff(peerClient *shared.BitmapIndex, newNode pb.BitmapIndexClient, index, field string,
@@ -460,7 +443,27 @@ func (m *BitmapIndex) syncEnumMetadata(peerKV *shared.KVStore, remoteKV pb.KVSto
 		return
 	})
 	if err != nil {
-		return fmt.Errorf("syncEnumMetadata:getStore failed for %s.%s - %v", index, field, err)
+		return fmt.Errorf("syncEnumMetadata:getStore(local) failed for %s.%s - %v", index, field, err)
+	}
+
+	// Get remote index file counts, size
+	remoteInfo, errx := peerKV.IndexInfoNode(remoteKV, kvPath)
+	if errx != nil {
+		return fmt.Errorf("syncEnumMetadata:remoteKV.IndexInfo failed for %s - %v", kvPath, errx)
+	}
+
+	if remoteInfo.Exists {
+		// Compare against local info
+		localFileSize, err := db.FileSize()
+		if err != nil {
+			return fmt.Errorf("syncEnumMetadata:FileSize(local) err - %v", err)
+		}
+		localCount := db.Count()
+
+		// If file size and counts match then no need to push data.
+		if localCount == remoteInfo.Count && localFileSize == remoteInfo.FileSize {
+			return nil
+		}
 	}
 
 	localBatch := make(map[interface{}]interface{}, 0)
@@ -667,7 +670,7 @@ func (m *BitmapIndex) syncStringBackingStore(peerKV *shared.KVStore, remoteKV pb
 	return nil
 }
 
-// Synchronize index (PK/SK)  backing store with remote.
+// Simple KV push for simple stores (UserRoles, etc.)
 func (m *BitmapIndex) simpleKVPush(peerKV *shared.KVStore, remoteKV pb.KVStoreClient, kvPath string,
 	keyType, valType reflect.Kind) error {
 
@@ -701,6 +704,64 @@ func (m *BitmapIndex) simpleKVPush(peerKV *shared.KVStore, remoteKV pb.KVStoreCl
 		err = peerKV.BatchPutNode(remoteKV, kvPath, pushBatch)
 		if err != nil {
 			return fmt.Errorf("simpleKVPush:remoteKV.BatchPut failed for %s - %v", kvPath, err)
+		}
+	}
+
+	return nil
+}
+
+// Synchronize index (PK/SK)  backing store with remote.
+func (m *BitmapIndex) indexKVPush(peerKV *shared.KVStore, remoteKV pb.KVStoreClient, kvPath string) error {
+
+	localKV := m.Node.GetNodeService("KVStore").(*KVStore)
+	var db *pogreb.DB
+	err := shared.Retry(5, 20*time.Second, func() (err error) {
+		var errx error
+		db, errx = localKV.getStore(kvPath)
+		if errx != nil {
+			err = errx
+		}
+		return
+	})
+	if err != nil {
+		return fmt.Errorf("indexKVPush:getStore failed for %s - %v", kvPath, err)
+	}
+
+	// Get remote index file counts, size
+	remoteInfo, errx := peerKV.IndexInfoNode(remoteKV, kvPath)
+	if errx != nil {
+		return fmt.Errorf("indexKVPush:remoteKV.IndexInfo failed for %s - %v", kvPath, errx)
+	}
+	if remoteInfo.Exists {
+		// Compare against local info
+		localFileSize, err := db.FileSize()
+		if err != nil {
+			return fmt.Errorf("indexKVPush:FileSize(local) err - %v", err)
+		}
+		localCount := db.Count()
+
+		// If file size and counts match then no need to push data.
+		if localCount == remoteInfo.Count && localFileSize == remoteInfo.FileSize {
+			return nil
+		}
+	}
+
+	pushBatch := make(map[interface{}]interface{}, 0)
+	it := db.Items()
+	for {
+		key, val, err := it.Next()
+		if err != nil {
+			if err != pogreb.ErrIterationDone {
+				return fmt.Errorf("indexKVPush:db.Items failed for %s - %v", kvPath, err)
+			}
+			break
+		}
+		pushBatch[shared.UnmarshalValue(reflect.String, key)] = shared.UnmarshalValue(reflect.Uint64, val)
+	}
+	if len(pushBatch) > 0 {
+		err = peerKV.BatchPutNode(remoteKV, kvPath, pushBatch)
+		if err != nil {
+			return fmt.Errorf("indexKVPush:remoteKV.BatchPut failed for %s - %v", kvPath, err)
 		}
 	}
 

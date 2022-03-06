@@ -22,6 +22,7 @@ service KVStore {
   rpc Items(google.protobuf.StringValue) returns (stream IndexKVPair) {}
   rpc PutStringEnum(StringEnum) returns (google.protobuf.UInt64Value) {}
   rpc DeleteIndicesWithPrefix(DeleteIndicesWithPrefixRequest) returns (google.protobuf.Empty) {}
+  rpc IndexInfo(IndexInfoRequest) returns (IndexInfoResponse) {}
 }
 
 service StringSearch {
@@ -172,6 +173,23 @@ message SyncStatusResponse {
   int64     BSIChecksum = 3;
   int64     modTime = 4;
   repeated bytes data = 5;
+}
+
+
+message IndexInfoRequest {
+  string   indexPath = 1;
+}
+
+message IndexInfoResponse {
+  string   indexPath = 1;
+  bool     exists = 2;
+  bool     wasOpen = 3;
+  uint32   count = 4;
+  int64    puts = 5;
+  int64    gets = 6;
+  int64    dels = 7;
+  int64    hashCollisions = 8;
+  int64    fileSize = 9;
 }
 
 message ProjectionRequest {

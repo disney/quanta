@@ -569,7 +569,11 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 					}
 					tbuf.sequencer = seq
 				}
-				tbuf.CurrentColumnID, _ = tbuf.sequencer.Next()
+				newColumnID, _ := tbuf.sequencer.Next()
+				if newColumnID <= tbuf.CurrentColumnID {
+					u.Warnf("new sequencer columnID [%d] overlaps current [%d]", newColumnID, tbuf.CurrentColumnID)
+				}
+				tbuf.CurrentColumnID = newColumnID
 			} else {
 				tbuf.CurrentColumnID = providedColID
 			}

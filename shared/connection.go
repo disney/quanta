@@ -554,12 +554,30 @@ func (m *Conn) GetNodeMap() map[string]int {
 	return m.nodeMap
 }
 
-// GetHashTableWithNewNodes - Construct a new consistent hashtable with joining nodes
-func (m *Conn) GetHashTableWithNewNodes(newIds []string) *rendezvous.Table {
+// CheckNodeForKey
+func (m *Conn) CheckNodeForKey(key, nodeID string) (bool, int) {
 
 	m.nodeMapLock.RLock()
 	defer m.nodeMapLock.RUnlock()
-	return rendezvous.New(append(m.ids, newIds...))
+
+	nodeKeys := m.HashTable.GetN(m.Replicas, key)
+
+	for i, v := range nodeKeys {
+		if v != nodeID {
+			continue
+		}
+		status, found := m.nodeStatusMap[v]
+		if !found {
+			u.Errorf("CheckNodeForKey: assertion fail - for key %s, node %s status unknown", key, nodeID)
+			return false, 0
+		}
+		if status.NodeState != "Active" && status.NodeState != "Syncing" {
+			u.Errorf("CheckNodeForKey: assertion fail - for key %s, node %s not Active/Syncing", key, nodeID)
+			return false, 0
+		}
+		return true, i + 1
+	}
+	return false, 0
 }
 
 // SendMemberLeft - Notify listening service of MemberLeft event.

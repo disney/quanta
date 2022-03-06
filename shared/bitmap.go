@@ -47,16 +47,13 @@ type BitmapIndex struct {
 	batchSets         map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
 	batchClears       map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
 	batchValues       map[string]map[string]map[int64]*roaring64.BSI
-	batchStringKey    map[string]map[string]map[string]map[interface{}]interface{}
 	batchPartitionStr map[string]map[interface{}]interface{}
 	batchSize         int
 	batchSetCount     int
 	batchClearCount   int
 	batchValueCount   int
-	//batchStringKeyCount    int
 	batchPartitionStrCount int
-	batchMutex             sync.RWMutex
-	//batchKeyMutex          sync.RWMutex
+	batchMutex        sync.RWMutex
 }
 
 // NewBitmapIndex - Initializer for client side API wrappers.
@@ -135,27 +132,6 @@ func (c *BitmapIndex) Flush() error {
 		c.batchPartitionStrCount = 0
 	}
 	c.batchMutex.Unlock()
-
-	/*
-		c.batchKeyMutex.Lock()
-		if c.batchStringKey != nil {
-			for index, fieldMap := range c.batchStringKey {
-				for field, typeMap := range fieldMap {
-					for itype, valueMap := range typeMap { // itype is 'P' for Primary, 'S' for secondary
-						tableField := fmt.Sprintf("%s%s%s.%sK", index, ifDelim, field, itype)
-						if err := c.KVStore.BatchPut(tableField, valueMap, false); err != nil {
-							c.batchKeyMutex.Unlock()
-							return err
-						}
-					}
-
-				}
-			}
-			c.batchStringKey = nil
-			c.batchStringKeyCount = 0
-		}
-		c.batchKeyMutex.Unlock()
-	*/
 	return nil
 }
 
@@ -163,8 +139,8 @@ func (c *BitmapIndex) Flush() error {
 func (c *BitmapIndex) Update(index, field string, columnID uint64, rowIDOrValue int64,
 	ts time.Time, isBSI, isExclusive bool) error {
 
-	req := &pb.UpdateRequest{Index: index, Field: field, ColumnId: columnID,
-		RowIdOrValue: rowIDOrValue, Time: ts.UnixNano()}
+    req := &pb.UpdateRequest{Index: index, Field: field, ColumnId: columnID,
+        RowIdOrValue: rowIDOrValue, Time: ts.UnixNano()}
 
 	var eg errgroup.Group
 
@@ -677,65 +653,6 @@ func (c *BitmapIndex) LookupLocalCIDForString(index, lookup string) (columnID ui
 	}
 	return
 }
-
-// LookupLocalPKString - Lookup PK from local cache.
-/*
-func (c *BitmapIndex) LookupLocalPKString(index, field string, value interface{}) (columnID uint64, ok bool) {
-
-	c.batchKeyMutex.RLock()
-	defer c.batchKeyMutex.RUnlock()
-
-	var colIDVal interface{}
-	colIDVal, ok = c.batchStringKey[index][field]["P"][value]
-	if ok {
-		columnID = colIDVal.(uint64)
-	}
-	return
-}
-*/
-
-// SetKeyString - Set a Key
-/*
-func (c *BitmapIndex) SetKeyString(index, field, itype string, value interface{}, columnID uint64) error {
-
-	c.batchKeyMutex.Lock()
-	defer c.batchKeyMutex.Unlock()
-
-	if c.batchStringKey == nil {
-		c.batchStringKey = make(map[string]map[string]map[string]map[interface{}]interface{})
-	}
-	if _, ok := c.batchStringKey[index]; !ok {
-		c.batchStringKey[index] = make(map[string]map[string]map[interface{}]interface{})
-	}
-	if _, ok := c.batchStringKey[index][field]; !ok {
-		c.batchStringKey[index][field] = make(map[string]map[interface{}]interface{})
-	}
-	if _, ok := c.batchStringKey[index][field][itype]; !ok {
-		c.batchStringKey[index][field][itype] = make(map[interface{}]interface{})
-	}
-	if _, ok := c.batchStringKey[index][field][itype][value]; !ok {
-		c.batchStringKey[index][field][itype][value] = columnID
-	}
-
-	c.batchStringKeyCount++
-
-	if c.batchStringKeyCount >= c.batchSize/100 {
-		for index, fieldMap := range c.batchStringKey {
-			for field, typeMap := range fieldMap {
-				for itype, valueMap := range typeMap { // itype is 'P' for Primary, 'S' for secondary
-					tableField := fmt.Sprintf("%s%s%s.%sK", index, ifDelim, field, itype)
-					if err := c.KVStore.BatchPut(tableField, valueMap, false); err != nil {
-						return err
-					}
-				}
-			}
-		}
-		c.batchStringKey = nil
-		c.batchStringKeyCount = 0
-	}
-	return nil
-}
-*/
 
 // SetPartitionedString - Create column ID to backing string index entry.
 func (c *BitmapIndex) SetPartitionedString(indexPath string, key, value interface{}) error {

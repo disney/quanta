@@ -64,6 +64,9 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort, sessionPoolSize in
 		os.Exit(1)
 	}
 
+	// Register for member leave/join notifications.
+	clientConn.RegisterService(m)
+
 	m.sessionPool = core.NewSessionPool(clientConn, m.Schema, baseDir, sessionPoolSize)
 
 	m.baseDir = baseDir
@@ -75,6 +78,20 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort, sessionPoolSize in
 	m.exit = make(chan bool, 1)
 
 	return m, nil
+}
+
+// MemberLeft - Implements member leave notification due to failure.
+func (m *QuantaSource) MemberLeft(nodeID string, index int) {
+
+	u.Warnf("node %v left the cluster, purging sessions", nodeID)
+    m.sessionPool.Recover()
+}
+
+// MemberJoined - A new node joined the cluster.
+func (m *QuantaSource) MemberJoined(nodeID, ipAddress string, index int) {
+
+	u.Warnf("node %v joined the cluster, purging sessions", nodeID)
+    m.sessionPool.Recover()
 }
 
 // GetSessionPool - Return the underlying session pool instance.

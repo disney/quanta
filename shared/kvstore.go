@@ -268,7 +268,6 @@ func (c *KVStore) BatchLookup(indexPath string, batch map[interface{}]interface{
 
 // BatchLookupNode - Batch lookup of keys on a single node.
 func (c *KVStore) BatchLookupNode(client pb.KVStoreClient, index string,
-
 	batch map[interface{}]interface{}) (map[interface{}]interface{}, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
@@ -453,6 +452,18 @@ func (c *KVStore) deleteIndicesWithPrefix(client pb.KVStoreClient, prefix string
 		return fmt.Errorf("%v.DeleteIndicesWithPrefix(_) = _, %v: ", c, err)
 	}
 	return nil
+}
+
+// IndexInfoNode - Get index info on a specific node
+func (c *KVStore) IndexInfoNode(client pb.KVStoreClient, indexPath string) (*pb.IndexInfoResponse, error) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	defer cancel()
+	res, err := client.IndexInfo(ctx, &pb.IndexInfoRequest{IndexPath: indexPath})
+	if err != nil {
+		return nil, fmt.Errorf("%v.IndexInfo(_) = _, %v: ", c, err)
+	}
+	return res, nil
 }
 
 // The path may be in the form "key,filePathSuffix"

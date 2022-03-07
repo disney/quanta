@@ -84,14 +84,14 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort, sessionPoolSize in
 func (m *QuantaSource) MemberLeft(nodeID string, index int) {
 
 	u.Warnf("node %v left the cluster, purging sessions", nodeID)
-    m.sessionPool.Recover()
+	m.sessionPool.Recover()
 }
 
 // MemberJoined - A new node joined the cluster.
 func (m *QuantaSource) MemberJoined(nodeID, ipAddress string, index int) {
 
 	u.Warnf("node %v joined the cluster, purging sessions", nodeID)
-    m.sessionPool.Recover()
+	m.sessionPool.Recover()
 }
 
 // GetSessionPool - Return the underlying session pool instance.

@@ -308,7 +308,7 @@ func main() {
 				itemsOutstanding += len(v.Data)
 			}
 			main.partitionLock.Unlock()
-			poolSize, inUse := main.sessionPool.Metrics()
+			poolSize, inUse, _, _ := main.sessionPool.Metrics()
 			if itemsOutstanding > 0 {
 				u.Infof("Partitions %d, Outstanding Items = %d, Processors in use = %d",
 					len(main.partitionMap), itemsOutstanding, inUse)
@@ -357,15 +357,15 @@ func exitErrorf(msg string, args ...interface{}) {
 // MemberLeft - Implements member leave notification due to failure.
 func (m *Main) MemberLeft(nodeID string, index int) {
 
-    u.Warnf("node %v left the cluster, purging sessions", nodeID)
-    m.sessionPool.Recover()
+	u.Warnf("node %v left the cluster, purging sessions", nodeID)
+	m.sessionPool.Recover()
 }
 
 // MemberJoined - A new node joined the cluster.
 func (m *Main) MemberJoined(nodeID, ipAddress string, index int) {
 
-    u.Warnf("node %v joined the cluster, purging sessions", nodeID)
-    m.sessionPool.Recover()
+	u.Warnf("node %v joined the cluster, purging sessions", nodeID)
+	m.sessionPool.Recover()
 }
 
 // Init function initilizations loader.
@@ -385,7 +385,7 @@ func (m *Main) Init() (int, error) {
 		os.Exit(1)
 	}
 
-	// Register member leave/join 
+	// Register member leave/join
 	clientConn.RegisterService(m)
 
 	m.sessionPool = core.NewSessionPool(clientConn, nil, "", m.sessionPoolSize)
@@ -588,15 +588,45 @@ var (
 		Name: "connections_in_use",
 		Help: "Number of Quanta sessions currently (actively) in use.",
 	})
+
+	connPooled = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "connections_in_pool",
+		Help: "Number of Quanta sessions currently pooled.",
+	})
+
+	connMaxInUse = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "max_connections_in_use",
+		Help: "Maximum nunber of Quanta sessions in use.",
+	})
 )
 
 func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) time.Time {
 
-	connectionPoolSize, connectionsInUse := m.sessionPool.Metrics()
+	connectionPoolSize, connectionsInUse, pooled, maxUsed := m.sessionPool.Metrics()
 	interval := time.Since(lastPublishedAt).Seconds()
 	_, err := m.metrics.PutMetricData(&cloudwatch.PutMetricDataInput{
 		Namespace: aws.String("Quanta-Consumer/Records"),
 		MetricData: []*cloudwatch.MetricDatum{
+			{
+				MetricName: aws.String("ConnectionPoolSize"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(connectionPoolSize)),
+			},
+			{
+				MetricName: aws.String("ConnectionsInUse"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(connectionsInUse)),
+			},
+			{
+				MetricName: aws.String("MaxConnectionsInUse"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(maxUsed)),
+			},
+			{
+				MetricName: aws.String("ConnectionsInPool"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(pooled)),
+			},
 			{
 				MetricName: aws.String("Arrived"),
 				Unit:       aws.String("Count"),
@@ -677,7 +707,7 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			{
 				MetricName: aws.String("UpTimeHours"),
 				Unit:       aws.String("Count"),
-				Value:      aws.Float64(float64(upTime / (1000000000 * 3600))),
+				Value:      aws.Float64(float64(upTime) / float64(1000000000*3600)),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
@@ -695,9 +725,11 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 	errors.Set(float64(m.errorCount.Get()))
 	processedBytes.Set(float64(m.totalBytes.Get()))
 	processedBytesPerSec.Set(float64(m.totalBytes.Get()-m.totalBytesL.Get()) / interval)
-	uptimeHours.Set(float64(upTime / (1000000000 * 3600)))
+	uptimeHours.Set(float64(upTime) / float64(1000000000*3600))
 	connPoolSize.Set(float64(connectionPoolSize))
 	connInUse.Set(float64(connectionsInUse))
+	connMaxInUse.Set(float64(maxUsed))
+	connPooled.Set(float64(pooled))
 
 	m.totalRecsL.Set(m.totalRecs.Get())
 	m.processedRecL.Set(m.processedRecs.Get())

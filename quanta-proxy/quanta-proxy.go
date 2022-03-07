@@ -662,6 +662,16 @@ var (
 		Help: "Number of Quanta sessions currently (actively) in use.",
 	})
 
+	pConnPooled = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "connections_in_pool",
+		Help: "Number of Quanta sessions currently pooled.",
+	})
+
+	pConnMaxInUse = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "max_connections_in_use",
+		Help: "Maximum nunber of Quanta sessions in use.",
+	})
+
 	pConnPerSec = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "connections_per_sec",
 		Help: "Number of Quanta sessions requested per second.",
@@ -670,23 +680,23 @@ var (
 
 func publishMetrics(upTime time.Duration, lastPublishedAt time.Time, src *source.QuantaSource) time.Time {
 
-	connectionPoolSize, connectionsInUse := src.GetSessionPool().Metrics()
+	connectionPoolSize, connectionsInUse, pooled, maxUsed := src.GetSessionPool().Metrics()
 	interval := time.Since(lastPublishedAt).Seconds()
-	avgQueryLatency := queryTime.Get()
+	avgQueryLatency := float64(queryTime.Get())
 	if queryCount.Get() > 0 {
-		avgQueryLatency = queryTime.Get() / queryCount.Get()
+		avgQueryLatency = float64(queryTime.Get()) / float64(queryCount.Get())
 	}
-	avgUpdateLatency := updateTime.Get()
+	avgUpdateLatency := float64(updateTime.Get())
 	if updateCount.Get() > 0 {
-		avgUpdateLatency = updateTime.Get() / updateCount.Get()
+		avgUpdateLatency = float64(updateTime.Get()) / float64(updateCount.Get())
 	}
-	avgInsertLatency := insertTime.Get()
+	avgInsertLatency := float64(insertTime.Get())
 	if insertCount.Get() > 0 {
-		avgInsertLatency = insertTime.Get() / insertCount.Get()
+		avgInsertLatency = float64(insertTime.Get()) / float64(insertCount.Get())
 	}
-	avgDeleteLatency := deleteTime.Get()
+	avgDeleteLatency := float64(deleteTime.Get())
 	if deleteCount.Get() > 0 {
-		avgDeleteLatency = deleteTime.Get() / deleteCount.Get()
+		avgDeleteLatency = float64(deleteTime.Get()) / float64(deleteCount.Get())
 	}
 	_, err := metrics.PutMetricData(&cloudwatch.PutMetricDataInput{
 		Namespace: aws.String("Quanta-Proxy"),
@@ -700,6 +710,16 @@ func publishMetrics(upTime time.Duration, lastPublishedAt time.Time, src *source
 				MetricName: aws.String("ConnectionsInUse"),
 				Unit:       aws.String("Count"),
 				Value:      aws.Float64(float64(connectionsInUse)),
+			},
+			{
+				MetricName: aws.String("MaxConnectionsInUse"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(maxUsed)),
+			},
+			{
+				MetricName: aws.String("ConnectionsInPool"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(pooled)),
 			},
 			{
 				MetricName: aws.String("ConnectionsPerSec"),
@@ -769,7 +789,7 @@ func publishMetrics(upTime time.Duration, lastPublishedAt time.Time, src *source
 			{
 				MetricName: aws.String("UpTimeHours"),
 				Unit:       aws.String("Count"),
-				Value:      aws.Float64(float64(upTime / (1000000000 * 3600))),
+				Value:      aws.Float64(float64(upTime) / float64(1000000000*3600)),
 			},
 		},
 	})
@@ -777,9 +797,11 @@ func publishMetrics(upTime time.Duration, lastPublishedAt time.Time, src *source
 	pQueryCount.Set(float64(queryCount.Get()))
 	pQueriesPerSec.Set(float64(queryCount.Get()-queryCountL.Get()) / interval)
 	pAvgQueryLatency.Set(float64(avgQueryLatency))
-	pUptimeHours.Set(float64(upTime / (1000000000 * 3600)))
+	pUptimeHours.Set(float64(upTime) / float64(1000000000*3600))
 	pConnPoolSize.Set(float64(connectionPoolSize))
 	pConnInUse.Set(float64(connectionsInUse))
+	pConnMaxInUse.Set(float64(maxUsed))
+	pConnPooled.Set(float64(pooled))
 	pConnPerSec.Set(float64(connectCount.Get()-connectCountL.Get()) / interval)
 	pUpdateCount.Set(float64(updateCount.Get()))
 	pUpdatesPerSec.Set(float64(updateCount.Get()-updateCountL.Get()) / interval)

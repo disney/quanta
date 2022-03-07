@@ -42,18 +42,18 @@ const (
 //
 type BitmapIndex struct {
 	*Conn
-	KVStore           *KVStore
-	client            []pb.BitmapIndexClient
-	batchSets         map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
-	batchClears       map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
-	batchValues       map[string]map[string]map[int64]*roaring64.BSI
-	batchPartitionStr map[string]map[interface{}]interface{}
-	batchSize         int
-	batchSetCount     int
-	batchClearCount   int
-	batchValueCount   int
+	KVStore                *KVStore
+	client                 []pb.BitmapIndexClient
+	batchSets              map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
+	batchClears            map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
+	batchValues            map[string]map[string]map[int64]*roaring64.BSI
+	batchPartitionStr      map[string]map[interface{}]interface{}
+	batchSize              int
+	batchSetCount          int
+	batchClearCount        int
+	batchValueCount        int
 	batchPartitionStrCount int
-	batchMutex        sync.RWMutex
+	batchMutex             sync.RWMutex
 }
 
 // NewBitmapIndex - Initializer for client side API wrappers.
@@ -139,8 +139,8 @@ func (c *BitmapIndex) Flush() error {
 func (c *BitmapIndex) Update(index, field string, columnID uint64, rowIDOrValue int64,
 	ts time.Time, isBSI, isExclusive bool) error {
 
-    req := &pb.UpdateRequest{Index: index, Field: field, ColumnId: columnID,
-        RowIdOrValue: rowIDOrValue, Time: ts.UnixNano()}
+	req := &pb.UpdateRequest{Index: index, Field: field, ColumnId: columnID,
+		RowIdOrValue: rowIDOrValue, Time: ts.UnixNano()}
 
 	var eg errgroup.Group
 

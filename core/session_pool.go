@@ -8,6 +8,7 @@ import (
 	"github.com/disney/quanta/shared"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -23,6 +24,7 @@ type SessionPool struct {
 	sessPoolLock sync.RWMutex
 	semaphores   chan struct{}
 	poolSize     int
+	maxUsed      int32
 }
 
 // SessionPool - Pool of Quanta connections
@@ -68,6 +70,11 @@ func (m *SessionPool) Borrow(tableName string) (*Session, error) {
 	cp := m.getPoolByTableName(tableName)
 	select {
 	case <-m.semaphores:
+		max := atomic.LoadInt32(&m.maxUsed)
+		used := int32(m.poolSize - len(m.semaphores))
+		if used > max {
+			atomic.StoreInt32(&m.maxUsed, used)
+		}
 		select {
 		case r := <-cp.pool:
 			var err error
@@ -139,28 +146,32 @@ func (m *SessionPool) Recover() {
 
 	for _, v := range m.sessPoolMap {
 		// Drain and close bad sessions
-		loop:
+	loop:
 		for {
-	        select {
-	        case r := <-v.pool:
-	            r.CloseSession()  // Hail Mary for good measure
+			select {
+			case r := <-v.pool:
+				r.CloseSession() // Hail Mary for good measure
 				// Push a replacement semaphore
 				select {
 				case m.semaphores <- struct{}{}:
 				default:
 					continue
 				}
-	        default:
+			default:
 				break loop
-	        }
+			}
 		}
 	}
 }
 
 // Metrics - Return pool size and usage.
-func (m *SessionPool) Metrics() (poolSize, inUse int) {
+func (m *SessionPool) Metrics() (poolSize, inUse, pooled, maxUsed int) {
 
 	poolSize = m.poolSize
 	inUse = poolSize - len(m.semaphores)
+	for _, v := range m.sessPoolMap {
+		pooled = pooled + len(v.pool)
+	}
+	maxUsed = int(atomic.LoadInt32(&m.maxUsed))
 	return
 }

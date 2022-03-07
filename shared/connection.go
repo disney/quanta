@@ -554,7 +554,7 @@ func (m *Conn) GetNodeMap() map[string]int {
 	return m.nodeMap
 }
 
-// CheckNodeForKey
+// CheckNodeForKey - Verify the existence of a given shard on a specific node.
 func (m *Conn) CheckNodeForKey(key, nodeID string) (bool, int) {
 
 	m.nodeMapLock.RLock()

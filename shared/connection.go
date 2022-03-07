@@ -636,6 +636,14 @@ func (m *Conn) getNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error)
 	return result, nil
 }
 
+// GetNodeStatusForIndex - Returns the node status for a given client index.
+func (m *Conn) GetNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error) {
+
+	m.nodeMapLock.RLock()
+	defer m.nodeMapLock.RUnlock()
+	return m.getNodeStatusForIndex(clientIndex)
+}
+
 // GetClusterState - Returns the overall cluster state health, active nodes, cluster size.
 func (m *Conn) GetClusterState() (status ClusterState, activeCount, clusterSizeTarget int) {
 

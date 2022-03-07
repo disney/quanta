@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
+	"strings"
 )
 
 // ShutdownCmd - Shutdown command
@@ -25,12 +26,19 @@ func (s *ShutdownCmd) Run(ctx *Context) error {
 	if len(indices) != len(conn.Admin) {
 		return fmt.Errorf("SelectNodes returned %d indices, not %d", len(indices), len(conn.Admin))
 	}
+	shutCount := 0
 	for i, v := range conn.Admin {
-		if _, err := v.Shutdown(cx, &empty.Empty{}); err != nil {
-			fmt.Printf(fmt.Sprintf("%v.Shutdown(_) = _, %v, node = %s\n", v, err, conn.ClientConnections()[i].Target()))
-		} else {
-			fmt.Printf("Node %s shutdown triggered.\n", conn.ClientConnections()[i].Target())
+		if s.NodeIP != "all" && !strings.HasPrefix(conn.ClientConnections()[i].Target(), s.NodeIP) {
+			continue
 		}
+		_, _ = v.Shutdown(cx, &empty.Empty{})
+		fmt.Printf("Node %s shutdown triggered.\n", conn.ClientConnections()[i].Target())
+		shutCount++
+	}
+	if shutCount > 0 {
+		fmt.Printf("%d nodes shut down.\n", shutCount)
+	} else {
+		fmt.Printf("No nodes matched %s.\n", s.NodeIP)
 	}
 	return nil
 }

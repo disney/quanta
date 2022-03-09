@@ -183,6 +183,9 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 				if !found {
 					continue // nope soldier on
 				}
+				// Should this key even be here? (long term, i.e. after sync complete)
+				foundLocal, localReplica := m.CheckNodeForKey(key, m.GetNodeID())
+
 				//u.Infof("Key %s should be replica %d on node %s.", key, replica, newNodeID)
 				// invoke status check
 				bsi.Lock.RLock()
@@ -224,13 +227,13 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 				// New joining nodes key modification time should be earlier than me. if so push diffs
 				remoteModTime := time.Unix(0, res.ModTime).UTC()
 				if remoteModTime.Before(bsi.ModTime) {
-					pullDiff = roaring64.NewBitmap() // Ignore differences on remote
+					pullDiff = roaring64.NewBitmap() 
 				} else {
-					if pullDiff.GetCardinality() > 0 {
+					if pullDiff.GetCardinality() > 0 && !foundLocal {
 						u.Infof("Ignoring remote diff for key %s, local = %d, remote (new) = %d, delta = %d.\n", key,
 							bsi.GetExistenceBitmap().GetCardinality(), resBsi.GetExistenceBitmap().GetCardinality(),
 							pullDiff.GetCardinality())
-						pullDiff = roaring64.NewBitmap() // Ignore differences on remote, TODO: Re-evaluate
+						pullDiff = roaring64.NewBitmap() // Ignore differences on remote because should'nt remain here.
 					}
 
 				}
@@ -238,6 +241,11 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 				if pushDiff.GetCardinality() > 0 {
 					syncDifferences++
 					u.Infof("Key %s should be replica %d on node %s.", key, replica, newNodeID)
+					if !foundLocal {
+						u.Infof("Also, this key %s should be removed locally (%s) via purge thread.", key, m.GetNodeID())
+					} else {
+						u.Infof("Also, this key %s should be replica %d locally (%s)", key, localReplica, m.GetNodeID())
+					}
 					u.Infof("Pushing server diff for key %s, local = %d, remote (new) = %d, delta = %d.\n", key,
 						bsi.GetExistenceBitmap().GetCardinality(), resBsi.GetExistenceBitmap().GetCardinality(),
 						pushDiff.GetCardinality())
@@ -249,6 +257,7 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 				}
 				// "OR" in the localDiff
 				if pullDiff.GetCardinality() > 0 {
+					syncDifferences++
 					u.Infof("Merging remote diff for key %s, local = %d, remote (new) = %d, delta = %d.\n", key,
 						bsi.GetExistenceBitmap().GetCardinality(), resBsi.GetExistenceBitmap().GetCardinality(),
 						pullDiff.GetCardinality())
@@ -261,7 +270,7 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 				// Process backing strings for StringHashBSI
 				if attr.MappingStrategy == "StringHashBSI" {
 					if err := m.syncStringBackingStore(peerKVClient, newKVClient, indexName, fieldName, t,
-						pushDiff, pullDiff); err != nil {
+							pushDiff, pullDiff); err != nil {
 						u.Errorf("String backing store sync failed for '%s' - %v", key, err)
 					}
 				}
@@ -308,6 +317,9 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 					if !found {
 						continue // nope soldier on
 					}
+					// Should this key even be here? (long term, i.e. after sync complete)
+					foundLocal, localReplica := m.CheckNodeForKey(key, m.GetNodeID())
+
 					//u.Infof("Key %s should be replica %d on node %s.", key, newNodeID)
 					// invoke status check
 					bitmap.Lock.RLock()
@@ -345,12 +357,12 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 					// New joining nodes key modification time should be earlier than me. if so push diffs
 					remoteModTime := time.Unix(0, res.ModTime).UTC()
 					if remoteModTime.Before(bitmap.ModTime) {
-						pullDiff = roaring64.NewBitmap() // Ignore differences on remote
+						pullDiff = roaring64.NewBitmap() 
 					} else {
-						if pullDiff.GetCardinality() > 0 {
+						if pullDiff.GetCardinality() > 0 && !foundLocal {
 							u.Infof("Ignoring remote diff for key %s, local = %d, remote (new) = %d, delta = %d.\n", key,
 								bitmap.Bits.GetCardinality(), resBm.GetCardinality(), pullDiff.GetCardinality())
-							pullDiff = roaring64.NewBitmap() // Ignore differences on remote, TODO: Re-evaluate
+							pullDiff = roaring64.NewBitmap() // Ignore differences on remote because shoudn't remain here.
 						}
 
 					}
@@ -358,6 +370,11 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 					if pushDiff.GetCardinality() > 0 {
 						syncDifferences++
 						u.Infof("Key %s should be replica %d on node %s.", key, replica, newNodeID)
+						if !foundLocal {
+							u.Infof("Also, this key %s should be removed locally (%s) via purge thread.", key, m.GetNodeID())
+						} else {
+							u.Infof("Also, this key %s should be replica %d locally (%s)", key, localReplica, m.GetNodeID())
+						}
 						u.Infof("Pushing server diff for key %s, local = %d, remote (new) = %d, delta = %d.\n", key,
 							bitmap.Bits.GetCardinality(), resBm.GetCardinality(), pushDiff.GetCardinality())
 						err := m.pushBitmapDiff(peerClient, newNode, indexName, fieldName, rowID, t, pushDiff)
@@ -367,6 +384,7 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 					}
 					// "OR" in the localDiff
 					if pullDiff.GetCardinality() > 0 {
+						syncDifferences++
 						u.Infof("Merging remote diff for key %s, local = %d, remote (new) = %d, delta = %d.\n", key,
 							bitmap.Bits.GetCardinality(), resBm.GetCardinality(), pullDiff.GetCardinality())
 						err := m.mergeBitmapDiff(indexName, fieldName, rowID, t, pullDiff)

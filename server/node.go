@@ -149,7 +149,7 @@ func NewNode(version string, port int, bindAddr, dataDir string, consul *api.Cli
 	grpc_health_v1.RegisterHealthServer(m.server, &HealthImpl{})
 
 	// Register peer services with connection
-	_ = shared.NewBitmapIndex(conn, 20000)
+	_ = shared.NewBitmapIndex(conn)
 	_ = shared.NewKVStore(conn)
 	_ = shared.NewStringSearch(conn, 20000)
 

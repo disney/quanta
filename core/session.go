@@ -36,7 +36,8 @@ const (
 // Session - State for session (non-threadsafe)
 type Session struct {
 	BasePath     string // path to schema directory
-	Client       *shared.BitmapIndex
+	BitIndex     *shared.BitmapIndex
+	BatchBuffer  *shared.BatchBuffer
 	StringIndex  *shared.StringSearch
 	KVStore      *shared.KVStore
 	TableBuffers map[string]*TableBuffer
@@ -131,9 +132,8 @@ func OpenSession(path, name string, nested bool, conn *shared.Conn) (*Session, e
 	s := &Session{BasePath: path, TableBuffers: tableBuffers, Nested: nested}
 	s.StringIndex = shared.NewStringSearch(conn, 1000)
 	s.KVStore = kvStore
-	s.Client = shared.NewBitmapIndex(conn, 3000000)
-
-	s.Client.KVStore = s.KVStore
+	s.BitIndex = shared.NewBitmapIndex(conn)
+	s.BatchBuffer = shared.NewBatchBuffer(s.BitIndex, s.KVStore, 3000000)
 	s.CreatedAt = time.Now().UTC()
 
 	return s, nil
@@ -544,8 +544,8 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 	localKey := fmt.Sprintf("%s/%s/%s,%s.PK", tbuf.Table.Name, tbuf.PKAttributes[0].FieldName,
 		tbuf.CurrentTimestamp.Format(timeFmt), tbuf.Table.PrimaryKey)
 
-	//if lColID, ok := s.Client.LookupLocalPKString(tbuf.Table.Name, tbuf.Table.PrimaryKey, pkLookupVal.String()); !ok {
-	if lColID, ok := s.Client.LookupLocalCIDForString(localKey, pkLookupVal.String()); !ok {
+	//if lColID, ok := s.BatchBuffer.LookupLocalPKString(tbuf.Table.Name, tbuf.Table.PrimaryKey, pkLookupVal.String()); !ok {
+	if lColID, ok := s.BatchBuffer.LookupLocalCIDForString(localKey, pkLookupVal.String()); !ok {
 		var colID uint64
 		var errx error
 		var found bool
@@ -561,7 +561,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 			if providedColID == 0 {
 				// Generate new ColumnID
 				if tbuf.sequencer == nil || tbuf.sequencer.IsFullySubscribed() {
-					seq, err := s.Client.CheckoutSequence(tbuf.Table.Name, tbuf.PKAttributes[0].FieldName,
+					seq, err := s.BitIndex.CheckoutSequence(tbuf.Table.Name, tbuf.PKAttributes[0].FieldName,
 						tbuf.CurrentTimestamp, reservationSize)
 					if err != nil {
 						return false, fmt.Errorf("Sequencer checkout error for %s.%s - %v]", tbuf.Table.Name,
@@ -580,7 +580,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 			// Add the PK via local cache batch operation
 			key := fmt.Sprintf("%s/%s/%s,%s.PK", tbuf.Table.Name, tbuf.PKAttributes[0].FieldName,
 				tbuf.CurrentTimestamp.Format(timeFmt), tbuf.Table.PrimaryKey)
-			s.Client.SetPartitionedString(key, pkLookupVal.String(), tbuf.CurrentColumnID)
+			s.BatchBuffer.SetPartitionedString(key, pkLookupVal.String(), tbuf.CurrentColumnID)
 		}
 	} else {
 		if tbuf.Table.DisableDedup {
@@ -659,11 +659,11 @@ func (s *Session) processAlternateKeys(tbuf *TableBuffer, row interface{}, pqTab
 				skLookupVal.WriteString(fmt.Sprintf("+%s", cval.(string)))
 			}
 		}
-		//s.Client.SetKeyString(tbuf.Table.Name, k, secondaryKey, skLookupVal.String(),
+		//s.BatchBuffer.SetKeyString(tbuf.Table.Name, k, secondaryKey, skLookupVal.String(),
 		//	tbuf.CurrentColumnID)
 		key := fmt.Sprintf("%s/%s/%s,%s.SK", tbuf.Table.Name, tbuf.PKAttributes[0].FieldName,
 			tbuf.CurrentTimestamp.Format(timeFmt), k)
-		s.Client.SetPartitionedString(key, skLookupVal.String(), tbuf.CurrentColumnID)
+		s.BatchBuffer.SetPartitionedString(key, skLookupVal.String(), tbuf.CurrentColumnID)
 		i++
 	}
 	return nil
@@ -749,8 +749,8 @@ func (s *Session) Flush() {
 			u.Error(err)
 		}
 	}
-	if s.Client != nil {
-		if err := s.Client.Flush(); err != nil {
+	if s.BatchBuffer != nil {
+		if err := s.BatchBuffer.Flush(); err != nil {
 			u.Error(err)
 		}
 	}
@@ -771,8 +771,8 @@ func (s *Session) CloseSession() {
 		s.StringIndex = nil
 	}
 
-	if s.Client != nil {
-		if err := s.Client.Flush(); err != nil {
+	if s.BatchBuffer != nil {
+		if err := s.BatchBuffer.Flush(); err != nil {
 			u.Error(err)
 		}
 	}

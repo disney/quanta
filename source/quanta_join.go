@@ -380,7 +380,7 @@ func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitma
 		return nil, false, err
 	}
 
-	client := shared.NewBitmapIndex(conn, 3000000)
+	client := shared.NewBitmapIndex(conn)
 	defer cleanup(client)
 
 	joinCols := make([]string, 0)
@@ -409,10 +409,6 @@ func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitma
 
 func cleanup(client *shared.BitmapIndex) error {
 
-	if err := client.Flush(); err != nil {
-		u.Errorf("%v", err)
-		return err
-	}
 	if err := client.Disconnect(); err != nil {
 		u.Errorf("%v", err)
 		return err

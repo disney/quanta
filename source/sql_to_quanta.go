@@ -1223,7 +1223,7 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 
 	m.q.Dump()
 	start := time.Now()
-	response, err = m.conn.Client.Query(m.q)
+	response, err = m.conn.BitIndex.Query(m.q)
 	elapsed := time.Since(start)
 	u.Debugf("Elapsed time %s\n", elapsed)
 	u.Debugf("SQL = %v\n", m.sel)
@@ -1320,7 +1320,7 @@ func (m *SQLToQuanta) PatchWhere(ctx context.Context, where expr.Node, patch int
 	m.q.FromTime = m.startDate
 	m.q.ToTime = m.endDate
 
-	response, err := m.conn.Client.Query(m.q)
+	response, err := m.conn.BitIndex.Query(m.q)
 	if err != nil {
 		return 0, fmt.Errorf("Update query failed - %v", err)
 	}
@@ -1505,7 +1505,7 @@ func (m *SQLToQuanta) updateRow(table string, columnID uint64, updValueMap map[s
 		if err != nil {
 			return 0, err
 		}
-		err = m.conn.Client.Update(table, a.FieldName, columnID, int64(rowID), timePartition, a.IsBSI(), a.Exclusive)
+		err = m.conn.BitIndex.Update(table, a.FieldName, columnID, int64(rowID), timePartition, a.IsBSI(), a.Exclusive)
 		if err != nil {
 			return 0, err
 		}
@@ -1567,12 +1567,12 @@ func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, err
 
 	m.q.Dump()
 	var response *shared.BitmapQueryResponse
-	response, err = m.conn.Client.Query(m.q)
+	response, err = m.conn.BitIndex.Query(m.q)
 	if err != nil {
 		return 0, err
 	}
 
-	err = m.conn.Client.BulkClear(m.q.GetRootIndex(), m.q.FromTime, m.q.ToTime, response.Results)
+	err = m.conn.BitIndex.BulkClear(m.q.GetRootIndex(), m.q.FromTime, m.q.ToTime, response.Results)
 	if err != nil {
 		return 0, err
 	}

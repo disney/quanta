@@ -96,7 +96,7 @@ func performCreate(consul *api.Client, table *shared.BasicTable, port int) error
 	if err := conn.Connect(consul); err != nil {
 		log.Fatal(err)
 	}
-	services := shared.NewBitmapIndex(conn, 3000000)
+	services := shared.NewBitmapIndex(conn)
 
 	err := shared.DeleteTable(consul, table.Name)
 	if err != nil {

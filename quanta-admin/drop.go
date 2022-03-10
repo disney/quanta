@@ -76,7 +76,7 @@ func nukeData(consul *api.Client, port int, tableName, operation string, retainE
 	if err := conn.Connect(consul); err != nil {
 		log.Fatal(err)
 	}
-	services := shared.NewBitmapIndex(conn, 3000000)
+	services := shared.NewBitmapIndex(conn)
 	kvStore := shared.NewKVStore(conn)
 	err := services.TableOperation(tableName, operation)
 	if err != nil {

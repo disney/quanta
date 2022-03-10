@@ -46,7 +46,7 @@ func (m StringHashBSIMapper) MapValue(attr *Attribute, val interface{}, c *Sessi
 				err = c.StringIndex.Index(strVal)
 			}
 			indexPath := fmt.Sprintf("%s/%s/%s", tbuf.Table.Name, attr.FieldName, tbuf.CurrentTimestamp.Format(timeFmt))
-			c.Client.SetPartitionedString(indexPath, tbuf.CurrentColumnID, val)
+			c.BatchBuffer.SetPartitionedString(indexPath, tbuf.CurrentColumnID, val)
 			err = m.UpdateBitmap(c, attr.Parent.Name, attr.FieldName, result, attr.IsTimeSeries)
 		} else {
 			err = fmt.Errorf("table %s not open for this connection", attr.Parent.Name)

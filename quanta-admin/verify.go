@@ -62,7 +62,7 @@ func (f *VerifyCmd) Run(ctx *Context) error {
 	if err4 != nil {
 		return err4
 	}
-	bitClient := shared.NewBitmapIndex(conn, 0)
+	bitClient := shared.NewBitmapIndex(conn)
 	req := &pb.SyncStatusRequest{
 		SendData: true,
 		ModTime:  int64(-1),

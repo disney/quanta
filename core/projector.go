@@ -198,7 +198,7 @@ func (p *Projector) retrieveBitmapResults(foundSets map[string]*roaring64.Bitmap
 	bitmapResults := make(map[string]map[string]*BitmapFieldResults)
 
 	for k, v := range foundSets {
-		bsir, bitr, err := p.connection.Client.Projection(k, fieldNames[k], p.fromTime, p.toTime, v)
+		bsir, bitr, err := p.connection.BitIndex.Projection(k, fieldNames[k], p.fromTime, p.toTime, v)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -771,7 +771,7 @@ func (p *Projector) getPartitionedStrings(attr *Attribute, colIDs []uint64) (map
 		for _, colID := range colIDs {
 			lBatch[colID] = ""
 		}
-		return p.connection.Client.KVStore.BatchLookup(lookupIndex, lBatch, true)
+		return p.connection.KVStore.BatchLookup(lookupIndex, lBatch, true)
 	}
 
 	batch := make(map[interface{}]interface{})
@@ -779,7 +779,7 @@ func (p *Projector) getPartitionedStrings(attr *Attribute, colIDs []uint64) (map
 		endPartition = time.Unix(0, int64(colID)).Format(timeFmt)
 		if endPartition != startPartition {
 			lookupIndex := fmt.Sprintf("%s/%s/%s", attr.Parent.Name, attr.FieldName, startPartition)
-			b, err := p.connection.Client.KVStore.BatchLookup(lookupIndex, batch, true)
+			b, err := p.connection.KVStore.BatchLookup(lookupIndex, batch, true)
 			if err != nil {
 				return nil, fmt.Errorf("BatchLookup error for [%s] - %v", lookupIndex, err)
 			}
@@ -792,7 +792,7 @@ func (p *Projector) getPartitionedStrings(attr *Attribute, colIDs []uint64) (map
 		batch[colID] = ""
 	}
 	lookupIndex := fmt.Sprintf("%s/%s/%s", attr.Parent.Name, attr.FieldName, startPartition)
-	b, err := p.connection.Client.KVStore.BatchLookup(lookupIndex, batch, true)
+	b, err := p.connection.KVStore.BatchLookup(lookupIndex, batch, true)
 	if err != nil {
 		return nil, fmt.Errorf("BatchLookup error for [%s] - %v", lookupIndex, err)
 	}

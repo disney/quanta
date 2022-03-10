@@ -12,7 +12,6 @@ import (
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"golang.org/x/sync/errgroup"
-	"sync"
 	"time"
 )
 
@@ -27,43 +26,24 @@ const (
 )
 
 //
-// BitmapIndex - Client side state for batch operations.
+// BitmapIndex - Client side API for bitmap operations.
 //
 // Conn - "base" class wrapper for network connection to servers.
-// KVStore - Handle to KVStore client for string store operations
 // client - Array of client API wrappers, one each for every server node.
-// batchBits - Calls to SetBit are batched client side and send to server once full.
-// batchValues - Calls to SetValue are batched client side (BSI fields)  and send to server once full.
-// batchString - batch of primary key strings to ColumnID mappings to be inserted via KVStore.BatchPut
-// batchSize - Number of total entries to hold client side for both batchBits and batchValues.
-// batchCount - Current count of batch entries.
-// batchStringCount - Current count of batch strings.
-// batchMutex - Concurrency guard for batch state mutations.
 //
 type BitmapIndex struct {
 	*Conn
-	KVStore                *KVStore
-	client                 []pb.BitmapIndexClient
-	batchSets              map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
-	batchClears            map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
-	batchValues            map[string]map[string]map[int64]*roaring64.BSI
-	batchPartitionStr      map[string]map[interface{}]interface{}
-	batchSize              int
-	batchSetCount          int
-	batchClearCount        int
-	batchValueCount        int
-	batchPartitionStrCount int
-	batchMutex             sync.RWMutex
+	client []pb.BitmapIndexClient
 }
 
 // NewBitmapIndex - Initializer for client side API wrappers.
-func NewBitmapIndex(conn *Conn, batchSize int) *BitmapIndex {
+func NewBitmapIndex(conn *Conn) *BitmapIndex {
 
 	clients := make([]pb.BitmapIndexClient, len(conn.ClientConnections()))
 	for i := 0; i < len(conn.ClientConnections()); i++ {
 		clients[i] = pb.NewBitmapIndexClient(conn.ClientConnections()[i])
 	}
-	c := &BitmapIndex{Conn: conn, batchSize: batchSize, client: clients}
+	c := &BitmapIndex{Conn: conn, client: clients}
 	conn.RegisterService(c)
 	return c
 }
@@ -90,49 +70,6 @@ func (c *BitmapIndex) MemberLeft(nodeID string, index int) {
 func (c *BitmapIndex) Client(index int) pb.BitmapIndexClient {
 
 	return c.client[index]
-}
-
-// Flush outstanding batch before.
-func (c *BitmapIndex) Flush() error {
-
-	c.batchMutex.Lock()
-
-	if c.batchSets != nil {
-		if err := c.BatchMutate(c.batchSets, false); err != nil {
-			c.batchMutex.Unlock()
-			return err
-		}
-		c.batchSets = nil
-		c.batchSetCount = 0
-	}
-	if c.batchClears != nil {
-		if err := c.BatchMutate(c.batchClears, true); err != nil {
-			c.batchMutex.Unlock()
-			return err
-		}
-		c.batchClears = nil
-		c.batchClearCount = 0
-	}
-	if c.batchValues != nil {
-		if err := c.BatchSetValue(c.batchValues); err != nil {
-			c.batchMutex.Unlock()
-			return err
-		}
-		c.batchValues = nil
-		c.batchValueCount = 0
-	}
-	if c.batchPartitionStr != nil {
-		for indexPath, valueMap := range c.batchPartitionStr {
-			if err := c.KVStore.BatchPut(indexPath, valueMap, true); err != nil {
-				c.batchMutex.Unlock()
-				return err
-			}
-		}
-		c.batchPartitionStr = nil
-		c.batchPartitionStrCount = 0
-	}
-	c.batchMutex.Unlock()
-	return nil
 }
 
 // Update - Handle Updates
@@ -190,121 +127,6 @@ func (c *BitmapIndex) updateClient(client pb.BitmapIndexClient, req *pb.UpdateRe
 	if _, err := client.Update(ctx, req); err != nil {
 		return fmt.Errorf("%v.Update(_) = _, %v, node = %s", client, err,
 			c.Conn.ClientConnections()[clientIndex].Target())
-	}
-	return nil
-}
-
-// SetBit - Set a bit in a "standard" bitmap.  Operations are batched.
-func (c *BitmapIndex) SetBit(index, field string, columnID, rowID uint64, ts time.Time) error {
-
-	c.batchMutex.Lock()
-	defer c.batchMutex.Unlock()
-
-	if c.batchSets == nil {
-		c.batchSets = make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap)
-	}
-	if _, ok := c.batchSets[index]; !ok {
-		c.batchSets[index] = make(map[string]map[uint64]map[int64]*roaring64.Bitmap)
-	}
-	if _, ok := c.batchSets[index][field]; !ok {
-		c.batchSets[index][field] = make(map[uint64]map[int64]*roaring64.Bitmap)
-	}
-	if _, ok := c.batchSets[index][field][rowID]; !ok {
-		c.batchSets[index][field][rowID] = make(map[int64]*roaring64.Bitmap)
-	}
-	if bmap, ok := c.batchSets[index][field][rowID][ts.UnixNano()]; !ok {
-		b := roaring64.BitmapOf(columnID)
-		c.batchSets[index][field][rowID][ts.UnixNano()] = b
-	} else {
-		bmap.Add(columnID)
-	}
-
-	c.batchSetCount++
-
-	if c.batchSetCount >= c.batchSize {
-
-		if err := c.BatchMutate(c.batchSets, false); err != nil {
-			return err
-		}
-		c.batchSets = nil
-		c.batchSetCount = 0
-	}
-	return nil
-}
-
-// ClearBit - Clear a bit in a "standard" bitmap.  Operations are batched.
-func (c *BitmapIndex) ClearBit(index, field string, columnID, rowID uint64, ts time.Time) error {
-
-	c.batchMutex.Lock()
-	defer c.batchMutex.Unlock()
-
-	if c.batchClears == nil {
-		c.batchClears = make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap)
-	}
-	if _, ok := c.batchClears[index]; !ok {
-		c.batchClears[index] = make(map[string]map[uint64]map[int64]*roaring64.Bitmap)
-	}
-	if _, ok := c.batchClears[index][field]; !ok {
-		c.batchClears[index][field] = make(map[uint64]map[int64]*roaring64.Bitmap)
-	}
-	if _, ok := c.batchClears[index][field][rowID]; !ok {
-		c.batchClears[index][field][rowID] = make(map[int64]*roaring64.Bitmap)
-	}
-	if bmap, ok := c.batchClears[index][field][rowID][ts.UnixNano()]; !ok {
-		b := roaring64.BitmapOf(columnID)
-		c.batchClears[index][field][rowID][ts.UnixNano()] = b
-	} else {
-		bmap.Add(columnID)
-	}
-
-	c.batchClearCount++
-
-	if c.batchClearCount >= c.batchSize {
-
-		if err := c.BatchMutate(c.batchClears, true); err != nil {
-			return err
-		}
-		c.batchClears = nil
-		c.batchClearCount = 0
-	}
-	return nil
-}
-
-// SetValue - Set a value in a BSI  Operations are batched.
-func (c *BitmapIndex) SetValue(index, field string, columnID uint64, value int64, ts time.Time) error {
-
-	c.batchMutex.Lock()
-	defer c.batchMutex.Unlock()
-	var bsize int
-
-	if c.batchValues == nil {
-		c.batchValues = make(map[string]map[string]map[int64]*roaring64.BSI)
-	}
-	if _, ok := c.batchValues[index]; !ok {
-		c.batchValues[index] = make(map[string]map[int64]*roaring64.BSI)
-	}
-	if _, ok := c.batchValues[index][field]; !ok {
-		c.batchValues[index][field] = make(map[int64]*roaring64.BSI)
-	}
-	if bmap, ok := c.batchValues[index][field][ts.UnixNano()]; !ok {
-		b := roaring64.NewDefaultBSI()
-		b.SetValue(columnID, value)
-		c.batchValues[index][field][ts.UnixNano()] = b
-		bsize = b.BitCount()
-	} else {
-		bmap.SetValue(columnID, value)
-		bsize = bmap.BitCount()
-	}
-
-	c.batchValueCount += bsize
-
-	if c.batchValueCount >= c.batchSize {
-
-		if err := c.BatchSetValue(c.batchValues); err != nil {
-			return err
-		}
-		c.batchValues = nil
-		c.batchValueCount = 0
 	}
 	return nil
 }
@@ -638,51 +460,6 @@ func (c *BitmapIndex) sequencerClient(client pb.BitmapIndexClient, req *pb.Check
 			c.ClientConnections()[clientIndex].Target())
 	}
 	return result, nil
-}
-
-// LookupLocalCIDForString - Lookup possible columnID in local batch cache
-func (c *BitmapIndex) LookupLocalCIDForString(index, lookup string) (columnID uint64, ok bool) {
-
-	c.batchMutex.RLock()
-	defer c.batchMutex.RUnlock()
-
-	var colIDVal interface{}
-	colIDVal, ok = c.batchPartitionStr[index][lookup]
-	if ok {
-		columnID = colIDVal.(uint64)
-	}
-	return
-}
-
-// SetPartitionedString - Create column ID to backing string index entry.
-func (c *BitmapIndex) SetPartitionedString(indexPath string, key, value interface{}) error {
-
-	c.batchMutex.Lock()
-	defer c.batchMutex.Unlock()
-
-	if c.batchPartitionStr == nil {
-		c.batchPartitionStr = make(map[string]map[interface{}]interface{})
-	}
-	if _, ok := c.batchPartitionStr[indexPath]; !ok {
-		c.batchPartitionStr[indexPath] = make(map[interface{}]interface{})
-	}
-	if _, ok := c.batchPartitionStr[indexPath][key]; !ok {
-		c.batchPartitionStr[indexPath][key] = value
-	}
-
-	c.batchPartitionStrCount++
-
-	if c.batchPartitionStrCount >= c.batchSize/100 {
-		for indexPath, valueMap := range c.batchPartitionStr {
-			if err := c.KVStore.BatchPut(indexPath, valueMap, true); err != nil {
-				return err
-			}
-
-		}
-		c.batchPartitionStr = nil
-		c.batchPartitionStrCount = 0
-	}
-	return nil
 }
 
 //

@@ -61,7 +61,7 @@ func (f *FindKeyCmd) Run(ctx *Context) error {
 	if err4 != nil {
 		return err4
 	}
-	bitClient := shared.NewBitmapIndex(conn, 0)
+	bitClient := shared.NewBitmapIndex(conn)
 	req := &pb.SyncStatusRequest{Index: f.Table, Field: f.Field, RowId: f.RowID, Time: ts.UnixNano()}
 	fmt.Println("")
 	fmt.Println("REPLICA   ADDRESS            STATE          STATUS        CARDINALITY   MODTIME")

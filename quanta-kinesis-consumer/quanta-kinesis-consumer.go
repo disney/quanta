@@ -358,14 +358,36 @@ func exitErrorf(msg string, args ...interface{}) {
 func (m *Main) MemberLeft(nodeID string, index int) {
 
 	u.Warnf("node %v left the cluster, purging sessions", nodeID)
-	m.sessionPool.Recover()
+	go m.recoverInflight(m.sessionPool.Recover)
 }
 
 // MemberJoined - A new node joined the cluster.
 func (m *Main) MemberJoined(nodeID, ipAddress string, index int) {
 
 	u.Warnf("node %v joined the cluster, purging sessions", nodeID)
-	m.sessionPool.Recover()
+	go m.recoverInflight(m.sessionPool.Recover)
+}
+
+// recover in-flight data in new thread
+func (m *Main) recoverInflight(recoverFunc func(unflushedCh chan *shared.BatchBuffer)) {
+
+	sess, err := m.sessionPool.NewSession(m.Index)
+	if err != nil {
+		u.Errorf("recoverInflight error creating recovery session %v", err)
+	}
+	rc := make(chan *shared.BatchBuffer, runtime.NumCPU())
+	recoverFunc(rc)
+	close(rc)
+	i := 1
+	for batch := range rc {
+		u.Infof("recoverInflight session %d", i)
+		batch.MergeInto(sess.BatchBuffer)
+		i++
+	}
+	err = sess.CloseSession() // Will flush first
+	if err != nil {
+		u.Errorf("recoverInflight error closing session %v", err)
+	}
 }
 
 // Init function initilizations loader.

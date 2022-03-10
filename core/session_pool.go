@@ -116,6 +116,7 @@ func (m *SessionPool) Return(tableName string, conn *Session) {
 	return
 }
 
+// NewSession - Construct a new session.
 func (m *SessionPool) NewSession(tableName string) (*Session, error) {
 
 	conn, err := OpenSession(m.baseDir, tableName, false, m.AppHost)

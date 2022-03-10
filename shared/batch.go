@@ -167,10 +167,10 @@ func (c *BatchBuffer) MergeInto(to *BatchBuffer) {
 				if _, ok := to.batchValues[indexName][fieldName]; !ok {
 					to.batchValues[indexName][fieldName] = make(map[int64]*roaring64.BSI)
 				}
-				if to_bsi, ok := to.batchValues[indexName][fieldName][t]; !ok {
+				if toBsi, ok := to.batchValues[indexName][fieldName][t]; !ok {
 					to.batchValues[indexName][fieldName][t] = bsi
 				} else {
-					to_bsi.ParOr(0, bsi)
+					toBsi.ParOr(0, bsi)
 				}
 				to.batchValueCount += int(bsi.GetCardinality())
 			}

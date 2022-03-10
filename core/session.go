@@ -63,6 +63,7 @@ type TableBuffer struct {
 
 // NewTableBuffer - Construct a TableBuffer
 func NewTableBuffer(table *Table) (*TableBuffer, error) {
+
 	tb := &TableBuffer{Table: table}
 	tb.PKMap = make(map[string]*Attribute)
 	tb.PKAttributes = make([]*Attribute, 0)
@@ -740,42 +741,47 @@ func (s *Session) ResetRowCache() {
 }
 
 // Flush - Flush data to backend.
-func (s *Session) Flush() {
+func (s *Session) Flush() error {
 
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
 	if s.StringIndex != nil {
 		if err := s.StringIndex.Flush(); err != nil {
 			u.Error(err)
+			return err
 		}
 	}
 	if s.BatchBuffer != nil {
 		if err := s.BatchBuffer.Flush(); err != nil {
 			u.Error(err)
+			return err
 		}
 	}
+	return nil
 }
 
 // CloseSession - Close the session, flushing if necessary..
-func (s *Session) CloseSession() {
+func (s *Session) CloseSession() error {
 
 	if s == nil {
-		return
+		u.Warn("attempt to close a session already closed")
+		return nil
 	}
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
 	if s.StringIndex != nil {
 		if err := s.StringIndex.Flush(); err != nil {
-			u.Error(err)
+			return err
 		}
 		s.StringIndex = nil
 	}
 
 	if s.BatchBuffer != nil {
 		if err := s.BatchBuffer.Flush(); err != nil {
-			u.Error(err)
+			return err
 		}
 	}
+	return nil
 }
 
 // MapValue - Convenience function for Mapper interface.

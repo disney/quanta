@@ -32,7 +32,7 @@ type sessionPoolEntry struct {
 	pool chan *Session
 }
 
-// NewSessionPool - Construct a session pool to constrain resources.
+// NewSessionPool - Construct a session pool to constrain resource consumption.
 func NewSessionPool(appHost *shared.Conn, schema *sch.Schema, baseDir string, poolSize int) *SessionPool {
 
 	if poolSize == 0 {
@@ -81,14 +81,14 @@ func (m *SessionPool) Borrow(tableName string) (*Session, error) {
 			if m.schema != nil && m.schema.Since(time.Until(r.CreatedAt)) {
 				u.Debugf("pooled connection is stale after schema change, refreshing.")
 				r.CloseSession()
-				r, err = m.newSession(tableName)
+				r, err = m.NewSession(tableName)
 				if err != nil {
 					return nil, err
 				}
 			}
 			return r, nil
 		default:
-			conn, err := m.newSession(tableName)
+			conn, err := m.NewSession(tableName)
 			if err != nil {
 				return nil, fmt.Errorf("borrowSession %v", err)
 			}
@@ -116,7 +116,7 @@ func (m *SessionPool) Return(tableName string, conn *Session) {
 	return
 }
 
-func (m *SessionPool) newSession(tableName string) (*Session, error) {
+func (m *SessionPool) NewSession(tableName string) (*Session, error) {
 
 	conn, err := OpenSession(m.baseDir, tableName, false, m.AppHost)
 	if err != nil {
@@ -138,8 +138,8 @@ func (m *SessionPool) Shutdown() {
 	close(m.semaphores)
 }
 
-// Recover from network event.  Purge Sessions.
-func (m *SessionPool) Recover() {
+// Recover from network event.  Purge session and optionally recover unflushed buffers.
+func (m *SessionPool) Recover(unflushedCh chan *shared.BatchBuffer) {
 
 	m.sessPoolLock.Lock()
 	defer m.sessPoolLock.Unlock()
@@ -150,7 +150,9 @@ func (m *SessionPool) Recover() {
 		for {
 			select {
 			case r := <-v.pool:
-				r.CloseSession() // Hail Mary for good measure
+				if unflushedCh != nil && !r.BatchBuffer.IsEmpty() {
+					unflushedCh <- r.BatchBuffer
+				}
 				// Push a replacement semaphore
 				select {
 				case m.semaphores <- struct{}{}:

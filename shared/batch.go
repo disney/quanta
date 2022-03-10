@@ -14,7 +14,7 @@ import (
 //
 // BatchBuffer - Buffer for batch operations.
 //
-// BitmapIndex - base type
+// BitmapIndex - Wrapper around client bitmap indexing APIs
 // KVStore - Handle to KVStore client for string store operations
 // batchBits - Calls to SetBit are batched client side and send to server once full.
 // batchValues - Calls to SetValue are batched client side (BSI fields)  and send to server once full.
@@ -50,10 +50,10 @@ func NewBatchBuffer(bi *BitmapIndex, kv *KVStore, batchSize int) *BatchBuffer {
 func (c *BatchBuffer) Flush() error {
 
 	c.batchMutex.Lock()
+	defer c.batchMutex.Unlock()
 
 	if c.batchSets != nil {
 		if err := c.BatchMutate(c.batchSets, false); err != nil {
-			c.batchMutex.Unlock()
 			return err
 		}
 		c.batchSets = nil
@@ -61,7 +61,6 @@ func (c *BatchBuffer) Flush() error {
 	}
 	if c.batchClears != nil {
 		if err := c.BatchMutate(c.batchClears, true); err != nil {
-			c.batchMutex.Unlock()
 			return err
 		}
 		c.batchClears = nil
@@ -69,7 +68,6 @@ func (c *BatchBuffer) Flush() error {
 	}
 	if c.batchValues != nil {
 		if err := c.BatchSetValue(c.batchValues); err != nil {
-			c.batchMutex.Unlock()
 			return err
 		}
 		c.batchValues = nil
@@ -78,15 +76,119 @@ func (c *BatchBuffer) Flush() error {
 	if c.batchPartitionStr != nil {
 		for indexPath, valueMap := range c.batchPartitionStr {
 			if err := c.KVStore.BatchPut(indexPath, valueMap, true); err != nil {
-				c.batchMutex.Unlock()
 				return err
 			}
 		}
 		c.batchPartitionStr = nil
 		c.batchPartitionStrCount = 0
 	}
-	c.batchMutex.Unlock()
 	return nil
+}
+
+// IsEmpty - Return true is batch is empty
+func (c *BatchBuffer) IsEmpty() bool {
+
+	c.batchMutex.RLock()
+	defer c.batchMutex.RUnlock()
+	return c.batchSetCount == 0 && c.batchClearCount == 0 && c.batchValueCount == 0 && c.batchPartitionStrCount == 0
+}
+
+// MergeInto - Merge the contents of this batch into another.
+func (c *BatchBuffer) MergeInto(to *BatchBuffer) {
+
+	c.batchMutex.RLock()
+	to.batchMutex.Lock()
+	defer to.batchMutex.Unlock()
+	defer c.batchMutex.RUnlock()
+
+    for indexName, index := range c.batchSets {
+        for fieldName, field := range index {
+            for rowID, ts := range field {
+                for t, bitmap := range ts {
+					if to.batchSets == nil {
+						to.batchSets = make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap)
+					}
+					if _, ok := to.batchSets[indexName]; !ok {
+						to.batchSets[indexName] = make(map[string]map[uint64]map[int64]*roaring64.Bitmap)
+					}
+					if _, ok := to.batchSets[indexName][fieldName]; !ok {
+						to.batchSets[indexName][fieldName] = make(map[uint64]map[int64]*roaring64.Bitmap)
+					}
+					if _, ok := to.batchSets[indexName][fieldName][rowID]; !ok {
+						to.batchSets[indexName][fieldName][rowID] = make(map[int64]*roaring64.Bitmap)
+					}
+					if bmap, ok := to.batchSets[indexName][fieldName][rowID][t]; !ok {
+						to.batchSets[indexName][fieldName][rowID][t] = bitmap
+					} else {
+						to.batchSets[indexName][fieldName][rowID][t] = roaring64.ParOr(0, bmap, bitmap)
+					}
+					to.batchSetCount += int(bitmap.GetCardinality())
+                }
+            }
+        }
+    }
+
+    for indexName, index := range c.batchClears {
+        for fieldName, field := range index {
+            for rowID, ts := range field {
+                for t, bitmap := range ts {
+					if to.batchClears == nil {
+						to.batchClears = make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap)
+					}
+					if _, ok := to.batchClears[indexName]; !ok {
+						to.batchClears[indexName] = make(map[string]map[uint64]map[int64]*roaring64.Bitmap)
+					}
+					if _, ok := to.batchClears[indexName][fieldName]; !ok {
+						to.batchClears[indexName][fieldName] = make(map[uint64]map[int64]*roaring64.Bitmap)
+					}
+					if _, ok := to.batchClears[indexName][fieldName][rowID]; !ok {
+						to.batchClears[indexName][fieldName][rowID] = make(map[int64]*roaring64.Bitmap)
+					}
+					if bmap, ok := to.batchClears[indexName][fieldName][rowID][t]; !ok {
+						to.batchClears[indexName][fieldName][rowID][t] = bitmap
+					} else {
+						to.batchClears[indexName][fieldName][rowID][t] = roaring64.ParOr(0, bmap, bitmap)
+					}
+					to.batchClearCount += int(bitmap.GetCardinality())
+                }
+            }
+        }
+    }
+
+	for indexName, index := range c.batchValues {
+		for fieldName, field := range index {
+			for t, bsi := range field {
+				if to.batchValues == nil {
+					to.batchValues = make(map[string]map[string]map[int64]*roaring64.BSI)
+				}
+				if _, ok := to.batchValues[indexName]; !ok {
+					to.batchValues[indexName] = make(map[string]map[int64]*roaring64.BSI)
+				}
+				if _, ok := to.batchValues[indexName][fieldName]; !ok {
+					to.batchValues[indexName][fieldName] = make(map[int64]*roaring64.BSI)
+				}
+				if to_bsi, ok := to.batchValues[indexName][fieldName][t]; !ok {
+					to.batchValues[indexName][fieldName][t] = bsi
+				} else {
+					to_bsi.ParOr(0, bsi)
+				}
+				to.batchValueCount += int(bsi.GetCardinality())
+			}
+		}
+	}
+
+	for indexPath, valueMap := range c.batchPartitionStr {
+		if to.batchPartitionStr == nil {
+			to.batchPartitionStr = make(map[string]map[interface{}]interface{})
+		}
+		if _, ok := to.batchPartitionStr[indexPath]; !ok {
+			to.batchPartitionStr[indexPath] = make(map[interface{}]interface{})
+		}
+		for k, v := range valueMap {
+			to.batchPartitionStr[indexPath][k] = v
+			to.batchPartitionStrCount++
+		}
+	}
 }
 
 // SetBit - Set a bit in a "standard" bitmap.  Operations are batched.
@@ -227,7 +329,6 @@ func (c *BatchBuffer) SetPartitionedString(indexPath string, key, value interfac
 			if err := c.KVStore.BatchPut(indexPath, valueMap, true); err != nil {
 				return err
 			}
-
 		}
 		c.batchPartitionStr = nil
 		c.batchPartitionStrCount = 0

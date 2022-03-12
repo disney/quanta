@@ -380,7 +380,7 @@ func (m *Main) recoverInflight(recoverFunc func(unflushedCh chan *shared.BatchBu
 	close(rc)
 	i := 1
 	for batch := range rc {
-		u.Infof("recoverInflight session %d", i)
+		u.Warnf("recoverInflight session %d", i)
 		batch.MergeInto(sess.BatchBuffer)
 		i++
 	}

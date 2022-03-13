@@ -296,6 +296,7 @@ func (m *KVStore) PutStringEnum(ctx context.Context, se *pb.StringEnum) (*wrappe
 		}
 		greatestRowID++
 
+		defer db.Sync()
 		return greatestRowID, db.Put(shared.ToBytes(se.Value), shared.ToBytes(greatestRowID))
 	})
 

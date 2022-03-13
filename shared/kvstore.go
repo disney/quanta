@@ -402,7 +402,7 @@ func (c *KVStore) PutStringEnum(index, value string) (uint64, error) {
 
 	// Parallel iterate over remaining client list and perform Put operation (replication)
 	var eg errgroup.Group
-	for _, i := range indices[1:] {
+	for _, i := range indices {
 		c := c.client[indices[i]]
 		eg.Go(func() error {
 			_, err := c.Put(ctx, &pb.IndexKVPair{IndexPath: index, Key: ToBytes(value),

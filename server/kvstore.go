@@ -13,9 +13,10 @@ import (
 	"golang.org/x/sync/singleflight"
 	"io"
 	"os"
-	//"path/filepath"
+	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -42,6 +43,53 @@ func NewKVStore(node *Node) *KVStore {
 
 // Init - Initialize.
 func (m *KVStore) Init() error {
+
+	if m.Node.consul == nil {
+		return nil
+	}
+
+	tables, err := shared.GetTables(m.Node.consul)
+	if err != nil {
+		return err
+	}
+
+	lastDay := time.Now().AddDate(0, 0, -1)
+
+    dbList := make([]string, 0)
+	for _, table := range tables {
+	    err := filepath.Walk(m.Node.dataDir+sep+"index"+sep+table,
+	        func(path string, info os.FileInfo, err error) error {
+	            if err != nil {
+	                return err
+	            }
+				if info.ModTime().Before(lastDay) {
+	                return nil
+				}
+	            if !strings.HasSuffix(path, "/00000.psg") {
+	                return nil
+	            }
+	            dbPath, _ := filepath.Split(path)
+	            l := strings.Split(dbPath, string(os.PathSeparator))
+	            if len(l) == 0 {
+	                return nil
+	            }
+	            if l[len(l)-2] != "search.dat" && l[len(l)-2] != "UserRoles" {
+	                indexName := l[len(l)-3] + sep + l[len(l)-2]
+	                dbList = append(dbList, fmt.Sprintf("%s%s%s", table, sep, indexName))
+	            }
+	            return nil
+	        })
+	    if err != nil {
+	        return fmt.Errorf("cannot initialize kv store service: %v", err)
+	    }
+	}
+
+    for _, v := range dbList {
+        u.Infof("Opening [%s]", v)
+        if _, err := m.getStore(v); err != nil {
+            return fmt.Errorf("cannot initialize kv store service: %v", err)
+        }   
+    }
 
 	return nil
 }

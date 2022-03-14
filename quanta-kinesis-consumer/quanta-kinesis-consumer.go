@@ -29,6 +29,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -259,7 +260,11 @@ func main() {
 				case c.Data <- out:
 				}
 			} else { // Bypass partition worker dispatching
-				if err := main.processBatch([]map[string]interface{}{out}, partition); err != nil {
+				err := shared.Retry(3, 5 * time.Second, func() (err error) {
+					err = main.processBatch([]map[string]interface{}{out}, partition)
+					return
+				})
+				if err != nil {
 					u.Errorf("processBatch ERROR %v", err)
 					return nil // continue processing
 				}
@@ -329,6 +334,13 @@ func main() {
 
 func (m *Main) processBatch(rows []map[string]interface{}, partition string) error {
 
+    defer func() {
+        if r := recover(); r != nil {
+            err := fmt.Errorf("Panic recover: \n" + string(debug.Stack()))
+            u.Error(err)
+        }
+    }()
+
 	conn, err := m.sessionPool.Borrow(m.Index)
 	if err != nil {
 		if err == core.ErrPoolDrained {
@@ -380,7 +392,7 @@ func (m *Main) recoverInflight(recoverFunc func(unflushedCh chan *shared.BatchBu
 	close(rc)
 	i := 1
 	for batch := range rc {
-		u.Warnf("recoverInflight session %d", i)
+		u.Infof("recoverInflight session %d", i)
 		batch.MergeInto(sess.BatchBuffer)
 		i++
 	}

@@ -39,6 +39,7 @@ var cli struct {
 	Config     ConfigCmd     `cmd help:"Configuration key/value pair."`
 	Verify     VerifyCmd     `cmd help:"Verify data for key debug tool."`
 	VerifyEnum VerifyEnumCmd `cmd help:"Verify a string enum for key debug tool."`
+	VerifyIndex VerifyIndexCmd `cmd help:"Verify indices debug tool."`
 }
 
 func main() {

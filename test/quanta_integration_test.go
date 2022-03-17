@@ -11,11 +11,11 @@ import (
 	"github.com/araddon/qlbridge/expr/builtins"
 	_ "github.com/araddon/qlbridge/qlbdriver"
 	"github.com/araddon/qlbridge/schema"
-	quanta "github.com/disney/quanta/client"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/custom/functions"
 	"github.com/disney/quanta/rbac"
 	"github.com/disney/quanta/server"
+	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/source"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
@@ -25,20 +25,21 @@ import (
 
 type QuantaTestSuite struct {
 	suite.Suite
-	endpoint *server.EndPoint
-	store    *quanta.KVStore
+	node  *server.Node
+	store *shared.KVStore
 }
 
 func (suite *QuantaTestSuite) SetupSuite() {
 	var err error
-	suite.endpoint, err = Setup() // harness setup
+	suite.node, err = Setup() // harness setup
 	assert.NoError(suite.T(), err)
 
 	core.ClearTableCache()
 	RemoveContents("./testdata/index")
+	RemoveContents("./testdata/bitmap")
 
 	// Server side components already started and available in package level variables in harness.go
-	conn := quanta.NewDefaultConnection()
+	conn := shared.NewDefaultConnection()
 	conn.ServicePort = 0
 	err = conn.Connect(nil) // no consul
 	assert.NoError(suite.T(), err)
@@ -54,11 +55,11 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	functions.LoadAll() // Custom functions
 
 	// Simulate the mySQL proxy endpoint for golang dbdriver connection clients.
-	src, err2 := source.NewQuantaSource("./testdata/config", "", 0)
+	src, err2 := source.NewQuantaSource("./testdata/config", "", 0, 1)
 	assert.NoError(suite.T(), err2)
 	schema.RegisterSourceAsSchema("quanta", src)
 
-	suite.store = quanta.NewKVStore(conn)
+	suite.store = shared.NewKVStore(conn)
 	assert.NotNil(suite.T(), suite.store)
 
 	ctx, err := rbac.NewAuthContext(suite.store, "USER001", true)
@@ -67,7 +68,7 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err)
 }
 
-func (suite *QuantaTestSuite) loadData(table, filePath string, conn *quanta.Conn) error {
+func (suite *QuantaTestSuite) loadData(table, filePath string, conn *shared.Conn) error {
 
 	fr, err := local.NewLocalFileReader(filePath)
 	assert.Nil(suite.T(), err)

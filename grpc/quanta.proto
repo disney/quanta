@@ -3,14 +3,15 @@ syntax = "proto3";
 option java_multiple_files = true;
 option java_package = "io.grpc.disney.quanta";
 option java_outer_classname = "QuantaProto";
-option go_package = "github.com/disney/quanta;quanta";
+option go_package = "github.com/disney/quanta/grpc;shared";
 
-package quanta;
+package shared;
 import "google/protobuf/empty.proto";
 import "google/protobuf/wrappers.proto";
 
 service ClusterAdmin {
   rpc Status(google.protobuf.Empty) returns (StatusMessage) {}
+  rpc Shutdown(google.protobuf.Empty) returns (google.protobuf.Empty) {}
 }
 
 service KVStore {
@@ -21,6 +22,7 @@ service KVStore {
   rpc Items(google.protobuf.StringValue) returns (stream IndexKVPair) {}
   rpc PutStringEnum(StringEnum) returns (google.protobuf.UInt64Value) {}
   rpc DeleteIndicesWithPrefix(DeleteIndicesWithPrefixRequest) returns (google.protobuf.Empty) {}
+  rpc IndexInfo(IndexInfoRequest) returns (IndexInfoResponse) {}
 }
 
 service StringSearch {
@@ -37,14 +39,16 @@ service BitmapIndex {
   rpc Projection(ProjectionRequest) returns (ProjectionResponse) {}
   rpc CheckoutSequence(CheckoutSequenceRequest) returns (CheckoutSequenceResponse) {}
   rpc TableOperation(TableOperationRequest) returns (google.protobuf.Empty) {}
-}
-
-message Success {
-  bool ok = 1;
+  rpc Synchronize(google.protobuf.StringValue) returns (google.protobuf.Int64Value) {}
+  rpc SyncStatus(SyncStatusRequest) returns (SyncStatusResponse) {}
 }
 
 message StatusMessage {
-  string status = 1;
+  string nodeState = 1;
+  string localIP = 2;
+  uint32 localPort = 3;
+  string version = 4;
+  uint32 replicas = 5;
 }
 
 message IndexKVPair {
@@ -53,6 +57,7 @@ message IndexKVPair {
   repeated bytes value = 3;
   int64 	time = 4;
   bool      isClear = 5;
+  bool      sync = 6;
 }
 
 message StringEnum {
@@ -149,6 +154,42 @@ message UpdateRequest {
   uint64    columnId = 3;
   int64     rowIdOrValue = 4;
   int64 	time = 5;
+}
+
+message SyncStatusRequest {
+  string 	index = 1;
+  string 	field = 2;
+  uint64    rowId = 3;
+  int64 	time = 4;
+  uint64    cardinality = 5;
+  int64     bSIChecksum = 6;
+  int64     modTime = 7;
+  bool      sendData = 8;
+}
+
+message SyncStatusResponse {
+  bool      ok = 1;
+  uint64    cardinality = 2;
+  int64     BSIChecksum = 3;
+  int64     modTime = 4;
+  repeated bytes data = 5;
+}
+
+
+message IndexInfoRequest {
+  string   indexPath = 1;
+}
+
+message IndexInfoResponse {
+  string   indexPath = 1;
+  bool     exists = 2;
+  bool     wasOpen = 3;
+  uint32   count = 4;
+  int64    puts = 5;
+  int64    gets = 6;
+  int64    dels = 7;
+  int64    hashCollisions = 8;
+  int64    fileSize = 9;
 }
 
 message ProjectionRequest {

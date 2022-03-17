@@ -15,6 +15,7 @@ import (
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
 	"io"
+	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -26,6 +27,11 @@ import (
 
 const (
 	timeFmt = "2006-01-02T15"
+)
+
+var (
+	// Ensure BitmapIndex implements shared.Service
+	_ NodeService = (*BitmapIndex)(nil)
 )
 
 //
@@ -40,7 +46,7 @@ const (
 // tableCache - Schema metadata cache (essentially same YAML file used by loader).
 //
 type BitmapIndex struct {
-	*EndPoint
+	*Node
 	expireDays      int
 	bitmapCache     map[string]map[string]map[uint64]map[int64]*StandardBitmap
 	bitmapCacheLock sync.RWMutex
@@ -56,14 +62,14 @@ type BitmapIndex struct {
 }
 
 // NewBitmapIndex - Construct and initialize bitmap server state.
-func NewBitmapIndex(endPoint *EndPoint, expireDays int) *BitmapIndex {
+func NewBitmapIndex(node *Node, expireDays int) *BitmapIndex {
 
-	e := &BitmapIndex{EndPoint: endPoint}
+	e := &BitmapIndex{Node: node}
 	e.expireDays = expireDays
 	e.tableCache = make(map[string]*shared.BasicTable)
-	configPath := e.EndPoint.dataDir + sep + "config"
-	schemaPath := ""          // this is normally an empty string forcing schema to come from Consul
-	if e.EndPoint.Port == 0 { // In-memory test harness
+	configPath := e.dataDir + sep + "config"
+	schemaPath := ""        // this is normally an empty string forcing schema to come from Consul
+	if e.ServicePort == 0 { // In-memory test harness
 		schemaPath = configPath // read schema from local config yaml
 		_ = filepath.Walk(configPath,
 			func(path string, info os.FileInfo, err error) error {
@@ -88,7 +94,7 @@ func NewBitmapIndex(endPoint *EndPoint, expireDays int) *BitmapIndex {
 	} else { // Normal (from Consul) initialization
 		var tables []string
 		err := shared.Retry(5, 2*time.Second, func() (err error) {
-			tables, err = shared.GetTables(e.EndPoint.consul)
+			tables, err = shared.GetTables(e.consul)
 			return
 		})
 		if err != nil {
@@ -96,7 +102,7 @@ func NewBitmapIndex(endPoint *EndPoint, expireDays int) *BitmapIndex {
 			os.Exit(1)
 		}
 		for _, table := range tables {
-			if t, err := shared.LoadSchema(schemaPath, table, e.EndPoint.consul); err != nil {
+			if t, err := shared.LoadSchema(schemaPath, table, e.consul); err != nil {
 				u.Errorf("could not load schema for %s - %v", table, err)
 				os.Exit(1)
 			} else {
@@ -106,7 +112,7 @@ func NewBitmapIndex(endPoint *EndPoint, expireDays int) *BitmapIndex {
 		}
 	}
 
-	pb.RegisterBitmapIndexServer(e.EndPoint.server, e)
+	pb.RegisterBitmapIndexServer(e.server, e)
 	return e
 }
 
@@ -126,7 +132,10 @@ func (m *BitmapIndex) Init() error {
 	}
 
 	// Read files from disk
-	m.readBitmapFiles(m.fragQueue)
+	err := m.readBitmapFiles(m.fragQueue)
+	if err != nil {
+		return fmt.Errorf("cannot initialize bitmap server error: %v", err)
+	}
 
 	if m.expireDays > 0 {
 		u.Infof("Starting data expiration thread - expiration after %d days.", m.expireDays)
@@ -139,6 +148,17 @@ func (m *BitmapIndex) Init() error {
 
 // Shutdown - Shut down and clean up.
 func (m *BitmapIndex) Shutdown() {
+	u.Warnf("Shutting down bitmap server.")
+	// TODO:  Anything to do here?
+}
+
+// JoinCluster - Join the cluster
+func (m *BitmapIndex) JoinCluster() {
+	if m.Conn.ServicePort == 0 {
+		return // Skip this for test harness mode.
+	}
+	u.Infof("Bitmap server is joining the cluster.")
+	m.verifyNode()
 }
 
 // BatchMutate API call (used by client SetBit call for bulk loading data)
@@ -181,12 +201,23 @@ func (m *BitmapIndex) BatchMutate(stream pb.BitmapIndex_BatchMutateServer) error
 		isBSI := m.isBSI(indexName, fieldName)
 		ts := time.Unix(0, kv.Time)
 
+		frag := newBitmapFragment(indexName, fieldName, rowIDOrBits, ts, kv.Value,
+			isBSI, kv.IsClear, false)
+
+		if kv.Sync {
+			if frag.IsBSI {
+				m.updateBSICache(frag)
+			} else {
+				m.updateBitmapCache(frag)
+			}
+			return nil
+		}
+
 		select {
-		case m.fragQueue <- newBitmapFragment(indexName, fieldName, rowIDOrBits, ts, kv.Value,
-			isBSI, kv.IsClear, false):
+		case m.fragQueue <- frag:
 		default:
 			// Fragment queue is full
-			u.Errorf("BatchMutate: fragment queue is full!")
+			return fmt.Errorf("BatchMutate: fragment queue is full")
 		}
 	}
 }
@@ -355,6 +386,42 @@ func (m *BitmapIndex) expireProcessLoop(days int) {
 	select {
 	case <-time.After(time.Minute * 10):
 		m.expireOrTruncate(days, false)
+	}
+}
+
+/*
+ * Verify process thread.
+ *
+ * Wake up on interval and run node verification process.
+ */
+func (m *BitmapIndex) verifyProcessLoop() {
+
+	select {
+	case <-time.After(time.Second * 10):
+		m.verifyNode()
+	}
+}
+
+func (m *BitmapIndex) verifyNode() {
+
+	peerClient := m.Conn.GetService("BitmapIndex").(*shared.BitmapIndex)
+
+	m.State = Syncing
+	u.Warnf("Setting node state to Syncing")
+	tryCount := 1
+	for {
+		diffCount, err := peerClient.Synchronize(m.GetNodeID())
+		if err != nil {
+			log.Fatal(fmt.Errorf("Node synchronization/verification failed - %v", err))
+		}
+		if diffCount == 0 {
+			m.State = Active
+			u.Warnf("Setting node state to Active")
+			break
+		}
+		time.Sleep(shared.SyncRetryInterval)
+		tryCount++
+		u.Warnf("%d Differences detected, retrying Synchronization (attempt %d)", diffCount, tryCount)
 	}
 }
 
@@ -536,6 +603,8 @@ func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 		// Lock de-escalation
 		existBm.Lock.Lock()
 		m.bsiCacheLock.Unlock()
+		clearSet := roaring64.FastAnd(existBm.GetExistenceBitmap(), newBSI.GetExistenceBitmap())
+		existBm.ClearValues(clearSet)
 		existBm.ParOr(0, newBSI.BSI)
 		existBm.ModTime = f.ModTime
 		if f.IsInit {
@@ -650,7 +719,7 @@ func (m *BitmapIndex) truncateCaches(index string) {
 // Iterate standard bitmap cache looking for potential writes (dirty data)
 func (m *BitmapIndex) checkPersistBitmapCache(forceSync bool) {
 
-	if m.Port == 0 {
+	if m.ServicePort == 0 {
 		return // test mode, persistence disabled
 	}
 
@@ -693,7 +762,7 @@ func (m *BitmapIndex) checkPersistBitmapCache(forceSync bool) {
 // Iterate BSI cache looking for potential writes (dirty data)
 func (m *BitmapIndex) checkPersistBSICache(forceSync bool) {
 
-	if m.Port == 0 {
+	if m.ServicePort == 0 {
 		return // test mode persistence disabled
 	}
 
@@ -795,7 +864,7 @@ func (m *BitmapIndex) Update(ctx context.Context, req *pb.UpdateRequest) (*empty
 	case m.fragQueue <- frag:
 	default:
 		// Fragment queue is full
-		u.Errorf("Update: fragment queue is full!")
+		return &empty.Empty{}, fmt.Errorf("Update: fragment queue is full")
 	}
 	return &empty.Empty{}, nil
 }
@@ -909,7 +978,7 @@ func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperation
 
 	switch req.Operation {
 	case pb.TableOperationRequest_DEPLOY:
-		if table, err := shared.LoadSchema("", req.Table, m.EndPoint.consul); err != nil {
+		if table, err := shared.LoadSchema("", req.Table, m.consul); err != nil {
 			u.Errorf("could not load schema for %s - %v", req.Table, err)
 			os.Exit(1)
 		} else {

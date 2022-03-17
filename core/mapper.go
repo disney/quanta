@@ -280,14 +280,14 @@ func (mt MapperType) UpdateBitmap(c *Session, table, field string, mval uint64, 
 	if !mt.IsBSI() {
 		//fmt.Printf("SETBIT %s [%s] COLID =  %d TS = %s\n", table, field, tbuf.CurrentColumnID,
 		//    tbuf.CurrentTimestamp.Format(TIME_FMT))
-		if err := c.Client.SetBit(table, field, tbuf.CurrentColumnID, mval,
+		if err := c.BatchBuffer.SetBit(table, field, tbuf.CurrentColumnID, mval,
 			tbuf.CurrentTimestamp); err != nil {
 			return err
 		}
 	} else {
 		//fmt.Printf("SETVALUE %s [%s] COLID =  %d TS = %s\n", table, field, tbuf.CurrentColumnID,
 		//    tbuf.CurrentTimestamp.Format(TIME_FMT))
-		if err := c.Client.SetValue(table, field, tbuf.CurrentColumnID, int64(mval),
+		if err := c.BatchBuffer.SetValue(table, field, tbuf.CurrentColumnID, int64(mval),
 			tbuf.CurrentTimestamp); err != nil {
 			return err
 		}

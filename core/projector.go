@@ -15,6 +15,10 @@ import (
 	"unsafe"
 )
 
+const (
+	timeFmt = "2006-01-02T15"
+)
+
 // Projector - State of an in-flight projection
 type Projector struct {
 	connection     *Session
@@ -194,7 +198,7 @@ func (p *Projector) retrieveBitmapResults(foundSets map[string]*roaring64.Bitmap
 	bitmapResults := make(map[string]map[string]*BitmapFieldResults)
 
 	for k, v := range foundSets {
-		bsir, bitr, err := p.connection.Client.Projection(k, fieldNames[k], p.fromTime, p.toTime, v)
+		bsir, bitr, err := p.connection.BitIndex.Projection(k, fieldNames[k], p.fromTime, p.toTime, v)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -348,8 +352,7 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 		if v.MappingStrategy != "StringHashBSI" && v.MappingStrategy != "ParentRelation" {
 			continue
 		}
-		lBatch := make(map[interface{}]interface{})
-		lookupIndex := fmt.Sprintf("%s%s%s.CID2String", v.Parent.Name, ifDelim, v.FieldName)
+		lookupAttribute := v
 		/*
 		 * In a nested structure, the relation link field often doesn't have a source
 		 * including the relation link in a projection will resolve the backing data
@@ -376,10 +379,7 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 					continue
 					//return nil, fmt.Errorf("no BSI results for %s - %s", p.driverTable, key)
 				}
-				newCols := p.transposeFKColumnIDs(bsiResults[p.driverTable][key], columnIDs)
-				for _, v := range newCols {
-					lBatch[v] = "" // result placeholder
-				}
+				columnIDs = p.transposeFKColumnIDs(bsiResults[p.driverTable][key], columnIDs)
 				if v.MappingStrategy == "ParentRelation" {
 					if len(relBuf.PKAttributes) > 1 {
 						return nil, fmt.Errorf("Projector error - Can only support single PK with link [%s]", key)
@@ -388,18 +388,13 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 					if pv.MappingStrategy != "StringHashBSI" {
 						continue
 					}
-					lookupIndex = fmt.Sprintf("%s%s%s.CID2String", pv.Parent.Name, ifDelim, pv.FieldName)
+					lookupAttribute = pv
 				}
 			}
-		} else {
-			for _, v := range columnIDs {
-				lBatch[v] = "" // result placeholder
-			}
 		}
-		var err error
-		lBatch, err = p.connection.Client.KVStore.BatchLookup(lookupIndex, lBatch)
+		lBatch, err := p.getPartitionedStrings(lookupAttribute, columnIDs)
 		if err != nil {
-			return nil, fmt.Errorf("batch lookup error for [%s] - %v", lookupIndex, err)
+			return nil, err
 		}
 		strMap[v.FieldName] = lBatch
 	}
@@ -762,4 +757,47 @@ func (p *Projector) getAggregateResult(table, field string) (result *roaring64.B
 		return
 	}
 	return
+}
+
+// Handle boundary condition where a range of column IDs could span multiple partitions.
+func (p *Projector) getPartitionedStrings(attr *Attribute, colIDs []uint64) (map[interface{}]interface{}, error) {
+
+	lBatch := make(map[interface{}]interface{}, len(colIDs))
+	startPartition := time.Unix(0, int64(colIDs[0])).Format(timeFmt)
+	endPartition := time.Unix(0, int64(colIDs[len(colIDs)-1])).Format(timeFmt)
+
+	if startPartition == endPartition { // Everything in one partition
+		lookupIndex := fmt.Sprintf("%s/%s/%s", attr.Parent.Name, attr.FieldName, startPartition)
+		for _, colID := range colIDs {
+			lBatch[colID] = ""
+		}
+		return p.connection.KVStore.BatchLookup(lookupIndex, lBatch, true)
+	}
+
+	batch := make(map[interface{}]interface{})
+	for _, colID := range colIDs {
+		endPartition = time.Unix(0, int64(colID)).Format(timeFmt)
+		if endPartition != startPartition {
+			lookupIndex := fmt.Sprintf("%s/%s/%s", attr.Parent.Name, attr.FieldName, startPartition)
+			b, err := p.connection.KVStore.BatchLookup(lookupIndex, batch, true)
+			if err != nil {
+				return nil, fmt.Errorf("BatchLookup error for [%s] - %v", lookupIndex, err)
+			}
+			for k, v := range b {
+				lBatch[k] = v
+			}
+			batch = make(map[interface{}]interface{})
+			startPartition = endPartition
+		}
+		batch[colID] = ""
+	}
+	lookupIndex := fmt.Sprintf("%s/%s/%s", attr.Parent.Name, attr.FieldName, startPartition)
+	b, err := p.connection.KVStore.BatchLookup(lookupIndex, batch, true)
+	if err != nil {
+		return nil, fmt.Errorf("BatchLookup error for [%s] - %v", lookupIndex, err)
+	}
+	for k, v := range b {
+		lBatch[k] = v
+	}
+	return lBatch, nil
 }

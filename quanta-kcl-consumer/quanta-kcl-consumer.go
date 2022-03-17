@@ -8,7 +8,6 @@ import (
 	_ "github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/kinesis"
-	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 	"github.com/google/uuid"
@@ -68,7 +67,7 @@ type Main struct {
 	partitionMap    sync.Map
 	partitionLock   sync.Mutex
 	timeLocation    *time.Location
-	clientConn      *quanta.Conn
+	clientConn      *shared.Conn
 	partitionNotify chan string
 }
 
@@ -228,7 +227,7 @@ func (m *Main) Init() (*wk.Worker, error) {
 		return nil, err
 	}
 
-	m.clientConn = quanta.NewDefaultConnection()
+	m.clientConn = shared.NewDefaultConnection()
 	m.clientConn.ServicePort = m.Port
 	m.clientConn.Quorum = 3
 	if err := m.clientConn.Connect(m.ConsulClient); err != nil {

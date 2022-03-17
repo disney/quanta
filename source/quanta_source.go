@@ -8,7 +8,6 @@ import (
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/schema"
 	"github.com/araddon/qlbridge/value"
-	"github.com/disney/quanta/client"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
@@ -39,14 +38,13 @@ type QuantaSource struct {
 	colIndex       map[string]int
 
 	// Quanta specific after here
-	//result         *pcli.QueryResult
 	lastResultPos int
 	baseDir       string
 	sessionPool   *core.SessionPool
 }
 
 // NewQuantaSource - Construct a QuantaSource.
-func NewQuantaSource(baseDir, consulAddr string, servicePort int) (*QuantaSource, error) {
+func NewQuantaSource(baseDir, consulAddr string, servicePort, sessionPoolSize int) (*QuantaSource, error) {
 
 	m := &QuantaSource{}
 	var err error
@@ -58,7 +56,7 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort int) (*QuantaSource
 		}
 	}
 
-	clientConn := quanta.NewDefaultConnection()
+	clientConn := shared.NewDefaultConnection()
 	clientConn.ServicePort = servicePort
 	clientConn.Quorum = 3
 	if err := clientConn.Connect(consulClient); err != nil {
@@ -66,7 +64,10 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort int) (*QuantaSource
 		os.Exit(1)
 	}
 
-	m.sessionPool = core.NewSessionPool(clientConn, m.Schema, baseDir)
+	// Register for member leave/join notifications.
+	clientConn.RegisterService(m)
+
+	m.sessionPool = core.NewSessionPool(clientConn, m.Schema, baseDir, sessionPoolSize)
 
 	m.baseDir = baseDir
 	if m.baseDir != "" {
@@ -79,8 +80,22 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort int) (*QuantaSource
 	return m, nil
 }
 
+// MemberLeft - Implements member leave notification due to failure.
+func (m *QuantaSource) MemberLeft(nodeID string, index int) {
+
+	u.Warnf("node %v left the cluster, purging sessions", nodeID)
+	m.sessionPool.Recover(nil)  // TODO: Need to re-evalute this when inserts are fully implemented.
+}
+
+// MemberJoined - A new node joined the cluster.
+func (m *QuantaSource) MemberJoined(nodeID, ipAddress string, index int) {
+
+	u.Warnf("node %v joined the cluster, purging sessions", nodeID)
+	m.sessionPool.Recover(nil)  // TODO: Need to re-evalute this when inserts are fully implemented.
+}
+
 // GetSessionPool - Return the underlying session pool instance.
-func (m *QuantaSource) GetSessionPool() *core.SessionPool  {
+func (m *QuantaSource) GetSessionPool() *core.SessionPool {
 	return m.sessionPool
 }
 

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	//"expvar"
 	"fmt"
 	"github.com/araddon/dateparse"
 	u "github.com/araddon/gou"
@@ -17,16 +16,20 @@ import (
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
-	"github.com/disney/quanta/client"
 	"github.com/hamba/avro"
 	"github.com/harlow/kinesis-consumer"
 	store "github.com/harlow/kinesis-consumer/store/ddb"
 	"github.com/hashicorp/consul/api"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
-	//"runtime"
+	"runtime"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -44,42 +47,43 @@ const (
 	//partitionChannelSize = 10000
 	partitionChannelSize = 2000000
 	batchSize            = 100000
-	appName				 = "Kinesis-Consumer"
+	appName              = "Kinesis-Consumer"
 )
 
 // Main strct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
-	Stream        string
-	Region        string
-	Index         string
-	BufferSize    uint
-	totalBytes    *Counter
-	totalBytesL   *Counter
-	totalRecs     *Counter
-	totalRecsL    *Counter
-	errorCount    *Counter
-	poolPercent   *Counter
-	Port          int
-	ConsulAddr    string
-	ShardCount    int
-	lock          *api.Lock
-	consumer      *consumer.Consumer
-	Table         *shared.BasicTable
-	Schema        avro.Schema
-	InitialPos    string
-	IsAvro        bool
-	CheckpointDB  bool
-	CheckpointTable string
-	AssumeRoleArn string
+	Stream              string
+	Region              string
+	Index               string
+	BufferSize          uint
+	totalBytes          *Counter
+	totalBytesL         *Counter
+	totalRecs           *Counter
+	totalRecsL          *Counter
+	errorCount          *Counter
+	poolPercent         *Counter
+	Port                int
+	ConsulAddr          string
+	ShardCount          int
+	lock                *api.Lock
+	consumer            *consumer.Consumer
+	Table               *shared.BasicTable
+	Schema              avro.Schema
+	InitialPos          string
+	IsAvro              bool
+	CheckpointDB        bool
+	CheckpointTable     string
+	AssumeRoleArn       string
 	AssumeRoleArnRegion string
-	Deaggregate   bool
-	partitionMap  map[string]*Partition
-	partitionLock sync.Mutex
-	timeLocation  *time.Location
-	processedRecs *Counter
-	processedRecL *Counter
-	sessionPool   *core.SessionPool
-	metrics       *cloudwatch.CloudWatch
+	Deaggregate         bool
+	partitionMap        map[string]*Partition
+	partitionLock       sync.Mutex
+	timeLocation        *time.Location
+	processedRecs       *Counter
+	processedRecL       *Counter
+	sessionPool         *core.SessionPool
+	sessionPoolSize     int
+	metrics             *cloudwatch.CloudWatch
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -110,6 +114,7 @@ func main() {
 	region := app.Arg("region", "AWS region").Default("us-east-1").String()
 	port := app.Flag("port", "Port number for service").Default("4000").Int32()
 	bufSize := app.Flag("buf-size", "Buffer size").Default("1000000").Int32()
+	poolSize := app.Flag("session-pool-size", "Session pool size").Int()
 	withAssumeRoleArn := app.Flag("assume-role-arn", "Assume role ARN.").String()
 	withAssumeRoleArnRegion := app.Flag("assume-role-arn-region", "Assume role ARN region.").String()
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
@@ -140,6 +145,14 @@ func main() {
 	log.Printf("Kinesis region %v.", main.Region)
 	log.Printf("Index name %v.", main.Index)
 	log.Printf("Buffer size %d.", main.BufferSize)
+	// If the pool size is not configured then set it to the number of available CPUs
+	main.sessionPoolSize = *poolSize
+	if main.sessionPoolSize == 0 {
+		main.sessionPoolSize = runtime.NumCPU()
+		log.Printf("Session Pool Size not set, defaulting to number of available CPUs = %d", main.sessionPoolSize)
+	} else {
+		log.Printf("Session Pool Size = %d", main.sessionPoolSize)
+	}
 	log.Printf("Service port %d.", main.Port)
 	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
 	if *trimHorizon {
@@ -194,6 +207,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	go func() {
+		// Start Prometheus endpoint
+		http.Handle("/metrics", promhttp.Handler())
+		http.ListenAndServe(":2112", nil)
+	}()
+
 	var ticker *time.Ticker
 	ticker = main.printStats()
 
@@ -241,7 +260,11 @@ func main() {
 				case c.Data <- out:
 				}
 			} else { // Bypass partition worker dispatching
-				if err := main.processBatch([]map[string]interface{}{out}, partition); err != nil {
+				err := shared.Retry(3, 5 * time.Second, func() (err error) {
+					err = main.processBatch([]map[string]interface{}{out}, partition)
+					return
+				})
+				if err != nil {
 					u.Errorf("processBatch ERROR %v", err)
 					return nil // continue processing
 				}
@@ -290,7 +313,7 @@ func main() {
 				itemsOutstanding += len(v.Data)
 			}
 			main.partitionLock.Unlock()
-			poolSize, inUse := main.sessionPool.Metrics()
+			poolSize, inUse, _, _ := main.sessionPool.Metrics()
 			if itemsOutstanding > 0 {
 				u.Infof("Partitions %d, Outstanding Items = %d, Processors in use = %d",
 					len(main.partitionMap), itemsOutstanding, inUse)
@@ -310,6 +333,13 @@ func main() {
 }
 
 func (m *Main) processBatch(rows []map[string]interface{}, partition string) error {
+
+    defer func() {
+        if r := recover(); r != nil {
+            err := fmt.Errorf("Panic recover: \n" + string(debug.Stack()))
+            u.Error(err)
+        }
+    }()
 
 	conn, err := m.sessionPool.Borrow(m.Index)
 	if err != nil {
@@ -336,6 +366,42 @@ func exitErrorf(msg string, args ...interface{}) {
 	os.Exit(1)
 }
 
+// MemberLeft - Implements member leave notification due to failure.
+func (m *Main) MemberLeft(nodeID string, index int) {
+
+	u.Warnf("node %v left the cluster, purging sessions", nodeID)
+	go m.recoverInflight(m.sessionPool.Recover)
+}
+
+// MemberJoined - A new node joined the cluster.
+func (m *Main) MemberJoined(nodeID, ipAddress string, index int) {
+
+	u.Warnf("node %v joined the cluster, purging sessions", nodeID)
+	go m.recoverInflight(m.sessionPool.Recover)
+}
+
+// recover in-flight data in new thread
+func (m *Main) recoverInflight(recoverFunc func(unflushedCh chan *shared.BatchBuffer)) {
+
+	sess, err := m.sessionPool.NewSession(m.Index)
+	if err != nil {
+		u.Errorf("recoverInflight error creating recovery session %v", err)
+	}
+	rc := make(chan *shared.BatchBuffer, runtime.NumCPU())
+	recoverFunc(rc)
+	close(rc)
+	i := 1
+	for batch := range rc {
+		u.Infof("recoverInflight session %d", i)
+		batch.MergeInto(sess.BatchBuffer)
+		i++
+	}
+	err = sess.CloseSession() // Will flush first
+	if err != nil {
+		u.Errorf("recoverInflight error closing session %v", err)
+	}
+}
+
 // Init function initilizations loader.
 // Establishes session with bitmap server and Kinesis
 func (m *Main) Init() (int, error) {
@@ -345,7 +411,7 @@ func (m *Main) Init() (int, error) {
 		return 0, err
 	}
 
-	clientConn := quanta.NewDefaultConnection()
+	clientConn := shared.NewDefaultConnection()
 	clientConn.ServicePort = m.Port
 	clientConn.Quorum = 3
 	if err := clientConn.Connect(consulClient); err != nil {
@@ -353,7 +419,10 @@ func (m *Main) Init() (int, error) {
 		os.Exit(1)
 	}
 
-	m.sessionPool = core.NewSessionPool(clientConn, nil, "")
+	// Register member leave/join
+	clientConn.RegisterService(m)
+
+	m.sessionPool = core.NewSessionPool(clientConn, nil, "", m.sessionPoolSize)
 
 	m.Table, err = shared.LoadSchema("", m.Index, consulClient)
 	if err != nil {
@@ -497,12 +566,101 @@ func (m *Main) printStats() *time.Ticker {
 	return t
 }
 
+// Global storage for Prometheus metrics
+var (
+	totalRecs = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "consumer_records_arrived",
+		Help: "The total number of records consumed",
+	})
+
+	totalRecsPerSec = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "consumer_records_arrived_per_sec",
+		Help: "The total number of records consumed per second",
+	})
+
+	processedRecs = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "consumer_records_processed",
+		Help: "The number of records processed",
+	})
+
+	processedRecsPerSec = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "consumer_records_processed_per_sec",
+		Help: "The number of records processed per second",
+	})
+
+	totalBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "consumer_bytes_arrived",
+		Help: "The total number of bytes consumed",
+	})
+
+	errors = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "total_errors",
+		Help: "The total number of errors",
+	})
+
+	processedBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "processed_bytes",
+		Help: "The total number of processed bytes",
+	})
+
+	processedBytesPerSec = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "processed_bytes_per_second",
+		Help: "The total number of processed bytes per second",
+	})
+
+	uptimeHours = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "uptime_hours",
+		Help: "Hours of up time",
+	})
+
+	connPoolSize = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "connection_pool_size",
+		Help: "The size of the Quanta session pool",
+	})
+
+	connInUse = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "connections_in_use",
+		Help: "Number of Quanta sessions currently (actively) in use.",
+	})
+
+	connPooled = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "connections_in_pool",
+		Help: "Number of Quanta sessions currently pooled.",
+	})
+
+	connMaxInUse = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "max_connections_in_use",
+		Help: "Maximum nunber of Quanta sessions in use.",
+	})
+)
+
 func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) time.Time {
 
+	connectionPoolSize, connectionsInUse, pooled, maxUsed := m.sessionPool.Metrics()
 	interval := time.Since(lastPublishedAt).Seconds()
 	_, err := m.metrics.PutMetricData(&cloudwatch.PutMetricDataInput{
 		Namespace: aws.String("Quanta-Consumer/Records"),
 		MetricData: []*cloudwatch.MetricDatum{
+			{
+				MetricName: aws.String("ConnectionPoolSize"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(connectionPoolSize)),
+			},
+			{
+				MetricName: aws.String("ConnectionsInUse"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(connectionsInUse)),
+			},
+			{
+				MetricName: aws.String("MaxConnectionsInUse"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(maxUsed)),
+			},
+			{
+				MetricName: aws.String("ConnectionsInPool"),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(pooled)),
+			},
 			{
 				MetricName: aws.String("Arrived"),
 				Unit:       aws.String("Count"),
@@ -583,7 +741,7 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			{
 				MetricName: aws.String("UpTimeHours"),
 				Unit:       aws.String("Count"),
-				Value:      aws.Float64(float64(upTime / (1000000000 * 3600))),
+				Value:      aws.Float64(float64(upTime) / float64(1000000000*3600)),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
@@ -593,6 +751,20 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 		},
 	})
+	// Set Prometheus values
+	totalRecs.Set(float64(m.totalRecs.Get()))
+	totalRecsPerSec.Set(float64(m.totalRecs.Get()-m.totalRecsL.Get()) / interval)
+	processedRecs.Set(float64(m.processedRecs.Get()))
+	processedRecsPerSec.Set(float64(m.processedRecs.Get()-m.processedRecL.Get()) / interval)
+	errors.Set(float64(m.errorCount.Get()))
+	processedBytes.Set(float64(m.totalBytes.Get()))
+	processedBytesPerSec.Set(float64(m.totalBytes.Get()-m.totalBytesL.Get()) / interval)
+	uptimeHours.Set(float64(upTime) / float64(1000000000*3600))
+	connPoolSize.Set(float64(connectionPoolSize))
+	connInUse.Set(float64(connectionsInUse))
+	connMaxInUse.Set(float64(maxUsed))
+	connPooled.Set(float64(pooled))
+
 	m.totalRecsL.Set(m.totalRecs.Get())
 	m.processedRecL.Set(m.processedRecs.Get())
 	m.totalBytesL.Set(m.totalBytes.Get())

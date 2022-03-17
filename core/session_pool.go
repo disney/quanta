@@ -5,9 +5,10 @@ import (
 	"fmt"
 	u "github.com/araddon/gou"
 	sch "github.com/araddon/qlbridge/schema"
-	"github.com/disney/quanta/client"
+	"github.com/disney/quanta/shared"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -16,12 +17,14 @@ var ErrPoolDrained = errors.New("session pool drained")
 
 // SessionPool - Session pool encapsulates a Quanta session.
 type SessionPool struct {
-	AppHost      *quanta.Conn
+	AppHost      *shared.Conn
 	schema       *sch.Schema
 	baseDir      string
 	sessPoolMap  map[string]*sessionPoolEntry
-	sessPoolLock sync.Mutex
+	sessPoolLock sync.RWMutex
 	semaphores   chan struct{}
+	poolSize     int
+	maxUsed      int32
 }
 
 // SessionPool - Pool of Quanta connections
@@ -29,21 +32,27 @@ type sessionPoolEntry struct {
 	pool chan *Session
 }
 
-// NewSessionPool - Construct a session pool to constrain resources.
-func NewSessionPool(appHost *quanta.Conn, schema *sch.Schema, baseDir string) *SessionPool {
+// NewSessionPool - Construct a session pool to constrain resource consumption.
+func NewSessionPool(appHost *shared.Conn, schema *sch.Schema, baseDir string, poolSize int) *SessionPool {
+
+	if poolSize == 0 {
+		poolSize = runtime.NumCPU()
+	}
+
 	p := &SessionPool{AppHost: appHost, schema: schema, baseDir: baseDir,
-		sessPoolMap: make(map[string]*sessionPoolEntry), semaphores: make(chan struct{}, runtime.NumCPU())}
-	for i := 0; i < runtime.NumCPU(); i++ {
+		sessPoolMap: make(map[string]*sessionPoolEntry), semaphores: make(chan struct{}, poolSize), poolSize: poolSize}
+	for i := 0; i < poolSize; i++ {
 		p.semaphores <- struct{}{}
 	}
 	return p
 }
 
 func (m *SessionPool) newSessionPoolEntry() *sessionPoolEntry {
-	return &sessionPoolEntry{pool: make(chan *Session, runtime.NumCPU())}
+	return &sessionPoolEntry{pool: make(chan *Session, m.poolSize)}
 }
 
 func (m *SessionPool) getPoolByTableName(tableName string) *sessionPoolEntry {
+
 	m.sessPoolLock.Lock()
 	defer m.sessPoolLock.Unlock()
 	var cp *sessionPoolEntry
@@ -61,20 +70,25 @@ func (m *SessionPool) Borrow(tableName string) (*Session, error) {
 	cp := m.getPoolByTableName(tableName)
 	select {
 	case <-m.semaphores:
+		max := atomic.LoadInt32(&m.maxUsed)
+		used := int32(m.poolSize - len(m.semaphores))
+		if used > max {
+			atomic.StoreInt32(&m.maxUsed, used)
+		}
 		select {
 		case r := <-cp.pool:
 			var err error
 			if m.schema != nil && m.schema.Since(time.Until(r.CreatedAt)) {
 				u.Debugf("pooled connection is stale after schema change, refreshing.")
 				r.CloseSession()
-				r, err = m.newSession(tableName)
+				r, err = m.NewSession(tableName)
 				if err != nil {
 					return nil, err
 				}
 			}
 			return r, nil
 		default:
-			conn, err := m.newSession(tableName)
+			conn, err := m.NewSession(tableName)
 			if err != nil {
 				return nil, fmt.Errorf("borrowSession %v", err)
 			}
@@ -102,7 +116,8 @@ func (m *SessionPool) Return(tableName string, conn *Session) {
 	return
 }
 
-func (m *SessionPool) newSession(tableName string) (*Session, error) {
+// NewSession - Construct a new session.
+func (m *SessionPool) NewSession(tableName string) (*Session, error) {
 
 	conn, err := OpenSession(m.baseDir, tableName, false, m.AppHost)
 	if err != nil {
@@ -124,10 +139,42 @@ func (m *SessionPool) Shutdown() {
 	close(m.semaphores)
 }
 
-// Metrics - Return pool size and usage.
-func (m *SessionPool) Metrics() (poolSize, inUse int) {
+// Recover from network event.  Purge session and optionally recover unflushed buffers.
+func (m *SessionPool) Recover(unflushedCh chan *shared.BatchBuffer) {
 
-	poolSize = runtime.NumCPU()
+	m.sessPoolLock.Lock()
+	defer m.sessPoolLock.Unlock()
+
+	for _, v := range m.sessPoolMap {
+		// Drain and close bad sessions
+	loop:
+		for {
+			select {
+			case r := <-v.pool:
+				if unflushedCh != nil && !r.BatchBuffer.IsEmpty() {
+					unflushedCh <- r.BatchBuffer
+				}
+				// Push a replacement semaphore
+				select {
+				case m.semaphores <- struct{}{}:
+				default:
+					continue
+				}
+			default:
+				break loop
+			}
+		}
+	}
+}
+
+// Metrics - Return pool size and usage.
+func (m *SessionPool) Metrics() (poolSize, inUse, pooled, maxUsed int) {
+
+	poolSize = m.poolSize
 	inUse = poolSize - len(m.semaphores)
+	for _, v := range m.sessPoolMap {
+		pooled = pooled + len(v.pool)
+	}
+	maxUsed = int(atomic.LoadInt32(&m.maxUsed))
 	return
 }

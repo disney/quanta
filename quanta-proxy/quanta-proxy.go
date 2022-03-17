@@ -348,7 +348,7 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 		//for handling go mysql driver select @@version_comment
 		if strings.Contains(strings.ToLower(query), "version_comment") {
 			r, err = mysql.BuildSimpleResultset([]string{"@@max_allowed_packet"}, [][]interface{}{
-				{"V0.1"},
+				{"- Quanta version " + Version + " - Build: " + Build},
 			}, binary)
 			if err != nil {
 				return nil, err

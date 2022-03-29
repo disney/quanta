@@ -47,26 +47,26 @@ var (
 //
 type BitmapIndex struct {
 	*Node
-	expireDays	  int
-	bitmapCache	 map[string]map[string]map[uint64]map[int64]*StandardBitmap
-	bitmapCacheLock sync.RWMutex
-	bsiCache		map[string]map[string]map[int64]*BSIBitmap
-	bsiCacheLock	sync.RWMutex
-	fragQueue	   chan *BitmapFragment
-	workers		 int
-	fragFileLock	sync.Mutex
-	setBitThreads   *CountTrigger
-	writeSignal	 chan bool
-	tableCache	  map[string]*shared.BasicTable
-	tableCacheLock  sync.RWMutex
-	partitionQueue  chan *PartitionOperation
+	memoryLimitMb		int
+	bitmapCache			map[string]map[string]map[uint64]map[int64]*StandardBitmap
+	bitmapCacheLock		sync.RWMutex
+	bsiCache			map[string]map[string]map[int64]*BSIBitmap
+	bsiCacheLock		sync.RWMutex
+	fragQueue			chan *BitmapFragment
+	workers				int
+	fragFileLock		sync.Mutex
+	setBitThreads		*CountTrigger
+	writeSignal			chan bool
+	tableCache			map[string]*shared.BasicTable
+	tableCacheLock		sync.RWMutex
+	partitionQueue		chan *PartitionOperation
 }
 
 // NewBitmapIndex - Construct and initialize bitmap server state.
-func NewBitmapIndex(node *Node, expireDays int) *BitmapIndex {
+func NewBitmapIndex(node *Node, memoryLimitMb int) *BitmapIndex {
 
 	e := &BitmapIndex{Node: node}
-	e.expireDays = expireDays
+	e.memoryLimitMb = memoryLimitMb
 	e.tableCache = make(map[string]*shared.BasicTable)
 	configPath := e.dataDir + sep + "config"
 	schemaPath := ""		// this is normally an empty string forcing schema to come from Consul
@@ -140,9 +140,9 @@ func (m *BitmapIndex) Init() error {
 		return fmt.Errorf("cannot initialize bitmap server error: %v", err)
 	}
 
-	if m.expireDays > 0 {
-		u.Infof("Starting data expiration thread - expiration after %d days.", m.expireDays)
-		go m.expireProcessLoop(m.expireDays)
+	if m.memoryLimitMb > 0 {
+		u.Infof("Starting data expiration thread - expiration after %d Mb limit.", m.memoryLimitMb)
+		go m.expireProcessLoop(m.memoryLimitMb)
 	} else {
 		u.Info("Data expiration thread disabled.")
 	}
@@ -388,11 +388,17 @@ func (m *BitmapIndex) batchProcessLoop(threadID int) {
  *
  * Wake up on interval and run data expiration process.
  */
-func (m *BitmapIndex) expireProcessLoop(days int) {
+func (m *BitmapIndex) expireProcessLoop(memoryLimitMb int) {
 
-	select {
-	case <-time.After(time.Minute * 10):
-		m.expire(days)
+	for {
+		if m.State != Active {
+			time.Sleep(time.Second * 10)
+			continue
+		}
+		select {
+		case <-time.After(time.Minute * 10):
+			m.expire(memoryLimitMb)
+		}
 	}
 }
 
@@ -409,11 +415,14 @@ func (m *BitmapIndex) partitionProcessLoop() {
 			time.Sleep(time.Second * 10)
 			continue
 		}
-	
+
+		m.cleanupStrandedShards()
+
 		select {
 		case p := <- m.partitionQueue:
 			m.executeOperation(p)
 			m.purgePartition(p.Partition)
+			runtime.GC()
 		case <-time.After(time.Second * 10):
 			continue
 		}
@@ -674,23 +683,68 @@ func (m *BitmapIndex) Truncate(index string) {
 	}
 }
 
-func (m *BitmapIndex) expire(days int) {
+func (m *BitmapIndex) cleanupStrandedShards() {
 
-	expiration := time.Duration(24*days) * time.Hour
 	m.iterateBSICache(func (p *Partition) error {
-		return m.expireOp(p, expiration)
+		return m.cleanupOp(p)
 	})
 	m.iterateBitmapCache(func (p *Partition) error {
-		return m.expireOp(p, expiration)
+		return m.cleanupOp(p)
 	})
 }
 
-// expireOp - Determinte which partitions should be archived
-func (m *BitmapIndex) expireOp(p *Partition, expiration time.Duration) error {
+func (m *BitmapIndex) expire(memoryLimitMb int) {
 
-	endDate := p.Time.Add(expiration)
-	if endDate.After(time.Now()) {
-		m.partitionQueue <- &PartitionOperation{Partition: p}
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+
+	mbUsed := int(mem.Alloc / (1 << (10 * 2)))
+	if mbUsed <= memoryLimitMb {
+		return
+	}
+	toExpire := m.findOldestPartition()
+	u.Warnf("Memory limit of %d Mb exceeded, expiring oldest partition %v", toExpire.Format(timeFmt))
+	m.iterateBSICache(func (p *Partition) error {
+		return m.expireOp(p, toExpire)
+	})
+	m.iterateBitmapCache(func (p *Partition) error {
+		return m.expireOp(p, toExpire)
+	})
+
+}
+
+// findOldestPartition
+func (m *BitmapIndex) findOldestPartition() time.Time {
+
+	// oldest time to maximum future time
+	oldestTime := time.Unix(1<<63-62135596801, 999999999)
+	m.iterateBSICache(func (p *Partition) error {
+		if p.Time.Before(oldestTime) {
+			oldestTime = p.Time
+		}
+		return nil
+	})
+	return oldestTime
+}
+
+// expireOp - Expire partitions that match the expiration time
+func (m *BitmapIndex) expireOp(p *Partition, exp time.Time) error {
+
+	if exp.Equal(p.Time) {
+		m.partitionQueue <- m.NewPartitionOperation(p, false)
+	}
+	return nil
+}
+
+// cleanupOp - Remove stranded partitions
+func (m *BitmapIndex) cleanupOp(p *Partition) error {
+
+	hashKey := fmt.Sprintf("%s/%s/%s", p.Index, p.Field, p.Time.Format(timeFmt))
+	if p.RowIDOrBits > 0 {
+		hashKey = fmt.Sprintf("%s/%s/%d/%s", p.Index, p.Field, p.RowIDOrBits, p.Time.Format(timeFmt))
+	}
+	if !m.Member(hashKey) {
+		m.partitionQueue <- m.NewPartitionOperation(p, true)
 	}
 	return nil
 }

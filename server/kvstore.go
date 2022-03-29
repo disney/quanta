@@ -130,6 +130,16 @@ func (m *KVStore) getStore(index string) (db *pogreb.DB, err error) {
 	return
 }
 
+func (m *KVStore) closeStore(index string) {
+
+	m.storeCacheLock.Lock()
+	defer m.storeCacheLock.Unlock()
+	if db, ok := m.storeCache[index]; ok {
+		db.Close()
+		delete(m.storeCache, index)
+	}
+}
+
 // Put - Insert a new key
 func (m *KVStore) Put(ctx context.Context, kv *pb.IndexKVPair) (*empty.Empty, error) {
 

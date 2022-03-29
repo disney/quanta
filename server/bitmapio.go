@@ -23,6 +23,7 @@ type Partition struct {
 	Time			time.Time
 	TQType			string
 	HasStrings		bool
+	IsPK			bool
 }
 
 // PartitionOperation - Partition operation
@@ -30,6 +31,24 @@ type PartitionOperation struct {
 	*Partition
 	RemoveOnly		bool
 	newPath			string
+}
+
+func (m *BitmapIndex) NewPartitionOperation(p *Partition, removeOnly bool) *PartitionOperation {
+
+	m.tableCacheLock.RLock()
+	defer m.tableCacheLock.RUnlock()
+	table := m.tableCache[p.Index]
+	if table == nil {
+		u.Errorf("NewPartitionOperation: assertion fail table is nil")
+		return nil
+	}
+	pka, err := table.GetPrimaryKeyInfo()
+	if err != nil {
+		u.Errorf("NewPartitionOperation: assertion fail GetPrimaryKeyInfo: %v", err)
+		return nil
+	}
+	p.IsPK =  p.Field == pka[0].FieldName
+	return &PartitionOperation{Partition: p, RemoveOnly: removeOnly}
 }
 
 // Persist a standard bitmap field to disk
@@ -103,8 +122,11 @@ func (m *BitmapIndex) executeOperation(aop *PartitionOperation) error {
 		return err
 	}
 	if aop.HasStrings {
-		oldPath = m.generateStringsFilePath(aop, false)
-		newPath = m.generateStringsFilePath(aop, true)
+		var iname string
+		oldPath, iname = m.generateStringsFilePath(aop, false)
+		localKV := m.Node.GetNodeService("KVStore").(*KVStore)
+		localKV.closeStore(iname)
+		newPath, _ = m.generateStringsFilePath(aop, true)
 		if err := filepath.Walk(oldPath, aop.perform); err != nil {
 			return err
 		}
@@ -155,7 +177,7 @@ func (m *BitmapIndex) generateBitmapFilePath(aop *Partition, isArchivePath bool)
 }
 
 // Figure out the appropriate file path for backing strings file
-func (m *BitmapIndex) generateStringsFilePath(aop *PartitionOperation, isArchivePath bool) string {
+func (m *BitmapIndex) generateStringsFilePath(aop *PartitionOperation, isArchivePath bool) (string, string) {
 
 	baseDir := m.dataDir + sep + "index" + sep + aop.Index + sep + aop.Field + sep
 	if isArchivePath {
@@ -171,7 +193,7 @@ func (m *BitmapIndex) generateStringsFilePath(aop *PartitionOperation, isArchive
 		fname = aop.Time.Format(timeFmt)
 	}
 	os.MkdirAll(baseDir, 0755)
-	return baseDir + sep + fname
+	return baseDir + sep + fname, fmt.Sprintf("%s%s%s%s%s", aop.Index, sep, aop.Field, sep, fname)
 }
 
 // Return open file descriptor(s) for writing

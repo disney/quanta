@@ -190,6 +190,14 @@ func (c *BitmapIndex) queryGroup(index string, query *pb.BitmapQuery) (*Intermed
 
 	// Send the same query to each node
 	for i, n := range c.client {
+		status, err := c.GetCachedNodeStatusForIndex(i)
+		if err != nil {
+			u.Errorf("Skipping node to error - %v", err)
+			continue
+		}
+		if status.NodeState != "Active" {
+			continue
+		}
 		client := n
 		clientIndex := i
 		eg.Go(func() error {

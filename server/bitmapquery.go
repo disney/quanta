@@ -217,11 +217,9 @@ func (m *BitmapIndex) timeRange(index, field string, rowID uint64, fromTime,
 
 	if tq == "" { // No time quantum
 		hashKey := fmt.Sprintf("%s/%s/%d/%s", index, field, rowID, lookupTime.Format(timeFmt))
-		/*
-		   if !m.Member(hashKey) {
-		       return result, nil
-		   }
-		*/
+		if !m.Member(hashKey) {
+			return result, nil
+		}
 		if bm, ok := m.bitmapCache[index][field][rowID][0]; ok {
 			if foundSet != nil {
 				b := bm.Bits.Clone()
@@ -296,11 +294,9 @@ func (m *BitmapIndex) timeRangeBSI(index, field string, fromTime, toTime time.Ti
 	if tq == "" { // No time quantum
 		// Verify that the data shard is primary here, skip if not.
 		hashKey := fmt.Sprintf("%s/%s/%s", index, field, lookupTime.Format(timeFmt))
-		/*
-		   if !m.Member(hashKey) {
-		       return result, nil
-		   }
-		*/
+		if !m.Member(hashKey) {
+			return result, nil
+		}
 		if bm, ok := m.bsiCache[index][field][0]; ok {
 			if foundSet != nil {
 				a = append(a, bm.BSI.NewBSIRetainSet(foundSet))
@@ -308,7 +304,10 @@ func (m *BitmapIndex) timeRangeBSI(index, field string, fromTime, toTime time.Ti
 				a = append(a, bm.BSI)
 			}
 			u.Debugf("timeRangeBSI No Quantum selecting %s", hashKey)
-			result.BSI.ParOr(0, a...)
+			//result.BSI.ParOr(0, a...)
+			for _, v := range a {
+				result.BSI.ParOr(0, v)
+			}
 		}
 	} else {
 		if tm, ok := m.bsiCache[index][field]; ok {
@@ -318,11 +317,9 @@ func (m *BitmapIndex) timeRangeBSI(index, field string, fromTime, toTime time.Ti
 					continue
 				}
 				hashKey := fmt.Sprintf("%s/%s/%s", index, field, time.Unix(0, ts).Format(timeFmt))
-				/*
-					if !m.Member(hashKey) {
-						continue
-					}
-				*/
+				if !m.Member(hashKey) {
+					continue
+				}
 				if foundSet != nil {
 					x := bsi.BSI.NewBSIRetainSet(foundSet)
 					if x.GetCardinality() == 0 {
@@ -331,12 +328,18 @@ func (m *BitmapIndex) timeRangeBSI(index, field string, fromTime, toTime time.Ti
 					a = append(a, x)
 					u.Debugf("timeRangeBSI %s selecting %s", tq, hashKey)
 				} else {
+					if bsi.BSI.GetCardinality() == 0 {
+						continue
+					}
 					a = append(a, bsi.BSI)
 					u.Debugf("timeRangeBSI %s selecting %s", tq, hashKey)
 				}
 			}
 		}
-		result.BSI.ParOr(0, a...)
+		//result.BSI.ParOr(0, a...)
+		for _, v := range a {
+			result.BSI.ParOr(0, v)
+		}
 	}
 	return result, nil
 }
@@ -360,11 +363,9 @@ func (m *BitmapIndex) timeRangeExistence(index, field string, fromTime, toTime t
 	if tq == "" { // No time quantum
 		// Verify that the data shard is primary here, skip if not.
 		hashKey := fmt.Sprintf("%s/%s/%s", index, field, lookupTime.Format(timeFmt))
-		/*
-		   if !m.Member(hashKey) {
-		       return result, nil
-		   }
-		*/
+		if !m.Member(hashKey) {
+			return roaring64.ParOr(0, results...), nil
+		}
 		if bm, ok := m.bsiCache[index][field][0]; ok {
 			results = append(results, bm.BSI.GetExistenceBitmap())
 		}
@@ -377,11 +378,9 @@ func (m *BitmapIndex) timeRangeExistence(index, field string, fromTime, toTime t
 					continue
 				}
 				hashKey := fmt.Sprintf("%s/%s/%s", index, field, time.Unix(0, ts).Format(timeFmt))
-				/*
-					if !m.Member(hashKey) {
-						continue
-					}
-				*/
+				if !m.Member(hashKey) {
+					continue
+				}
 				u.Debugf("timeRangeExistence %s selecting %s", tq, hashKey)
 				results = append(results, bm.BSI.GetExistenceBitmap())
 			}

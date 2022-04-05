@@ -15,9 +15,26 @@ import (
 	"time"
 )
 
+// Partition - Description of partition
+type Partition struct {
+	Index			string
+	Field			string
+	RowIDOrBits		int64
+	Time			time.Time
+	TQType			string
+	HasStrings		bool
+}
+
+// PartitionOperation - Partition operation
+type PartitionOperation struct {
+	*Partition
+	RemoveOnly		bool
+	newPath			string
+}
+
 // Persist a standard bitmap field to disk
 func (m *BitmapIndex) saveCompleteBitmap(bm *StandardBitmap, indexName, fieldName string, rowID int64,
-	ts time.Time) error {
+		ts time.Time) error {
 
 	data, err := bm.Bits.MarshalBinary()
 	if err != nil {
@@ -39,7 +56,7 @@ func (m *BitmapIndex) saveCompleteBitmap(bm *StandardBitmap, indexName, fieldNam
 
 // Persist a BSI field to disk
 func (m *BitmapIndex) saveCompleteBSI(bsi *BSIBitmap, indexName, fieldName string, bits int,
-	ts time.Time) error {
+		ts time.Time) error {
 
 	if fds, err := m.openCompleteFile(indexName, fieldName, int64(bits*-1), ts,
 		bsi.TQType); err == nil {
@@ -70,53 +87,64 @@ func (m *BitmapIndex) saveCompleteBSI(bsi *BSIBitmap, indexName, fieldName strin
 }
 
 // Move data from active use to the archive directory path
-func (m *BitmapIndex) archiveOrTruncateData(index, field string, rowIDOrBits int64, ts time.Time,
-	tqType string, archive bool) error {
+func (m *BitmapIndex) executeOperation(aop *PartitionOperation) error {
 
-	oldPath := m.generateFilePath(index, field, rowIDOrBits, ts, tqType, false)
-	newPath := m.generateFilePath(index, field, rowIDOrBits, ts, tqType, true)
+	oldPath := m.generateBitmapFilePath(aop.Partition, false)
+	newPath := m.generateBitmapFilePath(aop.Partition, true)
+	aop.newPath = newPath
 
-	if rowIDOrBits >= 0 {
-		if archive {
-			return os.Rename(oldPath, newPath)
+	if aop.RowIDOrBits >= 0 {
+		if aop.RemoveOnly {
+			return os.Remove(oldPath)
 		}
-		return os.Remove(oldPath)
+		return os.Rename(oldPath, newPath)
 	}
-
-	return filepath.Walk(oldPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
+	if err := filepath.Walk(oldPath, aop.perform); err != nil {
+		return err
+	}
+	if aop.HasStrings {
+		oldPath = m.generateStringsFilePath(aop, false)
+		newPath = m.generateStringsFilePath(aop, true)
+		if err := filepath.Walk(oldPath, aop.perform); err != nil {
 			return err
 		}
-		if info.IsDir() {
-			return nil
-		}
-		if archive {
-			return os.Rename(path, newPath+sep+info.Name())
-		}
+	}
+	return nil
+}
+
+func (po *PartitionOperation) perform(path string, info os.FileInfo, err error) error {
+
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return nil
+	}
+	if po.RemoveOnly {
 		return os.Remove(path)
-	})
+	}
+	return os.Rename(path, po.newPath+sep+info.Name())
 }
 
 // Figure out the appropriate file path given type BSI/Standard and applicable time quantum
-func (m *BitmapIndex) generateFilePath(index, field string, rowIDOrBits int64, ts time.Time,
-	tqType string, archive bool) string {
+func (m *BitmapIndex) generateBitmapFilePath(aop *Partition, isArchivePath bool) string {
 
 	// field is a BSI if rowIDOrBits < 0
 	leafDir := "bsi"
-	if rowIDOrBits >= 0 {
-		leafDir = fmt.Sprintf("%d", rowIDOrBits)
+	if aop.RowIDOrBits >= 0 {
+		leafDir = fmt.Sprintf("%d", aop.RowIDOrBits)
 	}
-	baseDir := m.dataDir + sep + "bitmap" + sep + index + sep + field + sep + leafDir
-	if archive {
-		baseDir = m.dataDir + sep + "archive" + sep + index + sep + field + sep + leafDir
+	baseDir := m.dataDir + sep + "bitmap" + sep + aop.Index + sep + aop.Field + sep + leafDir
+	if isArchivePath {
+		baseDir = m.dataDir + sep + "archive" + sep + aop.Index + sep + aop.Field + sep + leafDir
 	}
 	fname := "default"
-	if tqType == "YMD" {
-		fname = ts.Format(timeFmt)
+	if aop.TQType == "YMD" {
+		fname = aop.Time.Format(timeFmt)
 	}
-	if tqType == "YMDH" {
-		baseDir = baseDir + sep + fmt.Sprintf("%d%02d%02d", ts.Year(), ts.Month(), ts.Day())
-		fname = ts.Format(timeFmt)
+	if aop.TQType == "YMDH" {
+		baseDir = baseDir + sep + fmt.Sprintf("%d%02d%02d", aop.Time.Year(), aop.Time.Month(), aop.Time.Day())
+		fname = aop.Time.Format(timeFmt)
 	}
 	if leafDir == "bsi" {
 		baseDir = baseDir + sep + fname
@@ -126,14 +154,35 @@ func (m *BitmapIndex) generateFilePath(index, field string, rowIDOrBits int64, t
 	return baseDir + sep + fname
 }
 
+// Figure out the appropriate file path for backing strings file
+func (m *BitmapIndex) generateStringsFilePath(aop *PartitionOperation, isArchivePath bool) string {
+
+	baseDir := m.dataDir + sep + "index" + sep + aop.Index + sep + aop.Field + sep
+	if isArchivePath {
+		baseDir = m.dataDir + sep + "archive" + sep + aop.Index + sep + aop.Field + sep + "strings"
+	}
+
+	fname := "default"
+	if aop.TQType == "YMD" {
+		fname = aop.Time.Format(timeFmt)
+	}
+	if aop.TQType == "YMDH" {
+		baseDir = baseDir + sep + fmt.Sprintf("%d%02d%02d", aop.Time.Year(), aop.Time.Month(), aop.Time.Day())
+		fname = aop.Time.Format(timeFmt)
+	}
+	os.MkdirAll(baseDir, 0755)
+	return baseDir + sep + fname
+}
+
 // Return open file descriptor(s) for writing
 func (m *BitmapIndex) openCompleteFile(index, field string, rowIDOrBits int64, ts time.Time,
-	tqType string) ([]*os.File, error) {
+		tqType string) ([]*os.File, error) {
 
 	// if the bitmap file is a BSI (rowidOrBits < 0) then return an array of open file handles in low
 	// to high bit significance order.  For BSI, RowIDOrBits is the number of bits as a negative value.
 	// For StandardBitmap just use this value as rowID
-	path := m.generateFilePath(index, field, rowIDOrBits, ts, tqType, false)
+	operation := &Partition{Index: index, Field: field, Time: ts, TQType: tqType, RowIDOrBits: rowIDOrBits}
+	path := m.generateBitmapFilePath(operation, false)
 	var err error
 	f := make([]*os.File, 1)
 	numFiles := 1
@@ -316,3 +365,24 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 	}
 	return nil
 }
+
+// Purge a partition from cache
+func (m *BitmapIndex) purgePartition(aop *Partition) {
+
+	t := aop.Time.UnixNano()
+	if aop.RowIDOrBits > 0 {
+		rowID := uint64(aop.RowIDOrBits)
+		m.bitmapCacheLock.Lock()
+		defer m.bitmapCacheLock.Unlock()
+		if _, ok := m.bitmapCache[aop.Index][aop.Field][rowID][t]; ok {
+			delete(m.bitmapCache[aop.Index][aop.Field][rowID], t)
+		} 
+	} else {
+		m.bsiCacheLock.Lock()
+		defer m.bsiCacheLock.Unlock()
+		if _, ok := m.bsiCache[aop.Index][aop.Field][t]; ok {
+			delete(m.bsiCache[aop.Index][aop.Field], t)
+		} 
+	}
+}
+

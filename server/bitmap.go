@@ -47,18 +47,19 @@ var (
 //
 type BitmapIndex struct {
 	*Node
-	expireDays      int
-	bitmapCache     map[string]map[string]map[uint64]map[int64]*StandardBitmap
+	expireDays	  int
+	bitmapCache	 map[string]map[string]map[uint64]map[int64]*StandardBitmap
 	bitmapCacheLock sync.RWMutex
-	bsiCache        map[string]map[string]map[int64]*BSIBitmap
-	bsiCacheLock    sync.RWMutex
-	fragQueue       chan *BitmapFragment
-	workers         int
-	fragFileLock    sync.Mutex
+	bsiCache		map[string]map[string]map[int64]*BSIBitmap
+	bsiCacheLock	sync.RWMutex
+	fragQueue	   chan *BitmapFragment
+	workers		 int
+	fragFileLock	sync.Mutex
 	setBitThreads   *CountTrigger
-	writeSignal     chan bool
-	tableCache      map[string]*shared.BasicTable
+	writeSignal	 chan bool
+	tableCache	  map[string]*shared.BasicTable
 	tableCacheLock  sync.RWMutex
+	partitionQueue  chan *PartitionOperation
 }
 
 // NewBitmapIndex - Construct and initialize bitmap server state.
@@ -68,7 +69,7 @@ func NewBitmapIndex(node *Node, expireDays int) *BitmapIndex {
 	e.expireDays = expireDays
 	e.tableCache = make(map[string]*shared.BasicTable)
 	configPath := e.dataDir + sep + "config"
-	schemaPath := ""        // this is normally an empty string forcing schema to come from Consul
+	schemaPath := ""		// this is normally an empty string forcing schema to come from Consul
 	if e.ServicePort == 0 { // In-memory test harness
 		schemaPath = configPath // read schema from local config yaml
 		_ = filepath.Walk(configPath,
@@ -119,6 +120,8 @@ func NewBitmapIndex(node *Node, expireDays int) *BitmapIndex {
 // Init - Initialization
 func (m *BitmapIndex) Init() error {
 
+	// TODO: Sensible configuration for queue sizes.
+	m.partitionQueue = make(chan *PartitionOperation, 100000)
 	//m.fragQueue = make(chan *BitmapFragment, 20000000)
 	m.fragQueue = make(chan *BitmapFragment, 10000000)
 	m.bitmapCache = make(map[string]map[string]map[uint64]map[int64]*StandardBitmap)
@@ -143,6 +146,10 @@ func (m *BitmapIndex) Init() error {
 	} else {
 		u.Info("Data expiration thread disabled.")
 	}
+
+	// Partition operation worker thread
+	//go m.partitionProcessLoop()
+
 	return nil
 }
 
@@ -224,11 +231,11 @@ func (m *BitmapIndex) BatchMutate(stream pb.BitmapIndex_BatchMutateServer) error
 
 // StandardBitmap is just a wrapper around the roaring libraries for simple bitmap fields.
 type StandardBitmap struct {
-	Bits        *roaring64.Bitmap
-	ModTime     time.Time
+	Bits		*roaring64.Bitmap
+	ModTime	 time.Time
 	PersistTime time.Time
-	Lock        sync.RWMutex
-	TQType      string
+	Lock		sync.RWMutex
+	TQType	  string
 	Exclusive   bool
 }
 
@@ -248,10 +255,10 @@ func (m *BitmapIndex) newStandardBitmap(index, field string) *StandardBitmap {
 // BSIBitmap represents integer values
 type BSIBitmap struct {
 	*roaring64.BSI
-	ModTime        time.Time
-	PersistTime    time.Time
-	Lock           sync.RWMutex
-	TQType         string
+	ModTime		time.Time
+	PersistTime	time.Time
+	Lock		   sync.RWMutex
+	TQType		 string
 	sequencerQueue *SequencerQueue
 }
 
@@ -285,14 +292,14 @@ func (m *BitmapIndex) newBSIBitmap(index, field string) *BSIBitmap {
 type BitmapFragment struct {
 	IndexName   string
 	FieldName   string
-	RowIDOrBits int64     // Row ID or BSI bit count number (negative values = BSI bitcount)
-	Time        time.Time // Time for time quantum
-	BitData     [][]byte
-	ModTime     time.Time // Modification time stamp
-	IsBSI       bool
-	IsClear     bool // Is this a clear operation?  Othewise set bits.
-	IsUpdate    bool
-	IsInit      bool // Is this fragment part of init disk read?
+	RowIDOrBits int64	 // Row ID or BSI bit count number (negative values = BSI bitcount)
+	Time		time.Time // Time for time quantum
+	BitData	 [][]byte
+	ModTime	 time.Time // Modification time stamp
+	IsBSI	   bool
+	IsClear	 bool // Is this a clear operation?  Othewise set bits.
+	IsUpdate	bool
+	IsInit	  bool // Is this fragment part of init disk read?
 }
 
 func newBitmapFragment(index, field string, rowIDOrBits int64, ts time.Time, f [][]byte,
@@ -385,7 +392,31 @@ func (m *BitmapIndex) expireProcessLoop(days int) {
 
 	select {
 	case <-time.After(time.Minute * 10):
-		m.expireOrTruncate(days, false)
+		m.expire(days)
+	}
+}
+
+
+/*
+ * Partition cleanup/archive/expiration worker thread.
+ *
+ * Wake up on interval and run partition processing.
+ */
+func (m *BitmapIndex) partitionProcessLoop() {
+
+	for {
+		if m.State != Active {
+			time.Sleep(time.Second * 10)
+			continue
+		}
+	
+		select {
+		case p := <- m.partitionQueue:
+			m.executeOperation(p)
+			m.purgePartition(p.Partition)
+		case <-time.After(time.Second * 10):
+			continue
+		}
 	}
 }
 
@@ -643,45 +674,57 @@ func (m *BitmapIndex) Truncate(index string) {
 	}
 }
 
-func (m *BitmapIndex) expireOrTruncate(days int, truncate bool) {
+func (m *BitmapIndex) expire(days int) {
+
+	expiration := time.Duration(24*days) * time.Hour
+	m.iterateBSICache(func (p *Partition) error {
+		return m.expireOp(p, expiration)
+	})
+	m.iterateBitmapCache(func (p *Partition) error {
+		return m.expireOp(p, expiration)
+	})
+}
+
+// expireOp - Determinte which partitions should be archived
+func (m *BitmapIndex) expireOp(p *Partition, expiration time.Duration) error {
+
+	endDate := p.Time.Add(expiration)
+	if endDate.After(time.Now()) {
+		m.partitionQueue <- &PartitionOperation{Partition: p}
+	}
+	return nil
+}
+
+func (m *BitmapIndex) iterateBitmapCache(op func (p *Partition) error) {
 
 	m.bitmapCacheLock.Lock()
-	m.bsiCacheLock.Lock()
 	defer m.bitmapCacheLock.Unlock()
-	defer m.bsiCacheLock.Unlock()
-	expiration := time.Duration(24*days) * time.Hour
-
 	for indexName, fm := range m.bitmapCache {
 		for fieldName, rm := range fm {
 			for rowID, tm := range rm {
 				for ts, bitmap := range tm {
-					endDate := time.Unix(0, ts).Add(expiration)
-					if endDate.After(time.Now()) {
-						if err := m.archiveOrTruncateData(indexName, fieldName, int64(rowID), time.Unix(0, ts),
-							bitmap.TQType, truncate); err != nil {
-						} else {
-							delete(tm, ts)
-						}
-					} else if truncate {
-						delete(tm, ts)
+					partition := &Partition{Index: indexName, Field: fieldName, Time: time.Unix(0, ts), 
+							TQType: bitmap.TQType, RowIDOrBits: int64(rowID)}
+					if err := op(partition); err != nil {
+						u.Error(err)
 					}
 				}
 			}
 		}
 	}
+}
 
+func (m *BitmapIndex) iterateBSICache(op func (p *Partition) error) {
+
+	m.bsiCacheLock.Lock()
+	defer m.bsiCacheLock.Unlock()
 	for indexName, fm := range m.bsiCache {
 		for fieldName, tm := range fm {
 			for ts, bsi := range tm {
-				endDate := time.Unix(0, ts).Add(expiration)
-				if endDate.After(time.Now()) {
-					if err := m.archiveOrTruncateData(indexName, fieldName, -1, time.Unix(0, ts),
-						bsi.TQType, truncate); err != nil {
-					} else {
-						delete(tm, ts)
-					}
-				} else if truncate {
-					delete(tm, ts)
+				partition := &Partition{Index: indexName, Field: fieldName, Time: time.Unix(0, ts), 
+						TQType: bsi.TQType, RowIDOrBits: -1}
+				if err := op(partition); err != nil {
+					u.Error(err)
 				}
 			}
 		}
@@ -902,7 +945,7 @@ func (m *BitmapIndex) CheckoutSequence(ctx context.Context,
 
 	/*
 	   if !ok {
-	       return nil, fmt.Errorf("cannot find BSI for %s [%s] (TS %d)", req.Index, req.PkField, req.Time)
+		   return nil, fmt.Errorf("cannot find BSI for %s [%s] (TS %d)", req.Index, req.PkField, req.Time)
 	   }
 	*/
 
@@ -941,8 +984,8 @@ func (m *BitmapIndex) CheckoutSequence(ctx context.Context,
 
 // CountTrigger sends a message when counter reaches zero
 type CountTrigger struct {
-	num     int
-	lock    sync.Mutex
+	num	 int
+	lock	sync.Mutex
 	trigger chan bool
 }
 
@@ -964,7 +1007,7 @@ func (c *CountTrigger) Add(n int) {
 		case c.trigger <- true:
 			return
 			//default:
-			//    return
+			//	return
 		}
 	}
 }

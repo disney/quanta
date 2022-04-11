@@ -148,7 +148,7 @@ func (m *BitmapIndex) Init() error {
 	}
 
 	// Partition operation worker thread
-	go m.partitionProcessLoop()
+	//go m.partitionProcessLoop()
 
 	return nil
 }

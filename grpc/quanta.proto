@@ -106,6 +106,7 @@ message QueryFragment {
   float  samplePct = 13;
   bool  nullCheck = 14;
   bool  negate = 15;
+  bool  orContext = 16;
 }
 
 message TableOperationRequest {
@@ -121,11 +122,12 @@ message TableOperationRequest {
 message QueryResult {
   bytes    unions = 1;
   repeated bytes intersects = 2;
-  bytes    differences = 3;
+  repeated bytes differences = 3;
   repeated BitmapResult samples = 4;
   float    samplePct = 5;
   bool     sampleIsUnion = 6;
   bytes    existences = 7;
+  int32    andDifferencesCount = 8;
 }
 
 message JoinRequest {

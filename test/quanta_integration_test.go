@@ -455,6 +455,22 @@ func (suite *QuantaTestSuite) TestCitiesNotINStatement() {
 	suite.Equal("27334", results[0])
 }
 
+// NOT with OR
+func (suite *QuantaTestSuite) TestCitiesNotWithOR() {
+	results, _, err := suite.runQuery("select count(*) from cities where county != 'Nassau' or state != 'WA'")
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	//suite.Equal("28866", results[0])
+	suite.Equal("29488", results[0])
+}
+
+func (suite *QuantaTestSuite) TestCitiesNotWithAND() {
+	results, _, err := suite.runQuery("select count(*) from cities where county != 'Mason' and state = 'WA' and military != true and population > 0")
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	suite.Equal("596", results[0])
+}
+
 func (suite *QuantaTestSuite) TestZDropTables() {
 	err := suite.store.DeleteIndicesWithPrefix("cityzip", false)
 	assert.Nil(suite.T(), err)

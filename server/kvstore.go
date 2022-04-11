@@ -57,7 +57,9 @@ func (m *KVStore) Init() error {
 
     dbList := make([]string, 0)
 	for _, table := range tables {
-	    err := filepath.Walk(m.Node.dataDir+sep+"index"+sep+table,
+		tPath := m.Node.dataDir+sep+"index"+sep+table
+		os.MkdirAll(tPath, 0755)
+	    err := filepath.Walk(tPath,
 	        func(path string, info os.FileInfo, err error) error {
 	            if err != nil {
 	                return err

@@ -644,6 +644,25 @@ func (m *Conn) GetNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error)
 	return m.getNodeStatusForIndex(clientIndex)
 }
 
+// GetCachedNodeStatusForIndex - Returns the node status for a given client index.
+func (m *Conn) GetCachedNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error) {
+
+	m.nodeMapLock.RLock()
+	defer m.nodeMapLock.RUnlock()
+	if m.ServicePort == 0 {   // test harness
+		return  &pb.StatusMessage{NodeState: "Active"}, nil
+	}
+	if clientIndex < 0 || clientIndex >= len(m.ids) {
+		return nil, fmt.Errorf("clientIndex %d is invalid", clientIndex)
+	}
+	id := m.ids[clientIndex]
+	status, found := m.nodeStatusMap[id]
+	if !found {
+		return nil, fmt.Errorf("node status not found for id %v at clientIndex %d", id, clientIndex)
+	}
+	return status, nil
+}
+
 // GetClusterState - Returns the overall cluster state health, active nodes, cluster size.
 func (m *Conn) GetClusterState() (status ClusterState, activeCount, clusterSizeTarget int) {
 

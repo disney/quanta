@@ -97,8 +97,11 @@ func (c *BitmapIndex) query(query *pb.BitmapQuery) (*roaring64.Bitmap, error) {
 			for _, v := range rs.GetUnions() {
 				ir.AddUnion(v)
 			}
-			for _, v := range rs.GetDifferences() {
-				ir.AddDifference(v)
+			for _, v := range rs.GetAndDifferences() {
+				ir.AddAndDifference(v)
+			}
+			for _, v := range rs.GetOrDifferences() {
+				ir.AddOrDifference(v)
 			}
 			for _, v := range rs.GetExistences() {
 				ir.AddExistence(v)
@@ -110,12 +113,19 @@ func (c *BitmapIndex) query(query *pb.BitmapQuery) (*roaring64.Bitmap, error) {
 	var driver string
 	unions := make([]*roaring64.Bitmap, 0)
 	intersects := make([]*roaring64.Bitmap, 0)
-	differences := make([]*roaring64.Bitmap, 0)
+	andDifferences := make([]*roaring64.Bitmap, 0)
+	orDifferences := make([]*roaring64.Bitmap, 0)
 	existences := make([]*roaring64.Bitmap, 0)
 
 	for _, v := range resultsMap {
 		v.Collapse()
-		differences = append(differences, v.GetFinalDifference())
+		//differences = append(differences, v.GetFinalDifference())
+		for _, x := range v.GetAndDifferences() {
+			andDifferences = append(andDifferences, x)
+		}
+		for _, x := range v.GetOrDifferences() {
+			orDifferences = append(orDifferences, x)
+		}
 		if v.FKCount() == 0 {
 			if driver != "" {
 				return nil, fmt.Errorf("Must specify at least 1 join for index %s", v.Index)
@@ -154,25 +164,33 @@ func (c *BitmapIndex) query(query *pb.BitmapQuery) (*roaring64.Bitmap, error) {
 	}
 
 	union := roaring64.NewBitmap()
-	difference := roaring64.NewBitmap()
 	existence := roaring64.NewBitmap()
 	if len(unions) > 0 {
 		union = roaring64.ParOr(0, unions...)
 	}
-	if len(differences) > 0 {
-		difference = roaring64.ParOr(0, differences...)
-	}
+
 	if len(existences) > 0 {
 		existence = roaring64.ParOr(0, existences...)
 	}
 	result := roaring64.ParOr(0, union, existence)
 
+	if len(orDifferences) > 0 {
+		diff := make([]*roaring64.Bitmap, 0)
+		for _, x := range orDifferences {
+			d := roaring64.AndNot(result, x)
+			diff = append(diff, d)
+		}
+		result = roaring64.ParOr(0, diff...)
+	}
+
+	if len(andDifferences) > 0 {
+		diff := roaring64.ParOr(0, andDifferences...)
+		result.AndNot(diff)
+	}
+
 	if len(intersects) > 0 {
 		intersects = append(intersects, result)
 		result = roaring64.FastAnd(intersects...)
-	}
-	if len(differences) > 0 {
-		result.AndNot(difference)
 	}
 	return result, nil
 }
@@ -190,6 +208,14 @@ func (c *BitmapIndex) queryGroup(index string, query *pb.BitmapQuery) (*Intermed
 
 	// Send the same query to each node
 	for i, n := range c.client {
+		status, err := c.GetCachedNodeStatusForIndex(i)
+		if err != nil {
+			u.Errorf("Skipping node to error - %v", err)
+			continue
+		}
+		if status.NodeState != "Active" {
+			continue
+		}
 		client := n
 		clientIndex := i
 		eg.Go(func() error {
@@ -231,7 +257,8 @@ func (c *BitmapIndex) queryGroup(index string, query *pb.BitmapQuery) (*Intermed
 
 	// Iterate over node results and summarize into group results
 	aa := make([]*roaring64.Bitmap, len(ra))
-	ad := make([]*roaring64.Bitmap, len(ra))
+	adOr := make([]*roaring64.Bitmap, len(ra))
+	adAnd := make([]*roaring64.Bitmap, len(ra))
 	ae := make([]*roaring64.Bitmap, 0)
 	numAndPredicates := len(ra[0].GetIntersects())
 	for i := 0; i < numAndPredicates; i++ {
@@ -239,6 +266,22 @@ func (c *BitmapIndex) queryGroup(index string, query *pb.BitmapQuery) (*Intermed
 			aa[j] = ra[j].GetIntersects()[i]
 		}
 		gr.AddIntersect(roaring64.ParOr(len(ra), aa...))
+	}
+
+	numDiffAndPredicates := len(ra[0].GetAndDifferences())
+	for i := 0; i < numDiffAndPredicates; i++ {
+		for j := 0; j < len(ra); j++ {
+			adAnd[j] = ra[j].GetAndDifferences()[i]
+		}
+		gr.AddAndDifference(roaring64.ParOr(len(ra), adAnd...))
+	}
+
+	numDiffOrPredicates := len(ra[0].GetOrDifferences())
+	for i := 0; i < numDiffOrPredicates; i++ {
+		for j := 0; j < len(ra); j++ {
+			adOr[j] = ra[j].GetOrDifferences()[i]
+		}
+		gr.AddOrDifference(roaring64.ParOr(len(ra), adOr...))
 	}
 
 	samples := make([]*roaring64.Bitmap, 0)
@@ -263,7 +306,6 @@ func (c *BitmapIndex) queryGroup(index string, query *pb.BitmapQuery) (*Intermed
 		}
 		v.Collapse()
 		aa[i] = v.GetFinalUnion()
-		ad[i] = v.GetFinalDifference()
 		if v.GetFinalExistence() != nil {
 			x := v.GetFinalExistence()
 			if x.GetCardinality() > 0 {
@@ -272,7 +314,6 @@ func (c *BitmapIndex) queryGroup(index string, query *pb.BitmapQuery) (*Intermed
 		}
 	}
 	gr.AddUnion(roaring64.ParOr(len(aa), aa...))
-	gr.AddDifference(roaring64.ParOr(len(ad), ad...))
 	gr.AddExistence(roaring64.ParOr(len(ae), ae...))
 
 	return gr, nil

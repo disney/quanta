@@ -29,7 +29,8 @@ var (
 func main() {
 	app := kingpin.New(os.Args[0], "Quanta server node.").DefaultEnvars()
 	app.Version("Version: " + Version + "\nBuild: " + Build)
-	dataDir := app.Arg("data-dir", "Root directory for data files").Default("/home/ec2-user/data").String()
+	hashKey := app.Arg("hash-key", "Consistent hash key for node.").String()
+	dataDir := app.Arg("data-dir", "Root directory for data files.").Default("/home/ec2-user/data").String()
 	bindAddr := app.Arg("bind", "Bind address for this endpoint.").Default("0.0.0.0").String()
 	port := app.Arg("port", "Port for this endpoint.").Default("4000").Int32()
 	memLimit := app.Flag("mem-limit-mb", "Data partitions will expire after MB limit is exceeded (disabled if not specified).").Default("0").Int32()
@@ -50,6 +51,7 @@ func main() {
 		http.ListenAndServe(":2112", nil)
 	}()
 
+	u.Warnf("Node identifier '%s'", *hashKey)
 	u.Infof("Connecting to Consul at: [%s] ...\n", *consul)
 	consulClient, err := api.NewClient(&api.Config{Address: *consul})
 	if err != nil {
@@ -61,7 +63,7 @@ func main() {
 	_ = *certFile
 	_ = *keyFile
 
-	m, err := server.NewNode(fmt.Sprintf("%v:%v", Version, Build), int(*port), *bindAddr, *dataDir, consulClient)
+	m, err := server.NewNode(fmt.Sprintf("%v:%v", Version, Build), int(*port), *bindAddr, *dataDir, *hashKey, consulClient)
 	if err != nil {
 		u.Errorf("[node: Cannot initialize node config: error: %s", err)
 	}

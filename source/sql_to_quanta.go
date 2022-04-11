@@ -517,6 +517,7 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 			//u.Debugf("OR - LEFT (%T) [%v] RIGHT (%T) [%v] Nested = %v", node.Args[0], node.Args[0], node.Args[1], node.Args[1], node.Paren)
 			if q.Operation == "" {
 				q.Operation = "UNION"
+				q.ORContext = true
 			}
 			rhq.Operation = "UNION"
 		}

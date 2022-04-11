@@ -38,6 +38,7 @@ type QueryFragment struct {
 	SamplePct float32 `yaml:"samplePct,omitempty"`
 	NullCheck bool    `yaml:"nullCheck,omitempty"`
 	Negate    bool    `yaml:"negate,omitempty"`
+	ORContext bool    `yaml:"OrContext,omitempty"`
 	children  []*QueryFragment
 	parent    *QueryFragment
 	Query     *BitmapQuery
@@ -71,20 +72,21 @@ type BitmapQueryResponse struct {
 //
 // IntermediateResult - Container for query results returned from individual server nodes.
 // Aggregated results are stored in this structure for further processing on the client.
+// Also serves as a 'scratch pad' for query processing.
 //
 type IntermediateResult struct {
-	Index         string
-	SamplePct     float32
-	SampleIsUnion bool
-	unions        []*roaring64.Bitmap
-	intersects    []*roaring64.Bitmap
-	differences   []*roaring64.Bitmap
-	existences    []*roaring64.Bitmap
-	samples       []*RowBitmap
-	joinFkList    []FK
-	union         *roaring64.Bitmap
-	difference    *roaring64.Bitmap
-	existence     *roaring64.Bitmap
+	Index            string
+	SamplePct        float32
+	SampleIsUnion    bool
+	unions           []*roaring64.Bitmap
+	intersects       []*roaring64.Bitmap
+	andDifferences   []*roaring64.Bitmap
+	orDifferences    []*roaring64.Bitmap
+	existences       []*roaring64.Bitmap
+	samples          []*RowBitmap
+	joinFkList       []FK
+	union            *roaring64.Bitmap
+	existence        *roaring64.Bitmap
 }
 
 // FK - Foreign key container.
@@ -111,7 +113,8 @@ func NewIntermediateResult(index string) *IntermediateResult {
 	r := &IntermediateResult{Index: index}
 	r.unions = make([]*roaring64.Bitmap, 0)
 	r.intersects = make([]*roaring64.Bitmap, 0)
-	r.differences = make([]*roaring64.Bitmap, 0)
+	r.andDifferences = make([]*roaring64.Bitmap, 0)
+	r.orDifferences = make([]*roaring64.Bitmap, 0)
 	r.samples = make([]*RowBitmap, 0)
 	r.joinFkList = make([]FK, 0)
 	return r
@@ -145,22 +148,30 @@ func (r *IntermediateResult) GetFinalUnion() *roaring64.Bitmap {
 	return r.union
 }
 
-// AddDifference - Add a new "ANDNOT" predicate to the query.
-func (r *IntermediateResult) AddDifference(b *roaring64.Bitmap) {
+// AddAndDifference - Add a new "ANDNOT" predicate to the query and is logically 'ANDed' into final result.
+func (r *IntermediateResult) AddAndDifference(b *roaring64.Bitmap) {
 	if b == nil {
 		panic("Attempt to add nil Difference.")
 	}
-	r.differences = append(r.differences, b)
+	r.andDifferences = append(r.andDifferences, b)
 }
 
-// GetDifferences - Get all "ANDNOT" predicates.
-func (r *IntermediateResult) GetDifferences() []*roaring64.Bitmap {
-	return r.differences
+// GetAndDifferences - Get all "ANDNOT" predicates to be 'ANDed' into final result.
+func (r *IntermediateResult) GetAndDifferences() []*roaring64.Bitmap {
+	return r.andDifferences
 }
 
-// GetFinalDifference - "ANDNOT" operations are distributive so they can be aggregated on the nodes.
-func (r *IntermediateResult) GetFinalDifference() *roaring64.Bitmap {
-	return r.difference
+// AddOrDifference - Add a new "ANDNOT" predicate to the query and is logically 'ORed' into final result.
+func (r *IntermediateResult) AddOrDifference(b *roaring64.Bitmap) {
+	if b == nil {
+		panic("Attempt to add nil Difference.")
+	}
+	r.orDifferences = append(r.orDifferences, b)
+}
+
+// GetOrDifferences - Get all "ANDNOT" predicates to be 'ORed' into final result.
+func (r *IntermediateResult) GetOrDifferences() []*roaring64.Bitmap {
+	return r.orDifferences
 }
 
 // AddSamples - Add a stratified sample predicate batch.
@@ -220,15 +231,14 @@ func (r *IntermediateResult) GetFKList() []FK {
 func (r *IntermediateResult) Collapse() {
 
 	r.union = roaring64.ParOr(0, r.unions...)
-	r.difference = roaring64.ParOr(0, r.differences...)
 	r.existence = roaring64.ParOr(0, r.existences...)
 }
 
 // MarshalQueryResult into protobuf response for gRPC (server side).
 func (r *IntermediateResult) MarshalQueryResult() (qr *pb.QueryResult, err error) {
 
-	var unionBuf, differenceBuf, existenceBuf []byte
-	var intersectBuf [][]byte
+	var unionBuf, existenceBuf []byte
+	var intersectBuf, differenceBuf [][]byte
 	var sampleRows []*pb.BitmapResult
 	if r.union != nil {
 		unionBuf, err = r.union.MarshalBinary()
@@ -254,8 +264,15 @@ func (r *IntermediateResult) MarshalQueryResult() (qr *pb.QueryResult, err error
 		sampleRows[i] = &pb.BitmapResult{Field: rb.Field, RowId: rb.RowID, Bitmap: sampleBuf}
 	}
 
-	if r.difference != nil {
-		differenceBuf, err = r.difference.MarshalBinary()
+	differenceBuf = make([][]byte, len(r.andDifferences) + len(r.orDifferences))
+	for i, bm := range r.andDifferences {
+		differenceBuf[i], err = bm.MarshalBinary()
+		if err != nil {
+			return nil, fmt.Errorf("Cannot marshal intermediate difference result bitmap - %v", err)
+		}
+	}
+	for i, bm := range r.orDifferences {
+		differenceBuf[i + len(r.andDifferences)], err = bm.MarshalBinary()
 		if err != nil {
 			return nil, fmt.Errorf("Cannot marshal intermediate difference result bitmap - %v", err)
 		}
@@ -278,7 +295,7 @@ func (r *IntermediateResult) MarshalQueryResult() (qr *pb.QueryResult, err error
 
 	return &pb.QueryResult{Unions: unionBuf, Intersects: intersectBuf, Differences: differenceBuf,
 		Samples: sampleRows, SamplePct: r.SamplePct, SampleIsUnion: r.SampleIsUnion,
-		Existences: existenceBuf}, nil
+		Existences: existenceBuf, AndDifferencesCount: int32(len(r.andDifferences))}, nil
 }
 
 // UnmarshalAndAdd protobuf into Quanta query response (client side).
@@ -311,12 +328,20 @@ func (r *IntermediateResult) UnmarshalAndAdd(rs *pb.QueryResult) error {
 	r.SamplePct = rs.GetSamplePct()
 	r.SampleIsUnion = rs.SampleIsUnion
 
-	bm = roaring64.NewBitmap()
-	if err := bm.UnmarshalBinary(rs.GetDifferences()); err != nil {
-		return fmt.Errorf("Error unmarshalling query result differences - %v", err)
+	for i := 0; i < int(rs.AndDifferencesCount); i++ {
+		bm = roaring64.NewBitmap()
+		if err := bm.UnmarshalBinary(rs.Differences[i]); err != nil {
+			return fmt.Errorf("Error unmarshalling query result differences - %v", err)
+		}
+		r.AddAndDifference(bm)
 	}
-	if bm.GetCardinality() > 0 {
-		r.AddDifference(bm)
+
+	for i := int(rs.AndDifferencesCount); i < len(rs.Differences); i++ {
+		bm = roaring64.NewBitmap()
+		if err := bm.UnmarshalBinary(rs.Differences[i]); err != nil {
+			return fmt.Errorf("Error unmarshalling query result differences - %v", err)
+		}
+		r.AddOrDifference(bm)
 	}
 
 	bm = roaring64.NewBitmap()
@@ -568,7 +593,7 @@ func (q *BitmapQuery) toProtoFrag(n *QueryFragment, fa *[]*pb.QueryFragment) str
 
 	f := &pb.QueryFragment{Index: n.Index, Field: n.Field, RowID: n.RowID, Id: id, ChildrenIds: childIds,
 		Operation: op, BsiOp: bsiOp, Value: n.Value, Begin: n.Begin, End: n.End, Fk: n.Fk, Values: n.Values,
-		SamplePct: n.SamplePct, NullCheck: n.NullCheck, Negate: n.Negate}
+		SamplePct: n.SamplePct, NullCheck: n.NullCheck, Negate: n.Negate, OrContext: n.ORContext}
 
 	*fa = append(*fa, f)
 
@@ -591,11 +616,19 @@ func (q *BitmapQuery) walkReduce(n *QueryFragment) *IntermediateResult {
 		for _, v := range ir.GetIntersects() {
 			result.AddIntersect(v)
 		}
+		if n.ORContext {
+			for _, v := range ir.GetOrDifferences() {
+				result.AddOrDifference(v)
+			}
+		} else {
+			for _, v := range ir.GetAndDifferences() {
+				result.AddAndDifference(v)
+			}
+		}
 		for _, v := range ir.GetSamples() {
 			result.AddSample(v)
 		}
 		result.AddUnion(ir.GetFinalUnion())
-		result.AddDifference(ir.GetFinalDifference())
 	}
 
 	if v, ok := pb.QueryFragment_OpType_value[n.Operation]; ok {
@@ -617,7 +650,15 @@ func (q *BitmapQuery) walkReduce(n *QueryFragment) *IntermediateResult {
 				result.AddUnion(n.Data)
 			}
 		case 2:
-			result.AddDifference(n.Data)
+			if n.parent != nil && n.parent.ORContext {
+				result.AddOrDifference(n.Data)
+			} else {
+				if n.ORContext {
+					result.AddOrDifference(n.Data)
+				} else {
+					result.AddAndDifference(n.Data)
+				}
+			}
 			//case QueryFragment_DIFFERENCE:
 			//result.AddDifference(n.Data)
 			//case pb.QueryFragment_INNER_JOIN:
@@ -667,7 +708,8 @@ func FromProto(q *pb.BitmapQuery, dataMap map[string]*roaring64.Bitmap) *BitmapQ
 			op = "OUTER_JOIN"
 		}
 		f := &QueryFragment{Index: v.Index, Field: v.Field, RowID: v.RowID, Value: v.Value, End: v.End,
-			Begin: v.Begin, Fk: v.Fk, Values: v.Values, Operation: op, SamplePct: v.SamplePct}
+			Begin: v.Begin, Fk: v.Fk, Values: v.Values, Operation: op, SamplePct: v.SamplePct, Negate: v.Negate,
+			ORContext: v.OrContext, NullCheck: v.NullCheck}
 		if dataMap != nil {
 			if bm, ok := dataMap[v.Id]; ok {
 				f.Data = bm

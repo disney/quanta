@@ -25,7 +25,7 @@ func (suite *RBACTestSuite) SetupSuite() {
 	var err error
 	u.SetupLogging("debug")
 
-	node, err := server.NewNode("TEST", 0, "", "./testdata", nil)
+	node, err := server.NewNode("TEST", 0, "", "./testdata", "test", nil)
 	assert.NoError(suite.T(), err)
 	assert.NotNil(suite.T(), node)
 	suite.server = server.NewKVStore(node)

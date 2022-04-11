@@ -13,7 +13,7 @@ func Setup() (*server.Node, error) {
 
 	os.Mkdir("./testdata/bitmap", 0755)
 	// Enable in memory instance
-	node, err := server.NewNode("TEST", 0, "", "./testdata", nil)
+	node, err := server.NewNode("TEST", 0, "", "./testdata", "test", nil)
 	if err != nil {
 		return nil, err
 	}

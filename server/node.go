@@ -22,7 +22,6 @@ import (
 	"google.golang.org/grpc/testdata"
 	"net"
 	"os"
-	"path"
 	"reflect"
 	"strings"
 	"time"
@@ -111,15 +110,18 @@ type Node struct {
 }
 
 // NewNode - Construct a new node instance.
-func NewNode(version string, port int, bindAddr, dataDir string, consul *api.Client) (*Node, error) {
+func NewNode(version string, port int, bindAddr, dataDir, hashKey string, consul *api.Client) (*Node, error) {
 
 	conn := shared.NewDefaultConnection()
 	m := &Node{Conn: conn, version: version}
 	m.localServices = make(map[string]NodeService, 0)
 	m.ServicePort = port
 	m.Quorum = 0
-	m.hashKey = path.Base(dataDir) // leaf directory name is consistent hash key
-	if m.hashKey == "" || m.hashKey == "/" {
+	if hashKey == "" {
+		return nil, fmt.Errorf("hash key is empty")
+	}
+	m.hashKey = hashKey
+	if m.dataDir == "/" {
 		return nil, fmt.Errorf("data dir must not be root")
 	}
 

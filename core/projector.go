@@ -763,11 +763,11 @@ func (p *Projector) getAggregateResult(table, field string) (result *roaring64.B
 func (p *Projector) getPartitionedStrings(attr *Attribute, colIDs []uint64) (map[interface{}]interface{}, error) {
 
 	lBatch := make(map[interface{}]interface{}, len(colIDs))
-	startPartition := time.Unix(0, int64(colIDs[0])).Format(timeFmt)
-	endPartition := time.Unix(0, int64(colIDs[len(colIDs)-1])).Format(timeFmt)
+	startPartition := time.Unix(0, int64(colIDs[0]))
+	endPartition := time.Unix(0, int64(colIDs[len(colIDs)-1]))
 
-	if startPartition == endPartition { // Everything in one partition
-		lookupIndex := fmt.Sprintf("%s/%s/%s", attr.Parent.Name, attr.FieldName, startPartition)
+	if startPartition.Equal(endPartition) { // Everything in one partition
+		lookupIndex := stringsPath(attr.Parent, attr.FieldName, "strings", startPartition)
 		for _, colID := range colIDs {
 			lBatch[colID] = ""
 		}
@@ -776,9 +776,9 @@ func (p *Projector) getPartitionedStrings(attr *Attribute, colIDs []uint64) (map
 
 	batch := make(map[interface{}]interface{})
 	for _, colID := range colIDs {
-		endPartition = time.Unix(0, int64(colID)).Format(timeFmt)
-		if endPartition != startPartition {
-			lookupIndex := fmt.Sprintf("%s/%s/%s", attr.Parent.Name, attr.FieldName, startPartition)
+		endPartition = time.Unix(0, int64(colID))
+		if !endPartition.Equal(startPartition) {
+			lookupIndex := stringsPath(attr.Parent, attr.FieldName, "strings", startPartition)
 			b, err := p.connection.KVStore.BatchLookup(lookupIndex, batch, true)
 			if err != nil {
 				return nil, fmt.Errorf("BatchLookup error for [%s] - %v", lookupIndex, err)
@@ -791,7 +791,7 @@ func (p *Projector) getPartitionedStrings(attr *Attribute, colIDs []uint64) (map
 		}
 		batch[colID] = ""
 	}
-	lookupIndex := fmt.Sprintf("%s/%s/%s", attr.Parent.Name, attr.FieldName, startPartition)
+	lookupIndex := stringsPath(attr.Parent, attr.FieldName, "strings", startPartition)
 	b, err := p.connection.KVStore.BatchLookup(lookupIndex, batch, true)
 	if err != nil {
 		return nil, fmt.Errorf("BatchLookup error for [%s] - %v", lookupIndex, err)
@@ -800,4 +800,16 @@ func (p *Projector) getPartitionedStrings(attr *Attribute, colIDs []uint64) (map
 		lBatch[k] = v
 	}
 	return lBatch, nil
+}
+
+func stringsPath(table *Table, field, path string, ts time.Time) string {
+
+	lookupPath := fmt.Sprintf("%s/%s/%s,%s", table.Name, field, path, ts.Format(timeFmt))
+	if table.TimeQuantumType == "YMDH" {
+		key := fmt.Sprintf("%s/%s/%s", table.Name, field, ts.Format(timeFmt))
+		fpath := fmt.Sprintf("/%s/%s/%s/%s/%s", table.Name, field, path,
+				fmt.Sprintf("%d%02d%02d", ts.Year(), ts.Month(), ts.Day()), ts.Format(timeFmt))
+		lookupPath = key + "," + fpath
+	}
+	return lookupPath
 }

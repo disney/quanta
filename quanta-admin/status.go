@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/disney/quanta/core"
 )
 
 // StatusCmd - Status command
@@ -14,11 +15,13 @@ func (s *StatusCmd) Run(ctx *Context) error {
 	conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
 
 	fmt.Println()
-	fmt.Println("ADDRESS            STATUS    DATA CENTER      CONSUL NODE ID                        VERSION")
-	fmt.Println("================   ======    ==============   ====================================  =========================")
+	fmt.Println("ADDRESS            STATUS    DATA CENTER                              SHARDS   MEMORY   VERSION")
+	fmt.Println("================   ======    ==================================   ==========   =======  =========================")
 	for _, node := range conn.Nodes() {
 		status := "Left"
 		version := ""
+		var shards uint32
+		var memory uint32
 		if node.Checks[0].Status == "passing" {
 			status = "Crashed"
 			if node.Checks[1].Status == "passing" {
@@ -29,10 +32,13 @@ func (s *StatusCmd) Run(ctx *Context) error {
 				} else {
 					status = result.NodeState
 					version = result.Version
+					shards = result.ShardCount
+					memory = result.MemoryUsed
 				}
 			}
 		}
-		fmt.Printf("%-16s   %-8s  %-14s   %-25s  %s\n", node.Node.Address, status, node.Node.Datacenter, node.Node.ID, version)
+		fmt.Printf("%-16s   %-8s  %-34s   %10d   %-7s  %s\n", node.Node.Address, status, node.Node.Datacenter, shards, 
+				core.Bytes(memory), version)
 	}
 	fmt.Println()
 	status, active, size := conn.GetClusterState()

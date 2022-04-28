@@ -33,7 +33,7 @@ func main() {
 	dataDir := app.Arg("data-dir", "Root directory for data files.").Default("/home/ec2-user/data").String()
 	bindAddr := app.Arg("bind", "Bind address for this endpoint.").Default("0.0.0.0").String()
 	port := app.Arg("port", "Port for this endpoint.").Default("4000").Int32()
-	expireDays := app.Flag("expire-days", "Data will expire after n days (disabled if not specified).").Default("0").Int32()
+	memLimit := app.Flag("mem-limit-mb", "Data partitions will expire after MB limit is exceeded (disabled if not specified).").Default("0").Int32()
 	tls := app.Flag("tls", "Connection uses TLS if true.").Bool()
 	certFile := app.Flag("cert-file", "TLS cert file path.").String()
 	keyFile := app.Flag("key-file", "TLS key file path.").String()
@@ -74,7 +74,7 @@ func main() {
 	search := server.NewStringSearch(m)
 	m.AddNodeService(search)
 
-	bitmapIndex := server.NewBitmapIndex(m, int(*expireDays))
+	bitmapIndex := server.NewBitmapIndex(m, int(*memLimit))
 	m.AddNodeService(bitmapIndex)
 
 	// Start listening endpoint

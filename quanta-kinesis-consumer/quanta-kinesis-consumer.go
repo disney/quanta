@@ -76,6 +76,7 @@ type Main struct {
 	AssumeRoleArn       string
 	AssumeRoleArnRegion string
 	Deaggregate         bool
+	Collate             bool
 	partitionMap        map[string]*Partition
 	partitionLock       sync.Mutex
 	timeLocation        *time.Location
@@ -124,6 +125,7 @@ func main() {
 	checkpointTable := app.Flag("checkpoint-table", "DynamoDB checkpoint table name.").String()
 	avroPayload := app.Flag("avro-payload", "Payload is Avro.").Bool()
 	deaggregate := app.Flag("deaggregate", "Incoming payload records are aggregated.").Bool()
+	collate := app.Flag("collate", "Collate and partation shards.").Bool()
 	logLevel := app.Flag("log-level", "Log Level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
@@ -173,7 +175,11 @@ func main() {
 		} else {
 			main.CheckpointTable = main.Index
 		}
-		log.Printf("DynamoDB checkpoin table name [%s]", main.CheckpointTable)
+		log.Printf("DynamoDB checkpoint table name [%s]", main.CheckpointTable)
+	}
+	if *collate {
+		main.Collate = true
+		log.Printf("Shard collation enabled.")
 	}
 	if *withAssumeRoleArn != "" {
 		main.AssumeRoleArn = *withAssumeRoleArn
@@ -254,7 +260,7 @@ func main() {
 				main.errorCount.Add(1)
 				return nil
 			}
-			if main.ShardCount > 1 {
+			if main.ShardCount > 1 && main.Collate {
 				c := main.getPartition(partition)
 				select {
 				case c.Data <- out:

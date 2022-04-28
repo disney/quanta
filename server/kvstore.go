@@ -24,19 +24,30 @@ var (
 	_ NodeService = (*BitmapIndex)(nil)
 )
 
+const (
+	maxOpenHours = 1.0
+)
+
 // KVStore - Server side state for KVStore service.
 type KVStore struct {
 	*Node
-	storeCache     map[string]*pogreb.DB
-	storeCacheLock sync.RWMutex
-	enumGuard      singleflight.Group
+	storeCache      map[string]*cacheEntry
+	storeCacheLock  sync.RWMutex
+	enumGuard       singleflight.Group
+	exit			chan bool
+}
+
+type cacheEntry struct {
+	db				*pogreb.DB
+	accessTime		time.Time
 }
 
 // NewKVStore - Construct server side state.
 func NewKVStore(node *Node) *KVStore {
 
 	e := &KVStore{Node: node}
-	e.storeCache = make(map[string]*pogreb.DB)
+	e.exit = make(chan bool, 1)
+	e.storeCache = make(map[string]*cacheEntry)
 	pb.RegisterKVStoreServer(node.server, e)
 	return e
 }
@@ -53,7 +64,9 @@ func (m *KVStore) Init() error {
 		return err
 	}
 
+/*
 	lastDay := time.Now().AddDate(0, 0, -1)
+*/
 
     dbList := make([]string, 0)
 	for _, table := range tables {
@@ -64,21 +77,19 @@ func (m *KVStore) Init() error {
 	            if err != nil {
 	                return err
 	            }
+/*
 				if info.ModTime().Before(lastDay) {
 	                return nil
+				}
+*/
+				if strings.HasPrefix(path, ".SK") {
+					return nil
 				}
 	            if !strings.HasSuffix(path, "/00000.psg") {
 	                return nil
 	            }
-	            dbPath, _ := filepath.Split(path)
-	            l := strings.Split(dbPath, string(os.PathSeparator))
-	            if len(l) == 0 {
-	                return nil
-	            }
-	            if l[len(l)-2] != "search.dat" && l[len(l)-2] != "UserRoles" {
-	                indexName := l[len(l)-3] + sep + l[len(l)-2]
-	                dbList = append(dbList, fmt.Sprintf("%s%s%s", table, sep, indexName))
-	            }
+				index := table + sep + strings.ReplaceAll(filepath.Dir(path), tPath + "/", "")
+				dbList = append(dbList, index)
 	            return nil
 	        })
 	    if err != nil {
@@ -93,8 +104,42 @@ func (m *KVStore) Init() error {
         }   
     }
 
+	go m.cleanupProcessLoop()
 	return nil
 }
+
+// background thread to check and close cached DB entries that haven't been accessed in over 24 hours.
+func (m *KVStore) cleanupProcessLoop() {
+
+	for {
+		select {
+		case _, open := <- m.exit:
+			if !open {
+				return
+			}
+		default:
+		}
+		select {
+       	case <-time.After(time.Second * 10):
+			clusterState, _, _ := m.GetClusterState()
+			if m.State == Active && clusterState == shared.Green {
+				m.cleanup()
+			}
+       	}
+	}
+}
+
+// Scan open cache entries and close out indices
+func (m *KVStore) cleanup() {
+
+	for k, v := range m.storeCache {
+		if time.Since(v.accessTime).Hours() >= maxOpenHours {
+			u.Debugf("Closed %v due to inactivity.", k)
+			m.closeStore(k)
+		}
+	}
+}
+
 
 // Shutdown service.
 func (m *KVStore) Shutdown() {
@@ -102,9 +147,10 @@ func (m *KVStore) Shutdown() {
 	defer m.storeCacheLock.Unlock()
 	for k, v := range m.storeCache {
 		u.Infof("Sync and close [%s]", k)
-		v.Sync()
-		v.Close()
+		v.db.Sync()
+		v.db.Close()
 	}
+	close(m.exit)
 }
 
 // JoinCluster - Join the cluster
@@ -115,8 +161,11 @@ func (m *KVStore) getStore(index string) (db *pogreb.DB, err error) {
 
 	m.storeCacheLock.RLock()
 	var ok bool
-	if db, ok = m.storeCache[index]; ok {
+	var ce *cacheEntry
+	if ce, ok = m.storeCache[index]; ok {
 		m.storeCacheLock.RUnlock()
+		db = ce.db
+		ce.accessTime = time.Now()
 		return
 	}
 	m.storeCacheLock.RUnlock()
@@ -125,7 +174,7 @@ func (m *KVStore) getStore(index string) (db *pogreb.DB, err error) {
 	defer m.storeCacheLock.Unlock()
 	db, err = pogreb.Open(m.Node.dataDir+sep+"index"+sep+index, nil)
 	if err == nil {
-		m.storeCache[index] = db
+		m.storeCache[index] = &cacheEntry{db: db, accessTime: time.Now()}
 	} else {
 		err = fmt.Errorf("while opening [%s] - %v", index, err)
 	}
@@ -136,8 +185,10 @@ func (m *KVStore) closeStore(index string) {
 
 	m.storeCacheLock.Lock()
 	defer m.storeCacheLock.Unlock()
-	if db, ok := m.storeCache[index]; ok {
-		db.Close()
+	var ok bool
+	var ce *cacheEntry
+	if ce, ok = m.storeCache[index]; ok {
+		ce.db.Close()
 		delete(m.storeCache, index)
 	}
 }
@@ -377,8 +428,8 @@ func (m *KVStore) DeleteIndicesWithPrefix(ctx context.Context,
 	defer m.storeCacheLock.Unlock()
 	for k, v := range m.storeCache {
 		if strings.HasPrefix(k, req.Prefix) {
-			v.Sync()
-			v.Close()
+			v.db.Sync()
+			v.db.Close()
 			delete(m.storeCache, k)
 			if req.RetainEnums && strings.HasSuffix(k, "StringEnum") {
 				u.Infof("Sync and close [%s]", k)
@@ -414,17 +465,20 @@ func (m *KVStore) IndexInfo(ctx context.Context, req *pb.IndexInfoRequest) (*pb.
 		return res, nil
 	}
 
-	var db *pogreb.DB
 	var err error
+	var ce *cacheEntry
+	var db *pogreb.DB
 	m.storeCacheLock.RLock()
-	db, res.WasOpen = m.storeCache[req.IndexPath]
+	ce, res.WasOpen = m.storeCache[req.IndexPath]
 	m.storeCacheLock.RUnlock()
-	if db == nil {
+	if ce == nil {
 		db, err = pogreb.Open(filePath, nil)
 		if err != nil {
 			return res, fmt.Errorf("IndexInfo:Open err - %v", err)
 		}
 		defer db.Close()
+	} else {
+		db = ce.db
 	}
 	res.FileSize, err = db.FileSize()
 	if err != nil {

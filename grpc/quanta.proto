@@ -49,6 +49,8 @@ message StatusMessage {
   uint32 localPort = 3;
   string version = 4;
   uint32 replicas = 5;
+  uint32 shardCount = 6;
+  uint32 memoryUsed = 7;
 }
 
 message IndexKVPair {

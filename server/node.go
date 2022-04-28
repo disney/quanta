@@ -92,6 +92,8 @@ type Node struct {
 	consul      *api.Client
 	hashKey     string
 	version     string
+	shardCount  int
+	memoryUsed  int
 
 	// TLS options
 	tls      bool
@@ -280,11 +282,13 @@ func (n *Node) Status(ctx context.Context, e *empty.Empty) (*pb.StatusMessage, e
 		return nil, err
 	}
 	return &pb.StatusMessage{
-		NodeState: n.State.String(),
-		LocalIP:   ip.String(),
-		LocalPort: uint32(n.ServicePort),
-		Version:   n.version,
-		Replicas:  uint32(n.Replicas),
+		NodeState:   n.State.String(),
+		LocalIP:     ip.String(),
+		LocalPort:   uint32(n.ServicePort),
+		Version:     n.version,
+		Replicas:    uint32(n.Replicas),
+		ShardCount:  uint32(n.shardCount),
+		MemoryUsed:  uint32(n.memoryUsed),
 	}, nil
 }
 

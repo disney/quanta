@@ -26,6 +26,7 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime"

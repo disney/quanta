@@ -29,6 +29,7 @@ require (
 	github.com/hashicorp/go-memdb v1.3.1 // indirect
 	github.com/jmoiron/sqlx v1.3.1 // indirect
 	github.com/json-iterator/go v1.1.12
+	github.com/klauspost/compress v1.15.2 // indirect
 	github.com/leekchan/timeutil v0.0.0-20150802142658-28917288c48d // indirect
 	github.com/lestrrat-go/jwx v1.0.8
 	github.com/lytics/datemath v0.0.0-20180727225141-3ada1c10b5de // indirect
@@ -48,8 +49,8 @@ require (
 	github.com/vmware/vmware-go-kcl v1.5.0
 	github.com/willf/bitset v1.1.11 // indirect
 	github.com/xitongsys/parquet-go v1.5.5-0.20201031234703-4d9f11317375
-	//github.com/xitongsys/parquet-go v1.6.1
 	github.com/xitongsys/parquet-go-source v0.0.0-20201014235637-c24a23d9ef1e
+	go.uber.org/goleak v1.1.12
 	golang.org/x/net v0.0.0-20210614182718-04defd469f4e
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/text v0.3.6

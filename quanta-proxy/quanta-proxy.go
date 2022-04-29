@@ -25,6 +25,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"regexp"
@@ -220,6 +221,7 @@ func main() {
 			return
 		}
 		go onConn(conn)
+		
 	}
 
 }
@@ -243,7 +245,8 @@ func onConn(conn net.Conn) {
 	var tlsConf = server.NewServerTLSConfig(test_keys.CaPem, test_keys.CertPem, test_keys.KeyPem, tls.VerifyClientCertIfGiven)
 	svr := server.NewServer("8.0.12", mysql.DEFAULT_COLLATION_ID, mysql.AUTH_NATIVE_PASSWORD, test_keys.PubPem, tlsConf)
 	authProvider := NewAuthProvider() // Per connection (session) instance
-	sconn, err := server.NewCustomizedConn(conn, svr, authProvider, NewProxyHandler(authProvider))
+	handler := NewProxyHandler(authProvider)
+	sconn, err := server.NewCustomizedConn(conn, svr, authProvider, handler)
 	if err != nil {
 		if err.Error() == "invalid sequence 32 != 1" {
 			return
@@ -252,6 +255,7 @@ func onConn(conn net.Conn) {
 		u.Errorf("error from remote address %v", conn.RemoteAddr())
 		return
 	}
+	defer handler.Close()
 	connectCount.Add(1)
 	// Dispatch loop
 	for {
@@ -264,7 +268,6 @@ func onConn(conn net.Conn) {
 			}
 			break
 		}
-
 	}
 }
 
@@ -480,8 +483,11 @@ func (h *ProxyHandler) HandleStmtPrepare(sql string) (params int, columns int, c
 
 // HandleStmtClose - Handle Close
 func (h *ProxyHandler) HandleStmtClose(context interface{}) error {
-	h.db.Close()
 	return nil
+}
+
+func (h *ProxyHandler) Close() {
+	h.db.Close()
 }
 
 // HandleStmtExecute - Handle Execute

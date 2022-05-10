@@ -220,7 +220,7 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 
 	table := m.conn.TableBuffers[m.tbl.Name].Table
 
-	if req.Where == nil {
+	if req.Where == nil || req.Where != nil && req.Where.Source != nil {
 		pka, _ := table.GetPrimaryKeyInfo()
 		predicate := fmt.Sprintf("%s != NULL", pka[0].FieldName)
 		defaultWhere, _ := expr.ParseExpression(predicate)
@@ -228,7 +228,8 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 		m.defaultWhere = true
 	}
 
-	if req.Where != nil {
+	// if Where.Source is not nil then it is a subquery where clause that is walked separately via the planner
+	if req.Where != nil && req.Where.Source == nil {
 		_, err = m.walkNode(req.Where.Expr, frag)
 		if err != nil {
 			u.Warnf("Could Not evaluate Where Node %s %v", req.Where.Expr.String(), err)

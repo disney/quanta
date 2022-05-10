@@ -198,7 +198,7 @@ func (p *Projector) retrieveBitmapResults(foundSets map[string]*roaring64.Bitmap
 	bitmapResults := make(map[string]map[string]*BitmapFieldResults)
 
 	for k, v := range foundSets {
-		bsir, bitr, err := p.connection.BitIndex.Projection(k, fieldNames[k], p.fromTime, p.toTime, v)
+		bsir, bitr, err := p.connection.BitIndex.Projection(k, fieldNames[k], p.fromTime, p.toTime, v, false)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -763,6 +763,9 @@ func (p *Projector) getAggregateResult(table, field string) (result *roaring64.B
 func (p *Projector) getPartitionedStrings(attr *Attribute, colIDs []uint64) (map[interface{}]interface{}, error) {
 
 	lBatch := make(map[interface{}]interface{}, len(colIDs))
+	if len(colIDs) == 0 {
+		return lBatch, nil
+	}
 	startPartition := time.Unix(0, int64(colIDs[0]))
 	endPartition := time.Unix(0, int64(colIDs[len(colIDs)-1]))
 

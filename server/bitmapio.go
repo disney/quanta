@@ -153,6 +153,12 @@ func (m *BitmapIndex) executeOperation(aop *PartitionOperation) error {
 
 func (po *PartitionOperation) perform(path string, info os.FileInfo, err error) error {
 
+	if info == nil {
+		err := fmt.Errorf("assert info is nil for path %s", path)
+		u.Errorf("%v", err)
+		return err
+	}
+
 	if info.IsDir() {
 		return nil
 	}
@@ -188,7 +194,7 @@ func (p *Partition) generatePath(isArchivePath bool, base, leaf string) (string,
 	}
 
 	fname := "default"
-	dayDir := "/"
+	dayDir := ""
 	if p.TQType == "YMD" {
 		fname = p.Time.Format(timeFmt)
 	}

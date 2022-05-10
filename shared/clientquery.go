@@ -153,7 +153,7 @@ func (c *BitmapIndex) query(query *pb.BitmapQuery) (*roaring64.Bitmap, error) {
 				r = roaring64.FastAnd(x, r)
 			}
 			start := time.Now()
-			rs, err := c.Join(v.Index, []string{fk.Field}, query.FromTime, query.ToTime, r, nil)
+			rs, err := c.Join(v.Index, []string{fk.Field}, query.FromTime, query.ToTime, r, nil, false)
 			if err != nil {
 				return nil, err
 			}
@@ -403,7 +403,7 @@ func (c *BitmapIndex) ResultsQuery(query *pb.BitmapQuery, limit uint64) ([]uint6
 // Resulting bitmap is then intersected with final query results.
 //
 func (c *BitmapIndex) Join(driverIndex string, fklist []string, fromTime, toTime int64,
-	foundSet *roaring64.Bitmap, filterSets []*roaring64.Bitmap) (*roaring64.BSI, error) {
+	foundSet *roaring64.Bitmap, filterSets []*roaring64.Bitmap, negate bool) (*roaring64.BSI, error) {
 
 	foundData, err := foundSet.MarshalBinary()
 	if err != nil {
@@ -420,7 +420,7 @@ func (c *BitmapIndex) Join(driverIndex string, fklist []string, fromTime, toTime
 	}
 
 	req := &pb.JoinRequest{DriverIndex: driverIndex, FkFields: fklist, FromTime: fromTime,
-		ToTime: toTime, FoundSet: foundData, FilterSets: fs}
+		ToTime: toTime, FoundSet: foundData, FilterSets: fs, Negate: negate}
 
 	resultChan := make(chan *pb.JoinResponse, 100)
 	var eg errgroup.Group

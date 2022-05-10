@@ -10,7 +10,7 @@ require (
 	github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d // indirect
 	github.com/araddon/dateparse v0.0.0-20210207001429-0eec95c9db7e
 	github.com/araddon/gou v0.0.0-20190110011759-c797efecbb61
-	github.com/araddon/qlbridge v0.0.0-20200708000952-ce9ad213e74c
+	github.com/araddon/qlbridge v0.0.2
 	github.com/armon/go-metrics v0.3.4 // indirect
 	github.com/aviddiviner/go-murmur v0.0.0-20150519214947-b9740d71e571
 	github.com/aws/aws-sdk-go v1.41.7
@@ -43,7 +43,7 @@ require (
 	github.com/siddontang/go-mysql v1.1.0
 	github.com/steakknife/bloomfilter v0.0.0-20180922174646-6819c0d2a570
 	github.com/steakknife/hamming v0.0.0-20180906055917-c99c65617cd3 // indirect
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.7.1
 	github.com/stvp/rendezvous v0.0.0-20151118195501-67b5f26b3e18
 	github.com/tinylib/msgp v1.1.2 // indirect
 	github.com/vmware/vmware-go-kcl v1.5.0
@@ -63,4 +63,4 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 )
 
-replace github.com/araddon/qlbridge => github.com/guymolinari/qlbridge v0.0.0-20211212143244-2d30eaa76549
+replace github.com/araddon/qlbridge => github.com/guymolinari/qlbridge v0.0.0-20220510142205-73bb043e16ca

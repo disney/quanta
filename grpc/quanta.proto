@@ -139,6 +139,7 @@ message JoinRequest {
   int64    toTime = 4;
   bytes    foundSet = 5;
   repeated bytes filterSets = 6;
+  bool     negate = 7;
 }
 
 message JoinResponse {
@@ -202,6 +203,7 @@ message ProjectionRequest {
   bytes    foundSet = 3;
   string   index = 4;
   repeated string fields = 5;
+  bool     negate = 6; 
 }
 
 message BitmapResult {

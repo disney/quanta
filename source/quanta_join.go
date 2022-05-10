@@ -12,6 +12,7 @@ import (
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/araddon/qlbridge/datasource"
 	"github.com/araddon/qlbridge/exec"
+	"github.com/araddon/qlbridge/expr"
 	"github.com/araddon/qlbridge/lex"
 	"github.com/araddon/qlbridge/plan"
 	"github.com/araddon/qlbridge/rel"
@@ -58,7 +59,27 @@ func NewQuantaJoinMerge(ctx *plan.Context, l, r exec.TaskRunner, p *plan.JoinMer
 	m.aliases = make(map[string]*rel.SqlSource)
 	for i, v := range orig.From {
 		m.allTables[i] = v.Name
-		m.aliases[v.Alias] = v
+		alias := v.Alias
+		if alias == "" {
+			alias = v.Name
+		}
+		m.aliases[alias] = v
+	}
+	if _, ok := m.aliases[m.leftStmt.Name]; !ok {
+		m.allTables = append(m.allTables, m.leftStmt.Name)
+		alias := m.leftStmt.Alias
+		if alias == "" {
+			alias = m.leftStmt.Name
+		}
+		m.aliases[alias] = m.leftStmt
+	}
+	if _, ok := m.aliases[m.rightStmt.Name]; !ok {
+		m.allTables = append(m.allTables, m.rightStmt.Name)
+		alias := m.rightStmt.Alias
+		if alias == "" {
+			alias = m.rightStmt.Name
+		}
+		m.aliases[alias] = m.rightStmt
 	}
 	return m
 }
@@ -266,10 +287,17 @@ func (m *JoinMerge) Run() error {
 		outCh <- msg
 		return nil
 	}
+	if m.driverTable == "" {
+		return fmt.Errorf("driver table not specified")
+	}
 
 	joinTypes := make(map[string]bool)
+	negate := false
 	for _, v := range m.aliases {
 		if v.Name == m.driverTable {
+			if v.JoinExpr != nil && v.JoinExpr.(*expr.BinaryNode).Operator.T == lex.TokenNE {
+				negate = true
+			}
 			continue
 		}
 		if v.JoinType == lex.TokenInner {
@@ -279,14 +307,10 @@ func (m *JoinMerge) Run() error {
 		}
 	}
 
-	if m.driverTable == "" {
-		return fmt.Errorf("cannot resolve driver table")
-	}
-
 	if orig.IsAggQuery() {
 		nm := m.Ctx.Projection.Proj.Columns[0].As
 		if nm == "count(*)" {
-			rs, isOuter, err := m.callJoin(m.driverTable, foundSets, fromTime, toTime)
+			rs, isOuter, err := m.callJoin(m.driverTable, foundSets, fromTime, toTime, negate)
 			if err != nil {
 				fatalErr = err
 				return err
@@ -294,7 +318,7 @@ func (m *JoinMerge) Run() error {
 			ct, _ := rs.Sum(rs.GetExistenceBitmap())
 			// This test is necessary only if the foreign key can contain NULL values (which is the point of OUTER joins)
 			// A corner case can exist if there are no predicates in which case there are cancelling AndNot operations
-			if isOuter && (!lisdefaultedpredicate || !risdefaultedpredicate) {
+			if (isOuter) && (!lisdefaultedpredicate || !risdefaultedpredicate) {
 				driverSet := foundSets[m.driverTable]
 				diff := roaring64.AndNot(driverSet, rs.GetExistenceBitmap()).GetCardinality()
 				ct = int64(diff)
@@ -320,6 +344,13 @@ func (m *JoinMerge) Run() error {
 		_, cn, projFields, joinFields, err := createFinalProjection(orig, m.Ctx.Schema, m.driverTable)
 		if err != nil {
 			return err
+		}
+		if len(orig.From) == 1 {  // Assume Subquery
+			_, cn, projFields, joinFields, err = createFinalProjectionFromMaps(orig, m.aliases, m.allTables, 
+					m.Ctx.Schema, m.driverTable)
+			if err != nil {
+				return err
+			}
 		}
 		con, err := m.makeBufferedConnection(m.driverTable)
 		if err != nil {
@@ -367,7 +398,7 @@ func (m *JoinMerge) makeBufferedConnection(driverTable string) (*core.Session, e
 }
 
 func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitmap,
-	fromTime, toTime int64) (*roaring64.BSI, bool, error) {
+	fromTime, toTime int64, negate bool) (*roaring64.BSI, bool, error) {
 
 	conn := shared.NewDefaultConnection()
 	port, ok := m.Ctx.Session.Get(servicePort)
@@ -399,7 +430,7 @@ func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitma
 		}
 	}
 
-	rs, err := client.Join(table, joinCols, fromTime, toTime, foundSet, filterSetArray)
+	rs, err := client.Join(table, joinCols, fromTime, toTime, foundSet, filterSetArray, negate)
 	if err != nil {
 		return nil, false, err
 	}

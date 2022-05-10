@@ -171,11 +171,29 @@ func recurseAndLoadTable(basePath string, kvStore *shared.KVStore, tableBuffers 
 // IsDriverForTables - Is this the driver table?
 func (s *Session) IsDriverForTables(tables []string) bool {
 
-	for _, v := range tables {
-		if _, ok := s.TableBuffers[v]; !ok {
-			return false
-		}
+    for _, v := range tables {
+        if _, ok := s.TableBuffers[v]; !ok {
+            return false
+        }
+    }
+    return true
+}
+
+// IsDriverForJoin - Is this the driver table?
+func (s *Session) IsDriverForJoin(table, joinCol string) bool {
+
+	tbuf, ok := s.TableBuffers[table]
+	if !ok {
+		return false
 	}
+    attr, err := tbuf.Table.GetAttribute(joinCol)
+    if err != nil {
+        return false
+    }
+	if attr.ForeignKey == "" {
+		return false
+	}
+
 	return true
 }
 

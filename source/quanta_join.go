@@ -294,10 +294,10 @@ func (m *JoinMerge) Run() error {
 	joinTypes := make(map[string]bool)
 	negate := false
 	for _, v := range m.aliases {
+		if v.JoinExpr != nil && v.JoinExpr.(*expr.BinaryNode).Operator.T == lex.TokenNE {
+			negate = true
+		}
 		if v.Name == m.driverTable {
-			if v.JoinExpr != nil && v.JoinExpr.(*expr.BinaryNode).Operator.T == lex.TokenNE {
-				negate = true
-			}
 			continue
 		}
 		if v.JoinType == lex.TokenInner {
@@ -359,7 +359,7 @@ func (m *JoinMerge) Run() error {
 		defer con.CloseSession()
 		// driver table found set may have been reduced by join results
 		proj, err2 := core.NewProjection(con, foundSets, joinFields, projFields, m.driverTable,
-			fromTime, toTime, joinTypes)
+			fromTime, toTime, joinTypes, negate)
 		if err2 != nil {
 			return err2
 		}

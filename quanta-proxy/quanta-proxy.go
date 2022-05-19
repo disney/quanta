@@ -55,31 +55,35 @@ const (
 )
 
 var (
-	logging       *string
-	environment   *string
-	proxyHostPort *string
-	username      *string
-	password      *string
-	reWhitespace  *regexp.Regexp
-	publicKeySet  []*jwk.Set
-	userPool      sync.Map
-	authProvider  *AuthProvider
-	userClaimsKey string
-	metrics       *cloudwatch.CloudWatch
-	connectCount  *Counter
-	queryCount    *Counter
-	updateCount   *Counter
-	insertCount   *Counter
-	deleteCount   *Counter
-	connectCountL *Counter
-	queryCountL   *Counter
-	updateCountL  *Counter
-	insertCountL  *Counter
-	deleteCountL  *Counter
-	queryTime     *Counter
-	updateTime    *Counter
-	insertTime    *Counter
-	deleteTime    *Counter
+	src             *source.QuantaSource
+	sessionPoolSize int
+	quantaPort      *int
+	consulAddr      string
+	logging         *string
+	environment     *string
+	proxyHostPort   *string
+	username        *string
+	password        *string
+	reWhitespace    *regexp.Regexp
+	publicKeySet    []*jwk.Set
+	userPool        sync.Map
+	authProvider    *AuthProvider
+	userClaimsKey   string
+	metrics         *cloudwatch.CloudWatch
+	connectCount    *Counter
+	queryCount      *Counter
+	updateCount     *Counter
+	insertCount     *Counter
+	deleteCount     *Counter
+	connectCountL   *Counter
+	queryCountL     *Counter
+	updateCountL    *Counter
+	insertCountL    *Counter
+	deleteCountL    *Counter
+	queryTime       *Counter
+	updateTime      *Counter
+	insertTime      *Counter
+	deleteTime      *Counter
 )
 
 func main() {
@@ -90,7 +94,7 @@ func main() {
 	logging = app.Flag("log-level", "Logging level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
 	environment = app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	proxyHostPort = app.Flag("proxy-host-port", "Host:port mapping of MySQL Proxy server").Default("0.0.0.0:4000").String()
-	quantaPort := app.Flag("quanta-port", "Port number for Quanta service").Default("4000").Int()
+	quantaPort = app.Flag("quanta-port", "Port number for Quanta service").Default("4000").Int()
 	publicKeyURL := app.Arg("public-key-url", "URL for JWT public key.").String()
 	region := app.Arg("region", "AWS region for cloudwatch metrics").Default("us-east-1").String()
 	tokenservicePort := app.Arg("tokenservice-port", "Token exchance service port").Default("4001").Int()
@@ -117,7 +121,7 @@ func main() {
 		http.ListenAndServe(":2112", nil)
 	}()
 
-	consulAddr := *consul
+	consulAddr = *consul
 	log.Printf("Connecting to Consul at: [%s] ...\n", consulAddr)
 	consulConfig := &api.Config{Address: consulAddr}
 	errx := shared.RegisterSchemaChangeListener(consulConfig, schemaChangeListener)
@@ -146,7 +150,7 @@ func main() {
 	StartTokenService(*tokenservicePort, authProvider)
 
 	// If the pool size is not configured then set it to the number of available CPUs
-	sessionPoolSize := *poolSize
+	sessionPoolSize = *poolSize
 	if sessionPoolSize == 0 {
 		sessionPoolSize = runtime.NumCPU()
 		log.Printf("Session Pool Size not set, defaulting to number of available CPUs = %d", sessionPoolSize)
@@ -172,7 +176,6 @@ func main() {
 	metrics = cloudwatch.New(sess)
 
 	var err error
-	var src *source.QuantaSource
 	src, err = source.NewQuantaSource("", consulAddr, *quantaPort, sessionPoolSize)
 	if err != nil {
 		u.Error(err)
@@ -236,7 +239,15 @@ func schemaChangeListener(e shared.SchemaChangeEvent) {
 	case shared.Modify:
 		log.Printf("Truncated table %s", e.Table)
 	case shared.Create:
-		schema.DefaultRegistry().SchemaRefresh("quanta")
+		src.GetSessionPool().Recover(nil)
+		schema.DefaultRegistry().SchemaDrop("quanta", "quanta", lex.TokenSource)
+		var err error
+		src, err = source.NewQuantaSource("", consulAddr, *quantaPort, sessionPoolSize)
+		if err != nil {
+			u.Error(err)
+		}
+		schema.RegisterSourceAsSchema("quanta", src)
+		//schema.DefaultRegistry().SchemaRefresh("quanta")
 		log.Printf("Created table %s", e.Table)
 	}
 }
@@ -281,11 +292,13 @@ type ProxyHandler struct {
 func NewProxyHandler(authProvider *AuthProvider) *ProxyHandler {
 
 	h := &ProxyHandler{authProvider: authProvider}
+/*
 	var err error
 	h.db, err = sql.Open("qlbridge", "quanta")
 	if err != nil {
 		panic(err.Error())
 	}
+*/
 	return h
 }
 
@@ -310,6 +323,13 @@ func (h *ProxyHandler) UseDB(dbName string) error {
 }
 
 func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, error) {
+
+	var err error
+	h.db, err = sql.Open("qlbridge", "quanta")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer h.db.Close()
 
 	// Ignore java driver handshake
 	if strings.Contains(strings.ToLower(query), "mysql-connector-java") {
@@ -487,7 +507,7 @@ func (h *ProxyHandler) HandleStmtClose(context interface{}) error {
 }
 
 func (h *ProxyHandler) Close() {
-	h.db.Close()
+	//h.db.Close()
 }
 
 // HandleStmtExecute - Handle Execute

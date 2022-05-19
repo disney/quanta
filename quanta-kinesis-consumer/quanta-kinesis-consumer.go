@@ -409,11 +409,33 @@ func (m *Main) recoverInflight(recoverFunc func(unflushedCh chan *shared.BatchBu
 	}
 }
 
+func (m *Main) schemaChangeListener(e shared.SchemaChangeEvent) {
+
+	core.ClearTableCache()
+	switch e.Event {
+	case shared.Drop:
+		m.sessionPool.Recover(nil)
+		u.Warnf("Dropped table %s", e.Table)
+	case shared.Modify:
+		u.Warnf("Truncated table %s", e.Table)
+	case shared.Create:
+		m.sessionPool.Recover(nil)
+		u.Warnf("Created table %s", e.Table)
+	}
+}
+
 // Init function initilizations loader.
 // Establishes session with bitmap server and Kinesis
 func (m *Main) Init() (int, error) {
 
-	consulClient, err := api.NewClient(&api.Config{Address: m.ConsulAddr})
+	consulConfig := &api.Config{Address: m.ConsulAddr}
+	consulClient, err := api.NewClient(consulConfig)
+	if err != nil {
+		return 0, err
+	}
+
+	// Register for Schema changes
+	err = shared.RegisterSchemaChangeListener(consulConfig, m.schemaChangeListener)
 	if err != nil {
 		return 0, err
 	}

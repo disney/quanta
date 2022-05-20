@@ -85,6 +85,14 @@ func (m BoolDirectMapper) MapValue(attr *Attribute, val interface{},
 		if v {
 			result = uint64(1)
 		}
+	case int:
+		if val.(int) == 1 {
+			result = uint64(1)
+		}
+	case int64:
+		if val.(int64) == 1 {
+			result = uint64(1)
+		}
 	default:
 		return
 	}

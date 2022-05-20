@@ -425,6 +425,10 @@ func (suite *QuantaTestSuite) TestCitiesBoolDirect() {
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("84", results[0])
+	results, _, err = suite.runQuery("select count(*) from cities where military = 1")
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	suite.Equal("84", results[0])
 }
 
 // Like statements

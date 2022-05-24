@@ -351,6 +351,9 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 
 	operation := strings.ToLower(ss[0])
 	switch operation {
+	case "begin", "commit", "rollback":
+		return nil, nil   // Just returns an "OK" packet
+
 	case "select", "describe", "show":
 
 		h.checkSessionUserID(true)
@@ -370,7 +373,7 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 		}
 		//for handling go mysql driver select @@version_comment
 		if strings.Contains(strings.ToLower(query), "version_comment") {
-			r, err = mysql.BuildSimpleResultset([]string{"@@max_allowed_packet"}, [][]interface{}{
+			r, err = mysql.BuildSimpleResultset([]string{"@@version_comment"}, [][]interface{}{
 				{"- Quanta version " + Version + " - Build: " + Build},
 			}, binary)
 			if err != nil {
@@ -378,7 +381,35 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 			}
 			return &mysql.Result{0, 0, 0, r}, nil
 		}
-
+		//for handling go mysql driver select @@isolation_level
+		if strings.Contains(strings.ToLower(query), "transaction_isolation") {
+			r, err = mysql.BuildSimpleResultset([]string{"@@transaction_isolation"}, [][]interface{}{
+				{"READ UNCOMMITTED"},
+			}, binary)
+			if err != nil {
+				return nil, err
+			}
+			return &mysql.Result{0, 0, 0, r}, nil
+		}
+		//for handling go mysql driver select @@isolation_level
+		if strings.Contains(strings.ToLower(query), "show collation") {
+			r, err = mysql.BuildSimpleResultset([]string{""}, [][]interface{}{
+				{""},
+			}, binary)
+			if err != nil {
+				return nil, err
+			}
+			return &mysql.Result{0, 0, 0, r}, nil
+		}
+		if strings.Contains(strings.ToLower(query), "select cast") {
+			r, err = mysql.BuildSimpleResultset([]string{""}, [][]interface{}{
+				{""},
+			}, binary)
+			if err != nil {
+				return nil, err
+			}
+			return &mysql.Result{0, 0, 0, r}, nil
+		}
 		u.Debugf("running query [%v]\n", query)
 		start := time.Now()
 		rows, err2 := h.db.Query(query)

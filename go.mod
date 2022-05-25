@@ -63,5 +63,4 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 )
 
-replace github.com/araddon/qlbridge => github.com/guymolinari/qlbridge v0.0.0-20220510142205-73bb043e16ca
-//replace github.com/araddon/qlbridge => /home/ec2-user/qlbridge
+replace github.com/araddon/qlbridge => github.com/guymolinari/qlbridge v0.0.0-20220525092929-c7817258d98e

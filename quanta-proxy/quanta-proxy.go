@@ -401,6 +401,17 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 			}
 			return &mysql.Result{0, 0, 0, r}, nil
 		}
+		/*
+		if strings.Contains(strings.ToLower(query), "sql_mode") {
+			r, err = mysql.BuildSimpleResultset([]string{"@@sql_mode"}, [][]interface{}{
+				{"NO_ENGINE_SUBTITUTION"},
+			}, binary)
+			if err != nil {
+				return nil, err
+			}
+			return &mysql.Result{0, 0, 0, r}, nil
+		}
+		*/
 		if strings.Contains(strings.ToLower(query), "select cast") {
 			r, err = mysql.BuildSimpleResultset([]string{""}, [][]interface{}{
 				{""},

@@ -305,6 +305,8 @@ func (m StringEnumMapper) MapValue(attr *Attribute, val interface{},
 		} else {
 			multi = []string{strVal}
 		}
+	case []string:
+		multi = val.([]string)
 	case int32:
 		strVal := fmt.Sprintf("%d", val.(int32))
 		multi = []string{strVal}

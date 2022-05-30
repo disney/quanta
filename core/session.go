@@ -378,7 +378,15 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 			if (found && v.Required && val == nil) || (!found && v.Required) {
 				return nil, nil, fmt.Errorf("field %s - %s is required", v.FieldName, source)
 			}
-			retVals[i] = val
+			if aryVal, ok := val.([]interface{}); ok {  // JSON array is StringEnum multi value
+				s := make([]string, len(aryVal))
+				for x, y := range aryVal {
+					s[x] = fmt.Sprint(y)
+					retVals[i] = s
+				}
+			} else {
+				retVals[i] = val
+			}
 			continue
 		} else {
 			if found {

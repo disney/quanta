@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/rlmcpherson/s3gof3r"
 	pqs3 "github.com/xitongsys/parquet-go-source/s3"
 	"github.com/xitongsys/parquet-go/parquet"
@@ -33,15 +34,19 @@ type (
 		csvWriter      *csv.Writer
 		headersWritten bool
 		delimiter      rune
+		assumeRoleArn  string
+		config         *aws.Config
 	}
 )
 
 type (
 	// S3ParquetSink - State for AWS S3 implemention of Sink interface for Parquet output.
 	S3ParquetSink struct {
-		csvWriter *writer.CSVWriter
-		outFile   source.ParquetFile
-		md        []string
+		csvWriter      *writer.CSVWriter
+		outFile        source.ParquetFile
+		md        	   []string
+		assumeRoleArn  string
+		config         *aws.Config
 	}
 )
 
@@ -77,12 +82,19 @@ func (s *S3CSVSink) Open(ctx *plan.Context, bucketpath string, params map[string
 		s.delimiter = ra[0]
 	}
 
+	if assumeRoleArn, ok := params["assumeRoleArn"]; ok {
+		s.assumeRoleArn = assumeRoleArn.(string)
+	} else {
+		s.assumeRoleArn = ""
+	}
+	
 	bucket, file, err := parseBucketName(bucketpath)
 	if err != nil {
 		return err
 	}
 
-	k, err := s3gof3r.EnvKeys() // get S3 keys from environment
+	// k, err := s3gof3r.EnvKeys() // get S3 keys from environment
+	k, err := s3gof3r.InstanceKeys() // get S3 keys from environment
 	if err != nil {
 		return err
 	}
@@ -162,6 +174,13 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		region = r.(string)
 	}
 
+	if assumeRoleArn, ok := params["assumeRoleArn"]; ok {
+		s.assumeRoleArn = assumeRoleArn.(string)
+		u.Debug("Using Arn Role : '%s'\n", s.assumeRoleArn)
+	} else {
+		s.assumeRoleArn = ""
+	}
+
 	// Initialize S3 client
 	sess, err := session.NewSession(&aws.Config{
 		Region: aws.String(region)},
@@ -171,9 +190,23 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		return fmt.Errorf("Creating S3 session: %v", err)
 	}
 
+	s3svc := &s3.S3{}
+	if s.assumeRoleArn != "" {
+		creds := stscreds.NewCredentials(sess, s.assumeRoleArn)
+		s.config = aws.NewConfig().
+			WithCredentials(creds).
+			WithRegion(region).
+			WithMaxRetries(10)
+		s3svc = s3.New(sess, s.config)
+		if s3svc != nil {
+			u.Debug("Retrieved AWS session for writing Parquet using Arn Role '%s' \n", s.assumeRoleArn)
+		}
+	} else {
+		s3svc = s3.New(sess)
+	}
+
 	// Create S3 service client
 	u.Infof("Opening Output S3 path s3:///%s/%s", bucket, file)
-	s3svc := s3.New(sess)
 	s.outFile, err = pqs3.NewS3FileWriterWithClient(context.Background(), s3svc, bucket, file, nil)
 	if err != nil {
 		u.Error(err)
@@ -236,7 +269,7 @@ func (s *S3ParquetSink) Close() error {
 	if err := s.csvWriter.WriteStop(); err != nil {
 		return fmt.Errorf("WriteStop error %v", err)
 	}
-	u.Debug("Write Finished")
+	u.Debug("Parquet write Finished")
 	s.outFile.Close()
 	return nil
 }

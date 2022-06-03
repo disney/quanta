@@ -16,7 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/rlmcpherson/s3gof3r"
-	pqs3 "github.com/xitongsys/parquet-go-source/s3"
+	pgs3 "github.com/xitongsys/parquet-go-source/s3v2"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/source"
 	"github.com/xitongsys/parquet-go/writer"
@@ -229,9 +229,15 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		s3svc = s3.New(sess)
 	}
 
+	object_input = nil
+	if key != nil:
+		object_input = &s3.PutObjectInput{
+			ServerSideEncryption: aws.String(key),
+		}
+
 	// Create S3 service client
 	u.Infof("Opening Output S3 path s3:///%s/%s", bucket, file)
-	s.outFile, err = pqs3.NewS3FileWriterWithClient(context.Background(), s3svc, bucket, file, s.acl)
+	s.outFile, err = pgs3.NewS3FileWriterWithClient(context.Background(), s3svc, bucket, file, s.acl, nil, object_input)
 	if err != nil {
 		u.Error(err)
 		return err

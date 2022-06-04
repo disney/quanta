@@ -16,7 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/rlmcpherson/s3gof3r"
-	pqs3 "github.com/xitongsys/parquet-go-source/s3"
+	pgs3 "github.com/xitongsys/parquet-go-source/s3v2"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/source"
 	"github.com/xitongsys/parquet-go/writer"
@@ -35,6 +35,8 @@ type (
 		headersWritten bool
 		delimiter      rune
 		assumeRoleArn  string
+		acl            string
+		kms            string
 		config         *aws.Config
 	}
 )
@@ -46,6 +48,8 @@ type (
 		outFile        source.ParquetFile
 		md        	   []string
 		assumeRoleArn  string
+		act            string
+		kms            string
 		config         *aws.Config
 	}
 )
@@ -64,6 +68,7 @@ func NewS3Sink(ctx *plan.Context, path string, params map[string]interface{}) (e
 	s = &S3CSVSink{}
 	if fmt, ok := params["format"]; ok && fmt == "parquet" {
 		s = &S3ParquetSink{}
+		u.Debug("Format == Parquet")
 	}
 	err := s.Open(ctx, path, params)
 	if err != nil {
@@ -84,10 +89,18 @@ func (s *S3CSVSink) Open(ctx *plan.Context, bucketpath string, params map[string
 
 	if assumeRoleArn, ok := params["assumeRoleArn"]; ok {
 		s.assumeRoleArn = assumeRoleArn.(string)
-	} else {
-		s.assumeRoleArn = ""
 	}
 	
+	if acl, ok := params["acl"]; ok {
+		s.acl = acl.(string)
+		u.Debug("ACL : '%s'\n", s.acl)
+	}
+
+	if kms, ok := params["kmsKey"]; ok {
+		s.kms = kms.(string)
+		u.Debug("kms : '%s'\n", s.kms)
+	}
+
 	bucket, file, err := parseBucketName(bucketpath)
 	if err != nil {
 		return err
@@ -169,6 +182,8 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		return err
 	}
 
+	u.Debug("Bucket for parquet write: %s", bucketpath)
+
 	region := "us-east-1"
 	if r, ok := params["region"]; ok {
 		region = r.(string)
@@ -176,9 +191,17 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 
 	if assumeRoleArn, ok := params["assumeRoleArn"]; ok {
 		s.assumeRoleArn = assumeRoleArn.(string)
-		u.Debug("Using Arn Role : '%s'\n", s.assumeRoleArn)
-	} else {
-		s.assumeRoleArn = ""
+		u.Debug("Assuming Arn Role : '%s'\n", s.assumeRoleArn)
+	}
+
+	if acl, ok := params["acl"]; ok {
+		s.acl = acl.(string)
+		u.Debug("ACL : '%s'\n", s.acl)
+	}
+
+	if kms, ok := params["kmsKey"]; ok {
+		s.kms = kms.(string)
+		u.Debug("kms : '%s'\n", s.kms)
 	}
 
 	// Initialize S3 client
@@ -192,6 +215,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 
 	s3svc := &s3.S3{}
 	if s.assumeRoleArn != "" {
+		u.Debug("Parquet: Assuming role %s", s.assumeRoleArn)
 		creds := stscreds.NewCredentials(sess, s.assumeRoleArn)
 		s.config = aws.NewConfig().
 			WithCredentials(creds).
@@ -205,9 +229,15 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		s3svc = s3.New(sess)
 	}
 
+	object_input = nil
+	if key != nil:
+		object_input = &s3.PutObjectInput{
+			ServerSideEncryption: aws.String(key),
+		}
+
 	// Create S3 service client
 	u.Infof("Opening Output S3 path s3:///%s/%s", bucket, file)
-	s.outFile, err = pqs3.NewS3FileWriterWithClient(context.Background(), s3svc, bucket, file, nil)
+	s.outFile, err = pgs3.NewS3FileWriterWithClient(context.Background(), s3svc, bucket, file, s.acl, nil, object_input)
 	if err != nil {
 		u.Error(err)
 		return err

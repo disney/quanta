@@ -1,1 +1,1 @@
-quanta 0.9.6-rc-6
+quanta 0.9.6-rc-7

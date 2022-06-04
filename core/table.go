@@ -328,9 +328,14 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 // GetValueForID - Reverse map a value for a given row ID.  (StringEnum)
 func (a *Attribute) GetValueForID(id uint64) (interface{}, error) {
 
+	a.Parent.localLock.RLock()
 	if v, ok := a.reverseMap[id]; ok {
+		a.Parent.localLock.RUnlock()
 		return v, nil
 	}
+	a.Parent.localLock.RUnlock()
+	a.Parent.localLock.Lock()
+	defer a.Parent.localLock.Unlock()
 
 	if a.MappingStrategy != "StringEnum" {
 		return 0, fmt.Errorf("GetValueForID attribute %s is not a StringEnum", a.FieldName)

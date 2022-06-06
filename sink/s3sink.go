@@ -12,9 +12,10 @@ import (
 	"github.com/araddon/qlbridge/plan"
 	"github.com/araddon/qlbridge/value"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/rlmcpherson/s3gof3r"
 	pgs3 "github.com/xitongsys/parquet-go-source/s3v2"
 	"github.com/xitongsys/parquet-go/parquet"
@@ -36,7 +37,7 @@ type (
 		delimiter      rune
 		assumeRoleArn  string
 		acl            string
-		kms            string
+		sseKmsKeyId    string
 		config         *aws.Config
 	}
 )
@@ -48,8 +49,8 @@ type (
 		outFile        source.ParquetFile
 		md        	   []string
 		assumeRoleArn  string
-		act            string
-		kms            string
+		acl            string
+		sseKmsKeyId    string		
 		config         *aws.Config
 	}
 )
@@ -96,9 +97,9 @@ func (s *S3CSVSink) Open(ctx *plan.Context, bucketpath string, params map[string
 		u.Debug("ACL : '%s'\n", s.acl)
 	}
 
-	if kms, ok := params["kmsKey"]; ok {
-		s.kms = kms.(string)
-		u.Debug("kms : '%s'\n", s.kms)
+	if sseKmsKeyId, ok := params["sseKmsKeyId"]; ok {
+		s.sseKmsKeyId = sseKmsKeyId.(string)
+		u.Debug("kms : '%s'\n", s.sseKmsKeyId)
 	}
 
 	bucket, file, err := parseBucketName(bucketpath)
@@ -199,48 +200,41 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		u.Debug("ACL : '%s'\n", s.acl)
 	}
 
-	if kms, ok := params["kmsKey"]; ok {
-		s.kms = kms.(string)
-		u.Debug("kms : '%s'\n", s.kms)
+	if sseKmsKeyId, ok := params["sseKmsKeyId"]; ok {
+		s.sseKmsKeyId = sseKmsKeyId.(string)
+		u.Debug("sseKmsKeyId : '%s'\n", s.sseKmsKeyId)
 	}
 
-	// Initialize S3 client
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(region)},
-	)
-
+	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
-		return fmt.Errorf("Creating S3 session: %v", err)
+		u.Error("Could not load the default config: %v",err)
 	}
 
-	s3svc := &s3.S3{}
-	if s.assumeRoleArn != "" {
-		u.Debug("Parquet: Assuming role %s", s.assumeRoleArn)
-		creds := stscreds.NewCredentials(sess, s.assumeRoleArn)
-		u.Debug("Credentials retrieved for arn role: %v", creds)
-		s.config = aws.NewConfig().
-			WithCredentials(creds).
-			WithRegion(region).
-			WithMaxRetries(10)
-		s3svc = s3.New(sess, s.config)
-		if s3svc != nil {
-			u.Debug("Retrieved AWS session for writing Parquet using Arn Role '%s' \n", s.assumeRoleArn)
-		} else {
-			u.Error("Could not retrieve S3 session using arn role '%s' \n.", s.assumeRoleArn)
-		}
-	} else {
-		s3svc = s3.New(sess)
+	client := sts.NewFromConfig(cfg)
+	provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn)
+	// appCreds, err := provider.Retrieve(context.TODO())
+	if err != nil {
+		u.Error("Could not retrieve sts creds.")
 	}
+	u.Debug("Successfully created app credentials.")
+	u.Debug("Parquet: Assuming role %s", s.assumeRoleArn)
 
-	object_input = nil
-	if key != nil {
-		object_input = &s3.PutObjectInput{
-			ServerSideEncryption: aws.String(key),
-		}
+	s3svc := s3.NewFromConfig(cfg, 	func(o *s3.Options) {
+		o.Region = region
+		o.Credentials = provider
+		o.RetryMaxAttempts = 10
+	})
+
+	if s3svc != nil {
+		return fmt.Errorf("Failed creating S3 session.")
+	}
 
 	// Create S3 service client
 	u.Infof("Opening Output S3 path s3:///%s/%s", bucket, file)
-	s.outFile, err = pgs3.NewS3FileWriterWithClient(context.Background(), s3svc, bucket, file, s.acl, nil, object_input)
+	s.outFile, err = pgs3.NewS3FileWriterWithClient(context.Background(), s3svc, bucket, file, nil, func(p *s3.PutObjectInput){
+		p.SSEKMSKeyId = &s.sseKmsKeyId
+	})
+
 	if err != nil {
 		u.Error(err)
 		return err

@@ -233,7 +233,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 	}
 
 	object_input = nil
-	if key != nil:
+	if key != nil {
 		object_input = &s3.PutObjectInput{
 			ServerSideEncryption: aws.String(key),
 		}

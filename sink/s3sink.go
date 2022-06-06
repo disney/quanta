@@ -217,6 +217,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 	if s.assumeRoleArn != "" {
 		u.Debug("Parquet: Assuming role %s", s.assumeRoleArn)
 		creds := stscreds.NewCredentials(sess, s.assumeRoleArn)
+		u.Debug("Credentials retrieved for arn role: %v", creds)
 		s.config = aws.NewConfig().
 			WithCredentials(creds).
 			WithRegion(region).
@@ -224,6 +225,8 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		s3svc = s3.New(sess, s.config)
 		if s3svc != nil {
 			u.Debug("Retrieved AWS session for writing Parquet using Arn Role '%s' \n", s.assumeRoleArn)
+		} else {
+			u.Error("Could not retrieve S3 session using arn role '%s' \n.", s.assumeRoleArn)
 		}
 	} else {
 		s3svc = s3.New(sess)

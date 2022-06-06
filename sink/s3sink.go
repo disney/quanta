@@ -3,6 +3,7 @@ package sink
 // S3Sink - Support for SELECT * INTO "s3://..."
 
 import (
+	"errors"
 	"context"
 	"database/sql/driver"
 	"encoding/csv"
@@ -90,6 +91,7 @@ func (s *S3CSVSink) Open(ctx *plan.Context, bucketpath string, params map[string
 
 	if assumeRoleArn, ok := params["assumeRoleArn"]; ok {
 		s.assumeRoleArn = assumeRoleArn.(string)
+		u.Debug("assumeRoleArn : '%s'\n", s.assumeRoleArn)
 	}
 	
 	if acl, ok := params["acl"]; ok {
@@ -192,32 +194,37 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 
 	if assumeRoleArn, ok := params["assumeRoleArn"]; ok {
 		s.assumeRoleArn = assumeRoleArn.(string)
-		u.Debug("Assuming Arn Role : '%s'\n", s.assumeRoleArn)
+		u.Debug("Assuming Arn Role : ", s.assumeRoleArn)
 	}
 
 	if acl, ok := params["acl"]; ok {
 		s.acl = acl.(string)
-		u.Debug("ACL : '%s'\n", s.acl)
+		u.Debug("ACL : ", s.acl)
 	}
 
 	if sseKmsKeyId, ok := params["sseKmsKeyId"]; ok {
 		s.sseKmsKeyId = sseKmsKeyId.(string)
-		u.Debug("sseKmsKeyId : '%s'\n", s.sseKmsKeyId)
+		u.Debug("sseKmsKeyId : ", s.sseKmsKeyId)
 	}
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		u.Error("Could not load the default config: %v",err)
 	}
+	if err != nil {
+		u.Error("Could not load config.")
+	}
 
 	client := sts.NewFromConfig(cfg)
 	provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn)
 	// appCreds, err := provider.Retrieve(context.TODO())
-	if err != nil {
-		u.Error("Could not retrieve sts creds.")
+
+	if provider != nil {
+		u.Debug("Successfully created app credentials.")
+	} else {
+		u.Error("Failed to create the app credentials provider.")
+		return errors.New("Failed to create the credential provider.")
 	}
-	u.Debug("Successfully created app credentials.")
-	u.Debug("Parquet: Assuming role %s", s.assumeRoleArn)
 
 	s3svc := s3.NewFromConfig(cfg, 	func(o *s3.Options) {
 		o.Region = region
@@ -225,7 +232,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		o.RetryMaxAttempts = 10
 	})
 
-	if s3svc != nil {
+	if s3svc == nil {
 		return fmt.Errorf("Failed creating S3 session.")
 	}
 

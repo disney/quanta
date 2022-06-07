@@ -214,15 +214,22 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		u.Error("Could not load the default config: %v",err)
 	}
 
-	client := sts.NewFromConfig(cfg)
-	provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn)
-	// appCreds, err := provider.Retrieve(context.TODO())
+	var provider *stscreds.AssumeRoleProvider
 
-	if provider != nil {
-		u.Debug("Successfully created app credentials.")
+	if s.assumeRoleArn != "" {
+		client := sts.NewFromConfig(cfg)
+		provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn, func(a *stscreds.AssumeRoleOptions){
+			a.RoleSessionName = "quanta-exporter-session"})
+		// appCreds, err := provider.Retrieve(context.TODO())
+
+		if provider != nil {
+			u.Debug("Successfully created app credentials.")
+		} else {
+			u.Error("Failed to create the app credentials provider.")
+			return errors.New("Failed to create the credential provider.")
+		}
 	} else {
-		u.Error("Failed to create the app credentials provider.")
-		return errors.New("Failed to create the credential provider.")
+		provider = nil
 	}
 
 	s3svc := s3.NewFromConfig(cfg, 	func(o *s3.Options) {

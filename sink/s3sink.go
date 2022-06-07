@@ -196,22 +196,22 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 
 	if assumeRoleArn, ok := params["assumeRoleArn"]; ok {
 		s.assumeRoleArn = assumeRoleArn.(string)
-		u.Debug("Assuming Arn Role : ", s.assumeRoleArn)
+		u.Errorf("Assuming Arn Role : ", s.assumeRoleArn)
 	}
 
 	if acl, ok := params["acl"]; ok {
 		s.acl = acl.(string)
-		u.Debug("ACL : ", s.acl)
+		u.Errorf("ACL : ", s.acl)
 	}
 
 	if sseKmsKeyId, ok := params["sseKmsKeyId"]; ok {
 		s.sseKmsKeyId = sseKmsKeyId.(string)
-		u.Debug("sseKmsKeyId : ", s.sseKmsKeyId)
+		u.Errorf("sseKmsKeyId : ", s.sseKmsKeyId)
 	}
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
-		u.Error("Could not load the default config: %v",err)
+		u.Errorf("Could not load the default config: %v",err)
 	}
 
 	var provider *stscreds.AssumeRoleProvider
@@ -223,9 +223,9 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		// appCreds, err := provider.Retrieve(context.TODO())
 
 		if provider != nil {
-			u.Debug("Successfully created app credentials.")
+			u.Errorf("Successfully created app credentials.")
 		} else {
-			u.Error("Failed to create the app credentials provider.")
+			u.Errorf("Failed to create the app credentials provider.")
 			return errors.New("Failed to create the credential provider.")
 		}
 	} else {
@@ -239,11 +239,12 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 	})
 
 	if s3svc == nil {
+		u.Errorf("Failed to create S3 session.")
 		return fmt.Errorf("Failed creating S3 session.")
 	}
 
 	// Create S3 service client
-	u.Infof("Opening Output S3 path s3:///%s/%s", bucket, file)
+	u.Errorf("Opening Output S3 path s3:///%s/%s", bucket, file)
 	s.outFile, err = pgs3.NewS3FileWriterWithClient(context.Background(), s3svc, bucket, file, nil, func(p *s3.PutObjectInput){
 		p.SSEKMSKeyId = &s.sseKmsKeyId
 		p.ACL = types.ObjectCannedACL(s.acl)
@@ -310,7 +311,7 @@ func (s *S3ParquetSink) Close() error {
 	if err := s.csvWriter.WriteStop(); err != nil {
 		return fmt.Errorf("WriteStop error %v", err)
 	}
-	u.Debug("Parquet write Finished")
+	u.Errorf("Parquet write Finished")
 	if err := s.outFile.Close(); err != nil {
 		u.Errorf("Outfile close error: %v", err)
 	}

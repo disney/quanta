@@ -311,7 +311,7 @@ func (s *S3ParquetSink) Close() error {
 		return fmt.Errorf("WriteStop error %v", err)
 	}
 	u.Debug("Parquet write Finished")
-	if err := outFile.Close(); err != nil {
+	if err := s.outFile.Close(); err != nil {
 		u.Errorf("Outfile close error: %v", err)
 	}
 	return nil

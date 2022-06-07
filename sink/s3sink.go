@@ -3,28 +3,30 @@ package sink
 // S3Sink - Support for SELECT * INTO "s3://..."
 
 import (
-	"errors"
 	"context"
 	"database/sql/driver"
 	"encoding/csv"
+	"errors"
 	"fmt"
+	"io"
+	"path"
+	"strings"
+
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/exec"
 	"github.com/araddon/qlbridge/plan"
 	"github.com/araddon/qlbridge/value"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/rlmcpherson/s3gof3r"
 	pgs3 "github.com/xitongsys/parquet-go-source/s3v2"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/source"
 	"github.com/xitongsys/parquet-go/writer"
-	"io"
-	"path"
-	"strings"
 )
 
 type (
@@ -211,9 +213,6 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 	if err != nil {
 		u.Error("Could not load the default config: %v",err)
 	}
-	if err != nil {
-		u.Error("Could not load config.")
-	}
 
 	client := sts.NewFromConfig(cfg)
 	provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn)
@@ -240,6 +239,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 	u.Infof("Opening Output S3 path s3:///%s/%s", bucket, file)
 	s.outFile, err = pgs3.NewS3FileWriterWithClient(context.Background(), s3svc, bucket, file, nil, func(p *s3.PutObjectInput){
 		p.SSEKMSKeyId = &s.sseKmsKeyId
+		p.ACL = types.ObjectCannedACL(s.acl)
 	})
 
 	if err != nil {

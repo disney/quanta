@@ -3,6 +3,7 @@ module github.com/disney/quanta
 go 1.14
 
 require (
+	github.com/Azure/go-autorest/autorest v0.9.0 // indirect
 	github.com/Jeffail/tunny v0.0.0-20190930221602-f13eb662a36a
 	github.com/RoaringBitmap/roaring v0.9.4
 	github.com/akrylysov/pogreb v0.9.1
@@ -14,7 +15,11 @@ require (
 	github.com/armon/go-metrics v0.3.4 // indirect
 	github.com/aviddiviner/go-murmur v0.0.0-20150519214947-b9740d71e571
 	github.com/aws/aws-sdk-go v1.41.7
+	github.com/aws/aws-sdk-go-v2/config v1.15.9
+	github.com/aws/aws-sdk-go-v2/credentials v1.12.4
 	github.com/aws/aws-sdk-go-v2/service/kinesis v1.9.0
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.26.10
+	github.com/aws/aws-sdk-go-v2/service/sts v1.16.6
 	github.com/bbalet/stopwords v1.0.0
 	github.com/confluentinc/confluent-kafka-go v1.4.2 // indirect
 	github.com/dchest/siphash v1.2.2 // indirect
@@ -49,7 +54,7 @@ require (
 	github.com/vmware/vmware-go-kcl v1.5.0
 	github.com/willf/bitset v1.1.11 // indirect
 	github.com/xitongsys/parquet-go v1.5.5-0.20201031234703-4d9f11317375
-	github.com/xitongsys/parquet-go-source v0.0.0-20201014235637-c24a23d9ef1e
+	github.com/xitongsys/parquet-go-source v0.0.0-20220527110425-ba4adb87a31b
 	go.uber.org/goleak v1.1.12
 	golang.org/x/net v0.0.0-20210614182718-04defd469f4e
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c

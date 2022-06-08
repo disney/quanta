@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql/driver"
 	"encoding/csv"
-	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -214,31 +213,29 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		u.Errorf("Parquet Sink: Could not load the default config: %v",err)
 	}
 
-	var provider *stscreds.AssumeRoleProvider
+	var s3svc *s3.Client
 
 	if s.assumeRoleArn != "" {
 		u.Warnf("Parquet Sink: With assume role arn.") 
+		
 		client := sts.NewFromConfig(cfg)
 		provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn, func(a *stscreds.AssumeRoleOptions){
 			a.RoleSessionName = "quanta-exporter-session"})
 		// appCreds, err := provider.Retrieve(context.TODO())
 
-		if provider != nil {
-			u.Warnf("Parquet Sink: Successfully created app credentials.")
-		} else {
-			u.Errorf("Parquet Sink: Failed to create the app credentials provider.")
-			return errors.New("Failed to create the credential provider.")
-		}
+		s3svc = s3.NewFromConfig(cfg, 	func(o *s3.Options) {
+			o.Region = region
+			o.Credentials = provider
+			o.RetryMaxAttempts = 10
+		})
 	} else {
 		u.Warnf("Parquet Sink: Without assume role arn.")
-		provider = nil
+		
+		s3svc = s3.NewFromConfig(cfg, 	func(o *s3.Options) {
+			o.Region = region
+			o.RetryMaxAttempts = 10
+		})
 	}
-
-	s3svc := s3.NewFromConfig(cfg, 	func(o *s3.Options) {
-		o.Region = region
-		o.Credentials = provider
-		o.RetryMaxAttempts = 10
-	})
 
 	u.Warnf("Parquet Sink: After NewFromConfig.")
 
@@ -294,7 +291,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 // Next batch of output data
 func (s *S3ParquetSink) Next(dest []driver.Value, colIndex map[string]int) error {
 
-	u.Warnf("Parquet Sink: Inside Next.")
+	// u.Warnf("Parquet Sink: Inside Next.")
 
 	vals := make([]string, len(dest))
 	for i, v := range dest {
@@ -309,7 +306,7 @@ func (s *S3ParquetSink) Next(dest []driver.Value, colIndex map[string]int) error
 		}
 	}
 
-	u.Warnf("Parquet Sink: After Row creation.")
+	// u.Warnf("Parquet Sink: After Row creation.")
 
 	rec := make([]*string, len(vals))
 	for j := 0; j < len(vals); j++ {
@@ -319,7 +316,7 @@ func (s *S3ParquetSink) Next(dest []driver.Value, colIndex map[string]int) error
 		return err
 	}
 
-	u.Warnf("Parquet Sink: After WriteString.")
+	// u.Warnf("Parquet Sink: After WriteString.")
 
 	return nil
 }

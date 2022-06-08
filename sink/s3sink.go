@@ -220,7 +220,8 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		
 		client := sts.NewFromConfig(cfg)
 		provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn, func(a *stscreds.AssumeRoleOptions){
-			a.RoleSessionName = "quanta-exporter-session"})
+			a.RoleSessionName = "quanta-exporter-session"
+			a.RoleARN = s.assumeRoleArn})
 		// appCreds, err := provider.Retrieve(context.TODO())
 
 		s3svc = s3.NewFromConfig(cfg, 	func(o *s3.Options) {
@@ -247,7 +248,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 	// Create S3 service client
 	u.Warnf("Parquet Sink: Opening Output S3 path s3:///%s/%s", bucket, file)
 	s.outFile, err = pgs3.NewS3FileWriterWithClient(context.Background(), s3svc, bucket, file, nil, func(p *s3.PutObjectInput){
-		p.SSEKMSKeyId = &s.sseKmsKeyId
+		// p.SSEKMSKeyId = &s.sseKmsKeyId
 		p.ACL = types.ObjectCannedACL(s.acl)
 	})
 

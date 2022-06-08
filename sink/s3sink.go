@@ -234,11 +234,19 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		provider = nil
 	}
 
-	s3svc := s3.NewFromConfig(cfg, 	func(o *s3.Options) {
-		o.Region = region
-		o.Credentials = provider
-		o.RetryMaxAttempts = 10
-	})
+	var s3svc *s3.Client
+	if provider != nil {
+		s3svc = s3.NewFromConfig(cfg, 	func(o *s3.Options) {
+			o.Region = region
+			o.Credentials = provider
+			o.RetryMaxAttempts = 10
+		})
+	} else {
+		s3svc = s3.NewFromConfig(cfg, 	func(o *s3.Options) {
+			o.Region = region
+			o.RetryMaxAttempts = 10
+		})
+	}
 
 	u.Errorf("Parquet Sink: After NewFromConfig.")
 
@@ -294,7 +302,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 // Next batch of output data
 func (s *S3ParquetSink) Next(dest []driver.Value, colIndex map[string]int) error {
 
-	u.Errorf("Parquet Sink: Inside Next.")
+	//u.Errorf("Parquet Sink: Inside Next.")
 
 	vals := make([]string, len(dest))
 	for i, v := range dest {
@@ -309,7 +317,7 @@ func (s *S3ParquetSink) Next(dest []driver.Value, colIndex map[string]int) error
 		}
 	}
 
-	u.Errorf("Parquet Sink: After Row creation.")
+	//u.Errorf("Parquet Sink: After Row creation.")
 
 	rec := make([]*string, len(vals))
 	for j := 0; j < len(vals); j++ {
@@ -319,7 +327,7 @@ func (s *S3ParquetSink) Next(dest []driver.Value, colIndex map[string]int) error
 		return err
 	}
 
-	u.Errorf("Parquet Sink: After WriteString.")
+	//u.Errorf("Parquet Sink: After WriteString.")
 
 	return nil
 }

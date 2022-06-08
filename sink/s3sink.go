@@ -187,7 +187,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		return err
 	}
 
-	u.Errorf("Parquet Sink: Bucket for parquet write: %s", bucketpath)
+	u.Warnf("Parquet Sink: Bucket for parquet write: %s", bucketpath)
 
 	region := "us-east-1"
 	if r, ok := params["region"]; ok {
@@ -196,17 +196,17 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 
 	if assumeRoleArn, ok := params["assumeRoleArn"]; ok {
 		s.assumeRoleArn = assumeRoleArn.(string)
-		u.Errorf("Parquet Sink: Assuming Arn Role : ", s.assumeRoleArn)
+		u.Warnf("Parquet Sink: Assuming Arn Role : ", s.assumeRoleArn)
 	}
 
 	if acl, ok := params["acl"]; ok {
 		s.acl = acl.(string)
-		u.Errorf("Parquet Sink: ACL : ", s.acl)
+		u.Warnf("Parquet Sink: ACL : ", s.acl)
 	}
 
 	if sseKmsKeyId, ok := params["sseKmsKeyId"]; ok {
 		s.sseKmsKeyId = sseKmsKeyId.(string)
-		u.Errorf("Parquet Sink: sseKmsKeyId : ", s.sseKmsKeyId)
+		u.Warnf("Parquet Sink: sseKmsKeyId : ", s.sseKmsKeyId)
 	}
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
@@ -217,20 +217,20 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 	var provider *stscreds.AssumeRoleProvider
 
 	if s.assumeRoleArn != "" {
-		u.Errorf("Parquet Sink: With assume role arn.") 
+		u.Warnf("Parquet Sink: With assume role arn.") 
 		client := sts.NewFromConfig(cfg)
 		provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn, func(a *stscreds.AssumeRoleOptions){
 			a.RoleSessionName = "quanta-exporter-session"})
 		// appCreds, err := provider.Retrieve(context.TODO())
 
 		if provider != nil {
-			u.Errorf("Parquet Sink: Successfully created app credentials.")
+			u.Warnf("Parquet Sink: Successfully created app credentials.")
 		} else {
 			u.Errorf("Parquet Sink: Failed to create the app credentials provider.")
 			return errors.New("Failed to create the credential provider.")
 		}
 	} else {
-		u.Errorf("Parquet Sink: Without assume role arn.")
+		u.Warnf("Parquet Sink: Without assume role arn.")
 		provider = nil
 	}
 
@@ -240,7 +240,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		o.RetryMaxAttempts = 10
 	})
 
-	u.Errorf("Parquet Sink: After NewFromConfig.")
+	u.Warnf("Parquet Sink: After NewFromConfig.")
 
 	if s3svc == nil {
 		u.Errorf("Parquet Sink: Failed to create S3 session.")
@@ -248,13 +248,13 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 	}
 
 	// Create S3 service client
-	u.Errorf("Parquet Sink: Opening Output S3 path s3:///%s/%s", bucket, file)
+	u.Warnf("Parquet Sink: Opening Output S3 path s3:///%s/%s", bucket, file)
 	s.outFile, err = pgs3.NewS3FileWriterWithClient(context.Background(), s3svc, bucket, file, nil, func(p *s3.PutObjectInput){
 		p.SSEKMSKeyId = &s.sseKmsKeyId
 		p.ACL = types.ObjectCannedACL(s.acl)
 	})
 
-	u.Errorf("Parquet Sink: After NewS3FileWriterWithClient.")
+	u.Warnf("Parquet Sink: After NewS3FileWriterWithClient.")
 
 	if err != nil {
 		u.Error(err)
@@ -276,7 +276,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		}
 	}
 
-	u.Errorf("Parquet Sink: After constructing parquet metadata.")
+	u.Warnf("Parquet Sink: After constructing parquet metadata.")
 
 	s.csvWriter, err = writer.NewCSVWriter(s.md, s.outFile, 4)
 	if err != nil {
@@ -284,7 +284,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		return err
 	}
 
-	u.Errorf("Parquet Sink: After NewCSVWriter.")
+	u.Warnf("Parquet Sink: After NewCSVWriter.")
 
 	s.csvWriter.RowGroupSize = 128 * 1024 * 1024 //128M
 	s.csvWriter.CompressionType = parquet.CompressionCodec_SNAPPY
@@ -294,7 +294,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 // Next batch of output data
 func (s *S3ParquetSink) Next(dest []driver.Value, colIndex map[string]int) error {
 
-	u.Errorf("Parquet Sink: Inside Next.")
+	u.Warnf("Parquet Sink: Inside Next.")
 
 	vals := make([]string, len(dest))
 	for i, v := range dest {
@@ -309,7 +309,7 @@ func (s *S3ParquetSink) Next(dest []driver.Value, colIndex map[string]int) error
 		}
 	}
 
-	u.Errorf("Parquet Sink: After Row creation.")
+	u.Warnf("Parquet Sink: After Row creation.")
 
 	rec := make([]*string, len(vals))
 	for j := 0; j < len(vals); j++ {
@@ -319,7 +319,7 @@ func (s *S3ParquetSink) Next(dest []driver.Value, colIndex map[string]int) error
 		return err
 	}
 
-	u.Errorf("Parquet Sink: After WriteString.")
+	u.Warnf("Parquet Sink: After WriteString.")
 
 	return nil
 }
@@ -327,16 +327,16 @@ func (s *S3ParquetSink) Next(dest []driver.Value, colIndex map[string]int) error
 // Close S3 session.
 func (s *S3ParquetSink) Close() error {
 
-	u.Errorf("Parquet Sink: Inside Close.")
+	u.Warnf("Parquet Sink: Inside Close.")
 
 	if err := s.csvWriter.WriteStop(); err != nil {
 		return fmt.Errorf("Parquet Sink: WriteStop error %v", err)
 	}
-	u.Errorf("Parquet Sink: Parquet write Finished")
+	u.Warnf("Parquet Sink: Parquet write Finished")
 	if err := s.outFile.Close(); err != nil {
 		u.Errorf("Parquet Sink: Outfile close error: %v", err)
 	}
-	u.Errorf("Parquet Sink: After Outfile Close.")
+	u.Warnf("Parquet Sink: After Outfile Close.")
 	return nil
 }
 

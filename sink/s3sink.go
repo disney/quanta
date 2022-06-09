@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/rlmcpherson/s3gof3r"
 	pgs3 "github.com/xitongsys/parquet-go-source/s3v2"
@@ -221,9 +222,9 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		client := sts.NewFromConfig(cfg)
 		provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn, func(a *stscreds.AssumeRoleOptions){
 			a.RoleSessionName = "quanta-exporter-session"})
-		// appCreds, err := provider.Retrieve(context.TODO())
+		cfg.Credentials = awsv2.NewCredentialsCache(provider)
 
-		s3svc = s3.NewFromConfig(cfg, 	func(o *s3.Options) {
+		s3svc = s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.Region = region
 			o.Credentials = provider
 			o.RetryMaxAttempts = 10

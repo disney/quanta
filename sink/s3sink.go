@@ -224,7 +224,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 			a.RoleSessionName = "quanta-exporter-session"})
 		value,err := provider.Retrieve(context.TODO())
 
-		if err == nil {
+		if err != nil {
 			return fmt.Errorf("Failed to retrieve credentials: %v",err)
 		}
 
@@ -238,6 +238,17 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		if err != nil {
 			return fmt.Errorf("Failed to retrieve credentials from cache: %v", err)
 		}
+
+		value,err = provider.Retrieve(context.TODO())
+
+		if err == nil {
+			return fmt.Errorf("Failed to retrieve credentials: %v",err)
+		}
+
+		u.Warnf("Second attempt: Credential values: %v", value)
+		u.Warnf("Second attempt: Access Key: ", value.AccessKeyID)
+		u.Warnf("Second attempt: Secret Key: ", value.SecretAccessKey)
+		u.Warnf("Second attempt: Session Token: ", value.SessionToken)		
 
 		s3svc = s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.Region = region

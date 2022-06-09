@@ -229,6 +229,9 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		}
 
 		u.Warnf("Credential values: %v", value)
+		u.Warnf("Access Key: ", value.AccessKeyID)
+		u.Warnf("Secret Key: ", value.SecretAccessKey)
+		u.Warnf("Session Token: ", value.SessionToken)
 
 		cfg.Credentials = awsv2.NewCredentialsCache(provider)
 

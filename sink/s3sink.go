@@ -223,6 +223,11 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn, func(a *stscreds.AssumeRoleOptions){
 			a.RoleSessionName = "quanta-exporter-session"})
 		cfg.Credentials = awsv2.NewCredentialsCache(provider)
+		_,err = cfg.Credentials.Retrieve(context.TODO())
+				
+		if err == nil {
+			return fmt.Errorf("Failed to retrieve credentials: %v",err)
+		}
 
 		s3svc = s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.Region = region

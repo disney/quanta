@@ -234,6 +234,10 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		u.Warnf("Session Token: ", value.SessionToken)
 
 		cfg.Credentials = awsv2.NewCredentialsCache(provider)
+		_,err = cfg.Credentials.Retrieve(context.TODO())
+		if err != nil {
+			return fmt.Errorf("Failed to retrieve credentials from cache: %v", err)
+		}
 
 		s3svc = s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.Region = region

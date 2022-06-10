@@ -221,8 +221,9 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		u.Warnf("Parquet Sink: With assume role arn.") 
 		
 		client := sts.NewFromConfig(cfg)
-		provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn, func(a *stscreds.AssumeRoleOptions){
-			a.RoleSessionName = "quanta-exporter-session"})
+		// provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn, func(a *stscreds.AssumeRoleOptions){
+		// 	a.RoleSessionName = "quanta-exporter-session"})
+		provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn, nil)			
 		// provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn, nil)
 		value,err := provider.Retrieve(context.TODO())
 

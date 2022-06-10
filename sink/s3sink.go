@@ -364,9 +364,9 @@ func parseBucketName(bucketPath string) (bucket string, file string, err error) 
 	bucket = split_path[0]
 	file = split_path[1]
 
-	if file[0:1] != "/" {
-		file = "/"+file
-	}
+	// if file[0:1] != "/" {
+	// 	file = "/"+file
+	// }
 
 	if bucket == "" {
 		err = fmt.Errorf("no bucket specified")

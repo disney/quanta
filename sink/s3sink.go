@@ -8,7 +8,6 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"path"
 	"strings"
 
 	u "github.com/araddon/gou"
@@ -358,10 +357,17 @@ func (s *S3ParquetSink) Close() error {
 	return nil
 }
 
-func parseBucketName(bucketPath string) (bucket, file string, err error) {
+func parseBucketName(bucketPath string) (bucket string, file string, err error) {
 
-	noScheme := strings.Replace(bucketPath, "s3://", "", 1)
-	bucket, file = path.Split(noScheme)
+	noScheme := strings.Replace(strings.ToLower(bucketPath), "s3://", "", 1)
+	split_path := strings.SplitN(noScheme, "/",2)
+	bucket = split_path[0]
+	file = split_path[1]
+
+	if file[0:1] != "/" {
+		file = "/"+file
+	}
+
 	if bucket == "" {
 		err = fmt.Errorf("no bucket specified")
 		return
@@ -370,13 +376,6 @@ func parseBucketName(bucketPath string) (bucket, file string, err error) {
 		err = fmt.Errorf("no file specified")
 		return
 	}
-	bucket = strings.Replace(bucket, "/", "", 1)
-	file = strings.Replace(file, "/", "", 1)
-	if bucket == "" {
-		err = fmt.Errorf("no bucket specified")
-	}
-	if file == "" {
-		err = fmt.Errorf("no file specified")
-	}
+
 	return
 }

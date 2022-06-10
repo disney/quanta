@@ -242,15 +242,15 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 			return fmt.Errorf("Failed to retrieve credentials from cache: %v", err)
 		}	
 
-		var stsClient *sts.Client
-		var input *sts.GetCallerIdentityInput
-		var output *sts.GetCallerIdentityOutput
+		// var stsClient *sts.Client
+		// var input *sts.GetCallerIdentityInput
+		// var output *sts.GetCallerIdentityOutput
 
-		output,err = stsClient.GetCallerIdentity(context.TODO(), input)
+		// output,err = stsClient.GetCallerIdentity(context.TODO(), input)
 
-		u.Warnf("Account: ", output.Account)
-		u.Warnf("Arn: ", output.Arn)
-		u.Warnf("UserId: ", output.UserId)
+		// u.Warnf("Account: ", output.Account)
+		// u.Warnf("Arn: ", output.Arn)
+		// u.Warnf("UserId: ", output.UserId)
 
 		s3svc = s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.Region = region

@@ -187,7 +187,9 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		return err
 	}
 
-	u.Warnf("Parquet Sink: Bucket for parquet write: %s", bucketpath)
+	u.Warnf("Parquet Sink: Bucket Path for parquet write: %s", bucketpath)
+	u.Warnf("Parquet Sink: Bucket for parquet write: %s", bucket)
+	u.Warnf("Parquet Sink: File for parquet write: %s", file)
 
 	region := "us-east-1"
 	if r, ok := params["region"]; ok {
@@ -222,6 +224,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		client := sts.NewFromConfig(cfg)
 		provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn, func(a *stscreds.AssumeRoleOptions){
 			a.RoleSessionName = "quanta-exporter-session"})
+		// provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn, nil)
 		value,err := provider.Retrieve(context.TODO())
 
 		if err != nil {
@@ -261,9 +264,10 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 	}
 
 	// Create S3 service client
-	u.Warnf("Parquet Sink: Opening Output S3 path s3:///%s/%s", bucket, file)
+	u.Warnf("Parquet Sink: Opening Output S3 path s3://%s/%s", bucket, file)
 	s.outFile, err = pgs3.NewS3FileWriterWithClient(context.Background(), s3svc, bucket, file, nil, func(p *s3.PutObjectInput){
-		p.SSEKMSKeyId = &s.sseKmsKeyId
+		// p.SSEKMSKeyId = &s.sseKmsKeyId
+		p.SSEKMSKeyId = aws.String(s.sseKmsKeyId)
 		p.ServerSideEncryption = "aws:kms"
 		p.ACL = types.ObjectCannedACL(s.acl)
 	})

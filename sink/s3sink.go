@@ -223,7 +223,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		client := sts.NewFromConfig(cfg)
 		// provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn, func(a *stscreds.AssumeRoleOptions){
 		// 	a.RoleSessionName = "quanta-exporter-session"})
-		provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn, nil)			
+		provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn)			
 		// provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn, nil)
 		value,err := provider.Retrieve(context.TODO())
 
@@ -241,6 +241,16 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		if err != nil {
 			return fmt.Errorf("Failed to retrieve credentials from cache: %v", err)
 		}	
+
+		var stsClient *sts.Client
+		var input *sts.GetCallerIdentityInput
+		var output *sts.GetCallerIdentityOutput
+
+		output,err = stsClient.GetCallerIdentity(context.TODO(), input)
+
+		u.Warnf("Account: ", output.Account)
+		u.Warnf("Arn: ", output.Arn)
+		u.Warnf("UserId: ", output.UserId)
 
 		s3svc = s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.Region = region

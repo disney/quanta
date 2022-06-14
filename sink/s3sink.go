@@ -186,9 +186,9 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		return err
 	}
 
-	u.Warnf("Parquet Sink: Bucket Path for parquet write: %s", bucketpath)
-	u.Warnf("Parquet Sink: Bucket for parquet write: %s", bucket)
-	u.Warnf("Parquet Sink: File for parquet write: %s", file)
+	u.Infof("Parquet Sink: Bucket Path for parquet write: %s", bucketpath)
+	u.Infof("Parquet Sink: Bucket for parquet write: %s", bucket)
+	u.Infof("Parquet Sink: File for parquet write: %s", file)
 
 	region := "us-east-1"
 	if r, ok := params["region"]; ok {
@@ -197,17 +197,17 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 
 	if assumeRoleArn, ok := params["assumeRoleArn"]; ok {
 		s.assumeRoleArn = assumeRoleArn.(string)
-		u.Warnf("Parquet Sink: Assuming Arn Role : ", s.assumeRoleArn)
+		u.Infof("Parquet Sink: Assuming Arn Role : ", s.assumeRoleArn)
 	}
 
 	if acl, ok := params["acl"]; ok {
 		s.acl = acl.(string)
-		u.Warnf("Parquet Sink: ACL : ", s.acl)
+		u.Infof("Parquet Sink: ACL : ", s.acl)
 	}
 
 	if sseKmsKeyId, ok := params["sseKmsKeyId"]; ok {
 		s.sseKmsKeyId = sseKmsKeyId.(string)
-		u.Warnf("Parquet Sink: sseKmsKeyId : ", s.sseKmsKeyId)
+		u.Infof("Parquet Sink: sseKmsKeyId : ", s.sseKmsKeyId)
 	}
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
@@ -217,24 +217,19 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 
 	var s3svc *s3.Client
 
-	if s.assumeRoleArn != "" {
-		u.Warnf("Parquet Sink: With assume role arn.") 
-		
+	if s.assumeRoleArn != "" {		
 		client := sts.NewFromConfig(cfg)
-		// provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn, func(a *stscreds.AssumeRoleOptions){
-		// 	a.RoleSessionName = "quanta-exporter-session"})
 		provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn)			
-		// provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn, nil)
 		value,err := provider.Retrieve(context.TODO())
 
 		if err != nil {
 			return fmt.Errorf("Failed to retrieve credentials: %v",err)
 		}
 
-		u.Warnf("Credential values: %v", value)
-		u.Warnf("Access Key: ", value.AccessKeyID)
-		u.Warnf("Secret Key: ", value.SecretAccessKey)
-		u.Warnf("Session Token: ", value.SessionToken)
+		u.Debugf("Credential values: %v", value)
+		u.Debugf("Access Key: ", value.AccessKeyID)
+		u.Debugf("Secret Key: ", value.SecretAccessKey)
+		u.Debugf("Session Token: ", value.SessionToken)
 
 		cfg.Credentials = awsv2.NewCredentialsCache(provider)
 		_,err = cfg.Credentials.Retrieve(context.TODO())
@@ -242,47 +237,29 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 			return fmt.Errorf("Failed to retrieve credentials from cache: %v", err)
 		}	
 
-		// var stsClient *sts.Client
-		// var input *sts.GetCallerIdentityInput
-		// var output *sts.GetCallerIdentityOutput
-
-		// output,err = stsClient.GetCallerIdentity(context.TODO(), input)
-
-		// u.Warnf("Account: ", output.Account)
-		// u.Warnf("Arn: ", output.Arn)
-		// u.Warnf("UserId: ", output.UserId)
-
 		s3svc = s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.Region = region
 			o.Credentials = provider
 			o.RetryMaxAttempts = 10
 		})
 	} else {
-		u.Warnf("Parquet Sink: Without assume role arn.")
-		
 		s3svc = s3.NewFromConfig(cfg, 	func(o *s3.Options) {
 			o.Region = region
 			o.RetryMaxAttempts = 10
 		})
 	}
 
-	u.Warnf("Parquet Sink: After NewFromConfig.")
-
 	if s3svc == nil {
-		u.Errorf("Parquet Sink: Failed to create S3 session.")
 		return fmt.Errorf("Failed creating S3 session.")
 	}
 
 	// Create S3 service client
-	u.Warnf("Parquet Sink: Opening Output S3 path s3://%s/%s", bucket, file)
+	u.Infof("Parquet Sink: Opening Output S3 path s3://%s/%s", bucket, file)
 	s.outFile, err = pgs3.NewS3FileWriterWithClient(context.Background(), s3svc, bucket, file, nil, func(p *s3.PutObjectInput){
-		// p.SSEKMSKeyId = &s.sseKmsKeyId
 		p.SSEKMSKeyId = aws.String(s.sseKmsKeyId)
 		p.ServerSideEncryption = "aws:kms"
 		p.ACL = types.ObjectCannedACL(s.acl)
 	})
-
-	u.Warnf("Parquet Sink: After NewS3FileWriterWithClient.")
 
 	if err != nil {
 		u.Error(err)
@@ -304,15 +281,11 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		}
 	}
 
-	u.Warnf("Parquet Sink: After constructing parquet metadata.")
-
 	s.csvWriter, err = writer.NewCSVWriter(s.md, s.outFile, 4)
 	if err != nil {
 		u.Errorf("Parquet Sink: Can't create csv writer %s", err)
 		return err
 	}
-
-	u.Warnf("Parquet Sink: After NewCSVWriter.")
 
 	s.csvWriter.RowGroupSize = 128 * 1024 * 1024 //128M
 	s.csvWriter.CompressionType = parquet.CompressionCodec_SNAPPY
@@ -321,8 +294,6 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 
 // Next batch of output data
 func (s *S3ParquetSink) Next(dest []driver.Value, colIndex map[string]int) error {
-
-	// u.Warnf("Parquet Sink: Inside Next.")
 
 	vals := make([]string, len(dest))
 	for i, v := range dest {
@@ -337,8 +308,6 @@ func (s *S3ParquetSink) Next(dest []driver.Value, colIndex map[string]int) error
 		}
 	}
 
-	// u.Warnf("Parquet Sink: After Row creation.")
-
 	rec := make([]*string, len(vals))
 	for j := 0; j < len(vals); j++ {
 		rec[j] = &vals[j]
@@ -347,24 +316,19 @@ func (s *S3ParquetSink) Next(dest []driver.Value, colIndex map[string]int) error
 		return err
 	}
 
-	// u.Warnf("Parquet Sink: After WriteString.")
-
 	return nil
 }
 
 // Close S3 session.
 func (s *S3ParquetSink) Close() error {
 
-	u.Warnf("Parquet Sink: Inside Close.")
-
 	if err := s.csvWriter.WriteStop(); err != nil {
 		return fmt.Errorf("Parquet Sink: WriteStop error %v", err)
 	}
-	u.Warnf("Parquet Sink: Parquet write Finished")
 	if err := s.outFile.Close(); err != nil {
 		u.Errorf("Parquet Sink: Outfile close error: %v", err)
 	}
-	u.Warnf("Parquet Sink: After Outfile Close.")
+	u.Infof("Parquest file successfully written.")
 	return nil
 }
 
@@ -374,10 +338,6 @@ func parseBucketName(bucketPath string) (bucket string, file string, err error) 
 	split_path := strings.SplitN(noScheme, "/",2)
 	bucket = split_path[0]
 	file = split_path[1]
-
-	// if file[0:1] != "/" {
-	// 	file = "/"+file
-	// }
 
 	if bucket == "" {
 		err = fmt.Errorf("no bucket specified")

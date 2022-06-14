@@ -15,7 +15,7 @@ require (
 	github.com/armon/go-metrics v0.3.4 // indirect
 	github.com/aviddiviner/go-murmur v0.0.0-20150519214947-b9740d71e571
 	github.com/aws/aws-sdk-go v1.41.7
-	github.com/aws/aws-sdk-go-v2 v1.16.4 // indirect
+	github.com/aws/aws-sdk-go-v2 v1.16.4
 	github.com/aws/aws-sdk-go-v2/config v1.15.9
 	github.com/aws/aws-sdk-go-v2/credentials v1.12.4
 	github.com/aws/aws-sdk-go-v2/service/kinesis v1.9.0

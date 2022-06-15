@@ -45,8 +45,8 @@ func (m StringHashBSIMapper) MapValue(attr *Attribute, val interface{}, c *Sessi
 			if attr.Searchable {
 				err = c.StringIndex.Index(strVal)
 			}
-			indexPath := fmt.Sprintf("%s/%s/%s", tbuf.Table.Name, attr.FieldName, tbuf.CurrentTimestamp.Format(timeFmt))
-			c.BatchBuffer.SetPartitionedString(indexPath, tbuf.CurrentColumnID, val)
+			stringPath := indexPath(tbuf, attr.FieldName, "strings")    // indexPath() is in core/session.go
+			c.BatchBuffer.SetPartitionedString(stringPath, tbuf.CurrentColumnID, val)
 			err = m.UpdateBitmap(c, attr.Parent.Name, attr.FieldName, result, attr.IsTimeSeries)
 		} else {
 			err = fmt.Errorf("table %s not open for this connection", attr.Parent.Name)
@@ -83,6 +83,14 @@ func (m BoolDirectMapper) MapValue(attr *Attribute, val interface{},
 			return
 		}
 		if v {
+			result = uint64(1)
+		}
+	case int:
+		if val.(int) == 1 {
+			result = uint64(1)
+		}
+	case int64:
+		if val.(int64) == 1 {
 			result = uint64(1)
 		}
 	default:
@@ -297,6 +305,8 @@ func (m StringEnumMapper) MapValue(attr *Attribute, val interface{},
 		} else {
 			multi = []string{strVal}
 		}
+	case []string:
+		multi = val.([]string)
 	case int32:
 		strVal := fmt.Sprintf("%d", val.(int32))
 		multi = []string{strVal}

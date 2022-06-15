@@ -72,6 +72,7 @@ type Conn struct {
 	nodeMap            map[string]int
 	nodeMapLock        sync.RWMutex
 	registeredServices map[string]Service
+	registerLock       sync.RWMutex
 	idMap              map[string]*api.ServiceEntry
 	ids                []string
 	clusterSizeTarget  int
@@ -164,6 +165,8 @@ func (st ClusterState) String() string {
 // RegisterService - Add a new service registration for member events.
 func (m *Conn) RegisterService(svc Service) {
 
+	m.registerLock.Lock()
+	defer m.registerLock.Unlock()
 	n := reflect.TypeOf(svc).String()
 	name := strings.Split(n, ".")[1]
 	m.registeredServices[name] = svc
@@ -582,6 +585,9 @@ func (m *Conn) CheckNodeForKey(key, nodeID string) (bool, int) {
 
 // SendMemberLeft - Notify listening service of MemberLeft event.
 func (m *Conn) SendMemberLeft(nodeID string, index int) {
+	
+	m.registerLock.RLock()
+	defer m.registerLock.RUnlock()
 
 	for _, svc := range m.registeredServices {
 		svc.MemberLeft(nodeID, index)
@@ -591,6 +597,8 @@ func (m *Conn) SendMemberLeft(nodeID string, index int) {
 // SendMemberJoined - Notify listening service of MemberLeft event.
 func (m *Conn) SendMemberJoined(nodeID, ipAddress string, index int) {
 
+	m.registerLock.RLock()
+	defer m.registerLock.RUnlock()
 	for _, svc := range m.registeredServices {
 		svc.MemberJoined(nodeID, ipAddress, index)
 	}
@@ -599,6 +607,8 @@ func (m *Conn) SendMemberJoined(nodeID, ipAddress string, index int) {
 // GetService - Get a service by its name.
 func (m *Conn) GetService(name string) Service {
 
+	m.registerLock.RLock()
+	defer m.registerLock.RUnlock()
 	return m.registeredServices[name]
 }
 

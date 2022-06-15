@@ -25,6 +25,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"regexp"
@@ -54,31 +55,35 @@ const (
 )
 
 var (
-	logging       *string
-	environment   *string
-	proxyHostPort *string
-	username      *string
-	password      *string
-	reWhitespace  *regexp.Regexp
-	publicKeySet  []*jwk.Set
-	userPool      sync.Map
-	authProvider  *AuthProvider
-	userClaimsKey string
-	metrics       *cloudwatch.CloudWatch
-	connectCount  *Counter
-	queryCount    *Counter
-	updateCount   *Counter
-	insertCount   *Counter
-	deleteCount   *Counter
-	connectCountL *Counter
-	queryCountL   *Counter
-	updateCountL  *Counter
-	insertCountL  *Counter
-	deleteCountL  *Counter
-	queryTime     *Counter
-	updateTime    *Counter
-	insertTime    *Counter
-	deleteTime    *Counter
+	src             *source.QuantaSource
+	sessionPoolSize int
+	quantaPort      *int
+	consulAddr      string
+	logging         *string
+	environment     *string
+	proxyHostPort   *string
+	username        *string
+	password        *string
+	reWhitespace    *regexp.Regexp
+	publicKeySet    []*jwk.Set
+	userPool        sync.Map
+	authProvider    *AuthProvider
+	userClaimsKey   string
+	metrics         *cloudwatch.CloudWatch
+	connectCount    *Counter
+	queryCount      *Counter
+	updateCount     *Counter
+	insertCount     *Counter
+	deleteCount     *Counter
+	connectCountL   *Counter
+	queryCountL     *Counter
+	updateCountL    *Counter
+	insertCountL    *Counter
+	deleteCountL    *Counter
+	queryTime       *Counter
+	updateTime      *Counter
+	insertTime      *Counter
+	deleteTime      *Counter
 )
 
 func main() {
@@ -89,7 +94,7 @@ func main() {
 	logging = app.Flag("log-level", "Logging level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
 	environment = app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	proxyHostPort = app.Flag("proxy-host-port", "Host:port mapping of MySQL Proxy server").Default("0.0.0.0:4000").String()
-	quantaPort := app.Flag("quanta-port", "Port number for Quanta service").Default("4000").Int()
+	quantaPort = app.Flag("quanta-port", "Port number for Quanta service").Default("4000").Int()
 	publicKeyURL := app.Arg("public-key-url", "URL for JWT public key.").String()
 	region := app.Arg("region", "AWS region for cloudwatch metrics").Default("us-east-1").String()
 	tokenservicePort := app.Arg("tokenservice-port", "Token exchance service port").Default("4001").Int()
@@ -116,7 +121,7 @@ func main() {
 		http.ListenAndServe(":2112", nil)
 	}()
 
-	consulAddr := *consul
+	consulAddr = *consul
 	log.Printf("Connecting to Consul at: [%s] ...\n", consulAddr)
 	consulConfig := &api.Config{Address: consulAddr}
 	errx := shared.RegisterSchemaChangeListener(consulConfig, schemaChangeListener)
@@ -145,7 +150,7 @@ func main() {
 	StartTokenService(*tokenservicePort, authProvider)
 
 	// If the pool size is not configured then set it to the number of available CPUs
-	sessionPoolSize := *poolSize
+	sessionPoolSize = *poolSize
 	if sessionPoolSize == 0 {
 		sessionPoolSize = runtime.NumCPU()
 		log.Printf("Session Pool Size not set, defaulting to number of available CPUs = %d", sessionPoolSize)
@@ -171,7 +176,6 @@ func main() {
 	metrics = cloudwatch.New(sess)
 
 	var err error
-	var src *source.QuantaSource
 	src, err = source.NewQuantaSource("", consulAddr, *quantaPort, sessionPoolSize)
 	if err != nil {
 		u.Error(err)
@@ -220,6 +224,7 @@ func main() {
 			return
 		}
 		go onConn(conn)
+		
 	}
 
 }
@@ -234,7 +239,15 @@ func schemaChangeListener(e shared.SchemaChangeEvent) {
 	case shared.Modify:
 		log.Printf("Truncated table %s", e.Table)
 	case shared.Create:
-		schema.DefaultRegistry().SchemaRefresh("quanta")
+		src.GetSessionPool().Recover(nil)
+		schema.DefaultRegistry().SchemaDrop("quanta", "quanta", lex.TokenSource)
+		var err error
+		src, err = source.NewQuantaSource("", consulAddr, *quantaPort, sessionPoolSize)
+		if err != nil {
+			u.Error(err)
+		}
+		schema.RegisterSourceAsSchema("quanta", src)
+		//schema.DefaultRegistry().SchemaRefresh("quanta")
 		log.Printf("Created table %s", e.Table)
 	}
 }
@@ -243,7 +256,8 @@ func onConn(conn net.Conn) {
 	var tlsConf = server.NewServerTLSConfig(test_keys.CaPem, test_keys.CertPem, test_keys.KeyPem, tls.VerifyClientCertIfGiven)
 	svr := server.NewServer("8.0.12", mysql.DEFAULT_COLLATION_ID, mysql.AUTH_NATIVE_PASSWORD, test_keys.PubPem, tlsConf)
 	authProvider := NewAuthProvider() // Per connection (session) instance
-	sconn, err := server.NewCustomizedConn(conn, svr, authProvider, NewProxyHandler(authProvider))
+	handler := NewProxyHandler(authProvider)
+	sconn, err := server.NewCustomizedConn(conn, svr, authProvider, handler)
 	if err != nil {
 		if err.Error() == "invalid sequence 32 != 1" {
 			return
@@ -252,6 +266,7 @@ func onConn(conn net.Conn) {
 		u.Errorf("error from remote address %v", conn.RemoteAddr())
 		return
 	}
+	defer handler.Close()
 	connectCount.Add(1)
 	// Dispatch loop
 	for {
@@ -260,11 +275,10 @@ func onConn(conn net.Conn) {
 		}
 		if err := sconn.HandleCommand(); err != nil {
 			if err.Error() != "connection closed" {
-				u.Errorf(err.Error())
+				u.Debug(err.Error())
 			}
 			break
 		}
-
 	}
 }
 
@@ -278,11 +292,13 @@ type ProxyHandler struct {
 func NewProxyHandler(authProvider *AuthProvider) *ProxyHandler {
 
 	h := &ProxyHandler{authProvider: authProvider}
+/*
 	var err error
 	h.db, err = sql.Open("qlbridge", "quanta")
 	if err != nil {
 		panic(err.Error())
 	}
+*/
 	return h
 }
 
@@ -308,6 +324,13 @@ func (h *ProxyHandler) UseDB(dbName string) error {
 
 func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, error) {
 
+	var err error
+	h.db, err = sql.Open("qlbridge", "quanta")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer h.db.Close()
+
 	// Ignore java driver handshake
 	if strings.Contains(strings.ToLower(query), "mysql-connector-java") {
 		r, err := generateJavaDriverHandshake(binary)
@@ -328,6 +351,9 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 
 	operation := strings.ToLower(ss[0])
 	switch operation {
+	case "begin", "commit", "rollback":
+		return nil, nil   // Just returns an "OK" packet
+
 	case "select", "describe", "show":
 
 		h.checkSessionUserID(true)
@@ -347,7 +373,7 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 		}
 		//for handling go mysql driver select @@version_comment
 		if strings.Contains(strings.ToLower(query), "version_comment") {
-			r, err = mysql.BuildSimpleResultset([]string{"@@max_allowed_packet"}, [][]interface{}{
+			r, err = mysql.BuildSimpleResultset([]string{"@@version_comment"}, [][]interface{}{
 				{"- Quanta version " + Version + " - Build: " + Build},
 			}, binary)
 			if err != nil {
@@ -355,7 +381,35 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 			}
 			return &mysql.Result{0, 0, 0, r}, nil
 		}
-
+		//for handling go mysql driver select @@isolation_level
+		if strings.Contains(strings.ToLower(query), "transaction_isolation") {
+			r, err = mysql.BuildSimpleResultset([]string{"@@transaction_isolation"}, [][]interface{}{
+				{"READ UNCOMMITTED"},
+			}, binary)
+			if err != nil {
+				return nil, err
+			}
+			return &mysql.Result{0, 0, 0, r}, nil
+		}
+		//for handling go mysql driver select @@isolation_level
+		if strings.Contains(strings.ToLower(query), "show collation") {
+			r, err = mysql.BuildSimpleResultset([]string{""}, [][]interface{}{
+				{""},
+			}, binary)
+			if err != nil {
+				return nil, err
+			}
+			return &mysql.Result{0, 0, 0, r}, nil
+		}
+		if strings.Contains(strings.ToLower(query), "select cast") {
+			r, err = mysql.BuildSimpleResultset([]string{""}, [][]interface{}{
+				{""},
+			}, binary)
+			if err != nil {
+				return nil, err
+			}
+			return &mysql.Result{0, 0, 0, r}, nil
+		}
 		u.Debugf("running query [%v]\n", query)
 		start := time.Now()
 		rows, err2 := h.db.Query(query)
@@ -480,8 +534,11 @@ func (h *ProxyHandler) HandleStmtPrepare(sql string) (params int, columns int, c
 
 // HandleStmtClose - Handle Close
 func (h *ProxyHandler) HandleStmtClose(context interface{}) error {
-	h.db.Close()
 	return nil
+}
+
+func (h *ProxyHandler) Close() {
+	//h.db.Close()
 }
 
 // HandleStmtExecute - Handle Execute

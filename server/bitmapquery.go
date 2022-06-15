@@ -108,7 +108,7 @@ func (m *BitmapIndex) Query(ctx context.Context, query *pb.BitmapQuery) (*pb.Que
 			}
 		} else if v.BsiOp > 0 {
 			start := time.Now()
-			bsi, err := m.timeRangeBSI(v.Index, v.Field, fromTime, toTime, nil)
+			bsi, err := m.timeRangeBSI(v.Index, v.Field, fromTime, toTime, nil, false)
 			if err != nil {
 				return nil, err
 			}
@@ -140,7 +140,7 @@ func (m *BitmapIndex) Query(ctx context.Context, query *pb.BitmapQuery) (*pb.Que
 				var x *roaring64.Bitmap
 				exist := make([]*roaring64.Bitmap, 0)
 				for _, row := range m.listAllRowIDs(v.Index, v.Field) {
-					if x, err = m.timeRange(v.Index, v.Field, row, fromTime, toTime, nil); err != nil {
+					if x, err = m.timeRange(v.Index, v.Field, row, fromTime, toTime, nil, false); err != nil {
 						return nil, err
 					}
 					if x.GetCardinality() == 0 {
@@ -156,7 +156,7 @@ func (m *BitmapIndex) Query(ctx context.Context, query *pb.BitmapQuery) (*pb.Que
 					bm = roaring64.ParOr(0, exist...)
 				}
 			} else {
-				if bm, err = m.timeRange(v.Index, v.Field, v.RowID, fromTime, toTime, nil); err != nil {
+				if bm, err = m.timeRange(v.Index, v.Field, v.RowID, fromTime, toTime, nil, false); err != nil {
 					return nil, err
 				}
 			}
@@ -198,7 +198,7 @@ func truncateTime(tr time.Time, tq string) time.Time {
 
 // Walk the time range and assemble a union of all bitmap fields.
 func (m *BitmapIndex) timeRange(index, field string, rowID uint64, fromTime,
-	toTime time.Time, foundSet *roaring64.Bitmap) (*roaring64.Bitmap, error) {
+		toTime time.Time, foundSet *roaring64.Bitmap, negate bool) (*roaring64.Bitmap, error) {
 
 	m.bitmapCacheLock.RLock()
 	defer m.bitmapCacheLock.RUnlock()
@@ -223,7 +223,11 @@ func (m *BitmapIndex) timeRange(index, field string, rowID uint64, fromTime,
 		if bm, ok := m.bitmapCache[index][field][rowID][0]; ok {
 			if foundSet != nil {
 				b := bm.Bits.Clone()
-				b.And(foundSet)
+				if negate {
+					b.AndNot(foundSet)
+				} else {
+					b.And(foundSet)
+				}
 				a = append(a, b)
 			} else {
 				a = append(a, bm.Bits)
@@ -244,7 +248,11 @@ func (m *BitmapIndex) timeRange(index, field string, rowID uint64, fromTime,
 				}
 				if foundSet != nil {
 					b := bitmap.Bits.Clone()
-					b.And(foundSet)
+					if negate {
+						b.AndNot(foundSet)
+					} else {
+						b.And(foundSet)
+					}
 					if b.GetCardinality() == 0 {
 						continue
 					}
@@ -274,7 +282,7 @@ func (m *BitmapIndex) listAllRowIDs(index, field string) []uint64 {
 
 // Walk the time range and assemble a union of all BSI fields.
 func (m *BitmapIndex) timeRangeBSI(index, field string, fromTime, toTime time.Time,
-	foundSet *roaring64.Bitmap) (*BSIBitmap, error) {
+	foundSet *roaring64.Bitmap, negate bool) (*BSIBitmap, error) {
 
 	m.bsiCacheLock.RLock()
 	defer m.bsiCacheLock.RUnlock()
@@ -299,7 +307,11 @@ func (m *BitmapIndex) timeRangeBSI(index, field string, fromTime, toTime time.Ti
 		}
 		if bm, ok := m.bsiCache[index][field][0]; ok {
 			if foundSet != nil {
-				a = append(a, bm.BSI.NewBSIRetainSet(foundSet))
+				if negate {
+					a = append(a, bm.BSI.NewBSIRetainSet(roaring64.AndNot(bm.BSI.GetExistenceBitmap(), foundSet)))
+				} else {
+					a = append(a, bm.BSI.NewBSIRetainSet(foundSet))
+				}
 			} else {
 				a = append(a, bm.BSI)
 			}
@@ -321,7 +333,12 @@ func (m *BitmapIndex) timeRangeBSI(index, field string, fromTime, toTime time.Ti
 					continue
 				}
 				if foundSet != nil {
-					x := bsi.BSI.NewBSIRetainSet(foundSet)
+					var x *roaring64.BSI;
+					if negate {
+						x = bsi.BSI.NewBSIRetainSet(roaring64.AndNot(bsi.BSI.GetExistenceBitmap(), foundSet))
+					} else {
+						x = bsi.BSI.NewBSIRetainSet(foundSet)
+					}
 					if x.GetCardinality() == 0 {
 						continue
 					}
@@ -429,7 +446,7 @@ func (m *BitmapIndex) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRe
 	minCardIndex := 0
 	for i, v := range req.FkFields {
 		start := time.Now()
-		bsi, err := m.timeRangeBSI(req.DriverIndex, v, fromTime, toTime, foundSet)
+		bsi, err := m.timeRangeBSI(req.DriverIndex, v, fromTime, toTime, foundSet, req.Negate)
 		if err != nil {
 			err2 := fmt.Errorf("Cannot find FK BSI for %s %s - %v", req.DriverIndex, v, err)
 			return nil, err2
@@ -489,7 +506,7 @@ func (m *BitmapIndex) Projection(ctx context.Context, req *pb.ProjectionRequest)
 		if _, ok := m.bitmapCache[req.Index][v]; ok {
 			var x *roaring64.Bitmap
 			for _, row := range m.listAllRowIDs(req.Index, v) {
-				if x, err2 = m.timeRange(req.Index, v, row, fromTime, toTime, foundSet); err2 != nil {
+				if x, err2 = m.timeRange(req.Index, v, row, fromTime, toTime, foundSet, req.Negate); err2 != nil {
 					return nil, err2
 				}
 				if x.GetCardinality() == 0 {
@@ -504,7 +521,7 @@ func (m *BitmapIndex) Projection(ctx context.Context, req *pb.ProjectionRequest)
 		}
 		if _, ok := m.bsiCache[req.Index][v]; ok {
 			var bsi *BSIBitmap
-			if bsi, err2 = m.timeRangeBSI(req.Index, v, fromTime, toTime, foundSet); err2 != nil {
+			if bsi, err2 = m.timeRangeBSI(req.Index, v, fromTime, toTime, foundSet, req.Negate); err2 != nil {
 				return nil, fmt.Errorf("Error ranging projection BSI for %s %s - %v", req.Index, v, err2)
 			}
 			if bsi.GetCardinality() == 0 {

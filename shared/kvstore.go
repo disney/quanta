@@ -476,6 +476,10 @@ func checkAdjustKeyAndPath(path string) (key, indexPath string) {
 		indexPath = path
 	} else {
 		key = s[0]
+		if s[1][:1] == "/" {
+			indexPath = s[1][1:]
+			return
+		}
 		indexPath = fmt.Sprintf("%s/%s", s[0], s[1])
 	}
 	return

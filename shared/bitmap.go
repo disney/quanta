@@ -466,7 +466,7 @@ func (c *BitmapIndex) sequencerClient(client pb.BitmapIndexClient, req *pb.Check
 // Projection - Send fields and target set for a given index to cluster for projection processing.
 //
 func (c *BitmapIndex) Projection(index string, fields []string, fromTime, toTime int64,
-	foundSet *roaring64.Bitmap) (map[string]*roaring64.BSI, map[string]map[uint64]*roaring64.Bitmap, error) {
+	foundSet *roaring64.Bitmap, negate bool) (map[string]*roaring64.BSI, map[string]map[uint64]*roaring64.Bitmap, error) {
 
 	bsiResults := make(map[string][]*roaring64.BSI, 0)
 	bitmapResults := make(map[string]map[uint64][]*roaring64.Bitmap, 0)
@@ -477,7 +477,7 @@ func (c *BitmapIndex) Projection(index string, fields []string, fromTime, toTime
 	}
 
 	req := &pb.ProjectionRequest{Index: index, Fields: fields, FromTime: fromTime,
-		ToTime: toTime, FoundSet: data}
+		ToTime: toTime, FoundSet: data, Negate: negate}
 
 	resultChan := make(chan *pb.ProjectionResponse, 100)
 	var eg errgroup.Group

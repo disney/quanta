@@ -171,11 +171,29 @@ func recurseAndLoadTable(basePath string, kvStore *shared.KVStore, tableBuffers 
 // IsDriverForTables - Is this the driver table?
 func (s *Session) IsDriverForTables(tables []string) bool {
 
-	for _, v := range tables {
-		if _, ok := s.TableBuffers[v]; !ok {
-			return false
-		}
+    for _, v := range tables {
+        if _, ok := s.TableBuffers[v]; !ok {
+            return false
+        }
+    }
+    return true
+}
+
+// IsDriverForJoin - Is this the driver table?
+func (s *Session) IsDriverForJoin(table, joinCol string) bool {
+
+	tbuf, ok := s.TableBuffers[table]
+	if !ok {
+		return false
 	}
+    attr, err := tbuf.Table.GetAttribute(joinCol)
+    if err != nil {
+        return false
+    }
+	if attr.ForeignKey == "" {
+		return false
+	}
+
 	return true
 }
 
@@ -360,7 +378,15 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 			if (found && v.Required && val == nil) || (!found && v.Required) {
 				return nil, nil, fmt.Errorf("field %s - %s is required", v.FieldName, source)
 			}
-			retVals[i] = val
+			if aryVal, ok := val.([]interface{}); ok {  // JSON array is StringEnum multi value
+				s := make([]string, len(aryVal))
+				for x, y := range aryVal {
+					s[x] = fmt.Sprint(y)
+					retVals[i] = s
+				}
+			} else {
+				retVals[i] = val
+			}
 			continue
 		} else {
 			if found {
@@ -542,8 +568,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 	}
 
 	// Can't use batch operation here unfortunately, but at least we have local batch cache
-	localKey := fmt.Sprintf("%s/%s/%s,%s.PK", tbuf.Table.Name, tbuf.PKAttributes[0].FieldName,
-		tbuf.CurrentTimestamp.Format(timeFmt), tbuf.Table.PrimaryKey)
+	localKey := indexPath(tbuf, tbuf.PKAttributes[0].FieldName, tbuf.Table.PrimaryKey + ".PK")
 
 	//if lColID, ok := s.BatchBuffer.LookupLocalPKString(tbuf.Table.Name, tbuf.Table.PrimaryKey, pkLookupVal.String()); !ok {
 	if lColID, ok := s.BatchBuffer.LookupLocalCIDForString(localKey, pkLookupVal.String()); !ok {
@@ -579,9 +604,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 				tbuf.CurrentColumnID = providedColID
 			}
 			// Add the PK via local cache batch operation
-			key := fmt.Sprintf("%s/%s/%s,%s.PK", tbuf.Table.Name, tbuf.PKAttributes[0].FieldName,
-				tbuf.CurrentTimestamp.Format(timeFmt), tbuf.Table.PrimaryKey)
-			s.BatchBuffer.SetPartitionedString(key, pkLookupVal.String(), tbuf.CurrentColumnID)
+			s.BatchBuffer.SetPartitionedString(localKey, pkLookupVal.String(), tbuf.CurrentColumnID)
 		}
 	} else {
 		if tbuf.Table.DisableDedup {
@@ -662,9 +685,8 @@ func (s *Session) processAlternateKeys(tbuf *TableBuffer, row interface{}, pqTab
 		}
 		//s.BatchBuffer.SetKeyString(tbuf.Table.Name, k, secondaryKey, skLookupVal.String(),
 		//	tbuf.CurrentColumnID)
-		key := fmt.Sprintf("%s/%s/%s,%s.SK", tbuf.Table.Name, tbuf.PKAttributes[0].FieldName,
-			tbuf.CurrentTimestamp.Format(timeFmt), k)
-		s.BatchBuffer.SetPartitionedString(key, skLookupVal.String(), tbuf.CurrentColumnID)
+		lookupKey := indexPath(tbuf, tbuf.PKAttributes[0].FieldName, k + ".SK")
+		s.BatchBuffer.SetPartitionedString(lookupKey, skLookupVal.String(), tbuf.CurrentColumnID)
 		i++
 	}
 	return nil
@@ -672,13 +694,11 @@ func (s *Session) processAlternateKeys(tbuf *TableBuffer, row interface{}, pqTab
 
 func (s *Session) lookupColumnID(tbuf *TableBuffer, lookupVal, fkFieldSpec string) (uint64, bool, error) {
 
-	kvIndex := fmt.Sprintf("%s/%s/%s,%s.PK", tbuf.Table.Name, tbuf.PKAttributes[0].FieldName,
-		tbuf.CurrentTimestamp.Format(timeFmt), tbuf.Table.PrimaryKey)
+    kvIndex := indexPath(tbuf, tbuf.PKAttributes[0].FieldName, tbuf.Table.PrimaryKey + ".PK")
 
 	if fkFieldSpec != "" {
 		// Use the secondary/alternate key specification.  In this case tbuf is the FK table
-		kvIndex = fmt.Sprintf("%s/%s/%s,%s.SK", tbuf.Table.Name, tbuf.PKAttributes[0].FieldName,
-			tbuf.CurrentTimestamp.Format(timeFmt), fkFieldSpec)
+    	kvIndex = indexPath(tbuf, tbuf.PKAttributes[0].FieldName, fkFieldSpec + ".SK")
 	}
 	kvResult, err := s.KVStore.Lookup(kvIndex, lookupVal, reflect.Uint64, true)
 	if err != nil {
@@ -688,6 +708,20 @@ func (s *Session) lookupColumnID(tbuf *TableBuffer, lookupVal, fkFieldSpec strin
 		return 0, false, nil
 	}
 	return kvResult.(uint64), true, nil
+}
+
+func indexPath(tbuf *TableBuffer, field, path string) string {
+
+	lookupPath := fmt.Sprintf("%s/%s/%s,%s", tbuf.Table.Name, field, path,
+		tbuf.CurrentTimestamp.Format(timeFmt))
+	if tbuf.Table.TimeQuantumType == "YMDH" {
+		ts := tbuf.CurrentTimestamp
+		key := fmt.Sprintf("%s/%s/%s", tbuf.Table.Name, field, ts.Format(timeFmt))
+		fpath := fmt.Sprintf("/%s/%s/%s/%s/%s", tbuf.Table.Name, field, path,
+				fmt.Sprintf("%d%02d%02d", ts.Year(), ts.Month(), ts.Day()), ts.Format(timeFmt))
+		lookupPath = key + "," + fpath
+	}
+	return lookupPath
 }
 
 // LookupKeyBatch - Process a batch of keys.

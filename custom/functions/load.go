@@ -21,5 +21,7 @@ func LoadAll() {
 		expr.FuncAdd("is_bucket_readable", &IsBucketReadable{})
 		expr.FuncAdd("is_bucket_writable", &IsBucketWritable{})
 		expr.FuncAdd("sample_stratified", &StratifiedSample{})
+		expr.FuncAdd("version", &VersionFunc{})
+		expr.FuncAdd("database", &DatabaseFunc{})
 	})
 }

@@ -130,7 +130,7 @@ func (m *ResultReader) Run() error {
 		return err
 	}
 
-	if sql.CountStar() {
+	if sql.CountStar() && len(m.sql.p.Stmt.JoinNodes()) == 0 {
 		// select count(*)
 		vals := make([]driver.Value, 1)
 		ct := m.response.Count
@@ -141,19 +141,22 @@ func (m *ResultReader) Run() error {
 		//u.Debugf("In source Scanner iter %#v", msg)
 		outCh <- msg
 		return nil
-	} else if orig != nil && len(orig.From) > 1 {
+	//} else if orig != nil && len(orig.From) > 1 {
+	} else if len(m.sql.p.Stmt.JoinNodes()) > 0 {
 		// This query must be part of a join.  Pass along the roaring bitmap results to the next
 		// tasks in the process flow.
+/*
 		allTables := make([]string, len(orig.From))
 		for i, v := range orig.From {
 			allTables[i] = v.Name
 		}
+*/
 		dataMap := make(map[string]interface{})
 		dataMap["results"] = m.response.Results
 		dataMap["fromTime"] = fromTime.UnixNano()
 		dataMap["toTime"] = toTime.UnixNano()
 		dataMap["table"] = m.sql.tbl.Name
-		dataMap["isDriver"] = m.conn.IsDriverForTables(allTables)
+		dataMap["isDriver"] = m.conn.IsDriverForJoin(m.sql.tbl.Name, m.sql.p.Stmt.JoinNodes()[0].String())
 		dataMap["isDefaultWhere"] = false
 		if m.sql.defaultWhere {
 			dataMap["isDefaultWhere"] = true
@@ -171,7 +174,7 @@ func (m *ResultReader) Run() error {
 		foundSet := make(map[string]*roaring64.Bitmap)
 		foundSet[m.sql.tbl.Name] = m.response.Results
 		proj, errx := core.NewProjection(m.conn, foundSet, nil, projFields, "",
-			fromTime.UnixNano(), toTime.UnixNano(), nil)
+			fromTime.UnixNano(), toTime.UnixNano(), nil, false)
 		if errx != nil {
 			return errx
 		}
@@ -232,7 +235,7 @@ func (m *ResultReader) Run() error {
 			foundSet := make(map[string]*roaring64.Bitmap)
 			foundSet[m.sql.tbl.Name] = m.response.Results
 			proj, err3 := core.NewProjection(m.conn, foundSet, nil, projFields, "",
-				fromTime.UnixNano(), toTime.UnixNano(), nil)
+				fromTime.UnixNano(), toTime.UnixNano(), nil, false)
 			if err3 != nil {
 				return err3
 			}
@@ -280,7 +283,7 @@ func (m *ResultReader) Run() error {
 	foundSet := make(map[string]*roaring64.Bitmap)
 	foundSet[m.sql.tbl.Name] = m.response.Results
 	proj, err3 := core.NewProjection(m.conn, foundSet, nil, projFields, "",
-		fromTime.UnixNano(), toTime.UnixNano(), nil)
+		fromTime.UnixNano(), toTime.UnixNano(), nil, false)
 	if err3 != nil {
 		return err3
 	}

@@ -5,6 +5,7 @@ package core
 import (
 	"database/sql/driver"
 	"fmt"
+	//u "github.com/araddon/gou"
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/disney/quanta/shared"
 	"math"
@@ -36,6 +37,7 @@ type Projector struct {
 	Prefetch       bool                                      // Set to true to prefetch all bitmap related data for export.
 	bsiResults     map[string]map[string]*roaring64.BSI      // Prefetched BSIs
 	bitmapResults  map[string]map[string]*BitmapFieldResults // Prefetched Bitmaps
+	negate         bool                                      // != join
 }
 
 // BitmapFieldResults - All RowID values for a bitmap field/attribute sorted by cardinality descending
@@ -51,7 +53,7 @@ type BitmapFieldRow struct {
 
 // NewProjection - Construct a Projection.
 func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames, projNames []string,
-	driver string, fromTime, toTime int64, joinTypes map[string]bool) (*Projector, error) {
+	driver string, fromTime, toTime int64, joinTypes map[string]bool, negate bool) (*Projector, error) {
 
 	projFieldMap := make(map[string]int)
 	j := 0
@@ -76,7 +78,7 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 	}
 
 	p := &Projector{connection: s, projAttributes: projAttributes, joinTypes: joinTypes,
-		foundSets: foundSets, fromTime: fromTime, toTime: toTime, driverTable: driver}
+		foundSets: foundSets, fromTime: fromTime, toTime: toTime, driverTable: driver, negate: negate}
 
 	// Perform validation for join projections (if applicable)
 	if driver != "" && len(foundSets) > 1 {
@@ -107,7 +109,7 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 		// retrieve relation BSI(s)
 		rs := make(map[string]*roaring64.Bitmap)
 		rs[p.driverTable] = p.foundSets[p.driverTable]
-		bsir, _, err := p.retrieveBitmapResults(rs, p.joinAttributes)
+		bsir, _, err := p.retrieveBitmapResults(rs, p.joinAttributes, p.negate)
 		if err != nil {
 			return nil, err
 		}
@@ -146,7 +148,8 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 				p.driverTable, fka.FieldName)
 		}
 		// filter against relation foundset
-		driverSet.And(fkBsi.BatchEqual(0, signed))
+        driverSet = fkBsi.BatchEqual(0, signed)
+		//driverSet.And(fkBsi.BatchEqual(0, signed))
 	}
 
 	p.resultIterator = driverSet.ManyIterator()
@@ -183,7 +186,7 @@ func getAttributes(s *Session, fieldNames []string) ([]*Attribute, error) {
 }
 
 // retrieveBitmapResults - Populate internal structures with projection data.
-func (p *Projector) retrieveBitmapResults(foundSets map[string]*roaring64.Bitmap, attr []*Attribute) (
+func (p *Projector) retrieveBitmapResults(foundSets map[string]*roaring64.Bitmap, attr []*Attribute, negate bool) (
 	map[string]map[string]*roaring64.BSI, map[string]map[string]*BitmapFieldResults, error) {
 
 	fieldNames := make(map[string][]string)
@@ -198,7 +201,7 @@ func (p *Projector) retrieveBitmapResults(foundSets map[string]*roaring64.Bitmap
 	bitmapResults := make(map[string]map[string]*BitmapFieldResults)
 
 	for k, v := range foundSets {
-		bsir, bitr, err := p.connection.BitIndex.Projection(k, fieldNames[k], p.fromTime, p.toTime, v)
+		bsir, bitr, err := p.connection.BitIndex.Projection(k, fieldNames[k], p.fromTime, p.toTime, v, negate)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -232,7 +235,7 @@ func (p *Projector) findRelationLink(tableName string) (*Attribute, bool) {
 }
 
 func (p *Projector) nextSets(columnIDs []uint64) (map[string]map[string]*roaring64.BSI,
-	map[string]map[string]*BitmapFieldResults, error) {
+		map[string]map[string]*BitmapFieldResults, error) {
 
 	bsiResults := make(map[string]map[string]*roaring64.BSI)
 	bitmapResults := make(map[string]map[string]*BitmapFieldResults)
@@ -243,12 +246,13 @@ func (p *Projector) nextSets(columnIDs []uint64) (map[string]map[string]*roaring
 	allAttr := make([]*Attribute, 0)
 	allAttr = append(allAttr, p.projAttributes...)
 	allAttr = append(allAttr, p.joinAttributes...)
-	bsir, bitr, err := p.retrieveBitmapResults(rs, allAttr)
+	bsir, bitr, err := p.retrieveBitmapResults(rs, allAttr, false)
 	if err != nil {
 		return nil, nil, err
 	}
 	bsiResults[p.driverTable] = bsir[p.driverTable]
 	bitmapResults[p.driverTable] = bitr[p.driverTable]
+
 	for k, v := range p.foundSets {
 		if k == p.driverTable {
 			continue
@@ -272,7 +276,7 @@ func (p *Projector) nextSets(columnIDs []uint64) (map[string]map[string]*roaring
 			newSet.And(v)
 		}
 		rs[k] = newSet
-		bsir, bitr, err := p.retrieveBitmapResults(rs, p.projAttributes)
+		bsir, bitr, err := p.retrieveBitmapResults(rs, p.projAttributes, false)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -306,7 +310,7 @@ func (p *Projector) Next(count int) (columnIDs []uint64, rows [][]driver.Value, 
 			allAttr := make([]*Attribute, 0)
 			allAttr = append(allAttr, p.projAttributes...)
 			allAttr = append(allAttr, p.joinAttributes...)
-			bsiResults, bitmapResults, e := p.retrieveBitmapResults(p.foundSets, allAttr)
+			bsiResults, bitmapResults, e := p.retrieveBitmapResults(p.foundSets, allAttr, false)
 			if e != nil {
 				err = e
 				return
@@ -348,6 +352,7 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 	map[string]map[interface{}]interface{}, error) {
 
 	strMap := make(map[string]map[interface{}]interface{})
+	var trxColumnIDs []uint64
 	for _, v := range p.projAttributes {
 		if v.MappingStrategy != "StringHashBSI" && v.MappingStrategy != "ParentRelation" {
 			continue
@@ -379,7 +384,7 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 					continue
 					//return nil, fmt.Errorf("no BSI results for %s - %s", p.driverTable, key)
 				}
-				columnIDs = p.transposeFKColumnIDs(bsiResults[p.driverTable][key], columnIDs)
+				trxColumnIDs = p.transposeFKColumnIDs(bsiResults[p.driverTable][key], columnIDs)
 				if v.MappingStrategy == "ParentRelation" {
 					if len(relBuf.PKAttributes) > 1 {
 						return nil, fmt.Errorf("Projector error - Can only support single PK with link [%s]", key)
@@ -392,7 +397,13 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 				}
 			}
 		}
-		lBatch, err := p.getPartitionedStrings(lookupAttribute, columnIDs)
+		var lBatch map[interface{}]interface{}
+		var err error
+		if lookupAttribute.Parent.Name != p.driverTable {
+			lBatch, err = p.getPartitionedStrings(lookupAttribute, trxColumnIDs)
+		} else {
+			lBatch, err = p.getPartitionedStrings(lookupAttribute, columnIDs)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -623,7 +634,7 @@ func (r *BitmapFieldResults) Swap(i, j int) {
 // Rank - TopN rank aggregate
 func (p *Projector) Rank(table, field string, count int) (rows [][]driver.Value, err error) {
 
-	bsiResults, bitmapResults, err := p.retrieveBitmapResults(p.foundSets, p.projAttributes)
+	bsiResults, bitmapResults, err := p.retrieveBitmapResults(p.foundSets, p.projAttributes, false)
 	if err != nil {
 		return nil, err
 	}
@@ -729,7 +740,7 @@ func (p *Projector) minMax(isMin bool, table, field string) (minmax int64, err e
 
 func (p *Projector) getAggregateResult(table, field string) (result *roaring64.BSI, err error) {
 
-	bsiResults, bitmapResults, errx := p.retrieveBitmapResults(p.foundSets, p.projAttributes)
+	bsiResults, bitmapResults, errx := p.retrieveBitmapResults(p.foundSets, p.projAttributes, false)
 	if errx != nil {
 		err = errx
 		return
@@ -763,11 +774,14 @@ func (p *Projector) getAggregateResult(table, field string) (result *roaring64.B
 func (p *Projector) getPartitionedStrings(attr *Attribute, colIDs []uint64) (map[interface{}]interface{}, error) {
 
 	lBatch := make(map[interface{}]interface{}, len(colIDs))
-	startPartition := time.Unix(0, int64(colIDs[0])).Format(timeFmt)
-	endPartition := time.Unix(0, int64(colIDs[len(colIDs)-1])).Format(timeFmt)
+	if len(colIDs) == 0 {
+		return lBatch, nil
+	}
+	startPartition := time.Unix(0, int64(colIDs[0]))
+	endPartition := time.Unix(0, int64(colIDs[len(colIDs)-1]))
 
-	if startPartition == endPartition { // Everything in one partition
-		lookupIndex := fmt.Sprintf("%s/%s/%s", attr.Parent.Name, attr.FieldName, startPartition)
+	if startPartition.Equal(endPartition) { // Everything in one partition
+		lookupIndex := stringsPath(attr.Parent, attr.FieldName, "strings", startPartition)
 		for _, colID := range colIDs {
 			lBatch[colID] = ""
 		}
@@ -776,9 +790,9 @@ func (p *Projector) getPartitionedStrings(attr *Attribute, colIDs []uint64) (map
 
 	batch := make(map[interface{}]interface{})
 	for _, colID := range colIDs {
-		endPartition = time.Unix(0, int64(colID)).Format(timeFmt)
-		if endPartition != startPartition {
-			lookupIndex := fmt.Sprintf("%s/%s/%s", attr.Parent.Name, attr.FieldName, startPartition)
+		endPartition = time.Unix(0, int64(colID))
+		if !endPartition.Equal(startPartition) {
+			lookupIndex := stringsPath(attr.Parent, attr.FieldName, "strings", startPartition)
 			b, err := p.connection.KVStore.BatchLookup(lookupIndex, batch, true)
 			if err != nil {
 				return nil, fmt.Errorf("BatchLookup error for [%s] - %v", lookupIndex, err)
@@ -791,7 +805,7 @@ func (p *Projector) getPartitionedStrings(attr *Attribute, colIDs []uint64) (map
 		}
 		batch[colID] = ""
 	}
-	lookupIndex := fmt.Sprintf("%s/%s/%s", attr.Parent.Name, attr.FieldName, startPartition)
+	lookupIndex := stringsPath(attr.Parent, attr.FieldName, "strings", startPartition)
 	b, err := p.connection.KVStore.BatchLookup(lookupIndex, batch, true)
 	if err != nil {
 		return nil, fmt.Errorf("BatchLookup error for [%s] - %v", lookupIndex, err)
@@ -800,4 +814,16 @@ func (p *Projector) getPartitionedStrings(attr *Attribute, colIDs []uint64) (map
 		lBatch[k] = v
 	}
 	return lBatch, nil
+}
+
+func stringsPath(table *Table, field, path string, ts time.Time) string {
+
+	lookupPath := fmt.Sprintf("%s/%s/%s,%s", table.Name, field, path, ts.Format(timeFmt))
+	if table.TimeQuantumType == "YMDH" {
+		key := fmt.Sprintf("%s/%s/%s", table.Name, field, ts.Format(timeFmt))
+		fpath := fmt.Sprintf("/%s/%s/%s/%s/%s", table.Name, field, path,
+				fmt.Sprintf("%d%02d%02d", ts.Year(), ts.Month(), ts.Day()), ts.Format(timeFmt))
+		lookupPath = key + "," + fpath
+	}
+	return lookupPath
 }

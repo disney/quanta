@@ -23,6 +23,8 @@ type Partition struct {
 	Time			time.Time
 	TQType			string
 	HasStrings		bool
+	IsPK			bool
+	Shard			interface{}
 }
 
 // PartitionOperation - Partition operation
@@ -30,6 +32,31 @@ type PartitionOperation struct {
 	*Partition
 	RemoveOnly		bool
 	newPath			string
+}
+
+// NewPartitionOperation - Archival/Removal operations on an entire partition/shard.
+func (m *BitmapIndex) NewPartitionOperation(p *Partition, removeOnly bool) *PartitionOperation {
+
+	m.tableCacheLock.RLock()
+	defer m.tableCacheLock.RUnlock()
+	table := m.tableCache[p.Index]
+	if table == nil {
+		u.Errorf("NewPartitionOperation: assertion fail table is nil")
+		return nil
+	}
+	pka, err := table.GetPrimaryKeyInfo()
+	if err != nil {
+		u.Errorf("NewPartitionOperation: assertion fail GetPrimaryKeyInfo: %v", err)
+		return nil
+	}
+	p.IsPK = p.Field == pka[0].FieldName
+	attr, err  := table.GetAttribute(p.Field)
+	if err != nil {
+		u.Errorf("assertion fail: %v", err)
+	} else {
+		p.HasStrings = attr.MappingStrategy == "StringHashBSI"
+	}
+	return &PartitionOperation{Partition: p, RemoveOnly: removeOnly}
 }
 
 // Persist a standard bitmap field to disk
@@ -93,20 +120,32 @@ func (m *BitmapIndex) executeOperation(aop *PartitionOperation) error {
 	newPath := m.generateBitmapFilePath(aop.Partition, true)
 	aop.newPath = newPath
 
-	if aop.RowIDOrBits >= 0 {
-		if aop.RemoveOnly {
-			return os.Remove(oldPath)
-		}
-		return os.Rename(oldPath, newPath)
-	}
 	if err := filepath.Walk(oldPath, aop.perform); err != nil {
 		return err
 	}
+	if aop.RowIDOrBits >= 0 {
+		return nil
+	}
+	localKV := m.Node.GetNodeService("KVStore").(*KVStore)
 	if aop.HasStrings {
-		oldPath = m.generateStringsFilePath(aop, false)
-		newPath = m.generateStringsFilePath(aop, true)
+		var iname string
+		oldPath, iname = m.generateStringsFilePath(aop, false)
+		localKV.closeStore(iname)
+		aop.newPath, _ = m.generateStringsFilePath(aop, true)
+		os.MkdirAll(aop.newPath, 0755)
 		if err := filepath.Walk(oldPath, aop.perform); err != nil {
 			return err
+		}
+	} else {
+		if aop.IsPK {
+			var iname string
+			oldPath, iname = m.generateIndexFilePath(aop, false, 0)
+			localKV.closeStore(iname)
+			aop.newPath, _ = m.generateIndexFilePath(aop, true, 0)
+			os.MkdirAll(aop.newPath, 0755)
+			if err := filepath.Walk(oldPath, aop.perform); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -114,17 +153,59 @@ func (m *BitmapIndex) executeOperation(aop *PartitionOperation) error {
 
 func (po *PartitionOperation) perform(path string, info os.FileInfo, err error) error {
 
-	if err != nil {
+	if info == nil {
+		err := fmt.Errorf("assert info is nil for path %s", path)
+		u.Errorf("%v", err)
 		return err
 	}
+
 	if info.IsDir() {
 		return nil
 	}
 	if po.RemoveOnly {
 		return os.Remove(path)
 	}
-	return os.Rename(path, po.newPath+sep+info.Name())
+	dest := po.newPath+sep+info.Name()
+	err2 := os.Rename(path, dest)
+	if err2 == nil {
+		return nil
+	}
+	if !strings.HasSuffix(err2.Error(), "invalid cross-device link") {
+		return err2
+	}
+	input, err3 := ioutil.ReadFile(path)
+	if err3 != nil {
+		return err3
+	}
+	err4 := ioutil.WriteFile(dest, input, 0644)
+	if err4 != nil {
+		return err4
+	}
+	return os.Remove(path)
 }
+
+func (p *Partition) generatePath(isArchivePath bool, base, leaf string) (string, string) {
+
+	baseDir := base + sep + "index" + sep + p.Index + sep + p.Field + sep + leaf
+	baseWithDest := base + sep + "index" + sep
+	if isArchivePath {
+		baseDir = base + sep + "archive" + sep + p.Index + sep + p.Field + sep + leaf
+		baseWithDest = base + sep + "archive" + sep
+	}
+
+	fname := "default"
+	dayDir := ""
+	if p.TQType == "YMD" {
+		fname = p.Time.Format(timeFmt)
+	}
+	if p.TQType == "YMDH" {
+		dayDir = fmt.Sprintf("%d%02d%02d", p.Time.Year(), p.Time.Month(), p.Time.Day()) + "/"
+		fname = p.Time.Format(timeFmt)
+	}
+	ret := baseDir + sep + dayDir + fname
+	return ret, strings.ReplaceAll(ret, baseWithDest, "")
+}
+
 
 // Figure out the appropriate file path given type BSI/Standard and applicable time quantum
 func (m *BitmapIndex) generateBitmapFilePath(aop *Partition, isArchivePath bool) string {
@@ -151,27 +232,37 @@ func (m *BitmapIndex) generateBitmapFilePath(aop *Partition, isArchivePath bool)
 		fname = ""
 	}
 	os.MkdirAll(baseDir, 0755)
-	return baseDir + sep + fname
+	//return baseDir + sep + fname
+	return baseDir 
 }
 
 // Figure out the appropriate file path for backing strings file
-func (m *BitmapIndex) generateStringsFilePath(aop *PartitionOperation, isArchivePath bool) string {
+func (m *BitmapIndex) generateStringsFilePath(aop *PartitionOperation, isArchivePath bool) (string, string) {
 
-	baseDir := m.dataDir + sep + "index" + sep + aop.Index + sep + aop.Field + sep
-	if isArchivePath {
-		baseDir = m.dataDir + sep + "archive" + sep + aop.Index + sep + aop.Field + sep + "strings"
-	}
+	return aop.generatePath(isArchivePath, m.dataDir, "strings")
+}
 
-	fname := "default"
-	if aop.TQType == "YMD" {
-		fname = aop.Time.Format(timeFmt)
+// Figure out the appropriate file path for an index file (PK/SK)
+// Index number 0 is PK, index number 1 is first SK (if any)  and so forth
+func (m *BitmapIndex) generateIndexFilePath(aop *PartitionOperation, isArchivePath bool, indexNo int) (string, string) {
+
+	m.tableCacheLock.RLock()
+	defer m.tableCacheLock.RUnlock()
+	table := m.tableCache[aop.Index]
+	if table == nil {
+		u.Errorf("generateIndexFilePath: assertion fail table is nil")
+		return "", ""
 	}
-	if aop.TQType == "YMDH" {
-		baseDir = baseDir + sep + fmt.Sprintf("%d%02d%02d", aop.Time.Year(), aop.Time.Month(), aop.Time.Day())
-		fname = aop.Time.Format(timeFmt)
+	name := table.PrimaryKey + ".PK"
+	if indexNo > 0 {
+		s := strings.Split(table.SecondaryKeys, ",")
+		if indexNo > len(s) {
+			u.Errorf("generateIndexFilePath: indexNo is invalid")
+			return "", ""
+		}
+		name = s[indexNo - 1] + ".SK"
 	}
-	os.MkdirAll(baseDir, 0755)
-	return baseDir + sep + fname
+	return aop.generatePath(isArchivePath, m.dataDir, name)
 }
 
 // Return open file descriptor(s) for writing
@@ -194,6 +285,8 @@ func (m *BitmapIndex) openCompleteFile(index, field string, rowIDOrBits int64, t
 		f = make([]*os.File, numFiles)
 		// EBM is at fd[0]
 		f[0], err = os.OpenFile(path+sep+"EBM", os.O_CREATE|os.O_WRONLY, 0666)
+	} else {
+		path = path + sep + ts.Format(timeFmt)
 	}
 	for ; i < numFiles; i++ {
 		fpath := path

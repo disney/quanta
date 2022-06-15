@@ -44,13 +44,14 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	err = conn.Connect(nil) // no consul
 	assert.NoError(suite.T(), err)
 
+	u.SetupLogging("debug")
+
 	// load up vision test data (nested schema containing 3 separate tables)
 	suite.loadData("cities", "./testdata/us_cities.parquet", conn)
 	suite.loadData("cityzip", "./testdata/us_cityzip.parquet", conn)
 	// suite.loadData("nba", "./testdata/nba.parquet")
 
 	// load all of our built-in functions
-	u.SetupLogging("debug")
 	builtins.LoadAllBuiltins()
 	functions.LoadAll() // Custom functions
 
@@ -184,12 +185,26 @@ func (suite *QuantaTestSuite) TestInnerJoin() {
 	suite.Equal("46280", results[0])
 }
 
+// Test anti-join
+func (suite *QuantaTestSuite) TestAntiJoin() {
+	results, _, err := suite.runQuery("select count(*) from cityzip as z inner join cities as c on c.id != z.city_id where z.city = 'Oceanside'")
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	suite.Equal("46270", results[0])
+	results, _, err = suite.runQuery("select c.id, c.name, c.state_name, c.state from cityzip as z inner join cities as c on c.id != z.city_id where z.city != 'Oceanside' limit 100000")
+	assert.NoError(suite.T(), err)
+	suite.Equal(10, len(results))
+}
+
 // Test outer join
 func (suite *QuantaTestSuite) TestOuterJoinWithPredicate() {
 	results, _, err := suite.runQuery("select count(*) from cityzip as z outer join cities as c on c.id = z.city_id where z.city = 'Oceanside'")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("10", results[0])
+	results, _, err = suite.runQuery("select c.id, c.name, c.state_name, c.state from cityzip as z outer join cities as c on c.id = z.city_id where z.city = 'Oceanside'")
+	assert.NoError(suite.T(), err)
+	suite.Equal(10, len(results))
 }
 
 // Test outer join no predicate
@@ -226,6 +241,26 @@ func (suite *QuantaTestSuite) TestNotBetween() {
 	results, _, err := suite.runQuery("select count(*) from cities where population NOT BETWEEN 100000 and 150000")
 	assert.NoError(suite.T(), err)
 	suite.Equal("29321", results[0])
+}
+
+// Test subquery join
+func (suite *QuantaTestSuite) TestSubqueryJoin() {
+	results, _, err := suite.runQuery("select count(*) from cities where id in (select city_id from cityzip where city = 'Oceanside')")
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	suite.Equal("10", results[0])
+
+	results, _, err = suite.runQuery("select count(*) from cities where id not in (select city_id from cityzip where city = 'Oceanside')")
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	suite.Equal("46270", results[0])
+	results, _, err = suite.runQuery("select id, name, state_name, state from cities where id in (select city_id from cityzip where city = 'Oceanside')")
+	assert.NoError(suite.T(), err)
+	suite.Equal(10, len(results))
 }
 
 func (suite *QuantaTestSuite) TestInvalidTableOnJoin() {
@@ -387,6 +422,10 @@ func (suite *QuantaTestSuite) TestCitiesIntDirect() {
 
 func (suite *QuantaTestSuite) TestCitiesBoolDirect() {
 	results, _, err := suite.runQuery("select count(*) from cities where military = true")
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	suite.Equal("84", results[0])
+	results, _, err = suite.runQuery("select count(*) from cities where military = 1")
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("84", results[0])

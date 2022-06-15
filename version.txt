@@ -1,1 +1,1 @@
-quanta 0.9.6-rc-34
+quanta 0.9.6

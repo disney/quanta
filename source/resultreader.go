@@ -268,17 +268,21 @@ func (m *ResultReader) Run() error {
 	}
 
 	// Made it this far, must be a simple, non-join projection
-	projFields := make([]string, 0)
-	m.sql.p.Proj, colNames, _, _, err = createFinalProjection(orig, m.sql.tbl.Schema, "")
+	//projFields := make([]string, 0)
+	var projFields []string
+	var rowCols map[string]int
+	m.sql.p.Proj, colNames, rowCols, projFields, _, err = createFinalProjection(orig, m.sql.tbl.Schema, "")
 	if err != nil {
 		return err
 	}
+/*
 	cols = m.sql.p.Proj.Columns
 	for _, v := range cols {
 		if v.As != "@rownum" {
 			projFields = append(projFields, fmt.Sprintf("%s.%s", m.sql.tbl.Name, v.Name))
 		}
 	}
+*/
 
 	foundSet := make(map[string]*roaring64.Bitmap)
 	foundSet[m.sql.tbl.Name] = m.response.Results
@@ -295,8 +299,8 @@ func (m *ResultReader) Run() error {
 		isExport = true
 	}
 
-	if err = outputProjection(outCh, sigChan, proj, colNames, m.limit, m.offset, isExport,
-		orig.Distinct); err != nil {
+	if err = outputProjection(outCh, sigChan, proj, colNames, rowCols, m.limit, m.offset, isExport,
+		orig.Distinct, m.sql.p.Proj); err != nil {
 		return err
 	}
 

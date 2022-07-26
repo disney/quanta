@@ -860,6 +860,9 @@ func (m *SQLToQuanta) walkSelectList(q *shared.QueryFragment) error {
 			// case *expr.UnaryNode:
 			//     return m.walkUnary(curNode)
 			case *expr.FuncNode:
+   				if curNode.Missing {
+					return fmt.Errorf("func %q not found while processing select list", curNode.Name)
+				}
 				// All Func Nodes are Aggregates?
 				//esm, err := m.walkAggs(curNode)
 				return m.walkAggs(curNode, q)
@@ -1075,8 +1078,8 @@ func (m *SQLToQuanta) walkAggFunc(node *expr.FuncNode, q *shared.QueryFragment) 
 			//return M{"exists": M{"field": val.ToString()}}, nil
 		}
 
-	default:
-		u.Warnf("not implemented ")
+	//default:
+	//	u.Warnf("not implemented ")
 	}
 	u.Debugf("func:  %v", q)
 	if q != nil {
@@ -1164,7 +1167,7 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 	hasAliasedStar := len(ctx.Projection.Proj.Columns) == 1 &&
 		strings.HasSuffix(ctx.Projection.Proj.Columns[0].As, ".*")
 	if p.Stmt.Source.Star || hasAliasedStar {
-		ctx.Projection.Proj, _, _, _, err = createFinalProjection(p.Stmt.Source, p.Schema, "")
+		ctx.Projection.Proj, _, _, _, _, err = createFinalProjection(p.Stmt.Source, p.Schema, "")
 		if err != nil {
 			return nil, err
 		}

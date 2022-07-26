@@ -860,7 +860,7 @@ func (m *SQLToQuanta) walkSelectList(q *shared.QueryFragment) error {
 			// case *expr.UnaryNode:
 			//     return m.walkUnary(curNode)
 			case *expr.FuncNode:
-   				if curNode.Missing {
+   				if curNode.Missing && curNode.Name != "min" && curNode.Name != "max" {
 					return fmt.Errorf("func %q not found while processing select list", curNode.Name)
 				}
 				// All Func Nodes are Aggregates?

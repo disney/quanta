@@ -21,13 +21,14 @@ type Avg struct{}
 
 // Type is NumberType
 func (m *Avg) Type() value.ValueType { return value.NumberType }
+
+// Validate arguments
 func (m *Avg) Validate(n *expr.FuncNode) (expr.EvaluatorFunc, error) {
 	if len(n.Args) < 1 {
 		return nil, fmt.Errorf("Expected 1 or more args for Avg(arg, arg, ...) but got %s", n)
 	}
 	return avgEval, nil
 }
-//func (m *Avg) IsAgg() bool { return true }
 
 func avgEval(ctx expr.EvalContext, vals []value.Value) (value.Value, bool) {
 	avg := float64(0)
@@ -82,6 +83,7 @@ func (m *Sum) Type() value.ValueType { return value.NumberType }
 // IsAgg yes sum is an agg.
 //func (m *Sum) IsAgg() bool { return true }
 
+// Validate arguments
 func (m *Sum) Validate(n *expr.FuncNode) (expr.EvaluatorFunc, error) {
 	if len(n.Args) < 1 {
 		return nil, fmt.Errorf("Expected 1 or more args for Sum(arg, arg, ...) but got %s", n)
@@ -144,6 +146,7 @@ type TimeDiff struct{}
 // Type is number
 func (m *TimeDiff) Type() value.ValueType { return value.StringType }
 
+// Validate arguments
 func (m *TimeDiff) Validate(n *expr.FuncNode) (expr.EvaluatorFunc, error) {
 
 	if len(n.Args) < 2 || len(n.Args) > 3 {
@@ -165,11 +168,11 @@ func timeDiffEval(ctx expr.EvalContext, vals []value.Value) (value.Value, bool) 
 			value1 = time.Now()
 			break
 		}
-		if t, err := dateparse.ParseAny(vals[0].ToString()); err != nil {
+		t, err := dateparse.ParseAny(vals[0].ToString())
+		if err != nil {
 			return value.NewStringValue(""), false
-		} else {
-			value1 = t
 		}
+		value1 = t
 	}
 
 	switch vals[1].(type) {
@@ -178,11 +181,11 @@ func timeDiffEval(ctx expr.EvalContext, vals []value.Value) (value.Value, bool) 
 			value2 = time.Now()
 			break
 		}
-		if t, err := dateparse.ParseAny(vals[1].ToString()); err != nil {
+		t, err := dateparse.ParseAny(vals[1].ToString())
+		if err != nil {
 			return value.NewStringValue(""), false
-		} else {
-			value2 = t
 		}
+		value2 = t
 	}
 
 	diff :=  value1.Sub(value2)

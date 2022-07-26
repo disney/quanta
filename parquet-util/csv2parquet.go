@@ -97,8 +97,13 @@ func main() {
 		// Create S3 service client
 		log.Printf("Opening Output S3 path s3://%s/%s", outUrl.Host, path.Base(outUrl.Path))
 		s3svc := s3.New(sess)
-		fw, err = pqs3.NewS3FileWriterWithClient(context.Background(), s3svc, outUrl.Host,
-			*aws.String(path.Base(outUrl.Path)), nil)
+_ = s3svc
+		//fw, err = pqs3.NewS3FileWriterWithClient(context.Background(), s3svc, outUrl.Host,
+		//	*aws.String(path.Base(outUrl.Path)), nil)
+		fw, err = pqs3.NewS3FileWriterWithClient(context.Background(), nil, outUrl.Host,
+			*aws.String(path.Base(outUrl.Path)), "", nil)
+    //have (context.Context, *"github.com/aws/aws-sdk-go/service/s3".S3, string, string, nil)
+    //want (context.Context, s3iface.S3API, string, string, string, []func(*s3manager.Uploader))
 		if err != nil {
 			log.Fatal(err)
 		}

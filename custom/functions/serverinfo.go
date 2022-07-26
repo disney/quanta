@@ -6,11 +6,7 @@ import (
 	"github.com/araddon/qlbridge/value"
 )
 
-//
-// Version - return version number.
-//
-// version()
-//
+// VersionFunc return version number.
 type VersionFunc struct{}
 
 // Type - return type.
@@ -30,11 +26,7 @@ func versionEval(ctx expr.EvalContext, args []value.Value) (value.Value, bool) {
  return value.NewStringValue("8.0.12"), true
 }
 
-//
-// Database - return database name
-//
-// database()
-//
+// DatabaseFunc - return database name
 type DatabaseFunc struct{}
 
 // Type - return type.

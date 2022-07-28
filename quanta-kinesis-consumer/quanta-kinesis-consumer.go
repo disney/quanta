@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/custom/functions"
 	"github.com/disney/quanta/shared"
 	"github.com/hamba/avro"
 	"github.com/harlow/kinesis-consumer"
@@ -134,6 +135,7 @@ func main() {
 	shared.InitLogging(*logLevel, *environment, appName, Version, "Quanta")
 
 	builtins.LoadAllBuiltins()
+	functions.LoadAll()
 
 	main := NewMain()
 	main.Stream = *stream

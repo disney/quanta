@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	u "github.com/araddon/gou"
+	//u "github.com/araddon/gou"
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/araddon/qlbridge/datasource"
 	"github.com/araddon/qlbridge/exec"
@@ -72,8 +72,8 @@ func decorateRow(row []driver.Value, proj *rel.Projection, rowCols map[string]in
 		}
         nodeVal, ok := vm.Eval(ctx, v.Col.Expr)
         if !ok {
-            u.Errorf("could not evaluate: %v", v.Col.Expr.String())
-			return newRow
+			newRow[i] = "NULL"
+			continue
         }
 		newRow[i] = nodeVal.ToString()
 	}

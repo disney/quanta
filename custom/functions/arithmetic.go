@@ -187,6 +187,9 @@ func timeDiffEval(ctx expr.EvalContext, vals []value.Value) (value.Value, bool) 
 		}
 		value2 = t
 	}
+	if value1.IsZero() || value2.IsZero() {
+		return value.NewNilValue(), true
+	}
 
 	diff :=  value1.Sub(value2)
 	switch outFormat {

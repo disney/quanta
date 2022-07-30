@@ -469,7 +469,12 @@ func (s *Session) getDefaultValueForColumn(a *Attribute, row interface{}) interf
 	exprNode, _ := expr.ParseExpression(a.DefaultValue)
 	val, ok := vm.Eval(ctx, exprNode)
 	if !ok {
-		// If can't be parsed and evaluated then use literally.  Is this ok?
+		if exprNode != nil {
+			switch exprNode.NodeType() {
+				case "Func", "Identity":
+					return nil
+			}
+		}
 		val = value.NewValue(a.DefaultValue)
 	}
 	return fmt.Sprintf("%v", val.Value())

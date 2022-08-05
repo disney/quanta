@@ -59,7 +59,14 @@ loopExit:
 func decorateRow(row []driver.Value, proj *rel.Projection, rowCols map[string]int, columnID uint64) []driver.Value {
 
 	newRow := make([]driver.Value, len(proj.Columns))
-	ctx := datasource.NewSqlDriverMessageMap(columnID, row, rowCols)
+	cpyRow := make([]driver.Value, len(row))
+	copy(cpyRow, row)
+	for i, v := range cpyRow {
+		if v == "NULL" {
+			cpyRow[i] = nil
+		}
+	}
+	ctx := datasource.NewSqlDriverMessageMap(columnID, cpyRow, rowCols)
 	for i, v := range proj.Columns {
 		ri, rok := rowCols[v.As]
 		if rok {

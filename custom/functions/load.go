@@ -23,5 +23,7 @@ func LoadAll() {
 		expr.FuncAdd("sample_stratified", &StratifiedSample{})
 		expr.FuncAdd("version", &VersionFunc{})
 		expr.FuncAdd("database", &DatabaseFunc{})
+        expr.FuncAdd("add", &Sum{})
+        expr.FuncAdd("timediff", &TimeDiff{})
 	})
 }

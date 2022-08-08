@@ -165,7 +165,7 @@ func getAttributes(s *Session, fieldNames []string) ([]*Attribute, error) {
 	for i, v := range fieldNames {
 		st := strings.Split(v, ".")
 		if len(st) != 2 {
-			return nil, fmt.Errorf("field names must be in the form <tableName>.<attributeName>")
+			return nil, fmt.Errorf("field names must be in the form <tableName>.<attributeName> [%v]", v)
 		}
 		tableName := st[0]
 		attributeName := st[1]

@@ -39,7 +39,7 @@ type (
 		delimiter      rune
 		assumeRoleArn  string
 		acl            string
-		sseKmsKeyId    string
+		sseKmsKeyID    string
 		config         *aws.Config
 	}
 )
@@ -52,7 +52,7 @@ type (
 		md        	   []string
 		assumeRoleArn  string
 		acl            string
-		sseKmsKeyId    string		
+		sseKmsKeyID    string		
 		config         *aws.Config
 	}
 )
@@ -92,17 +92,17 @@ func (s *S3CSVSink) Open(ctx *plan.Context, bucketpath string, params map[string
 
 	if assumeRoleArn, ok := params["assumeRoleArn"]; ok {
 		s.assumeRoleArn = assumeRoleArn.(string)
-		u.Debug("assumeRoleArn : '%s'\n", s.assumeRoleArn)
+		u.Debugf("assumeRoleArn : '%s'\n", s.assumeRoleArn)
 	}
 	
 	if acl, ok := params["acl"]; ok {
 		s.acl = acl.(string)
-		u.Debug("ACL : '%s'\n", s.acl)
+		u.Debugf("ACL : '%s'\n", s.acl)
 	}
 
-	if sseKmsKeyId, ok := params["sseKmsKeyId"]; ok {
-		s.sseKmsKeyId = sseKmsKeyId.(string)
-		u.Debug("kms : '%s'\n", s.sseKmsKeyId)
+	if sseKmsKeyID, ok := params["sseKmsKeyId"]; ok {
+		s.sseKmsKeyID = sseKmsKeyID.(string)
+		u.Debugf("kms : '%s'\n", s.sseKmsKeyID)
 	}
 
 	bucket, file, err := parseBucketName(bucketpath)
@@ -197,17 +197,17 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 
 	if assumeRoleArn, ok := params["assumeRoleArn"]; ok {
 		s.assumeRoleArn = assumeRoleArn.(string)
-		u.Infof("Parquet Sink: Assuming Arn Role : ", s.assumeRoleArn)
+		u.Infof("Parquet Sink: Assuming Arn Role : %s ", s.assumeRoleArn)
 	}
 
 	if acl, ok := params["acl"]; ok {
 		s.acl = acl.(string)
-		u.Infof("Parquet Sink: ACL : ", s.acl)
+		u.Infof("Parquet Sink: ACL : %s ", s.acl)
 	}
 
-	if sseKmsKeyId, ok := params["sseKmsKeyId"]; ok {
-		s.sseKmsKeyId = sseKmsKeyId.(string)
-		u.Infof("Parquet Sink: sseKmsKeyId : ", s.sseKmsKeyId)
+	if sseKmsKeyID, ok := params["sseKmsKeyId"]; ok {
+		s.sseKmsKeyID = sseKmsKeyID.(string)
+		u.Infof("Parquet Sink: sseKmsKeyId : %s ", s.sseKmsKeyID)
 	}
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
@@ -227,9 +227,9 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		}
 
 		u.Debugf("Credential values: %v", value)
-		u.Debugf("Access Key: ", value.AccessKeyID)
-		u.Debugf("Secret Key: ", value.SecretAccessKey)
-		u.Debugf("Session Token: ", value.SessionToken)
+		u.Debugf("Access Key: %s", value.AccessKeyID)
+		u.Debugf("Secret Key: %s", value.SecretAccessKey)
+		u.Debugf("Session Token: %s", value.SessionToken)
 
 		cfg.Credentials = awsv2.NewCredentialsCache(provider)
 		_,err = cfg.Credentials.Retrieve(context.TODO())
@@ -250,13 +250,13 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 	}
 
 	if s3svc == nil {
-		return fmt.Errorf("Failed creating S3 session.")
+		return fmt.Errorf("failed creating S3 session")
 	}
 
 	// Create S3 service client
 	u.Infof("Parquet Sink: Opening Output S3 path s3://%s/%s", bucket, file)
 	s.outFile, err = pgs3.NewS3FileWriterWithClient(context.Background(), s3svc, bucket, file, nil, func(p *s3.PutObjectInput){
-		p.SSEKMSKeyId = aws.String(s.sseKmsKeyId)
+		p.SSEKMSKeyId = aws.String(s.sseKmsKeyID)
 		p.ServerSideEncryption = "aws:kms"
 		p.ACL = types.ObjectCannedACL(s.acl)
 	})
@@ -335,9 +335,9 @@ func (s *S3ParquetSink) Close() error {
 func parseBucketName(bucketPath string) (bucket string, file string, err error) {
 
 	noScheme := strings.Replace(strings.ToLower(bucketPath), "s3://", "", 1)
-	split_path := strings.SplitN(noScheme, "/",2)
-	bucket = split_path[0]
-	file = split_path[1]
+	splitPath := strings.SplitN(noScheme, "/",2)
+	bucket = splitPath[0]
+	file = splitPath[1]
 
 	if bucket == "" {
 		err = fmt.Errorf("no bucket specified")

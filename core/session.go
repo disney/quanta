@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/araddon/dateparse"
 	u "github.com/araddon/gou"
+	"github.com/araddon/qlbridge/datasource"
 	"github.com/araddon/qlbridge/expr"
 	"github.com/araddon/qlbridge/value"
 	"github.com/araddon/qlbridge/vm"
@@ -326,7 +327,7 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 	if v.SourceName == "" {
 		if v.DefaultValue != "" {
 			retVals := make([]interface{}, 0)
-			retVals = append(retVals, s.getDefaultValueForColumn(v))
+			retVals = append(retVals, s.getDefaultValueForColumn(v, row))
 			pqColPaths := []string{""}
 			return retVals, pqColPaths, nil
 		}
@@ -406,7 +407,7 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 				}
 				if str, ok := vals[0].(string); ok {
 					if str == "" {
-						vals[0] = fmt.Sprintf("%v", s.getDefaultValueForColumn(v))
+						vals[0] = fmt.Sprintf("%v", s.getDefaultValueForColumn(v, row))
 					}
 				}
 			}
@@ -442,12 +443,38 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 }
 
 // Get the defalue value for a column (can be an expression)
-func (s *Session) getDefaultValueForColumn(a *Attribute) interface{} {
+func (s *Session) getDefaultValueForColumn(a *Attribute, row interface{}) interface{} {
 
+	r := row.(map[string]interface{})
+	rm := make(map[string]interface{})
+	// convert source paths to fieldname paths in incoming row
+	if r != nil {
+		for _, v := range a.Parent.Attributes {
+			if v.SourceName == "" {
+				continue
+			}
+			var err error
+			var val interface{}
+			if val, err = shared.GetPath(v.SourceName[1:], row); err != nil {
+				val = r[v.SourceName]
+			}
+			rm[v.FieldName] = val
+		}
+	}
+
+	var ctx *datasource.ContextSimple
+	if r != nil {
+		ctx = datasource.NewContextSimpleNative(rm)
+	}
 	exprNode, _ := expr.ParseExpression(a.DefaultValue)
-	val, ok := vm.Eval(nil, exprNode)
+	val, ok := vm.Eval(ctx, exprNode)
 	if !ok {
-		// If can't be parsed and evaluated then use literally.  Is this ok?
+		if exprNode != nil {
+			switch exprNode.NodeType() {
+				case "Func", "Identity":
+					return nil
+			}
+		}
 		val = value.NewValue(a.DefaultValue)
 	}
 	return fmt.Sprintf("%v", val.Value())

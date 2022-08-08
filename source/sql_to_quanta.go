@@ -840,6 +840,31 @@ func (m *SQLToQuanta) eval(arg expr.Node) (value.Value, bool, bool) {
 	return nil, false, false
 }
 
+
+func (m *SQLToQuanta) checkFuncArgs(f *expr.FuncNode) error {
+
+	for _, x := range f.Args {
+		ids := expr.FindAllIdentities(x)
+		for _, n := range ids {
+			var tableName, fieldName string
+			l, r, isLr := n.LeftRight()
+			if isLr {
+				tableName = l
+				fieldName = r
+			} else {
+				fieldName = n.Text
+				tableName = m.tbl.Name
+			}
+			table := m.conn.TableBuffers[tableName].Table
+			_, err := table.GetAttribute(fieldName)
+			if err != nil {
+				return fmt.Errorf("cannot resolve field %s.%s in %v() function argument", tableName, fieldName, f.Name)
+			}
+		}
+	}
+	return nil
+}
+
 // Aggregations from the <select_list>
 //
 //    SELECT <select_list> FROM ... WHERE
@@ -860,9 +885,18 @@ func (m *SQLToQuanta) walkSelectList(q *shared.QueryFragment) error {
 			// case *expr.UnaryNode:
 			//     return m.walkUnary(curNode)
 			case *expr.FuncNode:
+   				if curNode.Missing && curNode.Name != "min" && curNode.Name != "max" && curNode.Name != "topn" {
+					return fmt.Errorf("func %q not found while processing select list", curNode.Name)
+				}
+				if err := m.checkFuncArgs(curNode); err != nil {
+					return err
+				}
 				// All Func Nodes are Aggregates?
 				//esm, err := m.walkAggs(curNode)
-				return m.walkAggs(curNode, q)
+				err := m.walkAggs(curNode, q)
+				if err != nil {
+					return err
+				}
 				/*
 				   if err == nil && len(esm) > 0 {
 				       m.aggs[col.As] = esm
@@ -1075,8 +1109,8 @@ func (m *SQLToQuanta) walkAggFunc(node *expr.FuncNode, q *shared.QueryFragment) 
 			//return M{"exists": M{"field": val.ToString()}}, nil
 		}
 
-	default:
-		u.Warnf("not implemented ")
+	//default:
+	//	u.Warnf("not implemented ")
 	}
 	u.Debugf("func:  %v", q)
 	if q != nil {
@@ -1164,7 +1198,7 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 	hasAliasedStar := len(ctx.Projection.Proj.Columns) == 1 &&
 		strings.HasSuffix(ctx.Projection.Proj.Columns[0].As, ".*")
 	if p.Stmt.Source.Star || hasAliasedStar {
-		ctx.Projection.Proj, _, _, _, err = createFinalProjection(p.Stmt.Source, p.Schema, "")
+		ctx.Projection.Proj, _, _, _, _, err = createFinalProjection(p.Stmt.Source, p.Schema, "")
 		if err != nil {
 			return nil, err
 		}

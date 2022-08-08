@@ -57,7 +57,6 @@ vet:
 
 lint:
 	go get golang.org/x/lint/golint
-	go get github.com/GoASTScanner/gas/cmd/gas
 	golint -set_exit_status ${GOLIST}
 	#gas ${PKG}
 

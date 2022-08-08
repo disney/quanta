@@ -310,7 +310,7 @@ func (suite *QuantaTestSuite) TestJoinWithNonkeyFields() {
 // SUM, MIN, MAX, AVERAGE
 func (suite *QuantaTestSuite) TestSumInvalidFieldName() {
 	_, _, err := suite.runQuery("select sum(foobar) from cities WHERE timezone != NULL")
-	assert.EqualError(suite.T(), err, "attribute 'foobar' not found")
+	assert.EqualError(suite.T(), err, "cannot resolve field cities.foobar in sum() function argument")
 }
 
 func (suite *QuantaTestSuite) TestSumInvalidFieldType() {
@@ -334,7 +334,7 @@ func (suite *QuantaTestSuite) TestSimpleAvg() {
 
 func (suite *QuantaTestSuite) TestAvgInvalidFieldName() {
 	_, _, err := suite.runQuery("select avg(foobar) from cities WHERE timezone != NULL")
-	assert.EqualError(suite.T(), err, "attribute 'foobar' not found")
+	assert.EqualError(suite.T(), err, "cannot resolve field cities.foobar in avg() function argument")
 }
 
 func (suite *QuantaTestSuite) TestAvgInvalidFieldType() {
@@ -359,7 +359,7 @@ func (suite *QuantaTestSuite) TestNegativeMin() {
 
 func (suite *QuantaTestSuite) TestMinInvalidFieldName() {
 	_, _, err := suite.runQuery("select min(foobar) from cities WHERE timezone != NULL")
-	assert.EqualError(suite.T(), err, "attribute 'foobar' not found")
+	assert.EqualError(suite.T(), err, "cannot resolve field cities.foobar in min() function argument")
 }
 
 func (suite *QuantaTestSuite) TestMinInvalidFieldType() {
@@ -376,12 +376,18 @@ func (suite *QuantaTestSuite) TestSimpleMax() {
 
 func (suite *QuantaTestSuite) TestMaxInvalidFieldName() {
 	_, _, err := suite.runQuery("select max(foobar) from cities WHERE timezone != NULL")
-	assert.EqualError(suite.T(), err, "attribute 'foobar' not found")
+	assert.EqualError(suite.T(), err, "cannot resolve field cities.foobar in max() function argument")
 }
 
 func (suite *QuantaTestSuite) TestMaxInvalidFieldType() {
 	_, _, err := suite.runQuery("select max(state_name) from cities")
 	assert.EqualError(suite.T(), err, "can't find the maximum of a non-bsi field state_name")
+}
+
+func (suite *QuantaTestSuite) TestSimpleRank() {
+	results, _, err := suite.runQuery("select topn(state_name) from cities")
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), 53, len(results))
 }
 
 // END AGGREGATES
@@ -508,6 +514,24 @@ func (suite *QuantaTestSuite) TestCitiesNotWithAND() {
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("596", results[0])
+}
+
+// SELECT List Functions
+func (suite *QuantaTestSuite) TestSimpleSelectListFunction() {
+	results, _, err := suite.runQuery("select id, add(population + 10) from cities where state = 'NY' and name = 'Oceanside'")
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	suite.Equal("1840005246,31195", results[0])
+}
+
+func (suite *QuantaTestSuite) TestSelectListFunctionInvalidArgument() {
+	_, _, err := suite.runQuery("select id, add(foobar + 10) from cities WHERE timezone != NULL")
+	assert.EqualError(suite.T(), err, "cannot resolve field cities.foobar in add() function argument")
+}
+
+func (suite *QuantaTestSuite) TestSelectListFunctionInvalidFunction() {
+	_, _, err := suite.runQuery("select id, foobar(population + 10) from cities WHERE timezone != NULL")
+	assert.EqualError(suite.T(), err, "func \"foobar\" not found while processing select list")
 }
 
 func (suite *QuantaTestSuite) TestZDropTables() {

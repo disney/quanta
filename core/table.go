@@ -21,17 +21,17 @@ type Table struct {
 	*shared.BasicTable
 	Attributes       []Attribute
 	attributeNameMap map[string]*Attribute
-	localLock        sync.RWMutex
 	kvStore          *shared.KVStore
 }
 
 // Attribute - Field structure.
 type Attribute struct {
 	*shared.BasicAttribute
-	Parent         *Table
-	valueMap       map[interface{}]uint64
-	reverseMap     map[uint64]interface{}
-	mapperInstance Mapper
+	Parent           *Table
+	valueMap         map[interface{}]uint64
+	reverseMap       map[uint64]interface{}
+	mapperInstance   Mapper
+	localLock        sync.RWMutex
 }
 
 const (
@@ -289,15 +289,12 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 	}
 	var v uint64
 	var ok bool
-	a.Parent.localLock.RLock()
+	a.localLock.Lock()
+	defer a.localLock.Unlock()
 	if v, ok = a.valueMap[value]; !ok {
 		/* If the value does not exist in the valueMap local cache  we will add it and then
 		 *  Call the string enum service to add it.
 		 */
-
-		a.Parent.localLock.RUnlock()
-		a.Parent.localLock.Lock()
-		defer a.Parent.localLock.Unlock()
 
 		if a.Parent.kvStore == nil {
 			return 0, fmt.Errorf("kvStore is not initialized")
@@ -319,8 +316,6 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 
 		v = rowID
 		u.Infof("Added enum for field = %s, value = %v, ID = %v", a.FieldName, value, v)
-	} else {
-		a.Parent.localLock.RUnlock()
 	}
 	return v, nil
 }
@@ -328,14 +323,14 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 // GetValueForID - Reverse map a value for a given row ID.  (StringEnum)
 func (a *Attribute) GetValueForID(id uint64) (interface{}, error) {
 
-	a.Parent.localLock.RLock()
+	a.localLock.RLock()
 	if v, ok := a.reverseMap[id]; ok {
-		a.Parent.localLock.RUnlock()
+		a.localLock.RUnlock()
 		return v, nil
 	}
-	a.Parent.localLock.RUnlock()
-	a.Parent.localLock.Lock()
-	defer a.Parent.localLock.Unlock()
+	a.localLock.RUnlock()
+	a.localLock.Lock()
+	defer a.localLock.Unlock()
 
 	if a.MappingStrategy != "StringEnum" {
 		return 0, fmt.Errorf("GetValueForID attribute %s is not a StringEnum", a.FieldName)

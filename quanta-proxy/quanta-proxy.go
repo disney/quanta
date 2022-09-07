@@ -8,6 +8,7 @@ import (
 	"github.com/araddon/qlbridge/expr"
 	"github.com/araddon/qlbridge/expr/builtins"
 	"github.com/araddon/qlbridge/lex"
+	"github.com/araddon/qlbridge/rel"
 	_ "github.com/araddon/qlbridge/qlbdriver"
 	"github.com/araddon/qlbridge/schema"
 	"github.com/aws/aws-sdk-go/aws"
@@ -286,19 +287,18 @@ func onConn(conn net.Conn) {
 type ProxyHandler struct {
 	authProvider *AuthProvider
 	db           *sql.DB
+	stmts        map[interface{}]*sql.Stmt
 }
 
 // NewProxyHandler - Create a new proxy handler
 func NewProxyHandler(authProvider *AuthProvider) *ProxyHandler {
 
-	h := &ProxyHandler{authProvider: authProvider}
-/*
+	h := &ProxyHandler{authProvider: authProvider, stmts: make(map[interface{}]*sql.Stmt, 0)}
 	var err error
 	h.db, err = sql.Open("qlbridge", "quanta")
 	if err != nil {
 		panic(err.Error())
 	}
-*/
 	return h
 }
 
@@ -317,19 +317,20 @@ func (h *ProxyHandler) checkSessionUserID(enforce bool) error {
 
 // UseDB - Set DB schema name
 func (h *ProxyHandler) UseDB(dbName string) error {
+
 	h.checkSessionUserID(true)
 	u.Debugf("UseDB handler called with '%s'\n", dbName)
 	return nil
 }
 
-func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, error) {
+func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool, 
+		ctx interface{}) (*mysql.Result, error) {
 
-	var err error
-	h.db, err = sql.Open("qlbridge", "quanta")
-	if err != nil {
-		panic(err.Error())
+	var stmt *sql.Stmt
+	if ctx != nil {
+		stmt = h.stmts[ctx] 
 	}
-	defer h.db.Close()
+	u.Debugf("found cached stmt %#p", stmt)
 
 	// Ignore java driver handshake
 	if strings.Contains(strings.ToLower(query), "mysql-connector-java") {
@@ -340,7 +341,7 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 		return &mysql.Result{0, 0, 0, r}, nil
 	}
 
-	u.Debugf("handleQuery called with [%v]\n", query)
+	u.Debugf("handleQuery called with [%v], arg count = %d", query, len(args))
 
 	query = reWhitespace.ReplaceAllString(query, " ")
 	hasInto := strings.Contains(strings.ToLower(query), "into")
@@ -410,12 +411,22 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 			}
 			return &mysql.Result{0, 0, 0, r}, nil
 		}
-		u.Debugf("running query [%v]\n", query)
+		//u.Errorf("running query [%v]", query)
 		start := time.Now()
-		rows, err2 := h.db.Query(query)
-		if err2 != nil {
-			u.Errorf("could not execute query: %v", err2)
-			return nil, err2
+		var rows *sql.Rows
+		var err2 error
+		if stmt != nil {
+			rows, err2 = stmt.Query(args...)
+			if err2 != nil {
+				u.Errorf("could not execute prepared query: %v - %v", err2, query)
+				return nil, err2
+			}
+		} else {
+			rows, err2 = h.db.Query(query, args...)
+			if err2 != nil {
+				u.Errorf("could not execute query: %v", err2)
+				return nil, err2
+			}
 		}
 		defer rows.Close()
 		queryCount.Add(1)
@@ -449,10 +460,20 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 	case "insert", "delete", "update", "replace", "selectinto":
 		h.checkSessionUserID(true)
 		start := time.Now()
-		result, err := h.db.Exec(query)
-		if err != nil {
-			u.Errorf("could not execute stmt: %v", err)
-			return nil, err
+		var result sql.Result
+		var err error
+		if stmt != nil {
+			result, err = stmt.Exec(args...)
+			if err != nil {
+				u.Errorf("could not execute prepared stmt: %v - %v", err, query)
+				return nil, err
+			}
+		} else {
+			result, err = h.db.Exec(query, args...)
+			if err != nil {
+				u.Errorf("could not execute stmt: %v", err)
+				return nil, err
+			}
 		}
 		insertID, err1 := result.LastInsertId()
 		rowCount, err2 := result.RowsAffected()
@@ -480,7 +501,7 @@ func (h *ProxyHandler) handleQuery(query string, binary bool) (*mysql.Result, er
 		return &mysql.Result{0, uint64(insertID), uint64(rowCount), nil}, nil
 	case "set":
 		h.checkSessionUserID(false)
-		_, err := h.db.Exec(query)
+		_, err := h.db.Exec(query, args...)
 		if err != nil {
 			u.Errorf("could not execute set: %v", err)
 			return nil, err
@@ -499,7 +520,7 @@ func (h *ProxyHandler) HandleQuery(query string) (*mysql.Result, error) {
 			u.Error(err)
 		}
 	}()
-	return h.handleQuery(query, false)
+	return h.handleQuery(query, nil, false, nil)
 }
 
 // HandleFieldList - Generate field list.
@@ -509,45 +530,75 @@ func (h *ProxyHandler) HandleFieldList(table string, fieldWildcard string) ([]*m
 
 // HandleStmtPrepare - Process prepared statements.
 func (h *ProxyHandler) HandleStmtPrepare(sql string) (params int, columns int, ctx interface{}, err error) {
-	ss := strings.Split(sql, " ")
-	switch strings.ToLower(ss[0]) {
-	case "select":
-		params = 1
-		columns = 2
-	case "insert":
-		params = 2
-		columns = 0
-	case "replace":
-		params = 2
-		columns = 0
-	case "update":
-		params = 1
-		columns = 0
-	case "delete":
-		params = 1
-		columns = 0
-	default:
-		err = fmt.Errorf("invalid prepare %s", sql)
+
+	params = strings.Count(sql, "?")
+	psql := strings.ReplaceAll(sql, "?", "0")
+	var stmt rel.SqlStatement
+	stmt, err = rel.ParseSql(psql)
+	if err != nil {
+		return
 	}
-	return params, columns, nil, err
+	switch v := interface{}(stmt).(type) {
+	case *rel.SqlSelect:
+		//columns = len(v.Columns)
+		// Prepare not implemented. Silently ignored and creates new stmt upon query
+	case *rel.SqlUpdate:
+		// Prepare not implemented. Silently ignored and creates new stmt upon exec
+	case *rel.SqlDelete:
+		// Prepare not implemented. Silently ignored and creates new stmt upon exec
+	case *rel.SqlInsert:
+		var table *schema.Table
+		table, err = src.Table(v.Table)
+		if err != nil {
+			return
+		}
+		for _, x := range v.Columns {
+			if !table.HasField(x.SourceField) {
+				err = fmt.Errorf("field %s.%s does not exist", v.Table, x.SourceField)
+				return
+			}
+		}
+	default:
+		err = fmt.Errorf("unhandled type %T", v)
+	}
+	s, errx := h.db.Prepare(sql)
+	if errx != nil {
+		err = errx
+	} else {
+		ctx = s
+		h.stmts[ctx] = s
+	}
+	return
 }
 
 // HandleStmtClose - Handle Close
-func (h *ProxyHandler) HandleStmtClose(context interface{}) error {
+func (h *ProxyHandler) HandleStmtClose(ctx interface{}) error {
+	
+	stmt, ok := h.stmts[ctx]
+	if ok {
+		stmt.Close()
+		delete(h.stmts, ctx)
+	}
 	return nil
 }
 
 func (h *ProxyHandler) Close() {
-	//h.db.Close()
+
+	for k, v := range h.stmts {
+		v.Close()
+		delete(h.stmts, k)
+	}
+	h.db.Close()
 }
 
 // HandleStmtExecute - Handle Execute
 func (h *ProxyHandler) HandleStmtExecute(ctx interface{}, query string, args []interface{}) (*mysql.Result, error) {
-	return h.handleQuery(query, true)
+	return h.handleQuery(query, args, true, ctx)
 }
 
 // HandleOtherCommand - Handle Command
 func (h *ProxyHandler) HandleOtherCommand(cmd byte, data []byte) error {
+
 	return mysql.NewError(mysql.ER_UNKNOWN_ERROR, fmt.Sprintf("command %d is not supported now", cmd))
 }
 

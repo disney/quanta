@@ -76,7 +76,16 @@ func (m BoolDirectMapper) MapValue(attr *Attribute, val interface{},
 			result = uint64(1)
 		}
 	case string:
-		v, e := strconv.ParseBool(strings.TrimSpace(val.(string)))
+		str := strings.TrimSpace(val.(string))
+		if str == "" || strings.ContainsAny(str, `Nn`) {
+			result = uint64(0)
+			break
+		}
+		if strings.ContainsAny(str, `Yy`) {
+			result = uint64(1)
+			break
+		}
+		v, e := strconv.ParseBool(str)
 		if e != nil {
 			err = e
 			result = uint64(0)
@@ -137,7 +146,11 @@ func (m IntDirectMapper) MapValue(attr *Attribute, val interface{},
 	case int:
 		result = uint64(val.(int))
 	case string:
-		v, e := strconv.ParseInt(strings.TrimSpace(val.(string)), 10, 64)
+		str := strings.TrimSpace(val.(string))
+		if str == "" {
+			str = "0"
+		}
+		v, e := strconv.ParseInt(str, 10, 64)
 		if e != nil {
 			err = e
 			result = uint64(0)
@@ -213,7 +226,11 @@ func (m FloatScaleBSIMapper) MapValue(attr *Attribute, val interface{},
 	case int64:
 		floatVal = float64(val.(int64))
 	case string:
-		floatVal, err = strconv.ParseFloat(strings.TrimSpace(val.(string)), 64)
+		str := strings.TrimSpace(val.(string))
+		if str == "" {
+			str = "0.0"
+		}
+		floatVal, err = strconv.ParseFloat(str, 64)
 		if err != nil {
 			return
 		}
@@ -256,7 +273,11 @@ func (m IntBSIMapper) MapValue(attr *Attribute, val interface{},
 	case uint:
 		result = uint64(val.(uint))
 	case string:
-		v, e := strconv.ParseInt(strings.TrimSpace(val.(string)), 10, 64)
+		str := strings.TrimSpace(val.(string))
+		if str == "" {
+			str = "0"
+		}
+		v, e := strconv.ParseInt(str, 10, 64)
 		if e != nil {
 			err = e
 			result = uint64(0)
@@ -420,11 +441,15 @@ func (m SysMillisBSIMapper) MapValue(attr *Attribute, val interface{},
 		loc, _ := time.LoadLocation("Local")
 		var t time.Time
 		t, err = dateparse.ParseIn(strVal, loc)
-		result = uint64(t.UnixNano() / 1000000)
+		if err == nil {
+			result = uint64(t.UnixNano() / 1000000)
+		}
 	case []byte:
 		t := time.Now()
 		err = t.UnmarshalBinary(val.([]byte))
-		result = uint64(t.UnixNano() / 1000000)
+		if err == nil {
+			result = uint64(t.UnixNano() / 1000000)
+		}
 	case time.Time:
 		result = uint64(val.(time.Time).UnixNano() / 1000000)
 	case int64:
@@ -460,11 +485,15 @@ func (m SysMicroBSIMapper) MapValue(attr *Attribute, val interface{},
 		loc, _ := time.LoadLocation("Local")
 		var t time.Time
 		t, err = dateparse.ParseIn(strVal, loc)
-		result = uint64(t.UnixNano() / 1000)
+		if err == nil {
+			result = uint64(t.UnixNano() / 1000)
+		}
 	case []byte:
 		t := time.Now()
 		err = t.UnmarshalBinary(val.([]byte))
-		result = uint64(t.UnixNano() / 1000)
+		if err == nil {
+			result = uint64(t.UnixNano() / 1000)
+		}
 	case time.Time:
 		result = uint64(val.(time.Time).UnixNano() / 1000)
 	case int64:

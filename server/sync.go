@@ -166,8 +166,11 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 		for fieldName, field := range index {
 			attr, err := m.getFieldConfig(indexName, fieldName)
 			if err != nil {
-				return &wrappers.Int64Value{Value: int64(-1)},
-					fmt.Errorf("Synchronize field metadata lookup failed for %s.%s", indexName, fieldName)
+				continue
+				// This could occur when a table is dropped and re-created but persisten shards still exist
+				// for a column that was removed in the newly created table.
+				//return &wrappers.Int64Value{Value: int64(-1)},
+				//	fmt.Errorf("Synchronize field metadata lookup failed for %s.%s", indexName, fieldName)
 			}
 			table := attr.Parent
 			pka, errx := table.GetPrimaryKeyInfo()

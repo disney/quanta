@@ -161,8 +161,11 @@ func (suite *QuantaTestSuite) runQuery(q string, args []interface{}) ([]string, 
 
 	log.Printf("EXECUTING SQL: %v", q)
 	var rows *sql.Rows
+	var stmt *sql.Stmt
 	if args != nil {
-		rows, err = db.Query(q, args...)
+		stmt, err = db.Prepare(q)
+		assert.NoError(suite.T(), err)
+		rows, err = stmt.Query(args...)
 	} else {
 		rows, err = db.Query(q)
 	}

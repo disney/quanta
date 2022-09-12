@@ -1,13 +1,13 @@
 package shared
 
 import (
-    "bytes"
+	"bytes"
 	"database/sql"
 	"fmt"
-    "reflect"
-    "sort"
+	"reflect"
+	"sort"
 	"strings"
-    "sync"
+	"sync"
 )
 
 // GenerateSQLInsert - Generate an SQL insert statement from a table.
@@ -21,8 +21,8 @@ func GenerateSQLInsert(table string, s interface{}) string {
 		colBuilder.WriteString(v)
 		valBuilder.WriteString("?")
 		if i < len(cols) - 1 {
-		    colBuilder.WriteString(", ")
-		    valBuilder.WriteString(", ")
+			colBuilder.WriteString(", ")
+			valBuilder.WriteString(", ")
 		}
 	}
 	return fmt.Sprintf("insert into %s (%s) values (%s)", table, colBuilder.String(), valBuilder.String())
@@ -44,17 +44,17 @@ func BindParams(s interface{}) []interface{} {
 
 	var values []interface{}
 	for _, name := range names {
-        idx, ok := fields[name]
-        var v interface{}
-        if !ok {
-            // There is no field mapped to this column so we discard it
-            v = &sql.RawBytes{}
-        } else {
-            //v = elem.FieldByIndex(idx).Addr().Interface()
-            v = elem.FieldByIndex(idx).Interface()
-        }
-        values = append(values, v)
-    }
+		idx, ok := fields[name]
+		var v interface{}
+		if !ok {
+			// There is no field mapped to this column so we discard it
+			v = &sql.RawBytes{}
+		} else {
+			//v = elem.FieldByIndex(idx).Addr().Interface()
+			v = elem.FieldByIndex(idx).Interface()
+		}
+		values = append(values, v)
+	}
 	return values
 }
 
@@ -167,7 +167,7 @@ func ColumnList(s interface{}) []string {
 // given alias.
 //
 // For each field in the given struct it will generate a statement like:
-//    alias.field AS alias_field
+//	alias.field AS alias_field
 //
 // It is intended to be used in conjunction with the ScanAliased function.
 func ColumnsAliased(s interface{}, alias string) string {
@@ -183,7 +183,7 @@ func ColumnsAliased(s interface{}, alias string) string {
 func cols(s interface{}) []string {
 
 	v := reflect.ValueOf(s)
-    elem := v.Elem()
+	elem := v.Elem()
 	fields := getFieldInfo(elem.Type())
 
 	names := make([]string, 0, len(fields))
@@ -251,4 +251,34 @@ func ToSnakeCase(src string) string {
 		buf.WriteRune(v)
 	}
 	return strings.ToLower(buf.String())
+}
+
+
+// GetAllRows - Handles database/sql *Rows and returns and array of row maps
+func GetAllRows(rows *sql.Rows) ([]map[string]interface{}, error) {
+
+	ret := make([]map[string]interface{}, 0)
+	cols, _ := rows.Columns()
+	for rows.Next() {
+		columns := make([]interface{}, len(cols))
+		columnPointers := make([]interface{}, len(cols))
+		for i, _ := range columns {
+			columnPointers[i] = &columns[i]
+		}
+		if err := rows.Scan(columnPointers...); err != nil {
+			return nil, err
+		}
+		row := make(map[string]interface{})
+		for i, colName := range cols {
+			val := columnPointers[i].(*interface{})
+			v := string((*val).([]byte))
+			if v != "NULL" {
+				row[colName] = v
+			}
+		}
+		if len(row) != 0 {
+			ret = append(ret, row)
+		}
+	}
+	return ret, nil
 }

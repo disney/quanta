@@ -273,6 +273,12 @@ func main() {
 			err = main.consumer.Scan(context.TODO(), main.scanAndProcess)
 			if err != nil {
 				u.Errorf("scan error: %v", err)
+				u.Errorf("Re-initializing.")
+    			if main.ShardCount, err = main.Init(); err != nil {
+        			u.Error(err)
+					u.Errorf("Exiting process.")
+        			os.Exit(1)
+    			}
 				//os.Exit(1)
 			}
 		}

@@ -592,6 +592,7 @@ func (m *Main) Init() (int, error) {
 			consumer.WithShardIteratorType(m.InitialPos),
 			consumer.WithStore(db),
 			consumer.WithAggregation(m.Deaggregate),
+			consumer.WithScanInterval(1000 * time.Millisecond),
 			//consumer.WithCounter(counter),
 		)
 	} else {
@@ -600,6 +601,7 @@ func (m *Main) Init() (int, error) {
 			consumer.WithClient(kc),
 			consumer.WithShardIteratorType(m.InitialPos),
 			consumer.WithAggregation(m.Deaggregate),
+			consumer.WithScanInterval(1000 * time.Millisecond),
 			//consumer.WithCounter(counter),
 		)
 	}

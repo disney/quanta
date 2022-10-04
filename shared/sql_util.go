@@ -271,7 +271,11 @@ func GetAllRows(rows *sql.Rows) ([]map[string]interface{}, error) {
 		row := make(map[string]interface{})
 		for i, colName := range cols {
 			val := columnPointers[i].(*interface{})
-			v := string((*val).([]byte))
+			x, ok := (*val).([]byte)
+			if !ok {
+				continue
+			}
+			v := string(x)
 			if v != "NULL" {
 				row[colName] = v
 			}

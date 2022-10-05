@@ -93,6 +93,7 @@ type Main struct {
 	processedRecL		*Counter
 	sessionPool			*core.SessionPool
 	sessionPoolSize		int
+	scanInterval		int
 	metrics				*cloudwatch.CloudWatch
 }
 
@@ -136,6 +137,7 @@ func main() {
 	deaggregate := app.Flag("deaggregate", "Incoming payload records are aggregated.").Bool()
 	collate := app.Flag("collate", "Collate and partation shards.").Bool()
 	preselector := app.Flag("preselector", "Filter expression (url encoded).").String()
+	scanInterval := app.Flag("scan-interval", "Scan interval (milliseconds)").Default("1000").Int()
 	logLevel := app.Flag("log-level", "Log Level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
@@ -150,6 +152,7 @@ func main() {
 	main.Region = *region
 	main.Index = *index
 	main.BufferSize = uint(*bufSize)
+	main.scanInterval = *scanInterval
 	main.Port = int(*port)
 	main.ConsulAddr = *consul
 
@@ -158,6 +161,7 @@ func main() {
 	log.Printf("Kinesis region %v.", main.Region)
 	log.Printf("Index name %v.", main.Index)
 	log.Printf("Buffer size %d.", main.BufferSize)
+	log.Printf("Scan interval (milliseconds) %d.", main.scanInterval)
 	// If the pool size is not configured then set it to the number of available CPUs
 	main.sessionPoolSize = *poolSize
 	if main.sessionPoolSize == 0 {
@@ -592,7 +596,7 @@ func (m *Main) Init() (int, error) {
 			consumer.WithShardIteratorType(m.InitialPos),
 			consumer.WithStore(db),
 			consumer.WithAggregation(m.Deaggregate),
-			consumer.WithScanInterval(1000 * time.Millisecond),
+			consumer.WithScanInterval(time.Duration(m.scanInterval) * time.Millisecond),
 			//consumer.WithCounter(counter),
 		)
 	} else {
@@ -601,7 +605,7 @@ func (m *Main) Init() (int, error) {
 			consumer.WithClient(kc),
 			consumer.WithShardIteratorType(m.InitialPos),
 			consumer.WithAggregation(m.Deaggregate),
-			consumer.WithScanInterval(1000 * time.Millisecond),
+			consumer.WithScanInterval(time.Duration(m.scanInterval) * time.Millisecond),
 			//consumer.WithCounter(counter),
 		)
 	}

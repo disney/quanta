@@ -46,10 +46,6 @@ func (suite *QuantaTestSuite) SetupSuite() {
 
 	u.SetupLogging("debug")
 
-	// load up vision test data (nested schema containing 3 separate tables)
-	suite.loadData("cities", "./testdata/us_cities.parquet", conn)
-	suite.loadData("cityzip", "./testdata/us_cityzip.parquet", conn)
-	// suite.loadData("nba", "./testdata/nba.parquet")
 
 	// load all of our built-in functions
 	builtins.LoadAllBuiltins()
@@ -67,6 +63,13 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err)
 	err = ctx.GrantRole(rbac.DomainUser, "USER001", "quanta", true)
 	assert.NoError(suite.T(), err)
+
+	// load up vision test data (nested schema containing 3 separate tables)
+	suite.loadData("cities", "./testdata/us_cities.parquet", conn)
+	suite.loadData("cityzip", "./testdata/us_cityzip.parquet", conn)
+	//suite.insertData("cityzip", "./testdata/us_cityzip.parquet")
+	// suite.loadData("nba", "./testdata/nba.parquet")
+
 }
 
 func (suite *QuantaTestSuite) loadData(table, filePath string, conn *shared.Conn) error {
@@ -97,7 +100,52 @@ func (suite *QuantaTestSuite) loadData(table, filePath string, conn *shared.Conn
 	return nil
 }
 
-func (suite *QuantaTestSuite) runQuery(q string) ([]string, []string, error) {
+func (suite *QuantaTestSuite) insertData(table, filePath string) error {
+
+	// Connect using GoLang database/sql driver.
+	db, err := sql.Open("qlbridge", "quanta")
+	defer db.Close()
+	assert.NoError(suite.T(), err)
+
+	// Set user id in session
+	setter := "set @userid = 'USER001'"
+	_, err = db.Exec(setter)
+	assert.NoError(suite.T(), err)
+
+    insertStmt, err := db.Prepare("insert into cityzip (id, zip, city, state) values (?, ?, ?, ?)")
+	assert.NoError(suite.T(), err)
+    defer insertStmt.Close()
+
+	fr, err := local.NewLocalFileReader(filePath)
+	assert.Nil(suite.T(), err)
+	if err != nil {
+		log.Println("Can't open file", err)
+		return err
+	}
+	pr, err := reader.NewParquetReader(fr, nil,  4)
+	assert.Nil(suite.T(), err)
+	if err != nil {
+		log.Println("Can't create column reader", err)
+		return err
+	}
+	num := int(pr.GetNumRows())
+	res, err := pr.ReadByNumber(num)
+	if err != nil {
+		log.Println("Can't read", err)
+		return err
+	}
+
+	for _, v := range res {
+		x := v.(struct{Id string; Zip string; Name string; State string})
+		_, err := insertStmt.Exec(x.Id, x.Zip, x.Name, x.State)
+		assert.NoError(suite.T(), err)
+	}
+
+	pr.ReadStop()
+	fr.Close()
+	return nil
+}
+func (suite *QuantaTestSuite) runQuery(q string, args []interface{}) ([]string, []string, error) {
 
 	// Connect using GoLang database/sql driver.
 	db, err := sql.Open("qlbridge", "quanta")
@@ -112,7 +160,15 @@ func (suite *QuantaTestSuite) runQuery(q string) ([]string, []string, error) {
 	assert.NoError(suite.T(), err)
 
 	log.Printf("EXECUTING SQL: %v", q)
-	rows, err := db.Query(q)
+	var rows *sql.Rows
+	var stmt *sql.Stmt
+	if args != nil {
+		stmt, err = db.Prepare(q)
+		assert.NoError(suite.T(), err)
+		rows, err = stmt.Query(args...)
+	} else {
+		rows, err = db.Query(q)
+	}
 	if err != nil {
 		return []string{""}, []string{""}, err
 	}
@@ -136,9 +192,11 @@ func (suite *QuantaTestSuite) runQuery(q string) ([]string, []string, error) {
 	return results, cols, nil
 }
 
-func (suite *QuantaTestSuite) runDML(q string) error {
+func (suite *QuantaTestSuite) runDML(q string, args []interface{}) error {
 
-	// Connect using GoLang database/sql driver.
+	assert.NotZero(suite.T(), q)
+
+	// Connect using GoLang database/sql driver directly to Quanta engine
 	db, err := sql.Open("qlbridge", "quanta")
 	defer db.Close()
 	if err != nil {
@@ -151,8 +209,20 @@ func (suite *QuantaTestSuite) runDML(q string) error {
 	assert.NoError(suite.T(), err)
 
 	log.Printf("EXECUTING DML: %v", q)
-	_, err = db.Exec(q)
-	assert.NoError(suite.T(), err)
+
+	var stmt *sql.Stmt
+	if args != nil && len(args) > 0 {
+		log.Printf("PREPARING: %v", q)
+		stmt, err = db.Prepare(q)
+		log.Printf("PREPARED: %#v", stmt)
+		assert.NoError(suite.T(), err)
+		log.Printf("EXEC: %#v", args)
+		_, err = stmt.Exec(args...)
+		assert.NoError(suite.T(), err)
+	} else {
+		_, err = db.Exec(q)
+		assert.NoError(suite.T(), err)
+	}
 	return nil
 }
 
@@ -164,7 +234,7 @@ func TestQuantaTestSuite(t *testing.T) {
 
 // Test count query with nested data source
 func (suite *QuantaTestSuite) TestSimpleQuery() {
-	results, _, err := suite.runQuery("select count(*) from cities")
+	results, _, err := suite.runQuery("select count(*) from cities", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("29488", results[0])
@@ -172,14 +242,14 @@ func (suite *QuantaTestSuite) TestSimpleQuery() {
 
 // Test projection with nested data source
 func (suite *QuantaTestSuite) TestSimpleProjection() {
-	results, _, err := suite.runQuery("select id, name, state_name, state from cities limit 100000")
+	results, _, err := suite.runQuery("select id, name, state_name, state from cities limit 100000", nil)
 	assert.NoError(suite.T(), err)
 	suite.Equal(29488, len(results))
 }
 
 // Test inner join with nested data source
 func (suite *QuantaTestSuite) TestInnerJoin() {
-	results, _, err := suite.runQuery("select count(*) from cityzip as z inner join cities as c on c.id = z.city_id")
+	results, _, err := suite.runQuery("select count(*) from cityzip as z inner join cities as c on c.id = z.city_id", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("46280", results[0])
@@ -187,106 +257,106 @@ func (suite *QuantaTestSuite) TestInnerJoin() {
 
 // Test anti-join
 func (suite *QuantaTestSuite) TestAntiJoin() {
-	results, _, err := suite.runQuery("select count(*) from cityzip as z inner join cities as c on c.id != z.city_id where z.city = 'Oceanside'")
+	results, _, err := suite.runQuery("select count(*) from cityzip as z inner join cities as c on c.id != z.city_id where z.city = 'Oceanside'", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("46270", results[0])
-	results, _, err = suite.runQuery("select c.id, c.name, c.state_name, c.state from cityzip as z inner join cities as c on c.id != z.city_id where z.city != 'Oceanside' limit 100000")
+	results, _, err = suite.runQuery("select c.id, c.name, c.state_name, c.state from cityzip as z inner join cities as c on c.id != z.city_id where z.city != 'Oceanside' limit 100000", nil)
 	assert.NoError(suite.T(), err)
 	suite.Equal(10, len(results))
 }
 
 // Test outer join
 func (suite *QuantaTestSuite) TestOuterJoinWithPredicate() {
-	results, _, err := suite.runQuery("select count(*) from cityzip as z outer join cities as c on c.id = z.city_id where z.city = 'Oceanside'")
+	results, _, err := suite.runQuery("select count(*) from cityzip as z outer join cities as c on c.id = z.city_id where z.city = 'Oceanside'", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("10", results[0])
-	results, _, err = suite.runQuery("select c.id, c.name, c.state_name, c.state from cityzip as z outer join cities as c on c.id = z.city_id where z.city = 'Oceanside'")
+	results, _, err = suite.runQuery("select c.id, c.name, c.state_name, c.state from cityzip as z outer join cities as c on c.id = z.city_id where z.city = 'Oceanside'", nil)
 	assert.NoError(suite.T(), err)
 	suite.Equal(10, len(results))
 }
 
 // Test outer join no predicate
 func (suite *QuantaTestSuite) TestOuterJoinNoPredicate() {
-	results, _, err := suite.runQuery("select count(*) from cities as c outer join cityzip as z on c.id = z.city_id")
+	results, _, err := suite.runQuery("select count(*) from cities as c outer join cityzip as z on c.id = z.city_id", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("46280", results[0])
 }
 
 func (suite *QuantaTestSuite) TestSQLSyntaxUnknownKeyword() {
-	_, _, err := suite.runQuery("selectX count(*) from cities")
+	_, _, err := suite.runQuery("selectX count(*) from cities", nil)
 	assert.EqualError(suite.T(), err, "Unrecognized request type: selectX")
 }
 
 func (suite *QuantaTestSuite) TestSQLSyntaxUnknownTable() {
-	_, _, err := suite.runQuery("select count(*) from citiesx")
+	_, _, err := suite.runQuery("select count(*) from citiesx", nil)
 	assert.EqualError(suite.T(), err, "QLBridge.plan: No datasource found")
 }
 
 func (suite *QuantaTestSuite) TestSQLSyntaxUnknownField() {
-	_, _, err := suite.runQuery("select count(*) from cities where nonsensefield = null")
+	_, _, err := suite.runQuery("select count(*) from cities where nonsensefield = null", nil)
 	assert.Error(suite.T(), err)
 }
 
 func (suite *QuantaTestSuite) TestBetweenWithNegative() {
-	results, _, err := suite.runQuery("select count(*) from cities where latitude BETWEEN 41.0056 AND 44.9733 AND longitude BETWEEN '-111.0344' AND '-104.0692'")
+	results, _, err := suite.runQuery("select count(*) from cities where latitude BETWEEN 41.0056 AND 44.9733 AND longitude BETWEEN '-111.0344' AND '-104.0692'", nil)
 
 	assert.NoError(suite.T(), err)
 	suite.Equal("202", results[0]) // Count of all cities in WY
 }
 
 func (suite *QuantaTestSuite) TestNotBetween() {
-	results, _, err := suite.runQuery("select count(*) from cities where population NOT BETWEEN 100000 and 150000")
+	results, _, err := suite.runQuery("select count(*) from cities where population NOT BETWEEN 100000 and 150000", nil)
 	assert.NoError(suite.T(), err)
 	suite.Equal("29321", results[0])
 }
 
 // Test subquery join
 func (suite *QuantaTestSuite) TestSubqueryJoin() {
-	results, _, err := suite.runQuery("select count(*) from cities where id in (select city_id from cityzip where city = 'Oceanside')")
+	results, _, err := suite.runQuery("select count(*) from cities where id in (select city_id from cityzip where city = 'Oceanside')", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("10", results[0])
 
-	results, _, err = suite.runQuery("select count(*) from cities where id not in (select city_id from cityzip where city = 'Oceanside')")
+	results, _, err = suite.runQuery("select count(*) from cities where id not in (select city_id from cityzip where city = 'Oceanside')", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("46270", results[0])
-	results, _, err = suite.runQuery("select id, name, state_name, state from cities where id in (select city_id from cityzip where city = 'Oceanside')")
+	results, _, err = suite.runQuery("select id, name, state_name, state from cities where id in (select city_id from cityzip where city = 'Oceanside')", nil)
 	assert.NoError(suite.T(), err)
 	suite.Equal(10, len(results))
 }
 
 func (suite *QuantaTestSuite) TestInvalidTableOnJoin() {
-	_, _, err := suite.runQuery("select count(*) from cities as c inner join faketable as f on c.id = f.fake_id")
+	_, _, err := suite.runQuery("select count(*) from cities as c inner join faketable as f on c.id = f.fake_id", nil)
 	assert.EqualError(suite.T(), err, "invalid table faketable in join criteria [INNER JOIN faketable AS f ON c.id = f.fake_id]")
 }
 
 func (suite *QuantaTestSuite) TestInvalidFieldOnJoin() {
-	_, _, err := suite.runQuery("select count(*) from cities as c inner join cityzip as z on c.id = z.fake_field")
+	_, _, err := suite.runQuery("select count(*) from cities as c inner join cityzip as z on c.id = z.fake_field", nil)
 	assert.EqualError(suite.T(), err, "invalid field fake_field in join criteria [INNER JOIN cityzip AS z ON c.id = z.fake_field]")
 }
 
 func (suite *QuantaTestSuite) TestSelectStar() {
-	results, _, err := suite.runQuery("select * from cities where timezone != NULL limit 100000")
+	results, _, err := suite.runQuery("select * from cities where timezone != NULL limit 100000", nil)
 	assert.NoError(suite.T(), err)
 	suite.Equal(29488, len(results))
 }
 
 func (suite *QuantaTestSuite) TestSelectStarWithAlias() {
-	results, _, err := suite.runQuery("select count(*) from cities as c")
+	results, _, err := suite.runQuery("select count(*) from cities as c", nil)
 	assert.NoError(suite.T(), err)
 	suite.Equal("29488", results[0])
 }
 
 func (suite *QuantaTestSuite) TestTableAlias() {
-	results, cols, err := suite.runQuery("select a.id as xid, a.state_name as xstate_name, a.state as xstate from cities as a where a.state_name = 'New York State' and a.state = 'NY'")
+	results, cols, err := suite.runQuery("select a.id as xid, a.state_name as xstate_name, a.state as xstate from cities as a where a.state_name = 'New York State' and a.state = 'NY'", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal(1186, len(results))
@@ -297,53 +367,53 @@ func (suite *QuantaTestSuite) TestTableAlias() {
 }
 
 func (suite *QuantaTestSuite) TestJoinWithoutOnClause() {
-	_, _, err := suite.runQuery("select count(*) from cities as c inner join cityzip as z")
+	_, _, err := suite.runQuery("select count(*) from cities as c inner join cityzip as z", nil)
 	assert.EqualError(suite.T(), err, "join criteria missing (ON clause)")
 }
 
 func (suite *QuantaTestSuite) TestJoinWithNonkeyFields() {
-	_, _, err := suite.runQuery("select count(*) from cities as c inner join cityzip as z on c.state_name = z.state")
+	_, _, err := suite.runQuery("select count(*) from cities as c inner join cityzip as z on c.state_name = z.state", nil)
 	assert.EqualError(suite.T(), err, "join field state_name is not a relation")
 }
 
 // AGGREGATES
 // SUM, MIN, MAX, AVERAGE
 func (suite *QuantaTestSuite) TestSumInvalidFieldName() {
-	_, _, err := suite.runQuery("select sum(foobar) from cities WHERE timezone != NULL")
+	_, _, err := suite.runQuery("select sum(foobar) from cities WHERE timezone != NULL", nil)
 	assert.EqualError(suite.T(), err, "cannot resolve field cities.foobar in sum() function argument")
 }
 
 func (suite *QuantaTestSuite) TestSumInvalidFieldType() {
-	_, _, err := suite.runQuery("select sum(state_name) from cities")
+	_, _, err := suite.runQuery("select sum(state_name) from cities", nil)
 	assert.EqualError(suite.T(), err, "can't sum a non-bsi field state_name")
 }
 
 func (suite *QuantaTestSuite) TestSimpleSum() {
-	results, _, err := suite.runQuery("select sum(population) from cities")
+	results, _, err := suite.runQuery("select sum(population) from cities", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("406795495", results[0])
 }
 
 func (suite *QuantaTestSuite) TestSimpleAvg() {
-	results, _, err := suite.runQuery("select avg(population) from cities")
+	results, _, err := suite.runQuery("select avg(population) from cities", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("13795", results[0])
 }
 
 func (suite *QuantaTestSuite) TestAvgInvalidFieldName() {
-	_, _, err := suite.runQuery("select avg(foobar) from cities WHERE timezone != NULL")
+	_, _, err := suite.runQuery("select avg(foobar) from cities WHERE timezone != NULL", nil)
 	assert.EqualError(suite.T(), err, "cannot resolve field cities.foobar in avg() function argument")
 }
 
 func (suite *QuantaTestSuite) TestAvgInvalidFieldType() {
-	_, _, err := suite.runQuery("select avg(state_name) from cities")
+	_, _, err := suite.runQuery("select avg(state_name) from cities", nil)
 	assert.EqualError(suite.T(), err, "can't average a non-bsi field state_name")
 }
 
 func (suite *QuantaTestSuite) TestSimpleMin() {
-	results, _, err := suite.runQuery("select min(population) from cities where name = 'Oceanside'")
+	results, _, err := suite.runQuery("select min(population) from cities where name = 'Oceanside'", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	//suite.Equal("2530", results[0])
@@ -351,41 +421,41 @@ func (suite *QuantaTestSuite) TestSimpleMin() {
 }
 
 func (suite *QuantaTestSuite) TestNegativeMin() {
-	results, _, err := suite.runQuery("select min(longitude) from cities where state = 'WY'")
+	results, _, err := suite.runQuery("select min(longitude) from cities where state = 'WY'", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal(" -111.0344", results[0])
 }
 
 func (suite *QuantaTestSuite) TestMinInvalidFieldName() {
-	_, _, err := suite.runQuery("select min(foobar) from cities WHERE timezone != NULL")
+	_, _, err := suite.runQuery("select min(foobar) from cities WHERE timezone != NULL", nil)
 	assert.EqualError(suite.T(), err, "cannot resolve field cities.foobar in min() function argument")
 }
 
 func (suite *QuantaTestSuite) TestMinInvalidFieldType() {
-	_, _, err := suite.runQuery("select min(state_name) from cities")
+	_, _, err := suite.runQuery("select min(state_name) from cities", nil)
 	assert.EqualError(suite.T(), err, "can't find the minimum of a non-bsi field state_name")
 }
 
 func (suite *QuantaTestSuite) TestSimpleMax() {
-	results, _, err := suite.runQuery("select max(population) from cities")
+	results, _, err := suite.runQuery("select max(population) from cities", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("  18713220", results[0])
 }
 
 func (suite *QuantaTestSuite) TestMaxInvalidFieldName() {
-	_, _, err := suite.runQuery("select max(foobar) from cities WHERE timezone != NULL")
+	_, _, err := suite.runQuery("select max(foobar) from cities WHERE timezone != NULL", nil)
 	assert.EqualError(suite.T(), err, "cannot resolve field cities.foobar in max() function argument")
 }
 
 func (suite *QuantaTestSuite) TestMaxInvalidFieldType() {
-	_, _, err := suite.runQuery("select max(state_name) from cities")
+	_, _, err := suite.runQuery("select max(state_name) from cities", nil)
 	assert.EqualError(suite.T(), err, "can't find the maximum of a non-bsi field state_name")
 }
 
 func (suite *QuantaTestSuite) TestSimpleRank() {
-	results, _, err := suite.runQuery("select topn(state_name) from cities")
+	results, _, err := suite.runQuery("select topn(state_name) from cities", nil)
 	assert.NoError(suite.T(), err)
 	assert.Equal(suite.T(), 53, len(results))
 }
@@ -393,24 +463,24 @@ func (suite *QuantaTestSuite) TestSimpleRank() {
 // END AGGREGATES
 
 func (suite *QuantaTestSuite) TestCityzipCount() {
-	results, _, err := suite.runQuery("select count(*) from cityzip")
+	results, _, err := suite.runQuery("select count(*) from cityzip", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("46280", results[0])
 }
 
 func (suite *QuantaTestSuite) TestCitiesRegionList() {
-	results, _, err := suite.runQuery("select count(*) from cities where region_list != null")
+	results, _, err := suite.runQuery("select count(*) from cities where region_list != null", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("29488", results[0])
-	results, _, err = suite.runQuery("select count(*) from cities where region_list = 'NY'")
+	results, _, err = suite.runQuery("select count(*) from cities where region_list = 'NY'", nil)
 	assert.NoError(suite.T(), err)
 	suite.Equal("1186", results[0])
 }
 
 func (suite *QuantaTestSuite) TestCitiesTimestamp() {
-	results, _, err := suite.runQuery("select created_timestamp from cities")
+	results, _, err := suite.runQuery("select created_timestamp from cities", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal(5000, len(results))
@@ -420,18 +490,18 @@ func (suite *QuantaTestSuite) TestCitiesTimestamp() {
 }
 
 func (suite *QuantaTestSuite) TestCitiesIntDirect() {
-	results, _, err := suite.runQuery("select count(*) from cities where ranking = 1")
+	results, _, err := suite.runQuery("select count(*) from cities where ranking = 1", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("50", results[0])
 }
 
 func (suite *QuantaTestSuite) TestCitiesBoolDirect() {
-	results, _, err := suite.runQuery("select count(*) from cities where military = true")
+	results, _, err := suite.runQuery("select count(*) from cities where military = true", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("84", results[0])
-	results, _, err = suite.runQuery("select count(*) from cities where military = 1")
+	results, _, err = suite.runQuery("select count(*) from cities where military = 1", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("84", results[0])
@@ -441,20 +511,20 @@ func (suite *QuantaTestSuite) TestCitiesBoolDirect() {
 // LIKE will index based off a whole word (separated by whitespace)
 // Wildcard operators are not necessary
 func (suite *QuantaTestSuite) TestCitiesLikeStatement() {
-	results, _, err := suite.runQuery("select county, name from cities where name like 'woods' and name like 'HAWTHORN'")
+	results, _, err := suite.runQuery("select county, name from cities where name like 'woods' and name like 'HAWTHORN'", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal(1, len(results))
 }
 
 func (suite *QuantaTestSuite) TestCitiesLikeListStatement() {
-	_, _, err := suite.runQuery("select count(*) from cities where region_list like 'NY'")
+	_, _, err := suite.runQuery("select count(*) from cities where region_list like 'NY'", nil)
 	assert.EqualError(suite.T(), err, "LIKE operator not supported for non-range field 'region_list'")
 }
 
 // DISTINCT statement
 func (suite *QuantaTestSuite) TestCitiesDistinctStatement() {
-	results, _, err := suite.runQuery("select distinct state_name from cities")
+	results, _, err := suite.runQuery("select distinct state_name from cities", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal(52, len(results))
@@ -462,7 +532,7 @@ func (suite *QuantaTestSuite) TestCitiesDistinctStatement() {
 
 // AND conditional statement
 func (suite *QuantaTestSuite) TestCitiesAndWhereStatement() {
-	results, _, err := suite.runQuery("select id, state_name, state from cities where state_name = 'New York State' and state = 'NY'")
+	results, _, err := suite.runQuery("select id, state_name, state from cities where state_name = 'New York State' and state = 'NY'", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal(1186, len(results))
@@ -470,7 +540,7 @@ func (suite *QuantaTestSuite) TestCitiesAndWhereStatement() {
 
 // OR conditional statement
 func (suite *QuantaTestSuite) TestCitiesOrWhereStatement() {
-	results, _, err := suite.runQuery("select id, state_name, state from cities where state_name = 'New York State' or state = 'NY'")
+	results, _, err := suite.runQuery("select id, state_name, state from cities where state_name = 'New York State' or state = 'NY'", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal(1186, len(results))
@@ -478,7 +548,7 @@ func (suite *QuantaTestSuite) TestCitiesOrWhereStatement() {
 
 // AND / OR conditional statement
 func (suite *QuantaTestSuite) TestCitiesAndOrWhereStatement() {
-	results, _, err := suite.runQuery("select id, state_name, state from cities where state_name = 'New York State' or state = 'NY' and ranking = 3")
+	results, _, err := suite.runQuery("select id, state_name, state from cities where state_name = 'New York State' or state = 'NY' and ranking = 3", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal(1051, len(results))
@@ -486,7 +556,7 @@ func (suite *QuantaTestSuite) TestCitiesAndOrWhereStatement() {
 
 // IN statements
 func (suite *QuantaTestSuite) TestCitiesINStatement() {
-	results, _, err := suite.runQuery("select count(*) from cities where state IN ('NY','AK','WA')")
+	results, _, err := suite.runQuery("select count(*) from cities where state IN ('NY','AK','WA')", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("2154", results[0])
@@ -494,7 +564,7 @@ func (suite *QuantaTestSuite) TestCitiesINStatement() {
 
 // IN with NOT statement
 func (suite *QuantaTestSuite) TestCitiesNotINStatement() {
-	results, _, err := suite.runQuery("select count(*) from cities where state not IN ('NY','AK','WA')")
+	results, _, err := suite.runQuery("select count(*) from cities where state not IN ('NY','AK','WA')", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("27334", results[0])
@@ -502,7 +572,7 @@ func (suite *QuantaTestSuite) TestCitiesNotINStatement() {
 
 // NOT with OR
 func (suite *QuantaTestSuite) TestCitiesNotWithOR() {
-	results, _, err := suite.runQuery("select count(*) from cities where county != 'Nassau' or state != 'WA'")
+	results, _, err := suite.runQuery("select count(*) from cities where county != 'Nassau' or state != 'WA'", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	//suite.Equal("28866", results[0])
@@ -510,7 +580,7 @@ func (suite *QuantaTestSuite) TestCitiesNotWithOR() {
 }
 
 func (suite *QuantaTestSuite) TestCitiesNotWithAND() {
-	results, _, err := suite.runQuery("select count(*) from cities where county != 'Mason' and state = 'WA' and military != true and population > 0")
+	results, _, err := suite.runQuery("select count(*) from cities where county != 'Mason' and state = 'WA' and military != true and population > 0", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("596", results[0])
@@ -518,19 +588,19 @@ func (suite *QuantaTestSuite) TestCitiesNotWithAND() {
 
 // SELECT List Functions
 func (suite *QuantaTestSuite) TestSimpleSelectListFunction() {
-	results, _, err := suite.runQuery("select id, add(population + 10) from cities where state = 'NY' and name = 'Oceanside'")
+	results, _, err := suite.runQuery("select id, add(population + 10) from cities where state = 'NY' and name = 'Oceanside'", nil)
 	assert.NoError(suite.T(), err)
 	assert.Greater(suite.T(), len(results), 0)
 	suite.Equal("1840005246,31195", results[0])
 }
 
 func (suite *QuantaTestSuite) TestSelectListFunctionInvalidArgument() {
-	_, _, err := suite.runQuery("select id, add(foobar + 10) from cities WHERE timezone != NULL")
+	_, _, err := suite.runQuery("select id, add(foobar + 10) from cities WHERE timezone != NULL", nil)
 	assert.EqualError(suite.T(), err, "cannot resolve field cities.foobar in add() function argument")
 }
 
 func (suite *QuantaTestSuite) TestSelectListFunctionInvalidFunction() {
-	_, _, err := suite.runQuery("select id, foobar(population + 10) from cities WHERE timezone != NULL")
+	_, _, err := suite.runQuery("select id, foobar(population + 10) from cities WHERE timezone != NULL", nil)
 	assert.EqualError(suite.T(), err, "func \"foobar\" not found while processing select list")
 }
 
@@ -542,25 +612,48 @@ func (suite *QuantaTestSuite) TestZDropTables() {
 }
 
 func (suite *QuantaTestSuite) TestXDML1Insert() {
-	err := suite.runDML("insert into dmltest (name, age, gender) values ('Tom', 20, 'M')")
+	err := suite.runDML("insert into dmltest (name, age, gender) values ('Tom', 20, 'M')", nil)
 	assert.Nil(suite.T(), err)
-	results, _, err2 := suite.runQuery("select count(*) from dmltest")
+	results, _, err2 := suite.runQuery("select count(*) from dmltest", nil)
 	assert.NoError(suite.T(), err2)
 	suite.Equal("1", results[0])
 }
 
 func (suite *QuantaTestSuite) TestXDML2Update() {
-	results, _, err := suite.runQuery("select date, name, age, gender from dmltest")
+	results, _, err := suite.runQuery("select date, name, age, gender from dmltest", nil)
 	assert.Nil(suite.T(), err)
 	values := strings.Split(results[0], ",")
 	qry := fmt.Sprintf("select count(*) from dmltest where date = '%s' and name = '%s'", values[0], values[1])
-	results, _, err2 := suite.runQuery(qry)
+	results, _, err2 := suite.runQuery(qry, nil)
 	assert.NoError(suite.T(), err2)
 	suite.Equal("1", results[0])
 	upd := fmt.Sprintf("update dmltest set age = 21, gender = 'U' where date = '%s' and name = '%s'", values[0], values[1])
-	err = suite.runDML(upd)
+	err = suite.runDML(upd, nil)
 	assert.Nil(suite.T(), err)
-	results, _, err = suite.runQuery("select date, name, age, gender from dmltest")
+	results, _, err = suite.runQuery("select date, name, age, gender from dmltest", nil)
+	assert.Nil(suite.T(), err)
+	suite.Equal(1, len(results))
+	values = strings.Split(results[0], ",")
+	suite.Equal(4, len(values))
+	suite.Equal("21", strings.TrimSpace(values[2]))
+	suite.Equal("U", strings.TrimSpace(values[3]))
+}
+
+func (suite *QuantaTestSuite) TestXDML2UpdatePrepared() {
+	results, _, err := suite.runQuery("select date, name, age, gender from dmltest", nil)
+	assert.Nil(suite.T(), err)
+	values := strings.Split(results[0], ",")
+	qry := fmt.Sprintf("select count(*) from dmltest where date = ? and name = ?")
+	vals := make([]interface{}, 2)
+	vals[0] = values[0]
+	vals[1] = values[1]
+	results, _, err2 := suite.runQuery(qry, vals)
+	assert.NoError(suite.T(), err2)
+	suite.Equal("1", results[0])
+	upd := fmt.Sprintf("update dmltest set age = 21, gender = 'U' where date = ? and name = ?")
+	err = suite.runDML(upd, vals)
+	assert.Nil(suite.T(), err)
+	results, _, err = suite.runQuery("select date, name, age, gender from dmltest", nil)
 	assert.Nil(suite.T(), err)
 	suite.Equal(1, len(results))
 	values = strings.Split(results[0], ",")
@@ -570,15 +663,15 @@ func (suite *QuantaTestSuite) TestXDML2Update() {
 }
 
 func (suite *QuantaTestSuite) TestXDML3Delete() {
-	results, _, err := suite.runQuery("select date, name, age, gender from dmltest")
+	results, _, err := suite.runQuery("select date, name, age, gender from dmltest", nil)
 	assert.Nil(suite.T(), err)
 	suite.Equal(1, len(results))
 	values := strings.Split(results[0], ",")
 	upd := fmt.Sprintf("delete from dmltest where date = '%s' and name = '%s'", values[0], values[1])
-	err = suite.runDML(upd)
+	err = suite.runDML(upd, nil)
 	assert.Nil(suite.T(), err)
 	qry := fmt.Sprintf("select count(*) from dmltest where date = '%s' and name = '%s'", values[0], values[1])
-	results, _, err2 := suite.runQuery(qry)
+	results, _, err2 := suite.runQuery(qry, nil)
 	assert.NoError(suite.T(), err2)
 	suite.Equal("0", results[0])
 }

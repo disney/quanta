@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"github.com/araddon/dateparse"
 	u "github.com/araddon/gou"
+	"github.com/araddon/qlbridge/datasource"
+	"github.com/araddon/qlbridge/expr"
+	"github.com/araddon/qlbridge/value"
+	"github.com/araddon/qlbridge/vm"
 	"github.com/araddon/qlbridge/expr/builtins"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis/types"
 	"github.com/aws/aws-sdk-go/aws"
@@ -27,6 +31,7 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
 	"net/http"
+	"net/url"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
@@ -39,7 +44,7 @@ import (
 // Variables to identify the build
 var (
 	Version  string
-	Build    string
+	Build	string
 	EPOCH, _ = time.ParseInLocation(time.RFC3339, "2000-01-01T00:00:00+00:00", time.UTC)
 )
 
@@ -48,57 +53,60 @@ const (
 	Success = 0
 	//partitionChannelSize = 10000
 	partitionChannelSize = 2000000
-	batchSize            = 100000
-	appName              = "Kinesis-Consumer"
+	batchSize			= 100000
+	appName			  = "Kinesis-Consumer"
 )
 
 // Main strct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
-	Stream              string
-	Region              string
-	Index               string
-	BufferSize          uint
-	totalBytes          *Counter
-	totalBytesL         *Counter
-	totalRecs           *Counter
-	totalRecsL          *Counter
-	errorCount          *Counter
-	poolPercent         *Counter
-	Port                int
-	ConsulAddr          string
-	ShardCount          int
-	lock                *api.Lock
-	consumer            *consumer.Consumer
-	Table               *shared.BasicTable
-	Schema              avro.Schema
-	InitialPos          string
-	IsAvro              bool
-	CheckpointDB        bool
-	CheckpointTable     string
-	AssumeRoleArn       string
+	Stream				string
+	Region				string
+	Index				string
+	BufferSize			uint
+	totalBytes			*Counter
+	totalBytesL			*Counter
+	totalRecs			*Counter
+	totalRecsL			*Counter
+	errorCount			*Counter
+	poolPercent			*Counter
+	Port				int
+	ConsulAddr			string
+	ShardCount			int
+	lock				*api.Lock
+	consumer			*consumer.Consumer
+	Table				*shared.BasicTable
+	Schema				avro.Schema
+	InitialPos			string
+	IsAvro				bool
+	CheckpointDB		bool
+	CheckpointTable		string
+	AssumeRoleArn		string
 	AssumeRoleArnRegion string
-	Deaggregate         bool
-	Collate             bool
-	partitionMap        map[string]*Partition
-	partitionLock       sync.Mutex
-	timeLocation        *time.Location
-	processedRecs       *Counter
-	processedRecL       *Counter
-	sessionPool         *core.SessionPool
-	sessionPoolSize     int
-	metrics             *cloudwatch.CloudWatch
+	Deaggregate			bool
+	Collate				bool
+	Preselector			expr.Node
+	selectorIdentities  []string
+	partitionMap		map[string]*Partition
+	partitionLock		sync.Mutex
+	timeLocation		*time.Location
+	processedRecs		*Counter
+	processedRecL		*Counter
+	sessionPool			*core.SessionPool
+	sessionPoolSize		int
+	scanInterval		int
+	metrics				*cloudwatch.CloudWatch
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
 func NewMain() *Main {
 	m := &Main{
-		totalRecs:     &Counter{},
-		totalRecsL:    &Counter{},
-		totalBytes:    &Counter{},
+		totalRecs:	 &Counter{},
+		totalRecsL:	&Counter{},
+		totalBytes:	&Counter{},
 		totalBytesL:   &Counter{},
 		processedRecs: &Counter{},
 		processedRecL: &Counter{},
-		errorCount:    &Counter{},
+		errorCount:	&Counter{},
 		poolPercent:   &Counter{},
 		partitionMap:  make(map[string]*Partition),
 	}
@@ -128,6 +136,8 @@ func main() {
 	avroPayload := app.Flag("avro-payload", "Payload is Avro.").Bool()
 	deaggregate := app.Flag("deaggregate", "Incoming payload records are aggregated.").Bool()
 	collate := app.Flag("collate", "Collate and partation shards.").Bool()
+	preselector := app.Flag("preselector", "Filter expression (url encoded).").String()
+	scanInterval := app.Flag("scan-interval", "Scan interval (milliseconds)").Default("1000").Int()
 	logLevel := app.Flag("log-level", "Log Level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
@@ -142,6 +152,7 @@ func main() {
 	main.Region = *region
 	main.Index = *index
 	main.BufferSize = uint(*bufSize)
+	main.scanInterval = *scanInterval
 	main.Port = int(*port)
 	main.ConsulAddr = *consul
 
@@ -150,6 +161,7 @@ func main() {
 	log.Printf("Kinesis region %v.", main.Region)
 	log.Printf("Index name %v.", main.Index)
 	log.Printf("Buffer size %d.", main.BufferSize)
+	log.Printf("Scan interval (milliseconds) %d.", main.scanInterval)
 	// If the pool size is not configured then set it to the number of available CPUs
 	main.sessionPoolSize = *poolSize
 	if main.sessionPoolSize == 0 {
@@ -211,6 +223,21 @@ func main() {
 
 	var err error
 
+	if *preselector != "" {
+		decodedValue, err := url.QueryUnescape(*preselector)
+		if err != nil {
+			u.Error(err)
+			os.Exit(1)
+		}
+		main.Preselector, err = expr.ParseExpression(decodedValue)
+		if err != nil {
+			u.Error(err)
+			os.Exit(1)
+		}
+		main.selectorIdentities = expr.FindAllIdentityField(main.Preselector)
+		log.Printf("Preseletor enabled -> %v <-", main.Preselector)
+	}
+
 	if main.ShardCount, err = main.Init(); err != nil {
 		u.Error(err)
 		os.Exit(1)
@@ -239,54 +266,25 @@ func main() {
 
 	// Main processing loop
 	go func() {
-		err = main.consumer.Scan(context.TODO(), func(v *consumer.Record) error {
-			ts, err := dateparse.ParseIn(*v.PartitionKey, main.timeLocation)
-			if err != nil {
-				u.Errorf("Date parse error for partition key %s - %v", *v.PartitionKey, err)
-				os.Exit(1)
-			}
-			tFormat := shared.YMDTimeFmt
-			if main.Table.TimeQuantumType == "YMDH" {
-				tFormat = shared.YMDHTimeFmt
-			}
-			partition := ts.Format(tFormat)
-
-			out := make(map[string]interface{})
-
-			if main.IsAvro {
-				err = avro.Unmarshal(main.Schema, v.Data, &out)
-			} else {
-				err = json.Unmarshal(v.Data, &out)
-			}
-			if err != nil {
-				u.Errorf("Unmarshal ERROR %v", err)
-				main.errorCount.Add(1)
-				return nil
-			}
-			if main.ShardCount > 1 && main.Collate {
-				c := main.getPartition(partition)
-				select {
-				case c.Data <- out:
+		for  {
+			select {
+			case _, done := <-c:
+				if done {
+					break
 				}
-			} else { // Bypass partition worker dispatching
-				err := shared.Retry(3, 5 * time.Second, func() (err error) {
-					err = main.processBatch([]map[string]interface{}{out}, partition)
-					return
-				})
-				if err != nil {
-					u.Errorf("processBatch ERROR %v", err)
-					return nil // continue processing
-				}
+			default:
 			}
-			main.totalRecs.Add(1)
-			main.totalBytes.Add(len(v.Data))
-
-			return nil // continue scanning
-		})
-
-		if err != nil {
-			u.Errorf("scan error: %v", err)
-			os.Exit(1)
+			err = main.consumer.Scan(context.TODO(), main.scanAndProcess)
+			if err != nil {
+				u.Errorf("scan error: %v", err)
+				u.Errorf("Re-initializing.")
+    			if main.ShardCount, err = main.Init(); err != nil {
+        			u.Error(err)
+					u.Errorf("Exiting process.")
+        			os.Exit(1)
+    			}
+				//os.Exit(1)
+			}
 		}
 	}()
 
@@ -341,14 +339,109 @@ func main() {
 	<-c
 }
 
+func (m *Main) scanAndProcess(v *consumer.Record) error {
+
+	ts, err := dateparse.ParseIn(*v.PartitionKey, m.timeLocation)
+	if err != nil {
+		u.Errorf("Date parse error for partition key %s - %v", *v.PartitionKey, err)
+		os.Exit(1)
+	}
+	tFormat := shared.YMDTimeFmt
+	if m.Table.TimeQuantumType == "YMDH" {
+		tFormat = shared.YMDHTimeFmt
+	}
+	partition := ts.Format(tFormat)
+
+	out := make(map[string]interface{})
+
+	if m.IsAvro {
+		err = avro.Unmarshal(m.Schema, v.Data, &out)
+	} else {
+		err = json.Unmarshal(v.Data, &out)
+	}
+	if err != nil {
+		u.Errorf("Unmarshal ERROR %v", err)
+		m.errorCount.Add(1)
+		return nil
+	}
+
+	// Got record at this point
+	if m.Preselector != nil {
+		if !m.preselect(out) {
+			return nil // continue processing
+		}
+	}
+
+	if m.ShardCount > 1 && m.Collate {
+		c := m.getPartition(partition)
+		select {
+		case c.Data <- out:
+		}
+	} else { // Bypass partition worker dispatching
+		err := shared.Retry(3, 5 * time.Second, func() (err error) {
+			err = m.processBatch([]map[string]interface{}{out}, partition)
+			return
+		})
+		if err != nil {
+			u.Errorf("processBatch ERROR %v", err)
+			return nil // continue processing
+		}
+	}
+	m.totalRecs.Add(1)
+	m.totalBytes.Add(len(v.Data))
+
+	return nil // continue scanning
+}
+
+// filter row per expression
+func (m *Main) preselect(row map[string]interface{}) bool {
+
+	ctx := m.buildEvalContext(row)
+	val, ok := vm.Eval(ctx, m.Preselector)
+	if !ok {
+		u.Errorf("Preselect expression %s failed to evaluate ", m.Preselector.String())
+		os.Exit(1)
+	}
+	if val.Type() != value.BoolType {
+		u.Errorf("Preselect expression %s does not evaluate to a boolean value", m.Preselector.String())
+		os.Exit(1)
+	}
+
+/*
+	selectit := val.Value().(bool) 
+	if selectit {
+		u.Errorf("%#v - %#v", ctx, row)
+		os.Exit(1)
+	}
+*/
+	return val.Value().(bool)
+}
+
+func (m *Main) buildEvalContext(row map[string]interface{}) *datasource.ContextSimple {
+
+	data := make(map[string]interface{})
+	for _, v := range m.selectorIdentities {
+		var path string
+		if v[0] == '/' {
+			path = v[1:]
+		} else {
+			path = v
+		}
+		if l, err := shared.GetPath(path, row); err == nil {
+			data[v] = l
+		}
+	}
+	return datasource.NewContextSimpleNative(data)
+}
+
 func (m *Main) processBatch(rows []map[string]interface{}, partition string) error {
 
-    defer func() {
-        if r := recover(); r != nil {
-            err := fmt.Errorf("Panic recover: \n" + string(debug.Stack()))
-            u.Error(err)
-        }
-    }()
+	defer func() {
+		if r := recover(); r != nil {
+			err := fmt.Errorf("Panic recover: \n" + string(debug.Stack()))
+			u.Error(err)
+		}
+	}()
 
 	conn, err := m.sessionPool.Borrow(m.Index)
 	if err != nil {
@@ -503,6 +596,7 @@ func (m *Main) Init() (int, error) {
 			consumer.WithShardIteratorType(m.InitialPos),
 			consumer.WithStore(db),
 			consumer.WithAggregation(m.Deaggregate),
+			consumer.WithScanInterval(time.Duration(m.scanInterval) * time.Millisecond),
 			//consumer.WithCounter(counter),
 		)
 	} else {
@@ -511,6 +605,7 @@ func (m *Main) Init() (int, error) {
 			consumer.WithClient(kc),
 			consumer.WithShardIteratorType(m.InitialPos),
 			consumer.WithAggregation(m.Deaggregate),
+			consumer.WithScanInterval(time.Duration(m.scanInterval) * time.Millisecond),
 			//consumer.WithCounter(counter),
 		)
 	}
@@ -525,9 +620,9 @@ func (m *Main) Init() (int, error) {
 
 // Partition - A partition is a Quanta concept and defines an daily or hourly time segment.
 type Partition struct {
-	ModTime      time.Time
+	ModTime	  time.Time
 	PartitionKey string
-	Data         chan map[string]interface{}
+	Data		 chan map[string]interface{}
 }
 
 // NewPartition - Construct a new partition.
@@ -674,28 +769,28 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 		MetricData: []*cloudwatch.MetricDatum{
 			{
 				MetricName: aws.String("ConnectionPoolSize"),
-				Unit:       aws.String("Count"),
-				Value:      aws.Float64(float64(connectionPoolSize)),
+				Unit:	   aws.String("Count"),
+				Value:	  aws.Float64(float64(connectionPoolSize)),
 			},
 			{
 				MetricName: aws.String("ConnectionsInUse"),
-				Unit:       aws.String("Count"),
-				Value:      aws.Float64(float64(connectionsInUse)),
+				Unit:	   aws.String("Count"),
+				Value:	  aws.Float64(float64(connectionsInUse)),
 			},
 			{
 				MetricName: aws.String("MaxConnectionsInUse"),
-				Unit:       aws.String("Count"),
-				Value:      aws.Float64(float64(maxUsed)),
+				Unit:	   aws.String("Count"),
+				Value:	  aws.Float64(float64(maxUsed)),
 			},
 			{
 				MetricName: aws.String("ConnectionsInPool"),
-				Unit:       aws.String("Count"),
-				Value:      aws.Float64(float64(pooled)),
+				Unit:	   aws.String("Count"),
+				Value:	  aws.Float64(float64(pooled)),
 			},
 			{
 				MetricName: aws.String("Arrived"),
-				Unit:       aws.String("Count"),
-				Value:      aws.Float64(float64(m.totalRecs.Get())),
+				Unit:	   aws.String("Count"),
+				Value:	  aws.Float64(float64(m.totalRecs.Get())),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Stream"),
@@ -705,8 +800,8 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("RecordsPerSec"),
-				Unit:       aws.String("Count/Second"),
-				Value:      aws.Float64(float64(m.totalRecs.Get()-m.totalRecsL.Get()) / interval),
+				Unit:	   aws.String("Count/Second"),
+				Value:	  aws.Float64(float64(m.totalRecs.Get()-m.totalRecsL.Get()) / interval),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Stream"),
@@ -716,8 +811,8 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("Processed"),
-				Unit:       aws.String("Count"),
-				Value:      aws.Float64(float64(m.processedRecs.Get())),
+				Unit:	   aws.String("Count"),
+				Value:	  aws.Float64(float64(m.processedRecs.Get())),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
@@ -727,8 +822,8 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("ProcessedPerSecond"),
-				Unit:       aws.String("Count/Second"),
-				Value:      aws.Float64(float64(m.processedRecs.Get()-m.processedRecL.Get()) / interval),
+				Unit:	   aws.String("Count/Second"),
+				Value:	  aws.Float64(float64(m.processedRecs.Get()-m.processedRecL.Get()) / interval),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
@@ -738,8 +833,8 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("Errors"),
-				Unit:       aws.String("Count"),
-				Value:      aws.Float64(float64(m.errorCount.Get())),
+				Unit:	   aws.String("Count"),
+				Value:	  aws.Float64(float64(m.errorCount.Get())),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
@@ -749,8 +844,8 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("ProcessedBytes"),
-				Unit:       aws.String("Bytes"),
-				Value:      aws.Float64(float64(m.totalBytes.Get())),
+				Unit:	   aws.String("Bytes"),
+				Value:	  aws.Float64(float64(m.totalBytes.Get())),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
@@ -760,8 +855,8 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("BytesPerSec"),
-				Unit:       aws.String("Bytes/Second"),
-				Value:      aws.Float64(float64(m.totalBytes.Get()-m.totalBytesL.Get()) / interval),
+				Unit:	   aws.String("Bytes/Second"),
+				Value:	  aws.Float64(float64(m.totalBytes.Get()-m.totalBytesL.Get()) / interval),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
@@ -771,8 +866,8 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("UpTimeHours"),
-				Unit:       aws.String("Count"),
-				Value:      aws.Float64(float64(upTime) / float64(1000000000*3600)),
+				Unit:	   aws.String("Count"),
+				Value:	  aws.Float64(float64(upTime) / float64(1000000000*3600)),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
@@ -847,3 +942,5 @@ func (r *QuantaRetryer) ShouldRetry(err error) bool {
 	}
 	return false
 }
+
+

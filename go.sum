@@ -355,6 +355,12 @@ github.com/guymolinari/qlbridge v0.0.0-20220510142205-73bb043e16ca h1:3PerMxFGRt
 github.com/guymolinari/qlbridge v0.0.0-20220510142205-73bb043e16ca/go.mod h1:4SL2pGOyW3H4a/mckpnbrp38ixt2Xw8yCnbzsrI3WM4=
 github.com/guymolinari/qlbridge v0.0.0-20220525092929-c7817258d98e h1:uscERBAnMfCG3qf2odUnUDgUaikbkl/n7cZfWUnzNDU=
 github.com/guymolinari/qlbridge v0.0.0-20220525092929-c7817258d98e/go.mod h1:4SL2pGOyW3H4a/mckpnbrp38ixt2Xw8yCnbzsrI3WM4=
+github.com/guymolinari/qlbridge v0.0.0-20220906205305-ba4aea9c7e96 h1:6kW4kWdr7EvG2tpD+XtEbQz49r6e8e4IWqjLbXYfAEk=
+github.com/guymolinari/qlbridge v0.0.0-20220906205305-ba4aea9c7e96/go.mod h1:4SL2pGOyW3H4a/mckpnbrp38ixt2Xw8yCnbzsrI3WM4=
+github.com/guymolinari/qlbridge v0.0.0-20220907215446-39888b918b57 h1:2ahN3SKUg65VSYu20kCRbj+yKkJ6IXSnuQgzCTWCciU=
+github.com/guymolinari/qlbridge v0.0.0-20220907215446-39888b918b57/go.mod h1:4SL2pGOyW3H4a/mckpnbrp38ixt2Xw8yCnbzsrI3WM4=
+github.com/guymolinari/qlbridge v0.0.0-20220908123708-8e2258173b7d h1:vFolPrAYG57gDBFFJsZn3faXBWqhGrrKlgB0Vh+gmdo=
+github.com/guymolinari/qlbridge v0.0.0-20220908123708-8e2258173b7d/go.mod h1:4SL2pGOyW3H4a/mckpnbrp38ixt2Xw8yCnbzsrI3WM4=
 github.com/hamba/avro v1.6.0 h1:a9tNvjpZVfDQQJWSM2g8hUc7gYacKZkHF3OK0w49UXY=
 github.com/hamba/avro v1.6.0/go.mod h1:iKbXifVeT1gOHU+Eqe8wWziE745Z+Aa/6sbJnWeSW5A=
 github.com/harlow/kinesis-consumer v0.3.5 h1:xeiDp2frP8DdKDeOzVuS+vaBX03JjifQO/Apzu4IOMA=

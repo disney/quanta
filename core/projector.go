@@ -312,9 +312,11 @@ func (p *Projector) Next(count int) (columnIDs []uint64, rows [][]driver.Value, 
 			allAttr = append(allAttr, p.joinAttributes...)
 			bsiResults, bitmapResults, e := p.retrieveBitmapResults(p.foundSets, allAttr, false)
 			if e != nil {
+				p.stateGuard.Unlock()
 				err = e
 				return
 			}
+
 			p.bsiResults = bsiResults
 			p.bitmapResults = bitmapResults
 		}

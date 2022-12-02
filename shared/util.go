@@ -606,6 +606,7 @@ func WaitTimeout(wg *errgroup.Group, timeout time.Duration, sigChan exec.SigChan
 	case err := <-c:
 		return err, false // completed normally
 	case <-time.After(timeout):
+		sigChan <- true
 		close(sigChan)
 		return nil, true // timed out
 	}

@@ -96,8 +96,21 @@ func outputProjection(outCh exec.MessageChan, sigChan exec.SigChan, proj *core.P
 	batchSize := limit
 	nThreads := 1
 	timeout := 60
-	limitIsBatch := true
 	var dupMap sync.Map
+	var err error
+	if params != nil {
+		if params["timeout"] != nil {
+			if timeout, err = shared.GetIntParam(params, "timeout"); err != nil {
+				return err
+			}
+		}
+		if params["threads"] != nil {
+			if nThreads, err = shared.GetIntParam(params, "threads"); err != nil {
+				return err
+			}
+		}
+	}
+	limitIsBatch := true
 
 	// Parallelize projection for SELECT ... INTO
 	if isExport {
@@ -108,16 +121,6 @@ func outputProjection(outCh exec.MessageChan, sigChan exec.SigChan, proj *core.P
 			var err error
 			if params["batchSize"] != nil {
 				if batchSize, err = shared.GetIntParam(params, "batchSize"); err != nil {
-					return err
-				}
-			}
-			if params["threads"] != nil {
-				if nThreads, err = shared.GetIntParam(params, "threads"); err != nil {
-					return err
-				}
-			}
-			if params["timeout"] != nil {
-				if timeout, err = shared.GetIntParam(params, "timeout"); err != nil {
 					return err
 				}
 			}

@@ -41,6 +41,7 @@ type (
 		acl            string
 		sseKmsKeyID    string
 		config         *aws.Config
+		path           string
 	}
 )
 
@@ -54,6 +55,8 @@ type (
 		acl            string
 		sseKmsKeyID    string		
 		config         *aws.Config
+		path           string
+		s3svc          *s3.Client
 	}
 )
 
@@ -83,6 +86,7 @@ func NewS3Sink(ctx *plan.Context, path string, params map[string]interface{}) (e
 // Open CSV session to S3
 func (s *S3CSVSink) Open(ctx *plan.Context, bucketpath string, params map[string]interface{}) error {
 
+	s.path = bucketpath
 	if delimiter, ok := params["delimiter"]; !ok {
 		s.delimiter = '\t'
 	} else {
@@ -178,9 +182,17 @@ func (s *S3CSVSink) Close() error {
 	return nil
 }
 
+
+// Cleanup S3 CSV  session.
+func (s *S3CSVSink) Cleanup() error {
+	return s.outBucket.Delete(s.path)
+}
+
+
 // Open Parquet session to S3
 func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[string]interface{}) error {
 
+	s.path = bucketpath
 	bucket, file, err := parseBucketName(bucketpath)
 	if err != nil {
 		return err
@@ -215,7 +227,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		u.Errorf("Parquet Sink: Could not load the default config: %v",err)
 	}
 
-	var s3svc *s3.Client
+	//var s3svc *s3.Client
 
 	if s.assumeRoleArn != "" {		
 		client := sts.NewFromConfig(cfg)
@@ -237,25 +249,25 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 			return fmt.Errorf("Failed to retrieve credentials from cache: %v", err)
 		}	
 
-		s3svc = s3.NewFromConfig(cfg, func(o *s3.Options) {
+		s.s3svc = s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.Region = region
 			o.Credentials = provider
 			o.RetryMaxAttempts = 10
 		})
 	} else {
-		s3svc = s3.NewFromConfig(cfg, 	func(o *s3.Options) {
+		s.s3svc = s3.NewFromConfig(cfg, 	func(o *s3.Options) {
 			o.Region = region
 			o.RetryMaxAttempts = 10
 		})
 	}
 
-	if s3svc == nil {
+	if s.s3svc == nil {
 		return fmt.Errorf("failed creating S3 session")
 	}
 
 	// Create S3 service client
 	u.Infof("Parquet Sink: Opening Output S3 path s3://%s/%s", bucket, file)
-	s.outFile, err = pgs3.NewS3FileWriterWithClient(context.Background(), s3svc, bucket, file, nil, func(p *s3.PutObjectInput){
+	s.outFile, err = pgs3.NewS3FileWriterWithClient(context.Background(), s.s3svc, bucket, file, nil, func(p *s3.PutObjectInput){
 		p.SSEKMSKeyId = aws.String(s.sseKmsKeyID)
 		p.ServerSideEncryption = "aws:kms"
 		p.ACL = types.ObjectCannedACL(s.acl)
@@ -330,6 +342,29 @@ func (s *S3ParquetSink) Close() error {
 	}
 	u.Infof("Parquest file successfully written.")
 	return nil
+}
+
+// Cleanup S3 Parquet  session.
+func (s *S3ParquetSink) Cleanup() error {
+
+	err := s.Close()
+	if err != nil {
+		return err
+	}
+
+	bucket, obj, err2 := parseBucketName(s.path) 
+	if err2 != nil {
+		return err2
+	}
+	
+	_, err = s.s3svc.DeleteObject(context.TODO(), &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(obj)})
+	if err != nil {
+		u.Warnf("Unable to delete object %q from bucket %q, %v", obj, bucket, err)
+		return err
+	}
+	
+	u.Warnf("removed partially written file %q from bucket %q", obj, bucket)
+	return err
 }
 
 func parseBucketName(bucketPath string) (bucket string, file string, err error) {

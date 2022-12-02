@@ -279,19 +279,22 @@ func (m *Main) LoadBucketContents() {
 	paginator := s3.NewListObjectsV2Paginator(m.S3svc, params, func(o *s3.ListObjectsV2PaginatorOptions) {
 		o.Limit = 10
 	})
+	fmt.Println("Paginator Succeeded")
 	
 	var err error
 	var output *s3.ListObjectsV2Output
 	ret := make([]types.Object, 0)
 	pageNum := 0
 	for paginator.HasMorePages() && pageNum < 3 {
+		fmt.Println("Inside Paginator")
 		output, err = paginator.NextPage(context.TODO())
+		fmt.Println("Next Page")
 		if err != nil {
 			log.Printf("error: %v", err)
 			return
 		}
 		for _, value := range output.Contents {
-			fmt.Println(*value.Key)
+			fmt.Println("S3 keys: ", *value.Key)
 			ret = append(ret, value)
 		}
 		pageNum++

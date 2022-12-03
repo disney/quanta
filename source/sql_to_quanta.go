@@ -132,9 +132,11 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	sessionMap[exec.GROUPBY_MAKER] = func(ctx *plan.Context, p *plan.GroupBy) exec.TaskRunner {
 		return NewNopTask(ctx)
 	}
+/*
 	sessionMap[exec.WHERE_MAKER] = func(ctx *plan.Context, p *plan.Where) exec.TaskRunner {
 		return NewNopTask(ctx)
 	}
+*/
 	sessionMap[exec.PROJECTION_MAKER] = func(ctx *plan.Context, p *plan.Projection) exec.TaskRunner {
 		return NewQuantaProjection(ctx)
 	}
@@ -164,10 +166,15 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	m.TaskBase = exec.NewTaskBase(p.Context())
 
 	p.SourceExec = true
-	m.p = p
 	m.q = shared.NewBitmapQuery()
 	frag := m.q.NewQueryFragment()
 
+	if m.needsPolyFill {
+		p.Custom["poly_fill"] = true
+		//u.Warnf("%p  need to signal poly-fill", m)
+	} else {
+		p.Complete = true
+	}
 	m.p = p
 	req := p.Stmt.Source
 
@@ -271,12 +278,6 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	   }
 	*/
 
-	if m.needsPolyFill {
-		p.Custom["poly_fill"] = true
-		//u.Warnf("%p  need to signal poly-fill", m)
-	} else {
-		p.Complete = true
-	}
 
 	if m.startDate == "" || table.TimeQuantumType == "" {
 		m.startDate = time.Unix(0, 0).Format(shared.YMDHTimeFmt)
@@ -553,8 +554,19 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 	rhval, rhok, isRident := m.eval(node.Args[1])
 	_, rhisnull := node.Args[1].(*expr.NullNode)
 	if !lhok {
-		u.Warnf("not ok: %v  l:%v  r:%v", node, lhval, rhval)
-		return nil, fmt.Errorf("could not evaluate left arg: %v", node.String())
+		// if the lvalue is a function that takes indentity nodes then a "WHERE" processor is required.
+		if m.p.Complete && node.Args[0].NodeType() == "Func" {
+			for _, x := range node.Args[0].(*expr.FuncNode).Args {
+				if x.NodeType() == "Identity" {
+					m.p.Complete = false
+					break
+				}
+			}
+		}
+		if m.p.Complete {
+			u.Warnf("not ok: %v  l:%v  r:%v", node, lhval, rhval)
+			return nil, fmt.Errorf("could not evaluate left arg: %v", node.String())
+		}
 	}
 	if !rhok && !rhisnull {
 		exprNode, _ := expr.ParseExpression(node.Args[1].String())
@@ -729,6 +741,10 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 }
 
 func (m *SQLToQuanta) handleBSI(op string, lhval, rhval value.Value, q *shared.QueryFragment) error {
+
+	if lhval == nil {  // silently ignore
+		return nil
+	}
 
 	nm := lhval.ToString()
 	fr, ft, err := m.ResolveField(nm)
@@ -1273,8 +1289,8 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 	// }
 
 	// Where clause will be processed in the source, so replace where clause with a filter that resolves to true
-	dummyWhere, _ := expr.ParseExpression("1=1")
-	m.sel.Where = rel.NewSqlWhere(dummyWhere)
+	//dummyWhere, _ := expr.ParseExpression("1=1")
+	//m.sel.Where = rel.NewSqlWhere(dummyWhere)
 
 	//u.LogTraceDf(u.WARN, 16, "hello")
 	resultReader := NewResultReader(m.conn, m, response, m.limit, m.offset)

@@ -300,7 +300,7 @@ func (m *ResultReader) Run() error {
 	}
 
 	if err = outputProjection(outCh, sigChan, proj, colNames, rowCols, m.limit, m.offset, isExport,
-		orig.Distinct, m.sql.p.Proj); err != nil {
+		orig.Distinct, m.sql.p.Proj, orig.With); err != nil {
 		return err
 	}
 

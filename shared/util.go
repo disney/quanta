@@ -6,8 +6,10 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/araddon/dateparse"
+	"github.com/araddon/qlbridge/exec"
 	u "github.com/araddon/gou"
 	"github.com/hashicorp/consul/api"
+	"golang.org/x/sync/errgroup"
 	"net"
 	"os"
 	"os/signal"
@@ -384,13 +386,13 @@ func Lock(consul *api.Client, lockName, processName string) (*api.Lock, error) {
 
 	// create lock key
 	opts := &api.LockOptions{
-		Key:        lockName + "/1",
-		Value:      []byte("lock set by " + processName),
+		Key:		lockName + "/1",
+		Value:	  []byte("lock set by " + processName),
 		SessionTTL: "10s",
 		/*
 		   		SessionOpts: &api.SessionEntry{
-		     	Checks:   []string{"check1", "check2"},
-		     	Behavior: "release",
+			 	Checks:   []string{"check1", "check2"},
+			 	Behavior: "release",
 		   		},
 		*/
 	}
@@ -541,4 +543,71 @@ func SetClusterSizeTarget(consul *api.Client, size int) error {
 		return err
 	}
 	return nil
+}
+
+// GetIntParam retrieves an int value from a parameter map
+func GetIntParam(params map[string]interface{}, key string) (val int, err error) {
+
+	if params != nil {
+		sParam := params[key]
+		if sParam != nil {
+			switch v := sParam.(type) {
+			case int64:
+				val = int(sParam.(int64))
+			case string:
+				var valx int64
+				valx, err = strconv.ParseInt(sParam.(string), 0, 32)
+				if err != nil {
+					err = fmt.Errorf("error parsing %s - %v", key, err)
+					return
+				}
+				val = int(valx)
+			default:
+				err = fmt.Errorf("unknown type %T for timeout", v)
+			}
+		}
+	}
+	return
+}
+
+// GetBoolParam retrieves an boolean value from a parameter map
+func GetBoolParam(params map[string]interface{}, key string) (val bool, err error) {
+
+	if params != nil {
+		sParam := params[key]
+		if sParam != nil {
+			switch v := sParam.(type) {
+			case bool:
+				val = sParam.(bool)
+			case string:
+				val, err = strconv.ParseBool(sParam.(string))
+				if err != nil {
+					err = fmt.Errorf("error parsing %s - %v", key, err)
+					return
+				}
+			default:
+				err = fmt.Errorf("unknown type %T for timeout", v)
+			}
+		}
+	}
+	return
+}
+
+// WaitTimeout waits for the waitgroup for the specified max timeout.
+// Returns true if waiting timed out.
+func WaitTimeout(wg *errgroup.Group, timeout time.Duration, sigChan exec.SigChan) (error, bool) {
+
+	c := make(chan error, 1)
+	go func() {
+		defer close(c)
+		c <-wg.Wait()
+	}()
+	select {
+	case err := <-c:
+		return err, false // completed normally
+	case <-time.After(timeout):
+		sigChan <- true
+		close(sigChan)
+		return nil, true // timed out
+	}
 }

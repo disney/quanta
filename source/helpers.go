@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 	//u "github.com/araddon/gou"
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/araddon/qlbridge/datasource"
@@ -17,6 +18,7 @@ import (
 	"github.com/araddon/qlbridge/value"
 	"github.com/araddon/qlbridge/vm"
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/shared"
 )
 
 func outputRownumMessages(outCh exec.MessageChan, rs *roaring64.Bitmap, limit, offset int) {
@@ -77,30 +79,57 @@ func decorateRow(row []driver.Value, proj *rel.Projection, rowCols map[string]in
 		if v.Col.Expr.NodeType() != "Func" {
 			continue
 		}
-        nodeVal, ok := vm.Eval(ctx, v.Col.Expr)
-        if !ok {
+		nodeVal, ok := vm.Eval(ctx, v.Col.Expr)
+		if !ok {
 			newRow[i] = "NULL"
 			continue
-        }
+		}
 		newRow[i] = nodeVal.ToString()
 	}
 	return newRow
 }
 
 func outputProjection(outCh exec.MessageChan, sigChan exec.SigChan, proj *core.Projector,
-		colNames, rowCols map[string]int, limit, offset int, isExport, isDistinct bool, pro *rel.Projection) error {
+		colNames, rowCols map[string]int, limit, offset int, isExport, isDistinct bool, pro *rel.Projection,
+		params map[string]interface{}) error {
 
 	batchSize := limit
 	nThreads := 1
-	limitIsBatch := true
+	timeout := 60
 	var dupMap sync.Map
+	var err error
+	if params != nil {
+		if params["timeout"] != nil {
+			if timeout, err = shared.GetIntParam(params, "timeout"); err != nil {
+				return err
+			}
+		}
+		if params["threads"] != nil {
+			if nThreads, err = shared.GetIntParam(params, "threads"); err != nil {
+				return err
+			}
+		}
+	}
+	limitIsBatch := true
 
 	// Parallelize projection for SELECT ... INTO
 	if isExport {
 		batchSize = 1000
-		nThreads = runtime.NumCPU() / 2
+		nThreads = runtime.NumCPU()
 		limitIsBatch = false
-		proj.Prefetch = true
+		if params != nil {
+			var err error
+			if params["batchSize"] != nil {
+				if batchSize, err = shared.GetIntParam(params, "batchSize"); err != nil {
+					return err
+				}
+			}
+			if params["prefetch"] != nil {
+				if proj.Prefetch, err = shared.GetBoolParam(params, "prefetch"); err != nil {
+					return err
+				}
+			}
+		}
 	}
 
 	var eg errgroup.Group
@@ -129,8 +158,14 @@ func outputProjection(outCh exec.MessageChan, sigChan exec.SigChan, proj *core.P
 					}
 					msg := datasource.NewSqlDriverMessageMap(columnID, rows[i], colNames)
 					select {
-					case <-sigChan:
+					case _, closed := <-sigChan:
+						if closed {
+							return fmt.Errorf("timed out.")
+						}
 						return nil
+					default:
+					}
+					select {
 					case outCh <- msg:
 						// continue
 					}
@@ -141,8 +176,12 @@ func outputProjection(outCh exec.MessageChan, sigChan exec.SigChan, proj *core.P
 			}
 		})
 	}
-	if err := eg.Wait(); err != nil {
+	err, timedOut := shared.WaitTimeout(&eg, time.Duration(timeout) * time.Second, sigChan)
+	if err != nil {
 		return err
+	}
+	if timedOut {
+		return fmt.Errorf("timed out after %d seconds", timeout)
 	}
 	return nil
 }

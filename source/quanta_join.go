@@ -371,7 +371,7 @@ func (m *JoinMerge) Run() error {
 		}
 
 		if err = outputProjection(outCh, m.SigChan(), proj, cn, rn, limit, offset, isExport,
-			orig.Distinct, fp); err != nil {
+			orig.Distinct, fp, orig.With); err != nil {
 			return err
 		}
 	}

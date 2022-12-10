@@ -74,6 +74,7 @@ type SQLToQuanta struct {
 	q              *shared.BitmapQuery
 	defaultWhere   bool
 	needsPolyFill  bool // polyfill?
+	funcAliases    map[string]struct{}
 }
 
 // NewSQLToQuanta - Construct a new SQLToQuanta query translator.
@@ -83,6 +84,7 @@ func NewSQLToQuanta(s *QuantaSource, t *schema.Table) *SQLToQuanta {
 		schema: t.Schema,
 		s:      s,
 	}
+	m.funcAliases = make(map[string]struct{})
 	return m
 }
 
@@ -235,6 +237,13 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 		m.defaultWhere = true
 	}
 
+	// Evaluate the Select columns make sure we can pass them down or polyfill
+	err = m.walkSelectList(frag)
+	if err != nil {
+		u.Warnf("Could Not evaluate Columns/Aggs %s %v", req.Columns.String(), err)
+		return nil, err
+	}
+
 	// if Where.Source is not nil then it is a subquery where clause that is walked separately via the planner
 	if req.Where != nil && req.Where.Source == nil {
 		_, err = m.walkNode(req.Where.Expr, frag)
@@ -242,13 +251,6 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 			u.Warnf("Could Not evaluate Where Node %s %v", req.Where.Expr.String(), err)
 			return nil, err
 		}
-	}
-
-	// Evaluate the Select columns make sure we can pass them down or polyfill
-	err = m.walkSelectList(frag)
-	if err != nil {
-		u.Warnf("Could Not evaluate Columns/Aggs %s %v", req.Columns.String(), err)
-		return nil, err
 	}
 
 	/*
@@ -278,6 +280,15 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	   }
 	*/
 
+	if m.p.Complete {
+u.Warnf("for SQL %v, adding dummy where.", req)
+		sessionMap[exec.WHERE_MAKER] = func(ctx *plan.Context, p *plan.Where) exec.TaskRunner {
+			return NewNopTask(ctx)
+		}
+		v := sessionMap[exec.WHERE_MAKER]
+		sk := SchemaInfoString{k: exec.WHERE_MAKER}
+		p.Context().Session.Put(sk, nil, value.NewValue(v))
+	}
 
 	if m.startDate == "" || table.TimeQuantumType == "" {
 		m.startDate = time.Unix(0, 0).Format(shared.YMDHTimeFmt)
@@ -554,12 +565,20 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 	rhval, rhok, isRident := m.eval(node.Args[1])
 	_, rhisnull := node.Args[1].(*expr.NullNode)
 	if !lhok {
-		// if the lvalue is a function that takes indentity nodes then a "WHERE" processor is required.
+		// if the lvalue is a function that takes identity nodes then a "WHERE" processor is required.
 		if m.p.Complete && node.Args[0].NodeType() == "Func" {
 			for _, x := range node.Args[0].(*expr.FuncNode).Args {
 				if x.NodeType() == "Identity" {
 					m.p.Complete = false
 					break
+				}
+			}
+		}
+		if m.p.Complete {
+			// if the lvalue references a function in the select list then post process "WHERE"
+			if n, isId := node.Args[0].(*expr.IdentityNode); isId {
+				if _, ok := m.funcAliases[n.Text]; ok {
+					m.p.Complete = false
 				}
 			}
 		}
@@ -857,8 +876,9 @@ func (m *SQLToQuanta) eval(arg expr.Node) (value.Value, bool, bool) {
 }
 
 
-func (m *SQLToQuanta) checkFuncArgs(f *expr.FuncNode) error {
+func (m *SQLToQuanta) checkFuncArgs(f *expr.FuncNode) (int, error) {
 
+	idCount := 0
 	for _, x := range f.Args {
 		ids := expr.FindAllIdentities(x)
 		for _, n := range ids {
@@ -874,11 +894,12 @@ func (m *SQLToQuanta) checkFuncArgs(f *expr.FuncNode) error {
 			table := m.conn.TableBuffers[tableName].Table
 			_, err := table.GetAttribute(fieldName)
 			if err != nil {
-				return fmt.Errorf("cannot resolve field %s.%s in %v() function argument", tableName, fieldName, f.Name)
+				return 0, fmt.Errorf("cannot resolve field %s.%s in %v() function argument", tableName, fieldName, f.Name)
 			}
 		}
+		idCount += len(ids)
 	}
-	return nil
+	return idCount, nil
 }
 
 // Aggregations from the <select_list>
@@ -904,12 +925,17 @@ func (m *SQLToQuanta) walkSelectList(q *shared.QueryFragment) error {
    				if curNode.Missing && curNode.Name != "min" && curNode.Name != "max" && curNode.Name != "topn" {
 					return fmt.Errorf("func %q not found while processing select list", curNode.Name)
 				}
-				if err := m.checkFuncArgs(curNode); err != nil {
+				count, err := m.checkFuncArgs(curNode)
+				if err != nil {
 					return err
+				}
+				if count > 0 {
+					// Has identity arguments add to function aliases list
+					m.funcAliases[col.As] = struct{}{}
 				}
 				// All Func Nodes are Aggregates?
 				//esm, err := m.walkAggs(curNode)
-				err := m.walkAggs(curNode, q)
+				err = m.walkAggs(curNode, q)
 				if err != nil {
 					return err
 				}

@@ -6,7 +6,7 @@ LABEL version="0.0.1" \
   maintainer="Curtis Deems" \
   maintainer.email="curtis.deems@disney.com" \
   description="Quanta Loader" \
-  repository="git@gitlab.disney.com:data-platforms/data-activation/quanta/quanta-exporter.git"
+  repository="git@gitlab.disney.com:data-platforms/curtis_x_deems_nd/quanta-loader.git"
 
 USER root
 COPY ./quanta-loader /usr/bin/quanta-loader

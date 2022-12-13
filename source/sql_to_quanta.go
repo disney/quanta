@@ -1444,9 +1444,16 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 						u.Errorf("bad column count?  %d vs %d  col: %+v", len(row), i, f)
 					} else {
 						switch val := row[i].(type) {
-						case string, []byte, int, int64, bool, time.Time:
+						case string:
+							if val != "" {
+								curRow[idx] = val
+								//vMap[colName] = val
+								vMap[f.Collation] = val
+							}
+						case []byte, int, int64, bool, time.Time, float64:
 							curRow[idx] = val
-							vMap[colName] = val
+							//vMap[colName] = val
+							vMap[f.Collation] = val
 						case []value.Value:
 							switch f.ValueType() {
 							case value.StringsType:
@@ -1455,7 +1462,6 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 									vals[si] = sv.ToString()
 								}
 								curRow[idx] = vals
-
 							default:
 								u.Warnf("what type? %v", f.Type)
 								/*

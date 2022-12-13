@@ -41,3 +41,8 @@ func (s *TableSink) Next(dest []driver.Value, colIndex map[string]int) error {
 func (s *TableSink) Close() error {
 	return nil
 }
+
+// Cleanup output session.
+func (s *TableSink) Cleanup() error {
+	return nil
+}

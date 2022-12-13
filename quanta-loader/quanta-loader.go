@@ -307,9 +307,7 @@ func (m *Main) LoadBucketContents() {
 			} else {
 				log.Fatal(err.Error())
 			}
-		} else {
-			log.Fatal(err.Error())
-	}
+		}
 	
 	sort.Slice(ret, func(i, j int) bool {
 		return ret[i].Size > ret[j].Size

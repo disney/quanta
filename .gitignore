@@ -21,3 +21,4 @@ bin/
 
 # Automation
 .espnautomation/
+.DS_Store

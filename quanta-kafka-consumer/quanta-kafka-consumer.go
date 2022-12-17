@@ -2,11 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/disney/quanta/core"
-	"github.com/disney/quanta/shared"
-	"github.com/hashicorp/consul/api"
-	"gopkg.in/alecthomas/kingpin.v2"
-	"gopkg.in/confluentinc/confluent-kafka-go.v1/kafka"
 	"log"
 	"os"
 	"os/signal"
@@ -14,6 +9,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/shared"
+	"github.com/hashicorp/consul/api"
+	"gopkg.in/alecthomas/kingpin.v2"
+	"gopkg.in/confluentinc/confluent-kafka-go.v1/kafka"
 )
 
 // Variables to identify the build
@@ -125,7 +126,7 @@ func main() {
 				log.Fatalf("Error opening connection %v", err)
 			}
 			for msg := range msgChan {
-				err = main.conns[i].PutRow(main.Index, msg, 0)
+				err = main.conns[i].PutRow(main.Index, msg, 0, false)
 				if err != nil {
 					log.Printf("ERROR %v", err)
 				}

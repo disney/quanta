@@ -70,3 +70,4 @@ require (
 )
 
 replace github.com/araddon/qlbridge => github.com/guymolinari/qlbridge v0.0.0-20221128230730-c39f38b91831
+

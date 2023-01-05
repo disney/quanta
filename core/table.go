@@ -42,7 +42,7 @@ const (
 
 var (
 	tableCache     map[string]*Table = make(map[string]*Table, 0)
-	tableCacheLock sync.Mutex
+	tableCacheLock sync.RWMutex
 )
 
 // LoadTable - Load and initialize table object.
@@ -283,6 +283,15 @@ func (a *Attribute) GetFKSpec() (string, string, error) {
 // GetValue - Return row ID for a given input value (StringEnum).
 func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 
+	tableCacheLock.RLock()
+	defer tableCacheLock.RUnlock()
+
+	la, lerr := tableCache[a.Parent.Name].GetAttribute(a.FieldName)
+	if lerr != nil {
+		return 0, fmt.Errorf("Cannot lookup attribute %s from table cache.")
+	}
+	la.localLock.RLock()
+
 	value := invalue
 	switch invalue.(type) {
 	case string:
@@ -290,12 +299,12 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 	}
 	var v uint64
 	var ok bool
-	a.localLock.Lock()
-	defer a.localLock.Unlock()
 	if v, ok = a.valueMap[value]; !ok {
 		/* If the value does not exist in the valueMap local cache  we will add it and then
 		 *  Call the string enum service to add it.
 		 */
+
+		la.localLock.RUnlock()
 
 		if a.Parent.kvStore == nil {
 			return 0, fmt.Errorf("kvStore is not initialized")
@@ -303,6 +312,8 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 		if a.Parent.Name == "" {
 			panic("a.Parent.Name is empty")
 		}
+
+		la.localLock.Lock()
 
 		// OK, value not anywhere to be found, invoke service to add.
 		rowID, err := a.Parent.kvStore.PutStringEnum(a.Parent.Name+SEP+a.FieldName+".StringEnum",
@@ -318,21 +329,38 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 		v = rowID
 		u.Infof("Added enum for field = %s, value = %v, ID = %v", a.FieldName, value, v)
 
+		la.localLock.Unlock()
+		la.localLock.RLock()
 	}
+	la.localLock.RUnlock()
 	return v, nil
 }
 
 // GetValueForID - Reverse map a value for a given row ID.  (StringEnum)
 func (a *Attribute) GetValueForID(id uint64) (interface{}, error) {
 
-	a.localLock.RLock()
+	if a.Parent.attributeNameMap == nil {
+		tableCacheLock.Lock()
+		defer tableCacheLock.Unlock()
+	} else {
+		tableCacheLock.RLock()
+		defer tableCacheLock.RUnlock()
+	}
+
+	la, lerr := tableCache[a.Parent.Name].GetAttribute(a.FieldName)
+	if lerr != nil {
+		return 0, fmt.Errorf("Cannot lookup attribute %s from table cache.")
+	}
+	la.localLock.RLock()
+
+	//a.localLock.RLock()
 	if v, ok := a.reverseMap[id]; ok {
-		a.localLock.RUnlock()
+		la.localLock.RUnlock()
 		return v, nil
 	}
-	a.localLock.RUnlock()
-	a.localLock.Lock()
-	defer a.localLock.Unlock()
+	la.localLock.RUnlock()
+	la.localLock.Lock()
+	defer la.localLock.Unlock()
 
 	if a.MappingStrategy != "StringEnum" {
 		return 0, fmt.Errorf("GetValueForID attribute %s is not a StringEnum", a.FieldName)

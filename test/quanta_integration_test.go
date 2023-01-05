@@ -92,7 +92,7 @@ func (suite *QuantaTestSuite) loadData(table, filePath string, conn *shared.Conn
 	assert.NotNil(suite.T(), c)
 
 	for i := 1; i <= num; i++ {
-		err := c.PutRow(table, pr, 0)
+		err := c.PutRow(table, pr, 0, false)
 		assert.Nil(suite.T(), err)
 	}
 	c.Flush()

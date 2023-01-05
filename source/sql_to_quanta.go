@@ -1580,7 +1580,7 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 	}
 
 	// Begin critical section
-	err = m.conn.PutRow(table.Name, vMap, colID)
+	err = m.conn.PutRow(table.Name, vMap, colID, false)
 	if err != nil {
 		return nil, err
 	}

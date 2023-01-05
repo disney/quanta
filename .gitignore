@@ -21,3 +21,5 @@ bin/
 
 # Automation
 .espnautomation/
+.DS_Store
+quanta-loader/quanta-loader

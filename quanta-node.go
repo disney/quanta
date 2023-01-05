@@ -1,6 +1,4 @@
-//
 // Data Node launcher.
-//
 package main
 
 import (

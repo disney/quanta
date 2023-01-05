@@ -4,13 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"net/http"
+	_ "net/http/pprof"
+	"net/url"
+	"os"
+	"os/signal"
+	"runtime"
+	"runtime/debug"
+	"sync"
+	"time"
+
 	"github.com/araddon/dateparse"
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/datasource"
 	"github.com/araddon/qlbridge/expr"
+	"github.com/araddon/qlbridge/expr/builtins"
 	"github.com/araddon/qlbridge/value"
 	"github.com/araddon/qlbridge/vm"
-	"github.com/araddon/qlbridge/expr/builtins"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis/types"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
@@ -22,23 +33,13 @@ import (
 	"github.com/disney/quanta/custom/functions"
 	"github.com/disney/quanta/shared"
 	"github.com/hamba/avro"
-	"github.com/harlow/kinesis-consumer"
+	consumer "github.com/harlow/kinesis-consumer"
 	store "github.com/harlow/kinesis-consumer/store/ddb"
 	"github.com/hashicorp/consul/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/alecthomas/kingpin.v2"
-	"log"
-	"net/http"
-	"net/url"
-	_ "net/http/pprof"
-	"os"
-	"os/signal"
-	"runtime"
-	"runtime/debug"
-	"sync"
-	"time"
 )
 
 // Variables to identify the build
@@ -452,7 +453,7 @@ func (m *Main) processBatch(rows []map[string]interface{}, partition string) err
 	}
 	defer m.sessionPool.Return(m.Index, conn)
 	for i := 0; i < len(rows); i++ {
-		err = conn.PutRow(m.Index, rows[i], 0)
+		err = conn.PutRow(m.Index, rows[i], 0, false)
 		if err != nil {
 			u.Errorf("ERROR in PutRow, partition %s - %v", partition, err)
 			m.errorCount.Add(1)

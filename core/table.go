@@ -5,15 +5,16 @@ package core
 import (
 	"encoding/json"
 	"fmt"
-	u "github.com/araddon/gou"
-	"github.com/disney/quanta/shared"
-	"github.com/hashicorp/consul/api"
 	"io/ioutil"
 	"os"
 	"plugin"
 	"reflect"
 	"strings"
 	"sync"
+
+	u "github.com/araddon/gou"
+	"github.com/disney/quanta/shared"
+	"github.com/hashicorp/consul/api"
 )
 
 // Table - Table structure.
@@ -327,6 +328,7 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 
 		v = rowID
 		u.Infof("Added enum for field = %s, value = %v, ID = %v", a.FieldName, value, v)
+
 		la.localLock.Unlock()
 		la.localLock.RLock()
 	}

@@ -341,7 +341,7 @@ func (m *JoinMerge) Run() error {
 			//outputRownumMessages(outCh, rs.GetExistenceBitmap(), limit, offset)
 		}
 	} else { //Assume a projection
-		fp, cn, rn, projFields, joinFields, err := createFinalProjection(orig, m.Ctx.Schema, m.driverTable)
+		fp, cn, rn, projFields, joinFields, err := createProjection(orig, m.Ctx.Schema, m.driverTable, nil)
 		if err != nil {
 			return err
 		}

@@ -154,6 +154,7 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 
 	p.resultIterator = driverSet.ManyIterator()
 
+//u.Warnf("PROJ FIELDS = %#v", p.projFieldMap)
 	return p, nil
 }
 

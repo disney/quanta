@@ -75,6 +75,7 @@ type SQLToQuanta struct {
 	defaultWhere   bool
 	needsPolyFill  bool // polyfill?
 	funcAliases    map[string]struct{}
+	whereProj      map[string]*core.Attribute
 }
 
 // NewSQLToQuanta - Construct a new SQLToQuanta query translator.
@@ -85,6 +86,7 @@ func NewSQLToQuanta(s *QuantaSource, t *schema.Table) *SQLToQuanta {
 		s:      s,
 	}
 	m.funcAliases = make(map[string]struct{})
+	m.whereProj = make(map[string]*core.Attribute)
 	return m
 }
 
@@ -281,13 +283,32 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	*/
 
 	if m.p.Complete {
-u.Warnf("for SQL %v, adding dummy where.", req)
 		sessionMap[exec.WHERE_MAKER] = func(ctx *plan.Context, p *plan.Where) exec.TaskRunner {
 			return NewNopTask(ctx)
 		}
 		v := sessionMap[exec.WHERE_MAKER]
 		sk := SchemaInfoString{k: exec.WHERE_MAKER}
 		p.Context().Session.Put(sk, nil, value.NewValue(v))
+	} else {
+		//p.Context().Projection.Proj.Final = false
+		// Make sure identities in WHERE are in the result set
+		ids := expr.FindAllIdentities(req.Where.Expr)
+		for _, n := range ids {
+			var tableName, fieldName string
+			l, r, isLr := n.LeftRight()
+			if isLr {
+				tableName = l
+				fieldName = r
+			} else {
+				fieldName = n.Text
+				tableName = m.tbl.Name
+			}
+			table := m.conn.TableBuffers[tableName].Table
+			if attr, err := table.GetAttribute(fieldName); err == nil {
+				f := fmt.Sprintf("%s.%s", tableName, fieldName)
+				m.whereProj[f] = attr
+			}
+		}
 	}
 
 	if m.startDate == "" || table.TimeQuantumType == "" {
@@ -1240,7 +1261,7 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 	hasAliasedStar := len(ctx.Projection.Proj.Columns) == 1 &&
 		strings.HasSuffix(ctx.Projection.Proj.Columns[0].As, ".*")
 	if p.Stmt.Source.Star || hasAliasedStar {
-		ctx.Projection.Proj, _, _, _, _, err = createFinalProjection(p.Stmt.Source, p.Schema, "")
+		ctx.Projection.Proj, _, _, _, _, err = createProjection(p.Stmt.Source, p.Schema, "", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -1565,8 +1586,6 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 	}
 
 	newKey := datasource.NewKeyCol("id", "fixme")
-	m.conn.Flush()
-	m.s.sessionPool.Return(table.Name, m.conn)
 
 	// End critical section
 	return newKey, nil
@@ -1594,8 +1613,6 @@ func (m *SQLToQuanta) updateRow(table string, columnID uint64, updValueMap map[s
 			return 0, err
 		}
 	}
-	m.conn.Flush()
-	m.s.sessionPool.Return(m.tbl.Name, m.conn)
 	return 1, nil
 }
 

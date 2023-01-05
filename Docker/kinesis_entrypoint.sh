@@ -47,5 +47,9 @@ if [ -n "$PRESELECTOR" ]
 then
     BOOL_FLAGS=${BOOL_FLAGS}" --preselector="${PRESELECTOR}""
 fi
+if [ -n "$SCAN_INTERVAL" ]
+then
+    BOOL_FLAGS=${BOOL_FLAGS}" --scan-interval="${SCAN_INTERVAL}""
+fi
 exec /usr/bin/quanta-kinesis-consumer ${STREAM} ${INDEX} ${REGION} ${BOOL_FLAGS}
 

@@ -159,19 +159,24 @@ func (m *KVStore) JoinCluster() {
 
 func (m *KVStore) getStore(index string) (db *pogreb.DB, err error) {
 
-	m.storeCacheLock.RLock()
+	m.storeCacheLock.Lock()
+	defer m.storeCacheLock.Unlock()
+
+	//m.storeCacheLock.RLock()
 	var ok bool
 	var ce *cacheEntry
 	if ce, ok = m.storeCache[index]; ok {
-		m.storeCacheLock.RUnlock()
+		//m.storeCacheLock.RUnlock()
 		db = ce.db
 		ce.accessTime = time.Now()
 		return
 	}
+/*
 	m.storeCacheLock.RUnlock()
 
 	m.storeCacheLock.Lock()
 	defer m.storeCacheLock.Unlock()
+*/
 	db, err = pogreb.Open(m.Node.dataDir+sep+"index"+sep+index, nil)
 	if err == nil {
 		m.storeCache[index] = &cacheEntry{db: db, accessTime: time.Now()}

@@ -30,7 +30,7 @@ func NewQuantaProjection(ctx *plan.Context) exec.TaskRunner {
 	}
 
 	var err error
-	m.Ctx.Projection.Proj, _, _, _, _, err = createFinalProjection(m.Ctx.Stmt.(*rel.SqlSelect), m.Ctx.Schema, "")
+	m.Ctx.Projection.Proj, _, _, _, _, err = createProjection(m.Ctx.Stmt.(*rel.SqlSelect), m.Ctx.Schema, "", nil)
 	if err != nil {
 		u.Errorf("QuantaProjection error %v\n", err)
 		m.Ctx.Errors = append(m.Ctx.Errors, err)

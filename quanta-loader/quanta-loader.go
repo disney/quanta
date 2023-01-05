@@ -4,12 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/araddon/dateparse"
-	// "github.com/aws/aws-sdk-go-v2/aws/awserr"
-	// "github.com/aws/aws-sdk-go/aws/awserr"
 
-	// "github.com/aws/aws-sdk-go-v2/aws/session"
-	// "github.com/aws/aws-sdk-go/service/s3"
+	"github.com/araddon/dateparse"
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
@@ -19,8 +15,6 @@ import (
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
-
-	// pqs3 "github.com/xitongsys/parquet-go-source/s3"
 	"errors"
 	"log"
 	"os"
@@ -32,6 +26,10 @@ import (
 	"sync"
 	"time"
 
+	pgs3 "github.com/xitongsys/parquet-go-source/s3v2"
+	"github.com/xitongsys/parquet-go/reader"
+	"golang.org/x/sync/errgroup"
+	"gopkg.in/alecthomas/kingpin.v2"
 	pgs3 "github.com/xitongsys/parquet-go-source/s3v2"
 	"github.com/xitongsys/parquet-go/reader"
 	"golang.org/x/sync/errgroup"
@@ -255,49 +253,27 @@ func (m *Main) LoadBucketContents() {
 		m.Bucket = bucket
 	}
 	params := &s3.ListObjectsV2Input{Bucket: awsv2.String(m.Bucket)}
+	params := &s3.ListObjectsV2Input{Bucket: awsv2.String(m.Bucket)}
 	if m.Prefix != "" {
 		params.Prefix = awsv2.String(m.Prefix)
+		params.Prefix = awsv2.String(m.Prefix)
 	}
-
-	// ret := make([]*s3.Object, 0)
-	// err := m.S3svc.ListObjectsV2Pages(params,
-	// 	func(page *s3.ListObjectsV2Output, lastPage bool) bool {
-	// 		for _, v := range page.Contents {
-	// 			ret = append(ret, v)
-	// 		}
-	// 		return true
-	// 	},
-	// )
-
-	// ret := make([]*s3.Object, 0)
-	// err := m.S3svc.ListObjectsV2Pages(params,
-	// 	func(page *s3.ListObjectsV2Output, lastPage bool) bool {
-	// 		for _, v := range page.Contents {
-	// 			ret = append(ret, v)
-	// 		}
-	// 		return true
-	// 	},
-	// )
 
 	paginator := s3.NewListObjectsV2Paginator(m.S3svc, params, func(o *s3.ListObjectsV2PaginatorOptions) {
 		o.Limit = 10
 	})
-	fmt.Println("Paginator Succeeded")
 	
 	var err error
 	var output *s3.ListObjectsV2Output
 	ret := make([]types.Object, 0)
 	pageNum := 0
 	for paginator.HasMorePages() && pageNum < 3 {
-		fmt.Println("Inside Paginator")
 		output, err = paginator.NextPage(context.TODO())
-		fmt.Println("Next Page")
 		if err != nil {
 			log.Printf("error: %v", err)
 			return
 		}
 		for _, value := range output.Contents {
-			fmt.Println("S3 keys: ", *value.Key)
 			ret = append(ret, value)
 		}
 		pageNum++
@@ -319,7 +295,10 @@ func (m *Main) LoadBucketContents() {
 }
 
 func (m *Main) processRowsForFile(s3object types.Object, dbConn *core.Session) {
+func (m *Main) processRowsForFile(s3object types.Object, dbConn *core.Session) {
 
+	pf, err1 := pgs3.NewS3FileReaderWithClient(context.Background(), m.S3svc, m.Bucket,
+		*awsv2.String(*s3object.Key))
 	pf, err1 := pgs3.NewS3FileReaderWithClient(context.Background(), m.S3svc, m.Bucket,
 		*awsv2.String(*s3object.Key))
 	if err1 != nil {
@@ -338,6 +317,7 @@ func (m *Main) processRowsForFile(s3object types.Object, dbConn *core.Session) {
 	for i := 1; i <= num; i++ {
 		var err error
 		m.totalRecs.Add(1)
+		err = dbConn.PutRow(m.Index, pr, 0, m.ignoreSourcePath)
 		err = dbConn.PutRow(m.Index, pr, 0, m.ignoreSourcePath)
 		if err != nil {
 			// TODO: Improve this by logging into work queue for re-processing
@@ -365,32 +345,19 @@ func (m *Main) Init() error {
 	}
 
 	// Initialize S3 client
-	// sess, err := session.NewSession(&aws.Config{
-	// 	Region: aws.String(m.AWSRegion)},
-	// )
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 
 	if err != nil {
 		return fmt.Errorf("Creating S3 session: %v", err)
 	}
 
-	// Create S3 service client
-	// m.S3svc = s3.New(sess)
-	// m.S3svc = s3.NewFromConfig(cfg)
-
 	if m.AssumeRoleArn != "" {		
 		client := sts.NewFromConfig(cfg)
-		provider := stscreds.NewAssumeRoleProvider(client, m.AssumeRoleArn)			
-		value,err := provider.Retrieve(context.TODO())
+		provider := stscreds.NewAssumeRoleProvider(client, m.AssumeRoleArn)
 
 		if err != nil {
 			return fmt.Errorf("Failed to retrieve credentials: %v",err)
 		}
-
-		fmt.Printf("Credential values: %v", value)
-		fmt.Printf("Access Key: ", value.AccessKeyID)
-		fmt.Printf("Secret Key: ", value.SecretAccessKey)
-		fmt.Printf("Session Token: ", value.SessionToken)
 
 		cfg.Credentials = awsv2.NewCredentialsCache(provider)
 		_,err = cfg.Credentials.Retrieve(context.TODO())

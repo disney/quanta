@@ -3,18 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
+
 	"github.com/araddon/dateparse"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
-	pqs3 "github.com/xitongsys/parquet-go-source/s3"
-	"github.com/xitongsys/parquet-go/reader"
-	"golang.org/x/sync/errgroup"
-	"gopkg.in/alecthomas/kingpin.v2"
+	"errors"
 	"log"
 	"os"
 	"os/signal"
@@ -24,6 +24,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	pgs3 "github.com/xitongsys/parquet-go-source/s3v2"
+	"github.com/xitongsys/parquet-go/reader"
+	"golang.org/x/sync/errgroup"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 // Variables to identify the build
@@ -47,8 +51,11 @@ type Main struct {
 	Prefix       string
 	Pattern      string
 	AWSRegion    string
-	S3svc        *s3.S3
-	S3files      []*s3.Object
+	S3svc         *s3.Client
+	S3files      []types.Object
+	AssumeRoleArn string
+	Acl          string
+	SseKmsKeyID  string	
 	totalBytes   int64
 	bytesLock    sync.RWMutex
 	totalRecs    *Counter
@@ -59,6 +66,7 @@ type Main struct {
 	DateFilter   *time.Time
 	lock         *api.Lock
 	apiHost      *shared.Conn
+	ignoreSourcePath bool
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -77,6 +85,9 @@ func main() {
 	bucketName := app.Arg("bucket-path", "AWS S3 Bucket Name/Path (patterns ok) to read from via the data loader.").Required().String()
 	index := app.Arg("index", "Table name (root name if nested schema)").Required().String()
 	port := app.Arg("port", "Port number for service").Default("4000").Int32()
+	assumeRoleArn := app.Flag("role-arn", "AWS role to assume for bucket access").String()
+	acl := app.Flag("acl", "AWS bucket acl - usually bucket-owner-full-control").Default("bucket-owner-full-control").String()
+	SseKmsKeyID := app.Flag("kms-key-id", "AWS key to use for this bucket").String()
 	region := app.Flag("aws-region", "AWS region of bitmap server host(s)").Default("us-east-1").String()
 	bufSize := app.Flag("buf-size", "Import buffer size").Default("1000000").Int32()
 	dryRun := app.Flag("dry-run", "Perform a dry run and exit (just print selected file names).").Bool()
@@ -84,6 +95,7 @@ func main() {
 	isNested := app.Flag("nested", "Input data is a nested schema. The <index> parameter is root.").Bool()
 	dateFilter := app.Flag("date-filter", "If provided, all rows must be within this time partition.").String()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
+	ignoreSourcePath := app.Flag("ignore-source-path","Ignore the source path into the parquet file.").Bool()
 
 	shared.InitLogging("WARN", *environment, "Loader", Version, "Quanta")
 
@@ -96,12 +108,19 @@ func main() {
 	main.Port = int(*port)
 	main.IsNested = *isNested
 	main.ConsulAddr = *consul
+	main.AssumeRoleArn = *assumeRoleArn
+	main.Acl = *acl
+	main.SseKmsKeyID = *SseKmsKeyID
+	main.ignoreSourcePath = *ignoreSourcePath
 
 	log.Printf("Index name %v.\n", main.Index)
 	log.Printf("Buffer size %d.\n", main.BufferSize)
 	log.Printf("AWS region %s\n", main.AWSRegion)
 	log.Printf("Service port %d.\n", main.Port)
 	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
+	log.Printf("Assume Role Arn %s\n", main.AssumeRoleArn)
+	log.Printf("Acl %s\n", main.Acl)
+	log.Printf("Kms Key Id %s\n", main.SseKmsKeyID)
 	if main.IsNested {
 		log.Printf("Nested Mode.  Input data is a nested schema, Index <%s> should be the root.", main.Index)
 	}
@@ -129,7 +148,7 @@ func main() {
 
 	threads := runtime.NumCPU()
 	var eg errgroup.Group
-	fileChan := make(chan *s3.Object, threads)
+	fileChan := make(chan *types.Object, threads)
 	closeLater := make([]*core.Session, 0)
 	var ticker *time.Ticker
 	// Spin up worker threads
@@ -144,7 +163,7 @@ func main() {
 					conn.SetDateFilter(main.DateFilter)
 				}
 				for file := range fileChan {
-					main.processRowsForFile(file, conn)
+					main.processRowsForFile(*file, conn)
 				}
 				closeLater = append(closeLater, conn)
 				return nil
@@ -173,7 +192,7 @@ func main() {
 		if fileName == "_SUCCESS" {
 			continue
 		}
-		if ok, err := path.Match(main.Pattern, fileName); ((!ok && main.Pattern != "") || *main.S3files[i].Size == 0) && err == nil {
+		if ok, err := path.Match(main.Pattern, fileName); ((!ok && main.Pattern != "") || main.S3files[i].Size == 0) && err == nil {
 			continue
 		} else if err != nil {
 			log.Fatalf("Pattern error %v", err)
@@ -181,7 +200,7 @@ func main() {
 		selected++
 		log.Printf("Selected bucket import file %s.\n", fileName)
 		if !*dryRun {
-			fileChan <- main.S3files[i]
+			fileChan <- &main.S3files[i]
 		}
 	}
 
@@ -227,45 +246,50 @@ func (m *Main) LoadBucketContents() {
 		m.Prefix = m.Bucket[idx+1:]
 		m.Bucket = bucket
 	}
-	params := &s3.ListObjectsV2Input{Bucket: aws.String(m.Bucket)}
+	params := &s3.ListObjectsV2Input{Bucket: awsv2.String(m.Bucket)}
 	if m.Prefix != "" {
-		params.Prefix = aws.String(m.Prefix)
+		params.Prefix = awsv2.String(m.Prefix)
 	}
 
-	ret := make([]*s3.Object, 0)
-	err := m.S3svc.ListObjectsV2Pages(params,
-		func(page *s3.ListObjectsV2Output, lastPage bool) bool {
-			for _, v := range page.Contents {
-				ret = append(ret, v)
-			}
-			return true
-		},
-	)
+	paginator := s3.NewListObjectsV2Paginator(m.S3svc, params, func(o *s3.ListObjectsV2PaginatorOptions) {
+		o.Limit = 10
+	})
+	
+	var err error
+	var output *s3.ListObjectsV2Output
+	ret := make([]types.Object, 0)
+	pageNum := 0
+	for paginator.HasMorePages() && pageNum < 3 {
+		output, err = paginator.NextPage(context.TODO())
+		if err != nil {
+			log.Printf("error: %v", err)
+			return
+		}
+		for _, value := range output.Contents {
+			ret = append(ret, value)
+		}
+		pageNum++
+	}
 
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			case s3.ErrCodeNoSuchBucket:
-				log.Fatal(fmt.Errorf("%v %v", s3.ErrCodeNoSuchBucket, aerr.Error()))
-			default:
-				log.Fatal(aerr.Error())
+			var bne *types.NoSuchBucket
+			if errors.As(err, &bne) {
+				log.Fatal(fmt.Errorf("%v %v", *bne, err.Error()))
+			} else {
+				log.Fatal(err.Error())
 			}
-		} else {
-			// Return the error, cast err to awserr.Error to get the Code and
-			// Message from an error.
-			log.Fatal(err.Error())
 		}
-	}
+	
 	sort.Slice(ret, func(i, j int) bool {
-		return *(ret[i].Size) > *(ret[j].Size)
+		return ret[i].Size > ret[j].Size
 	})
 	m.S3files = ret
 }
 
-func (m *Main) processRowsForFile(s3object *s3.Object, dbConn *core.Session) {
+func (m *Main) processRowsForFile(s3object types.Object, dbConn *core.Session) {
 
-	pf, err1 := pqs3.NewS3FileReaderWithClient(context.Background(), m.S3svc, m.Bucket,
-		*aws.String(*s3object.Key))
+	pf, err1 := pgs3.NewS3FileReaderWithClient(context.Background(), m.S3svc, m.Bucket,
+		*awsv2.String(*s3object.Key))
 	if err1 != nil {
 		log.Fatal(err1)
 	}
@@ -282,7 +306,7 @@ func (m *Main) processRowsForFile(s3object *s3.Object, dbConn *core.Session) {
 	for i := 1; i <= num; i++ {
 		var err error
 		m.totalRecs.Add(1)
-		err = dbConn.PutRow(m.Index, pr, 0)
+		err = dbConn.PutRow(m.Index, pr, 0, m.ignoreSourcePath)
 		if err != nil {
 			// TODO: Improve this by logging into work queue for re-processing
 			log.Println(err)
@@ -309,16 +333,41 @@ func (m *Main) Init() error {
 	}
 
 	// Initialize S3 client
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(m.AWSRegion)},
-	)
+	cfg, err := config.LoadDefaultConfig(context.TODO())
 
 	if err != nil {
 		return fmt.Errorf("Creating S3 session: %v", err)
 	}
 
-	// Create S3 service client
-	m.S3svc = s3.New(sess)
+	if m.AssumeRoleArn != "" {		
+		client := sts.NewFromConfig(cfg)
+		provider := stscreds.NewAssumeRoleProvider(client, m.AssumeRoleArn)
+
+		if err != nil {
+			return fmt.Errorf("Failed to retrieve credentials: %v",err)
+		}
+
+		cfg.Credentials = awsv2.NewCredentialsCache(provider)
+		_,err = cfg.Credentials.Retrieve(context.TODO())
+		if err != nil {
+			return fmt.Errorf("Failed to retrieve credentials from cache: %v", err)
+		}	
+
+		m.S3svc = s3.NewFromConfig(cfg, func(o *s3.Options) {
+			o.Region = m.AWSRegion
+			o.Credentials = provider
+			o.RetryMaxAttempts = 10
+		})
+	} else {
+		m.S3svc = s3.NewFromConfig(cfg, 	func(o *s3.Options) {
+			o.Region = m.AWSRegion
+			o.RetryMaxAttempts = 10
+		})
+	}
+
+	if m.S3svc == nil {
+		return fmt.Errorf("Failed creating S3 session.")
+	}
 
 	return nil
 }

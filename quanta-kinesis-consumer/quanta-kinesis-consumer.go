@@ -427,7 +427,7 @@ func (m *Main) buildEvalContext(row map[string]interface{}) *datasource.ContextS
 		} else {
 			path = v
 		}
-		if l, err := shared.GetPath(path, row); err == nil {
+		if l, err := shared.GetPath(path, row, false); err == nil {
 			data[v] = l
 		}
 	}
@@ -452,7 +452,7 @@ func (m *Main) processBatch(rows []map[string]interface{}, partition string) err
 	}
 	defer m.sessionPool.Return(m.Index, conn)
 	for i := 0; i < len(rows); i++ {
-		err = conn.PutRow(m.Index, rows[i], 0)
+		err = conn.PutRow(m.Index, rows[i], 0, false)
 		if err != nil {
 			u.Errorf("ERROR in PutRow, partition %s - %v", partition, err)
 			m.errorCount.Add(1)

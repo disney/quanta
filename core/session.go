@@ -199,7 +199,7 @@ func (s *Session) IsDriverForJoin(table, joinCol string) bool {
 }
 
 // PutRow - Entry point.  Load a row of data from source (Parquet/Kinesis/Kafka)
-func (s *Session) PutRow(name string, row interface{}, providedColID uint64) error {
+func (s *Session) PutRow(name string, row interface{}, providedColID uint64, ignoreSourcePath bool) error {
 
 	s.ResetRowCache()
 	pqTablePath := "/"
@@ -214,11 +214,11 @@ func (s *Session) PutRow(name string, row interface{}, providedColID uint64) err
 	} else {
 		return fmt.Errorf("cannot process row type %T", row)
 	}
-	return s.recursivePutRow(name, row, pqTablePath, providedColID, false)
+	return s.recursivePutRow(name, row, pqTablePath, providedColID, false, ignoreSourcePath)
 }
 
 func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath string, providedColID uint64,
-	isChild bool) error {
+	isChild bool, ignoreSourcePath bool) error {
 
 	tbuf, ok := s.TableBuffers[name]
 	if !ok {
@@ -229,7 +229,7 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 
 	if curTable.PrimaryKey != "" {
 		// Here we force the primary key to be handled first for table so that columnID is established in tbuf
-		if hasValues, err := s.processPrimaryKey(tbuf, row, pqTablePath, providedColID, isChild); err != nil {
+		if hasValues, err := s.processPrimaryKey(tbuf, row, pqTablePath, providedColID, isChild, ignoreSourcePath); err != nil {
 			return err
 		} else if !hasValues {
 			return nil // nothing to do, no values in child relation
@@ -237,7 +237,7 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 	}
 
 	if curTable.SecondaryKeys != "" {
-		if err := s.processAlternateKeys(tbuf, row, pqTablePath, isChild); err != nil {
+		if err := s.processAlternateKeys(tbuf, row, pqTablePath, isChild, ignoreSourcePath); err != nil {
 			return err
 		}
 	}
@@ -261,7 +261,7 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 			} else if strings.HasPrefix(v.SourceName, "^") {
 				pqChildPath = fmt.Sprintf("%s.%s.list.element.%s", root, v.Parent.Name, v.SourceName[1:])
 			}
-			if err := s.recursivePutRow(v.ChildTable, row, pqChildPath, providedColID, true); err != nil {
+			if err := s.recursivePutRow(v.ChildTable, row, pqChildPath, providedColID, true, ignoreSourcePath); err != nil {
 				return err
 			}
 		} else if v.MappingStrategy == "ParentRelation" && v.ForeignKey != "" {
@@ -278,7 +278,7 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 					return fmt.Errorf("Not a nested import, source must be specified for %s", v.FieldName)
 				}
 
-				lookupKey, err := s.resolveFKLookupKey(&v, tbuf, row)
+				lookupKey, err := s.resolveFKLookupKey(&v, tbuf, row, ignoreSourcePath)
 				if err != nil {
 					return fmt.Errorf("resolveFKLookupKey %v", err)
 				}
@@ -303,7 +303,7 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 				}
 			}
 		} else {
-			vals, pqps, err := s.readColumn(row, pqTablePath, &v, isChild)
+			vals, pqps, err := s.readColumn(row, pqTablePath, &v, isChild, ignoreSourcePath)
 			if err != nil {
 				return fmt.Errorf("Parquet reader error - %v", err)
 			}
@@ -320,14 +320,14 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 	return nil
 }
 
-// This function ensures that each parquet column is read once and only once for each row
+// // This function ensures that each parquet column is read once and only once for each row
 func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
-	isChild bool) ([]interface{}, []string, error) {
+	isChild bool, ignoreSourcePath bool) ([]interface{}, []string, error) {
 
 	if v.SourceName == "" {
 		if v.DefaultValue != "" {
 			retVals := make([]interface{}, 0)
-			retVals = append(retVals, s.getDefaultValueForColumn(v, row))
+			retVals = append(retVals, s.getDefaultValueForColumn(v, row, ignoreSourcePath))
 			pqColPaths := []string{""}
 			return retVals, pqColPaths, nil
 		}
@@ -339,6 +339,9 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 	pqColPaths := make([]string, len(sources))
 	retVals := make([]interface{}, len(sources))
 	for i, source := range sources {
+		if ignoreSourcePath {
+			source = shared.GetBasePath(source)
+		}
 		root := "/"
 		isParquet := false
 		pqColPath := source
@@ -368,7 +371,7 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 			//val, found = tbuf.rowCache[source[1:]]
 			var err error
 			found = true
-			if val, err = shared.GetPath(source[1:], tbuf.rowCache); err != nil {
+			if val, err = shared.GetPath(source[1:], tbuf.rowCache, ignoreSourcePath); err != nil {
 				found = false
 				if v.Required {
 					u.Warnf("field %s, source %s = %v", v.FieldName, source, err)
@@ -407,7 +410,7 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 				}
 				if str, ok := vals[0].(string); ok {
 					if str == "" {
-						vals[0] = fmt.Sprintf("%v", s.getDefaultValueForColumn(v, row))
+						vals[0] = fmt.Sprintf("%v", s.getDefaultValueForColumn(v, row, ignoreSourcePath))
 					}
 				}
 			}
@@ -442,40 +445,78 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 	return retVals, pqColPaths, nil
 }
 
-// Get the defalue value for a column (can be an expression)
-func (s *Session) getDefaultValueForColumn(a *Attribute, row interface{}) interface{} {
+// // Get the defalue value for a column (can be an expression)
+func (s *Session) getDefaultValueForColumn(a *Attribute, row interface{}, ignoreSourcePath bool) interface{} {
 
-	r := row.(map[string]interface{})
+	// add ignoreSourcePath parameter
+
+	var (
+		val value.Value
+		ok bool
+		r interface{}
+	)
 	rm := make(map[string]interface{})
-	// convert source paths to fieldname paths in incoming row
-	if r != nil {
-		for _, v := range a.Parent.Attributes {
-			if v.SourceName == "" {
-				continue
-			}
-			var err error
-			var val interface{}
-			if val, err = shared.GetPath(v.SourceName[1:], row); err != nil {
-				val = r[v.SourceName]
-			}
-			rm[v.FieldName] = val
-		}
-	}
 
-	var ctx *datasource.ContextSimple
-	if r != nil {
-		ctx = datasource.NewContextSimpleNative(rm)
-	}
-	exprNode, _ := expr.ParseExpression(a.DefaultValue)
-	val, ok := vm.Eval(ctx, exprNode)
-	if !ok {
-		if exprNode != nil {
-			switch exprNode.NodeType() {
-				case "Func", "Identity":
-					return nil
+	// convert source paths to fieldname paths in incoming row
+	if r, ok = row.(*reader.ParquetReader); ok {
+		if r != nil {
+			for _, v := range a.Parent.Attributes {
+				if v.SourceName == "" {
+					continue
+				}
+				var err error
+				var val interface{}
+				if val, err = shared.GetPath(v.SourceName, row, ignoreSourcePath); err != nil {
+					val = v.SourceName
+				}
+				rm[v.FieldName] = val
 			}
 		}
-		val = value.NewValue(a.DefaultValue)
+		var ctx *datasource.ContextSimple
+		if r != nil {
+			ctx = datasource.NewContextSimpleNative(rm)
+		}
+		exprNode, _ := expr.ParseExpression(a.DefaultValue)
+		val, ok = vm.Eval(ctx, exprNode)
+		if !ok {
+			if exprNode != nil {
+				switch exprNode.NodeType() {
+					case "Func", "Identity":
+						return nil
+				}
+			}
+			val = value.NewValue(a.DefaultValue)
+		}
+		// return fmt.Sprintf("%v", val.Value())
+	} else if r, ok = row.(map[string]interface{}); ok {
+		if r != nil {
+			for _, v := range a.Parent.Attributes {
+				if v.SourceName == "" {
+					continue
+				}
+				var err error
+				var val interface{}
+				if val, err = shared.GetPath(v.SourceName[1:], row, ignoreSourcePath); err != nil {
+					val = r.(map[string]interface{})[v.SourceName]
+				}
+				rm[v.FieldName] = val
+			}
+		}
+		var ctx *datasource.ContextSimple
+		if r != nil {
+			ctx = datasource.NewContextSimpleNative(rm)
+		}
+		exprNode, _ := expr.ParseExpression(a.DefaultValue)
+		val, ok = vm.Eval(ctx, exprNode)
+		if !ok {
+			if exprNode != nil {
+				switch exprNode.NodeType() {
+					case "Func", "Identity":
+						return nil
+				}
+			}
+			val = value.NewValue(a.DefaultValue)
+		}
 	}
 	return fmt.Sprintf("%v", val.Value())
 }
@@ -489,7 +530,7 @@ func (s *Session) getDefaultValueForColumn(a *Attribute, row interface{}) interf
 // returns true if there are values to process.
 //
 func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTablePath string,
-	providedColID uint64, isChild bool) (bool, error) {
+	providedColID uint64, isChild bool, ignoreSourcePath bool) (bool, error) {
 
 	if tbuf.Table.TimeQuantumType == "" {
 		tbuf.CurrentTimestamp = time.Unix(0, 0)
@@ -500,7 +541,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 	var pkLookupVal strings.Builder
 	for i, pk := range tbuf.PKAttributes {
 		var cval interface{}
-		vals, pqps, err := s.readColumn(row, pqTablePath, pk, isChild)
+		vals, pqps, err := s.readColumn(row, pqTablePath, pk, isChild, ignoreSourcePath)
 		if err != nil {
 			return false, fmt.Errorf("readColumn for PK - %v", err)
 		}
@@ -656,7 +697,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 
 // Handle Secondary Keys.  Create the index in backing store
 func (s *Session) processAlternateKeys(tbuf *TableBuffer, row interface{}, pqTablePath string,
-	isChild bool) error {
+	isChild bool, ignoreSourcePath bool) error {
 
 	pqColPaths := make([]string, len(tbuf.SKMap))
 	var skLookupVal strings.Builder
@@ -664,7 +705,7 @@ func (s *Session) processAlternateKeys(tbuf *TableBuffer, row interface{}, pqTab
 	for k, keyAttrs := range tbuf.SKMap {
 		for _, v := range keyAttrs {
 			var cval interface{}
-			vals, pqps, err := s.readColumn(row, pqTablePath, v, isChild)
+			vals, pqps, err := s.readColumn(row, pqTablePath, v, isChild, ignoreSourcePath)
 			if err != nil {
 				return fmt.Errorf("readColumn for SK - %v", err)
 			}
@@ -769,7 +810,7 @@ func (s *Session) LookupKeyBatch(tbuf *TableBuffer, lookupVals map[interface{}]i
 }
 */
 
-func (s *Session) resolveFKLookupKey(v *Attribute, tbuf *TableBuffer, row interface{}) (string, error) {
+func (s *Session) resolveFKLookupKey(v *Attribute, tbuf *TableBuffer, row interface{}, ignoreSourcePath bool) (string, error) {
 
 	var retVal strings.Builder
 	root := "/"
@@ -777,7 +818,7 @@ func (s *Session) resolveFKLookupKey(v *Attribute, tbuf *TableBuffer, row interf
 		root = r.SchemaHandler.GetRootExName()
 	}
 	pqTablePath := fmt.Sprintf("%s.%s", root, tbuf.Table.Name)
-	vals, _, err := s.readColumn(row, pqTablePath, v, false)
+	vals, _, err := s.readColumn(row, pqTablePath, v, false, ignoreSourcePath)
 	if err != nil {
 		return "", err
 	}

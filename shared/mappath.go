@@ -7,14 +7,22 @@ import (
 	//"reflect"
 	"strconv"
 	"strings"
+	"github.com/xitongsys/parquet-go/reader"
 )
 
 // GetPath - Recurse and retrieve a value at a given path
-func GetPath(path string, s interface{}) (value interface{}, err error) {
+func GetPath(path string, s interface{}, ignoreSourcePath bool) (value interface{}, err error) {
+
+	if ignoreSourcePath{
+		path = GetBasePath(path)
+	}
 
 	keys := strings.Split(path, "/")
 	value = s
 	for _, key := range keys {
+		if key == ""{
+			continue
+		}
 		if value, err = get(key, value); err != nil {
 			break
 		}
@@ -42,12 +50,22 @@ func get(key string, s interface{}) (v interface{}, err error) {
 				err = fmt.Errorf("Index out of bounds. [Index:%d] [Array:%v]", i, array)
 			}
 		}
-		/*
-		   case Signature:
-		       r := reflect.ValueOf(s)
-		       v = reflect.Indirect(r).FieldByName(key)
-		*/
+	case (*reader.ParquetReader):
+		v = fmt.Sprintf("%s.%s",s.(*reader.ParquetReader).SchemaHandler.GetRootExName(), key )
 	}
-	//fmt.Println("Value:", v, " Key:", key, "Error:", err)
+	/*
+		case Signature:
+		    r := reflect.ValueOf(s)
+		    v = reflect.Indirect(r).FieldByName(key)
+	*/
+
 	return v, err
+}
+
+func GetBasePath(source string) string {
+	if strings.Count(source, "/") > 1 || !strings.HasPrefix(source, "/") {
+		idx := strings.LastIndex(source, "/")
+		source = source[idx:]
+	}
+	return source
 }

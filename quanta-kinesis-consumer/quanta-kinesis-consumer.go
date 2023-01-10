@@ -428,7 +428,7 @@ func (m *Main) buildEvalContext(row map[string]interface{}) *datasource.ContextS
 		} else {
 			path = v
 		}
-		if l, err := shared.GetPath(path, row); err == nil {
+		if l, err := shared.GetPath(path, row, false); err == nil {
 			data[v] = l
 		}
 	}

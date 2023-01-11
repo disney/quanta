@@ -3,14 +3,6 @@ package core
 import (
 	"encoding/binary"
 	"fmt"
-	"reflect"
-	"regexp"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
-	"unsafe"
-
 	"github.com/araddon/dateparse"
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/datasource"
@@ -18,8 +10,15 @@ import (
 	"github.com/araddon/qlbridge/value"
 	"github.com/araddon/qlbridge/vm"
 	"github.com/disney/quanta/shared"
-	jsoniter "github.com/json-iterator/go"
+	"github.com/json-iterator/go"
 	"github.com/xitongsys/parquet-go/reader"
+	"reflect"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+	"unsafe"
 )
 
 var (
@@ -345,34 +344,21 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 		}
 		root := "/"
 		isParquet := false
-		tblColPath := source
 		pqColPath := source
 		if r, ok := row.(*reader.ParquetReader); ok {
 			root = r.SchemaHandler.GetRootExName()
 			isParquet = true
 		}
 		if isParquet {
-			if ignoreSourcePath {
-				pqColPath = fmt.Sprintf("%s.list.element", pqTablePath)
-					if !isChild {
-						pqColPath = fmt.Sprintf("%s", pqTablePath)
-					}
-			} else {
-				pqColPath = fmt.Sprintf("%s.list.element.%s", pqTablePath, source)
-					if !isChild {
-						pqColPath = fmt.Sprintf("%s.%s", pqTablePath, source)	
-					}
+			pqColPath = fmt.Sprintf("%s.list.element.%s", pqTablePath, source)
+			if !isChild {
+				pqColPath = fmt.Sprintf("%s.%s", pqTablePath, source)
 			}
 		}
-
 		if isParquet && strings.HasPrefix(source, "/") {
-			if ignoreSourcePath {
-				pqColPath = fmt.Sprintf("%s", root)
-			} else {
-				pqColPath = fmt.Sprintf("%s.%s", root, source[1:])
-			}
+			pqColPath = fmt.Sprintf("%s.%s", root, source[1:])
 		} else if strings.HasPrefix(source, "^") {
-			tblColPath = fmt.Sprintf("%s.%s.list.element.%s", root, v.Parent.Name, source[1:])
+			pqColPath = fmt.Sprintf("%s.%s.list.element.%s", root, v.Parent.Name, source[1:])
 		}
 		pqColPaths[i] = pqColPath
 		// Check cache first
@@ -380,7 +366,7 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 		if !ok {
 			return nil, nil, fmt.Errorf("readColumn: table not open for %s", v.Parent.Name)
 		}
-		val, found := tbuf.rowCache[tblColPath]
+		val, found := tbuf.rowCache[pqColPath]
 		if !found && !isParquet {
 			//val, found = tbuf.rowCache[source[1:]]
 			var err error
@@ -1007,3 +993,4 @@ func INT96ToTime(int96 string) time.Time {
 	days := binary.LittleEndian.Uint32([]byte(int96[8:]))
 	return fromJulianDay(int32(days), int64(nanos))
 }
+

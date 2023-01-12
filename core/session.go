@@ -3,14 +3,6 @@ package core
 import (
 	"encoding/binary"
 	"fmt"
-	"reflect"
-	"regexp"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
-	"unsafe"
-
 	"github.com/araddon/dateparse"
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/datasource"
@@ -18,8 +10,15 @@ import (
 	"github.com/araddon/qlbridge/value"
 	"github.com/araddon/qlbridge/vm"
 	"github.com/disney/quanta/shared"
-	jsoniter "github.com/json-iterator/go"
+	"github.com/json-iterator/go"
 	"github.com/xitongsys/parquet-go/reader"
+	"reflect"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+	"unsafe"
 )
 
 var (
@@ -321,14 +320,14 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 	return nil
 }
 
-// This function ensures that each parquet column is read once and only once for each row
+// // This function ensures that each parquet column is read once and only once for each row
 func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 	isChild bool, ignoreSourcePath bool) ([]interface{}, []string, error) {
 
 	if v.SourceName == "" {
 		if v.DefaultValue != "" {
 			retVals := make([]interface{}, 0)
-			retVals = append(retVals, s.getDefaultValueForColumn(v, row))
+			retVals = append(retVals, s.getDefaultValueForColumn(v, row, ignoreSourcePath))
 			pqColPaths := []string{""}
 			return retVals, pqColPaths, nil
 		}
@@ -340,36 +339,26 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 	pqColPaths := make([]string, len(sources))
 	retVals := make([]interface{}, len(sources))
 	for i, source := range sources {
+		if ignoreSourcePath {
+			source = shared.GetBasePath(source)
+		}
 		root := "/"
 		isParquet := false
-		tblColPath := source
 		pqColPath := source
 		if r, ok := row.(*reader.ParquetReader); ok {
 			root = r.SchemaHandler.GetRootExName()
 			isParquet = true
 		}
 		if isParquet {
-			if ignoreSourcePath {
-				pqColPath = fmt.Sprintf("%s.list.element", pqTablePath)
-					if !isChild {
-						pqColPath = fmt.Sprintf("%s", pqTablePath)
-					}
-			} else {
-				pqColPath = fmt.Sprintf("%s.list.element.%s", pqTablePath, source)
-					if !isChild {
-						pqColPath = fmt.Sprintf("%s.%s", pqTablePath, source)	
-					}
+			pqColPath = fmt.Sprintf("%s.list.element.%s", pqTablePath, source)
+			if !isChild {
+				pqColPath = fmt.Sprintf("%s.%s", pqTablePath, source)
 			}
 		}
-
 		if isParquet && strings.HasPrefix(source, "/") {
-			if ignoreSourcePath {
-				pqColPath = fmt.Sprintf("%s", root)
-			} else {
-				pqColPath = fmt.Sprintf("%s.%s", root, source[1:])
-			}
+			pqColPath = fmt.Sprintf("%s.%s", root, source[1:])
 		} else if strings.HasPrefix(source, "^") {
-			tblColPath = fmt.Sprintf("%s.%s.list.element.%s", root, v.Parent.Name, source[1:])
+			pqColPath = fmt.Sprintf("%s.%s.list.element.%s", root, v.Parent.Name, source[1:])
 		}
 		pqColPaths[i] = pqColPath
 		// Check cache first
@@ -377,12 +366,12 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 		if !ok {
 			return nil, nil, fmt.Errorf("readColumn: table not open for %s", v.Parent.Name)
 		}
-		val, found := tbuf.rowCache[tblColPath]
+		val, found := tbuf.rowCache[pqColPath]
 		if !found && !isParquet {
 			//val, found = tbuf.rowCache[source[1:]]
 			var err error
 			found = true
-			if val, err = shared.GetPath(source[1:], tbuf.rowCache); err != nil {
+			if val, err = shared.GetPath(source[1:], tbuf.rowCache, ignoreSourcePath); err != nil {
 				found = false
 				if v.Required {
 					u.Warnf("field %s, source %s = %v", v.FieldName, source, err)
@@ -421,7 +410,7 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 				}
 				if str, ok := vals[0].(string); ok {
 					if str == "" {
-						vals[0] = fmt.Sprintf("%v", s.getDefaultValueForColumn(v, row))
+						vals[0] = fmt.Sprintf("%v", s.getDefaultValueForColumn(v, row, ignoreSourcePath))
 					}
 				}
 			}
@@ -456,40 +445,78 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 	return retVals, pqColPaths, nil
 }
 
-// Get the defalue value for a column (can be an expression)
-func (s *Session) getDefaultValueForColumn(a *Attribute, row interface{}) interface{} {
+// // Get the defalue value for a column (can be an expression)
+func (s *Session) getDefaultValueForColumn(a *Attribute, row interface{}, ignoreSourcePath bool) interface{} {
 
-	r := row.(map[string]interface{})
+	// add ignoreSourcePath parameter
+
+	var (
+		val value.Value
+		ok bool
+		r interface{}
+	)
 	rm := make(map[string]interface{})
-	// convert source paths to fieldname paths in incoming row
-	if r != nil {
-		for _, v := range a.Parent.Attributes {
-			if v.SourceName == "" {
-				continue
-			}
-			var err error
-			var val interface{}
-			if val, err = shared.GetPath(v.SourceName[1:], row); err != nil {
-				val = r[v.SourceName]
-			}
-			rm[v.FieldName] = val
-		}
-	}
 
-	var ctx *datasource.ContextSimple
-	if r != nil {
-		ctx = datasource.NewContextSimpleNative(rm)
-	}
-	exprNode, _ := expr.ParseExpression(a.DefaultValue)
-	val, ok := vm.Eval(ctx, exprNode)
-	if !ok {
-		if exprNode != nil {
-			switch exprNode.NodeType() {
-				case "Func", "Identity":
-					return nil
+	// convert source paths to fieldname paths in incoming row
+	if r, ok = row.(*reader.ParquetReader); ok {
+		if r != nil {
+			for _, v := range a.Parent.Attributes {
+				if v.SourceName == "" {
+					continue
+				}
+				var err error
+				var val interface{}
+				if val, err = shared.GetPath(v.SourceName, row, ignoreSourcePath); err != nil {
+					val = v.SourceName
+				}
+				rm[v.FieldName] = val
 			}
 		}
-		val = value.NewValue(a.DefaultValue)
+		var ctx *datasource.ContextSimple
+		if r != nil {
+			ctx = datasource.NewContextSimpleNative(rm)
+		}
+		exprNode, _ := expr.ParseExpression(a.DefaultValue)
+		val, ok = vm.Eval(ctx, exprNode)
+		if !ok {
+			if exprNode != nil {
+				switch exprNode.NodeType() {
+					case "Func", "Identity":
+						return nil
+				}
+			}
+			val = value.NewValue(a.DefaultValue)
+		}
+		// return fmt.Sprintf("%v", val.Value())
+	} else if r, ok = row.(map[string]interface{}); ok {
+		if r != nil {
+			for _, v := range a.Parent.Attributes {
+				if v.SourceName == "" {
+					continue
+				}
+				var err error
+				var val interface{}
+				if val, err = shared.GetPath(v.SourceName[1:], row, ignoreSourcePath); err != nil {
+					val = r.(map[string]interface{})[v.SourceName]
+				}
+				rm[v.FieldName] = val
+			}
+		}
+		var ctx *datasource.ContextSimple
+		if r != nil {
+			ctx = datasource.NewContextSimpleNative(rm)
+		}
+		exprNode, _ := expr.ParseExpression(a.DefaultValue)
+		val, ok = vm.Eval(ctx, exprNode)
+		if !ok {
+			if exprNode != nil {
+				switch exprNode.NodeType() {
+					case "Func", "Identity":
+						return nil
+				}
+			}
+			val = value.NewValue(a.DefaultValue)
+		}
 	}
 	return fmt.Sprintf("%v", val.Value())
 }
@@ -966,3 +993,4 @@ func INT96ToTime(int96 string) time.Time {
 	days := binary.LittleEndian.Uint32([]byte(int96[8:]))
 	return fromJulianDay(int32(days), int64(nanos))
 }
+

@@ -340,10 +340,17 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 	} else {
 		// add the original projection to return
 		for _, v := range orig.Columns {
-			table := tableMap[orig.From[0].Name]
-			if vt, ok := table.Column(v.As); ok {
+			var table *schema.Table
+			l, _, isAliased := v.LeftRight()
+			if isAliased {
+				table = tableMap[aliasMap[l].Source.From[0].Name]
+			} else {
+				table = tableMap[orig.From[0].Name]
+			}
+			_, isIdent := v.Expr.(*expr.IdentityNode)
+			if vt, ok := table.Column(v.SourceField); ok && isIdent {
 				ret.AddColumn(v, vt)
-				p := fmt.Sprintf("%s.%s", table.Name, v.As)
+				p := fmt.Sprintf("%s.%s", table.Name, v.SourceField)
 				projCols = append(projCols, p)
 				projColsMap[p] = len(projCols) - 1
 			} else {
@@ -395,7 +402,7 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 					i++
 				}
 			} else {
-				colName := v.As
+				colName := r
 				colNames[colName] = i + rownumOffset
 				if colName == "@rownum" {
 					rownumOffset++
@@ -418,8 +425,14 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 		// The projection and proj columns list should be done, now create rowCols
 		for _, z := range ret.Columns {
 			v := z.Col
+			l, _, isAliased := v.LeftRight()
 			colName := v.As
-			table := tableMap[orig.From[0].Name]
+			var table *schema.Table
+			if isAliased {
+				table = tableMap[aliasMap[l].Name]
+			} else {
+				table = tableMap[orig.From[0].Name]
+			}
 			if _, ok :=  rowCols[colName]; !ok {
 				p := fmt.Sprintf("%s.%s", table.Name, v.SourceField)
 				if pv, ok := projColsMap[p]; ok {

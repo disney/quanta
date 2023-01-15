@@ -136,11 +136,6 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	sessionMap[exec.GROUPBY_MAKER] = func(ctx *plan.Context, p *plan.GroupBy) exec.TaskRunner {
 		return NewNopTask(ctx)
 	}
-/*
-	sessionMap[exec.WHERE_MAKER] = func(ctx *plan.Context, p *plan.Where) exec.TaskRunner {
-		return NewNopTask(ctx)
-	}
-*/
 	sessionMap[exec.PROJECTION_MAKER] = func(ctx *plan.Context, p *plan.Projection) exec.TaskRunner {
 		return NewQuantaProjection(ctx)
 	}
@@ -173,11 +168,12 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	m.q = shared.NewBitmapQuery()
 	frag := m.q.NewQueryFragment()
 
+	p.Complete = true
 	if m.needsPolyFill {
 		p.Custom["poly_fill"] = true
 		//u.Warnf("%p  need to signal poly-fill", m)
-	} else {
-		p.Complete = true
+	//} else {
+	//	p.Complete = true
 	}
 	m.p = p
 	req := p.Stmt.Source
@@ -290,6 +286,9 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 		sk := SchemaInfoString{k: exec.WHERE_MAKER}
 		p.Context().Session.Put(sk, nil, value.NewValue(v))
 	} else {
+		dm := make(map[string]value.Value)
+		dm[exec.WHERE_MAKER] = value.NilValueVal
+		p.Context().Session.Delete(dm)
 		//p.Context().Projection.Proj.Final = false
 		// Make sure identities in WHERE are in the result set
 		ids := expr.FindAllIdentities(req.Where.Expr)

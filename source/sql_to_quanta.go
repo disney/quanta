@@ -221,9 +221,6 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 
 	m.offset = req.Offset
 	m.limit = req.Limit
-	if m.limit == 0 {
-		m.limit = DefaultLimit
-	}
 
 	table := m.conn.TableBuffers[m.tbl.Name].Table
 
@@ -322,6 +319,17 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	}
 	m.q.FromTime = m.startDate
 	m.q.ToTime = m.endDate
+
+	if m.q.IsEmpty() && len(m.funcAliases) > 0 {
+		if m.limit == 0 {
+			return nil, fmt.Errorf("If there is a post process filter predicate then you must specify limit")
+		}
+		pka, _ := table.GetPrimaryKeyInfo()
+		p := m.q.NewQueryFragment()
+		p.SetNullPredicate(m.tbl.Name, pka[0].FieldName)
+		p.Negate = true
+		m.q.AddFragment(p)
+	}
 
 	return nil, nil
 }
@@ -928,6 +936,23 @@ func (m *SQLToQuanta) checkFuncArgs(f *expr.FuncNode) (int, error) {
 //
 func (m *SQLToQuanta) walkSelectList(q *shared.QueryFragment) error {
 
+	// Do a dup check to make sure columns are aliased first.
+	dupMap := make(map[string]*rel.Column, len(m.sel.Columns))
+	for i := 0;  i < len(m.sel.Columns); i++ {
+		c := m.sel.Columns[i]
+		if c.As != "" {
+			if _, found := dupMap[c.As]; found {
+				return fmt.Errorf("Duplicate column %s found at position %d, needs alias", c.As, i)
+			}
+			dupMap[c.As] = c
+			continue
+		}
+		if _, found := dupMap[c.SourceOriginal]; found {
+			return fmt.Errorf("Duplicate column %s found at position %d, needs alias", c.SourceOriginal, i)
+		}
+		dupMap[c.SourceOriginal] = c
+	}
+
 	for i := len(m.sel.Columns) - 1; i >= 0; i-- {
 		col := m.sel.Columns[i]
 		//u.Debugf("i=%d of %d  %v %#v ", i, len(m.sel.Columns), col.Key(), col)
@@ -1210,6 +1235,11 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 	if m.q.IsEmpty() {
 		return nil, fmt.Errorf("query must have a predicate")
 	}
+
+	if m.limit == 0 {
+		m.limit = DefaultLimit
+	}
+
 	if m.p == nil {
 		//u.Debugf("custom? %v", p.Custom)
 		// If we are operating in distributed mode it hasn't

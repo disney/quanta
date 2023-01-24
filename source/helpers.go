@@ -351,8 +351,10 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 			if vt, ok := table.Column(v.SourceField); ok && isIdent {
 				ret.AddColumn(v, vt)
 				p := fmt.Sprintf("%s.%s", table.Name, v.SourceField)
-				projCols = append(projCols, p)
-				projColsMap[p] = len(projCols) - 1
+				if _, ok := projColsMap[p]; !ok {
+					projCols = append(projCols, p)
+					projColsMap[p] = len(projCols) - 1
+				}
 			} else {
 				ret.AddColumn(v, value.StringType)
 			}

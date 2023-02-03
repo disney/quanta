@@ -320,13 +320,17 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	m.q.FromTime = m.startDate
 	m.q.ToTime = m.endDate
 
-	if m.q.IsEmpty() && len(m.funcAliases) > 0 {
+	if m.q.GetRootIndex() == "" && len(m.funcAliases) > 0 {
+		// root index is empty because there was no predicate for the backend.  Create a new default query.
 		if m.limit == 0 {
 			return nil, fmt.Errorf("If there is a post process filter predicate then you must specify limit")
 		}
 		pka, _ := table.GetPrimaryKeyInfo()
+		m.q = shared.NewBitmapQuery()
+		m.q.ToTime = m.endDate
 		p := m.q.NewQueryFragment()
 		p.SetNullPredicate(m.tbl.Name, pka[0].FieldName)
+		p.Operation = "DIFFERENCE"
 		p.Negate = true
 		m.q.AddFragment(p)
 	}
@@ -1279,11 +1283,13 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 	}
 
 	var err error
-	m.conn, err = m.s.sessionPool.Borrow(m.q.GetRootIndex())
+	//m.conn, err = m.s.sessionPool.Borrow(m.q.GetRootIndex())
+	m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
 	if err != nil {
 		return nil, fmt.Errorf("Error opening Quanta session %v", err)
 	}
-	defer m.s.sessionPool.Return(m.q.GetRootIndex(), m.conn)
+	//defer m.s.sessionPool.Return(m.q.GetRootIndex(), m.conn)
+	defer m.s.sessionPool.Return(m.tbl.Name, m.conn)
 	ctx := p.Context()
 	//hasJoin := len(p.Stmt.Source.From) > 0
 	//u.Infof("Projection:  %T:%p   %T:%p", proj, proj, proj.Proj, proj.Proj)

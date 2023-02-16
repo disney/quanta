@@ -1538,7 +1538,7 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 				if f.Name == colName {
 					found = true
 					idx := colNames[colName]
-					if len(row) <= i-1 {
+					if len(row) <= i-1 || len(row) != len(cols) {
 						u.Errorf("bad column count?  %d vs %d  col: %+v", len(row), i, f)
 					} else {
 						switch val := row[i].(type) {

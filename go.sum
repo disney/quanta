@@ -367,6 +367,8 @@ github.com/guymolinari/qlbridge v0.0.0-20221128230730-c39f38b91831 h1:LwsFarJkNQ
 github.com/guymolinari/qlbridge v0.0.0-20221128230730-c39f38b91831/go.mod h1:4SL2pGOyW3H4a/mckpnbrp38ixt2Xw8yCnbzsrI3WM4=
 github.com/guymolinari/qlbridge v0.0.0-20230115130425-bd77fa94333e h1:BPeyPd3xpdUQGurzKckq1luns/lNzDY8P2/StdpfkKA=
 github.com/guymolinari/qlbridge v0.0.0-20230115130425-bd77fa94333e/go.mod h1:4SL2pGOyW3H4a/mckpnbrp38ixt2Xw8yCnbzsrI3WM4=
+github.com/guymolinari/qlbridge v0.0.0-20230216153635-376aef7e44d3 h1:egtbVX0X9MfILdNLl0HRqoRysxlbt3d1W2i64BzIg6M=
+github.com/guymolinari/qlbridge v0.0.0-20230216153635-376aef7e44d3/go.mod h1:4SL2pGOyW3H4a/mckpnbrp38ixt2Xw8yCnbzsrI3WM4=
 github.com/hamba/avro v1.6.0 h1:a9tNvjpZVfDQQJWSM2g8hUc7gYacKZkHF3OK0w49UXY=
 github.com/hamba/avro v1.6.0/go.mod h1:iKbXifVeT1gOHU+Eqe8wWziE745Z+Aa/6sbJnWeSW5A=
 github.com/harlow/kinesis-consumer v0.3.5 h1:xeiDp2frP8DdKDeOzVuS+vaBX03JjifQO/Apzu4IOMA=

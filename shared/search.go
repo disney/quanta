@@ -11,6 +11,7 @@ import (
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/golang/protobuf/ptypes/wrappers"
+	"golang.org/x/sync/errgroup"
 	"io"
 	"sync"
 	"time"
@@ -136,23 +137,19 @@ func (c *StringSearch) BatchIndex(batch map[string]struct{}) error {
 
 	batches := c.splitStringBatch(batch, c.Conn.Replicas)
 
-	done := make(chan error)
-	defer close(done)
-	count := len(batches)
+	var eg errgroup.Group
 	for i, v := range batches {
-		go func(client pb.StringSearchClient, m map[string]struct{}) {
-			done <- c.batchIndex(client, m)
-		}(c.client[i], v)
+		client := c.client[i]
+		m := v
+		eg.Go(func() error {
+			if err := c.batchIndex(client, m); err != nil {
+				return err
+			}
+			return nil
+		})
 	}
-	for {
-		err := <-done
-		if err != nil {
-			return err
-		}
-		count--
-		if count == 0 {
-			break
-		}
+	if err := eg.Wait(); err != nil {
+		return err
 	}
 	return nil
 }

@@ -11,10 +11,10 @@ import (
 )
 
 // GetPath - Recurse and retrieve a value at a given path
-func GetPath(path string, s interface{}, ignoreSourcePath bool) (value interface{}, err error) {
+func GetPath(path string, s interface{}, ignoreSourcePath, useNerdCapitalization bool) (value interface{}, err error) {
 
 	if ignoreSourcePath{
-		path = GetBasePath(path)
+		path = GetBasePath(path, useNerdCapitalization)
 	}
 
 	keys := strings.Split(path, "/")
@@ -62,7 +62,10 @@ func get(key string, s interface{}) (v interface{}, err error) {
 	return v, err
 }
 
-func GetBasePath(source string) string {
+func GetBasePath(source string, useNerdCapitalization bool) string {
+	if useNerdCapitalization {
+		source = strings.Title(source)
+	}
 	if strings.Count(source, "/") > 1 || !strings.HasPrefix(source, "/") {
 		idx := strings.LastIndex(source, "/")
 		source = source[idx:]

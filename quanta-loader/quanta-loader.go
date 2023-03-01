@@ -68,6 +68,7 @@ type Main struct {
 	lock         *api.Lock
 	apiHost      *shared.Conn
 	ignoreSourcePath bool
+	nerdCapitalization bool
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -97,6 +98,7 @@ func main() {
 	dateFilter := app.Flag("date-filter", "If provided, all rows must be within this time partition.").String()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 	ignoreSourcePath := app.Flag("ignore-source-path","Ignore the source path into the parquet file.").Bool()
+	nerdCapitalization := app.Flag("nerd-capitalization","For parquet, field names are capitalized.").Bool()
 
 	shared.InitLogging("WARN", *environment, "Loader", Version, "Quanta")
 
@@ -113,6 +115,7 @@ func main() {
 	main.Acl = *acl
 	main.SseKmsKeyID = *SseKmsKeyID
 	main.ignoreSourcePath = *ignoreSourcePath
+	main.nerdCapitalization = *nerdCapitalization
 
 	log.Printf("Index name %v.\n", main.Index)
 	log.Printf("Buffer size %d.\n", main.BufferSize)
@@ -124,6 +127,12 @@ func main() {
 	log.Printf("Kms Key Id %s\n", main.SseKmsKeyID)
 	if main.IsNested {
 		log.Printf("Nested Mode.  Input data is a nested schema, Index <%s> should be the root.", main.Index)
+	}
+	if main.ignoreSourcePath {
+		log.Printf("Ignoring the source path info in the config file. Using column names and assuming root.")
+	}
+	if main.nerdCapitalization {
+		log.Printf("Column names are capitalized in the source file, normalizing to lower case.")
 	}
 
 	if *dateFilter != "" {
@@ -207,11 +216,11 @@ func main() {
 
 	if !*dryRun {
 		close(fileChan)
-		if err := eg.Wait(); err != nil {
-			log.Fatalf("Open error %v", err)
-		}
 		for _, cc := range closeLater {
 			cc.CloseSession()
+		}
+		if err := eg.Wait(); err != nil {
+			log.Fatalf("Open error %v", err)
 		}
 		ticker.Stop()
 		log.Printf("Completed, Last Record: %d, Bytes: %s", main.totalRecs.Get(), core.Bytes(main.BytesProcessed()))
@@ -307,7 +316,7 @@ func (m *Main) processRowsForFile(s3object types.Object, dbConn *core.Session) {
 	for i := 1; i <= num; i++ {
 		var err error
 		m.totalRecs.Add(1)
-		err = dbConn.PutRow(m.Index, pr, 0, m.ignoreSourcePath)
+		err = dbConn.PutRow(m.Index, pr, 0, m.ignoreSourcePath, m.nerdCapitalization)
 		if err != nil {
 			// TODO: Improve this by logging into work queue for re-processing
 			log.Println(err)

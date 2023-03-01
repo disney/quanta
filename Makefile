@@ -93,6 +93,7 @@ admin:
 
 loader:
 	go build -o ${BIN_DIR}/${BIN_LOADER} ${LDFLAGS} ${PKG_LOADER}
+	docker build -t containerregistry.disney.com/digital/quanta-loader -f Docker/DeployLoaderDockerfile .
 
 producer:
 	go build -o ${BIN_DIR}/${BIN_PRODUCER} ${LDFLAGS} ${PKG_PRODUCER}

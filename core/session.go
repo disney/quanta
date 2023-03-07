@@ -342,9 +342,12 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 	pqColPaths := make([]string, len(sources))
 	retVals := make([]interface{}, len(sources))
 	for i, source := range sources {
+/*
 		if ignoreSourcePath {
-			source = shared.GetBasePath(source, useNerdCapitalization)
+			//source = shared.GetBasePath(source, useNerdCapitalization)
+			source = strings.Title(v.FieldName)
 		}
+*/
 		root := "/"
 		isParquet := false
 		pqColPath := source
@@ -360,14 +363,22 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 					pqColPath = fmt.Sprintf("%s.%s", pqTablePath, strings.Title(source))
 				}
 			}
-		}
-		if isParquet && strings.HasPrefix(source, "/") {
-			pqColPath = fmt.Sprintf("%s.%s", root, source[1:])
-			if useNerdCapitalization {
-				pqColPath = fmt.Sprintf("%s.%s", strings.Title(root), strings.Title(source[1:]))
+			if !ignoreSourcePath {
+				if strings.HasPrefix(source, "/") {
+					pqColPath = fmt.Sprintf("%s.%s", root, source[1:])
+					if useNerdCapitalization {
+						pqColPath = fmt.Sprintf("%s.%s", strings.Title(root), strings.Title(source[1:]))
+					}
+				} else if strings.HasPrefix(source, "^") {
+					pqColPath = fmt.Sprintf("%s.%s.list.element.%s", root, v.Parent.Name, source[1:])
+				}
+			} else {
+				if useNerdCapitalization {
+					pqColPath = fmt.Sprintf("%s.%s", strings.Title(root), strings.Title(v.FieldName))
+				} else {
+					pqColPath = fmt.Sprintf("%s.%s", root, v.FieldName)
+				}
 			}
-		} else if strings.HasPrefix(source, "^") {
-			pqColPath = fmt.Sprintf("%s.%s.list.element.%s", root, v.Parent.Name, source[1:])
 		}
 		pqColPaths[i] = pqColPath
 		// Check cache first
@@ -632,6 +643,10 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 			}
 		case reflect.Float64:
 			orig := cval.(float64)
+			f := fmt.Sprintf("%%10.%df", pk.Scale)
+			cval = fmt.Sprintf(f, orig)
+		case reflect.Float32:
+			orig := cval.(float32)
 			f := fmt.Sprintf("%%10.%df", pk.Scale)
 			cval = fmt.Sprintf(f, orig)
 		default:

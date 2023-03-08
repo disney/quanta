@@ -327,7 +327,8 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 	isChild, ignoreSourcePath, useNerdCapitalization bool) ([]interface{}, []string, error) {
 
-	if v.SourceName == "" {
+	// If we are ignoring source path and it is not defined then this must be a defaulted value
+	if !ignoreSourcePath && v.SourceName == "" {
 		if v.DefaultValue != "" {
 			retVals := make([]interface{}, 0)
 			retVals = append(retVals, s.getDefaultValueForColumn(v, row, ignoreSourcePath, useNerdCapitalization))
@@ -342,12 +343,6 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 	pqColPaths := make([]string, len(sources))
 	retVals := make([]interface{}, len(sources))
 	for i, source := range sources {
-/*
-		if ignoreSourcePath {
-			//source = shared.GetBasePath(source, useNerdCapitalization)
-			source = strings.Title(v.FieldName)
-		}
-*/
 		root := "/"
 		isParquet := false
 		pqColPath := source

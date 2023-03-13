@@ -52,7 +52,7 @@ type Session struct {
 // TableBuffer - State info for table.
 type TableBuffer struct {
 	Table            *Table // table schema
-	sequencer        *shared.Sequencer
+	sequencerCache   map[int64]*shared.Sequencer
 	CurrentColumnID  uint64
 	CurrentTimestamp time.Time // Time quantum value
 	CurrentPKValue   []interface{}
@@ -66,6 +66,7 @@ type TableBuffer struct {
 func NewTableBuffer(table *Table) (*TableBuffer, error) {
 
 	tb := &TableBuffer{Table: table}
+	tb.sequencerCache = make(map[int64]*shared.Sequencer)
 	tb.PKMap = make(map[string]*Attribute)
 	tb.PKAttributes = make([]*Attribute, 0)
 	tb.CurrentTimestamp = time.Unix(0, 0)
@@ -86,6 +87,27 @@ func NewTableBuffer(table *Table) (*TableBuffer, error) {
 	}
 	return tb, err
 }
+
+
+// NextColumnID - Get a new column ID in the sequence for a given Time Quantum
+func (t *TableBuffer) NextColumnID(bi *shared.BitmapIndex) error {
+
+	sequencer, ok := t.sequencerCache[t.CurrentTimestamp.UnixNano()]
+	if !ok || sequencer.IsFullySubscribed() {
+		seq, err := bi.CheckoutSequence(t.Table.Name, t.PKAttributes[0].FieldName,
+			t.CurrentTimestamp, reservationSize)
+		if err != nil {
+			t.CurrentColumnID = 0
+			return fmt.Errorf("Sequencer checkout error for %s.%s - %v]", t.Table.Name,
+				t.PKAttributes[0].FieldName, err)
+		}
+		sequencer = seq
+		t.sequencerCache[t.CurrentTimestamp.UnixNano()] = sequencer
+	}
+	t.CurrentColumnID, _ = sequencer.Next()
+	return nil
+}
+
 
 //
 // OpenSession - Creates a connected session to the underlying core.
@@ -139,11 +161,6 @@ func OpenSession(path, name string, nested bool, conn *shared.Conn) (*Session, e
 	s.CreatedAt = time.Now().UTC()
 
 	return s, nil
-}
-
-// SetDateFilter - Filter by date
-func (s *Session) SetDateFilter(filter *time.Time) {
-	s.DateFilter = filter
 }
 
 func recurseAndLoadTable(basePath string, kvStore *shared.KVStore, tableBuffers map[string]*TableBuffer, curTable *Table) error {
@@ -579,34 +596,10 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		switch reflect.ValueOf(cval).Kind() {
 		case reflect.String:
 			// Do nothing already a string
-			if i == 0 {
+			if i == 0 {   // First field in PK is TQ (if TQ != "")
 				if pk.MappingStrategy == "SysMillisBSI" || pk.MappingStrategy == "SysMicroBSI" {
 					strVal := cval.(string)
-					loc, _ := time.LoadLocation("Local")
-					ts, err := dateparse.ParseIn(strVal, loc)
-					if err != nil {
-						return false, fmt.Errorf("Date parse error for PK field %s - value %s - %v",
-							pqColPaths[i], strVal, err)
-					}
-					tFormat := shared.YMDTimeFmt
-					if tbuf.Table.TimeQuantumType == "YMDH" {
-						tFormat = shared.YMDHTimeFmt
-					}
-					sf := ts.Format(tFormat)
-					tq, _ := time.Parse(tFormat, sf)
-					if s.DateFilter != nil && *s.DateFilter != tq {
-						// Filter is set and dates don't match so continue on.
-						return false, nil
-					}
-					if tbuf.CurrentTimestamp.UnixNano() > 0 && tbuf.CurrentTimestamp != tq {
-						/*
-						 * if the time partition value changes, then must get a new sequencer.
-						 * Doing this actually sucks because it will leave large gaps in sequence numbers.
-						 * Ideally we would load one time range at a time.  Better than a bug though.
-						 */
-						tbuf.sequencer = nil
-					}
-					tbuf.CurrentTimestamp = tq // Establish time quantum for record
+					tbuf.CurrentTimestamp, _, _ = shared.ToTQTimestamp(tbuf.Table.TimeQuantumType, strVal)
 				}
 			}
 		case reflect.Int64:
@@ -623,17 +616,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 					if pk.MappingStrategy == "SysMicroBSI" {
 						ts = time.Unix(0, orig*1000)
 					}
-					sf := ts.Format(tFormat)
-					tq, _ := time.Parse(tFormat, sf)
-					if s.DateFilter != nil && *s.DateFilter != tq {
-						// Fitler is set and dates don't match so continue on.
-						return false, nil
-					}
-					if tbuf.CurrentTimestamp.UnixNano() > 0 && tbuf.CurrentTimestamp != tq {
-						// See above comment.
-						tbuf.sequencer = nil
-					}
-					tbuf.CurrentTimestamp = tq // Establish time quantum for record
+					tbuf.CurrentTimestamp, _, _ = shared.ToTQTimestamp(tbuf.Table.TimeQuantumType, ts.Format(tFormat))
 				}
 			}
 		case reflect.Float64:
@@ -657,8 +640,6 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 
 	// Can't use batch operation here unfortunately, but at least we have local batch cache
 	localKey := indexPath(tbuf, tbuf.PKAttributes[0].FieldName, tbuf.Table.PrimaryKey + ".PK")
-
-	//if lColID, ok := s.BatchBuffer.LookupLocalPKString(tbuf.Table.Name, tbuf.Table.PrimaryKey, pkLookupVal.String()); !ok {
 	if lColID, ok := s.BatchBuffer.LookupLocalCIDForString(localKey, pkLookupVal.String()); !ok {
 		var colID uint64
 		var errx error
@@ -671,23 +652,14 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		}
 		if found {
 			tbuf.CurrentColumnID = colID
+			return false, nil
 		} else {
 			if providedColID == 0 {
-				// Generate new ColumnID
-				if tbuf.sequencer == nil || tbuf.sequencer.IsFullySubscribed() {
-					seq, err := s.BitIndex.CheckoutSequence(tbuf.Table.Name, tbuf.PKAttributes[0].FieldName,
-						tbuf.CurrentTimestamp, reservationSize)
-					if err != nil {
-						return false, fmt.Errorf("Sequencer checkout error for %s.%s - %v]", tbuf.Table.Name,
-							tbuf.PKAttributes[0].FieldName, err)
-					}
-					tbuf.sequencer = seq
+				// Generate new ColumnID.   Lookup the sequencer from the local cache by TQ
+				errx = tbuf.NextColumnID(s.BitIndex)
+				if errx != nil {
+					return false, errx
 				}
-				newColumnID, _ := tbuf.sequencer.Next()
-				if newColumnID <= tbuf.CurrentColumnID {
-					u.Warnf("new sequencer columnID [%d] overlaps current [%d]", newColumnID, tbuf.CurrentColumnID)
-				}
-				tbuf.CurrentColumnID = newColumnID
 			} else {
 				tbuf.CurrentColumnID = providedColID
 			}
@@ -695,10 +667,12 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 			s.BatchBuffer.SetPartitionedString(localKey, pkLookupVal.String(), tbuf.CurrentColumnID)
 		}
 	} else {
+		tbuf.CurrentColumnID = lColID
 		if tbuf.Table.DisableDedup {
 			u.Infof("PK %s found in cache but dedup is disabled.  PK mapping error?", pkLookupVal.String())
+		} else {
+			return false, nil
 		}
-		tbuf.CurrentColumnID = lColID
 	}
 
 	// Map the value(s) and update table

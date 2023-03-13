@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 
-	"github.com/araddon/dateparse"
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
@@ -100,7 +99,6 @@ func main() {
 	dryRun := app.Flag("dry-run", "Perform a dry run and exit (just print selected file names).").Bool()
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	isNested := app.Flag("nested", "Input data is a nested schema. The <index> parameter is root.").Bool()
-	dateFilter := app.Flag("date-filter", "If provided, all rows must be within this time partition.").String()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 	ignoreSourcePath := app.Flag("ignore-source-path","Ignore the source path into the parquet file.").Bool()
 	nerdCapitalization := app.Flag("nerd-capitalization","For parquet, field names are capitalized.").Bool()
@@ -140,18 +138,6 @@ func main() {
 		log.Printf("Column names are capitalized in the source file, normalizing to lower case.")
 	}
 
-	if *dateFilter != "" {
-		loc, _ := time.LoadLocation("Local")
-		ts, err := dateparse.ParseIn(*dateFilter, loc)
-		if err != nil {
-			log.Fatalf("Date parse error for time partition filter %s.", *dateFilter)
-		}
-		sf := ts.Format(shared.YMDTimeFmt)
-		tq, _ := time.Parse(shared.YMDTimeFmt, sf)
-		main.DateFilter = &tq
-		log.Printf("Filtering data for time partition %s.", sf)
-	}
-
 	if err := main.Init(); err != nil {
 		log.Fatal(err)
 	}
@@ -173,9 +159,6 @@ func main() {
 				conn, err := core.OpenSession("", main.Index, main.IsNested, main.apiHost)
 				if err != nil {
 					return err
-				}
-				if main.DateFilter != nil {
-					conn.SetDateFilter(main.DateFilter)
 				}
 				for file := range fileChan {
 					main.processRowsForFile(*file, conn)

@@ -24,6 +24,7 @@ import (
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
+	"github.com/stvp/rendezvous"
 	pgs3 "github.com/xitongsys/parquet-go-source/s3v2"
 	"github.com/xitongsys/parquet-go/reader"
 	"golang.org/x/sync/errgroup"
@@ -68,6 +69,9 @@ type Main struct {
 	apiHost      *shared.Conn
 	ignoreSourcePath bool
 	nerdCapitalization bool
+	hashTable    *rendezvous.Table
+	sessionMap   map[string]*core.Session
+	channelMap   map[string]chan 
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -75,6 +79,7 @@ func NewMain() *Main {
 	m := &Main{
 		totalRecs: &Counter{},
 	}
+	m.sessionMap = make(map[string]*core.Session)
 	return m
 }
 
@@ -143,22 +148,30 @@ func main() {
 	log.Printf("S3 bucket %s contains %d files for processing.", main.BucketPath, len(main.S3files))
 
 	threads := runtime.NumCPU()
+	
+	// Initialize sharding hashtable and session map
+	shardKeys := make([]string, threads)
+	for i := 0; i < threads; i++ {
+		k := fmt.Sprintf("shard%v", i)
+		shardKeys[i] = k
+		conn, err := core.OpenSession("", main.Index, main.IsNested, main.apiHost)
+		if err != nil {
+			return log.Fatal(err)
+		}
+		main.sessionMap[k] = conn
+	}
+	main.hashTable = rendezvous.New(shardKeys)
+
 	var eg errgroup.Group
 	fileChan := make(chan *types.Object, threads)
-	closeLater := make([]*core.Session, 0)
 	var ticker *time.Ticker
 	// Spin up worker threads
 	if !*dryRun {
 		for i := 0; i < threads; i++ {
 			eg.Go(func() error {
-				conn, err := core.OpenSession("", main.Index, main.IsNested, main.apiHost)
-				if err != nil {
-					return err
-				}
 				for file := range fileChan {
 					main.processRowsForFile(*file, conn)
 				}
-				closeLater = append(closeLater, conn)
 				return nil
 			})
 		}
@@ -199,8 +212,8 @@ func main() {
 
 	if !*dryRun {
 		close(fileChan)
-		for _, cc := range closeLater {
-			cc.CloseSession()
+		for _, v := range main.sessionMap {
+			v.CloseSession()
 		}
 		if err := eg.Wait(); err != nil {
 			log.Fatalf("Open error %v", err)
@@ -277,6 +290,35 @@ func (m *Main) LoadBucketContents() {
 		return ret[i].Size > ret[j].Size
 	})
 	m.S3files = ret
+}
+
+func (m *Main) queueRowsForFile(s3object types.Object) {
+
+	pf, err1 := pgs3.NewS3FileReaderWithClient(context.Background(), m.S3svc, m.Bucket,
+		*awsv2.String(*s3object.Key))
+	if err1 != nil {
+		log.Fatal(err1)
+	}
+
+	pr, err1 := reader.NewParquetColumnReader(pf, 4)
+	if err1 != nil {
+		log.Println("Can't create column reader", err1)
+		return
+	}
+	defer pr.ReadStop()
+	defer pf.Close()
+
+	num := int(pr.GetNumRows())
+	for i := 1; i <= num; i++ {
+		var err error
+/*
+		err = dbConn.PutRow(m.Index, pr, 0, m.ignoreSourcePath, m.nerdCapitalization)
+		if err != nil {
+			// TODO: Improve this by logging into work queue for re-processing
+			log.Println(err)
+		}
+*/
+	}
 }
 
 func (m *Main) processRowsForFile(s3object types.Object, dbConn *core.Session) {

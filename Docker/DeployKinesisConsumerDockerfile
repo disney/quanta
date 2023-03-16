@@ -27,4 +27,6 @@ RUN chmod 755 /usr/bin/entrypoint.sh
 # Port mapping of MySQL Proxy server. Default("127.0.0.1:4000")
 EXPOSE 2112
 
-ENTRYPOINT ["/usr/bin/entrypoint.sh"]
+STOPSIGNAL SIGINT
+
+CMD ["/usr/bin/entrypoint.sh"]

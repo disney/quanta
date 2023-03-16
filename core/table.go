@@ -288,7 +288,7 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 
 	la, lerr := tableCache[a.Parent.Name].GetAttribute(a.FieldName)
 	if lerr != nil {
-		return 0, fmt.Errorf("Cannot lookup attribute %s from table cache.")
+		return 0, fmt.Errorf("Cannot lookup attribute %s from table cache.", a.FieldName)
 	}
 	la.localLock.RLock()
 
@@ -348,7 +348,7 @@ func (a *Attribute) GetValueForID(id uint64) (interface{}, error) {
 
 	la, lerr := tableCache[a.Parent.Name].GetAttribute(a.FieldName)
 	if lerr != nil {
-		return 0, fmt.Errorf("Cannot lookup attribute %s from table cache.")
+		return 0, fmt.Errorf("Cannot lookup attribute %s from table cache.", a.FieldName)
 	}
 	la.localLock.RLock()
 

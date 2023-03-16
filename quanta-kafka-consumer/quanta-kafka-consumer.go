@@ -126,7 +126,7 @@ func main() {
 				log.Fatalf("Error opening connection %v", err)
 			}
 			for msg := range msgChan {
-				err = main.conns[i].PutRow(main.Index, msg, 0, false)
+				err = main.conns[i].PutRow(main.Index, nil, 0, false, false)
 				if err != nil {
 					log.Printf("ERROR %v", err)
 				}

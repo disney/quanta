@@ -34,6 +34,7 @@ var (
 	Version  string
 	Build    string
 	EPOCH, _ = time.ParseInLocation(time.RFC3339, "2000-01-01T00:00:00+00:00", time.UTC)
+	loc, _   = time.LoadLocation("Local")
 )
 
 // Exit Codes
@@ -269,6 +270,11 @@ func (m *Main) processRowsForFile(s3object *s3.Object) {
 			log.Println(err)
 			continue
 		}
+if key, ok := outMap["dx"]; ok {
+partitionKey = key.(string)
+} else {
+continue
+}
 
 		outData, errx := avro.Marshal(m.Schema, outMap)
 		if errx != nil {
@@ -417,10 +423,11 @@ func (m *Main) GetRow(pr *reader.ParquetReader) (map[string]interface{}, string,
 		source := v.SourceName
 		if strings.HasPrefix(v.SourceName, "/") {
 			source = v.SourceName[1:]
-			pqColPath = fmt.Sprintf("%s.%s", root, source)
+			pqColPath = fmt.Sprintf("%s.%s", strings.Title(root), strings.Title(source))
 		} else {
-			pqColPath = fmt.Sprintf("%s.%s", root, v.SourceName)
+			pqColPath = fmt.Sprintf("%s.%s", strings.Title(root), strings.Title(v.SourceName))
 		}
+		pqColPath = fmt.Sprintf("%s.%s", strings.Title(root), strings.Title(v.FieldName))
 		vals, _, _, err := pr.ReadColumnByPath(pqColPath, 1)
 		if err != nil {
 			return nil, "", fmt.Errorf("parquet reader error for %s [%v]", pqColPath, err)
@@ -432,7 +439,30 @@ func (m *Main) GetRow(pr *reader.ParquetReader) (map[string]interface{}, string,
 		if cval == nil {
 			continue
 		}
-		outMap[source] = cval
+		if v.MappingStrategy == "SysMillisBSI" || v.MappingStrategy == "SysMicroBSI" {
+			var ts time.Time
+			switch reflect.ValueOf(cval).Kind() {
+			case reflect.String:
+				strVal := cval.(string)
+				ts, err = dateparse.ParseIn(strVal, loc)
+				if err != nil {
+					return nil, "", fmt.Errorf("Date parse error for field %s - value %s - %v",
+						pqColPath, strVal, err)
+				}
+				outMap[source] = ts.UnixNano() / 1000000 // TODO FIX ME
+			case reflect.Int64:
+				orig := cval.(int64)
+				if v.MappingStrategy == "SysMillisBSI" || v.MappingStrategy == "SysMicroBSI" {
+					ts = time.Unix(0, orig*1000000)
+					if v.MappingStrategy == "SysMicroBSI" {
+						ts = time.Unix(0, orig*1000)
+					}
+				}
+			}
+		} else {
+			outMap[source] = cval
+		}
+/*
 		if v.FieldName != m.partitionCol.FieldName {
 			continue
 		}
@@ -463,9 +493,12 @@ func (m *Main) GetRow(pr *reader.ParquetReader) (map[string]interface{}, string,
 			}
 		}
 		partitionKey = ts.UTC().Format(tFormat)
+*/
 	}
+/*
 	if partitionKey == "" {
 		return nil, "", fmt.Errorf("no PK timestamp for row")
 	}
+*/
 	return outMap, partitionKey, nil
 }

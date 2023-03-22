@@ -250,8 +250,8 @@ func main() {
 		http.ListenAndServe(":2112", nil)
 	}()
 
-	//var ticker *time.Ticker
-	//ticker = main.printStats()
+	var ticker *time.Ticker
+	ticker = main.printStats()
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
@@ -263,7 +263,6 @@ func main() {
 			if main.cancelFunc != nil {
 				main.cancelFunc()
 			}
-			//ticker.Stop()
 		}
 	}()
 
@@ -289,6 +288,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	ticker.Stop()
 }
 
 func (m *Main) destroy() {

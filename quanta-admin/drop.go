@@ -67,7 +67,7 @@ func checkForChildDependencies(consul *api.Client, tableName, operation string) 
 	return nil
 }
 
-func nukeData(consul *api.Client, port int, tableName, operation string, retainEnums bool) error {
+func nukeData(consul *api.Client, port int, tableName, operation string, dropEnums bool) error {
 
 	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
 	conn := shared.NewDefaultConnection()
@@ -81,6 +81,10 @@ func nukeData(consul *api.Client, port int, tableName, operation string, retainE
 	err := services.TableOperation(tableName, operation)
 	if err != nil {
 		return fmt.Errorf("TableOperation error %v", err)
+	}
+	retainEnums := true
+	if dropEnums || operation == "drop" {
+		retainEnums = false
 	}
 	err = kvStore.DeleteIndicesWithPrefix(tableName, retainEnums)
 	if err != nil {

@@ -224,6 +224,10 @@ func LoadTable(path string, kvStore *shared.KVStore, name string, consulClient *
 // GetAttribute - Get a table's attribute by name.
 func (t *Table) GetAttribute(name string) (*Attribute, error) {
 
+	if t == nil || t.attributeNameMap == nil {
+		return nil, fmt.Errorf("schema cache not re-initialized ")
+	}
+
 	if attr, ok := t.attributeNameMap[name]; ok {
 		return attr, nil
 	}
@@ -353,7 +357,6 @@ func (a *Attribute) GetValueForID(id uint64) (interface{}, error) {
 	}
 	la.localLock.RLock()
 
-	//a.localLock.RLock()
 	if v, ok := a.reverseMap[id]; ok {
 		la.localLock.RUnlock()
 		return v, nil
@@ -496,3 +499,14 @@ func ClearTableCache() {
 	defer tableCacheLock.Unlock()
 	tableCache = make(map[string]*Table, 0)
 }
+
+// ReadLockChanges
+//func ReadLockChanges() {
+//	tableCacheLock.RLock()
+//}
+
+// ReadUnlockChanges
+//func ReadUnlockChanges() {
+//	tableCacheLock.RUnlock()
+//}
+

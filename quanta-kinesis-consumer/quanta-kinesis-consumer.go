@@ -418,23 +418,23 @@ func (m *Main) recoverInflight(recoverFunc func(unflushedCh chan *shared.BatchBu
 
 func (m *Main) schemaChangeListener(e shared.SchemaChangeEvent) {
 
+	if m.InitialPos == "TRIM_HORIZON" {
+		u.Error("can't re-initialize on schema change if set to TRIM_HORIZON, exiting")
+		os.Exit(1)
+	}
+	time.Sleep(time.Second * 2)
+	if m.cancelFunc != nil {
+		m.cancelFunc()
+	}
 	switch e.Event {
 	case shared.Drop:
 		//m.sessionPool.Recover(nil)
 		u.Warnf("Dropped table %s", e.Table)
-		time.Sleep(time.Second * 2)
-		if m.cancelFunc != nil {
-			m.cancelFunc()
-		}
 	case shared.Modify:
 		u.Warnf("Truncated table %s", e.Table)
 	case shared.Create:
 		//m.sessionPool.Recover(nil)
 		u.Warnf("Created table %s", e.Table)
-		time.Sleep(time.Second * 2)
-		if m.cancelFunc != nil {
-			m.cancelFunc()
-		}
 	}
 }
 

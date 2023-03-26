@@ -281,6 +281,10 @@ func main() {
 		} else {
 			u.Warnf("Received Cancellation.")
 		}
+		if main.InitialPos == "TRIM_HORIZON" {
+			u.Error("can't re-initialize 'in-place' if set to TRIM_HORIZON, exiting")
+			os.Exit(1)
+		}
 		u.Warnf("Re-initializing.")
 		if main.ShardCount, err = main.Init(); err != nil {
 			u.Errorf("initialization error: %v", err)
@@ -418,10 +422,6 @@ func (m *Main) recoverInflight(recoverFunc func(unflushedCh chan *shared.BatchBu
 
 func (m *Main) schemaChangeListener(e shared.SchemaChangeEvent) {
 
-	if m.InitialPos == "TRIM_HORIZON" {
-		u.Error("can't re-initialize on schema change if set to TRIM_HORIZON, exiting")
-		os.Exit(1)
-	}
 	time.Sleep(time.Second * 2)
 	if m.cancelFunc != nil {
 		m.cancelFunc()

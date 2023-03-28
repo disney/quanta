@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
+	"time"
 )
 
 // TruncateCmd - Truncate command
@@ -37,6 +38,9 @@ func (c *TruncateCmd) Run(ctx *Context) error {
 	if err != nil {
 		return fmt.Errorf("updateModTimeForTable  error %v", err)
 	}
+
+	// Give consumers time to flush and restart.
+	time.Sleep(time.Second * 5)
 
 	err = nukeData(consulClient, ctx.Port, c.Table, "truncate", c.DropEnums)
 	if err != nil {

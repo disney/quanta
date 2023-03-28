@@ -271,7 +271,6 @@ func main() {
 	for  {
 		ctx, main.cancelFunc = context.WithCancel(context.Background())
 		scanErr := main.consumer.Scan(ctx, main.scanAndProcess)
-		time.Sleep(time.Second * 5)
 		main.destroy()
 		if err := main.eg.Wait(); err != nil {
 			u.Errorf("session error: %v", err)
@@ -301,6 +300,7 @@ func (m *Main) destroy() {
 	for _, v := range m.shardChannels {
 		close(v)
 	}
+	time.Sleep(time.Second * 5)  // Allow time for completion
 }
 
 func (m *Main) scanAndProcess(v *consumer.Record) error {
@@ -422,7 +422,6 @@ func (m *Main) recoverInflight(recoverFunc func(unflushedCh chan *shared.BatchBu
 
 func (m *Main) schemaChangeListener(e shared.SchemaChangeEvent) {
 
-	time.Sleep(time.Second * 2)
 	if m.cancelFunc != nil {
 		m.cancelFunc()
 	}

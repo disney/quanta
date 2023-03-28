@@ -234,19 +234,16 @@ func schemaChangeListener(e shared.SchemaChangeEvent) {
 
 	core.ClearTableCache()
 	src.GetSessionPool().Recover(nil)
+	src.GetSessionPool().Lock()
+	defer src.GetSessionPool().Unlock()
 	switch e.Event {
 	case shared.Drop:
 		schema.DefaultRegistry().SchemaDrop("quanta", e.Table, lex.TokenTable)
 		log.Printf("Dropped table %s", e.Table)
 	case shared.Modify:
 		log.Printf("Truncated table %s", e.Table)
-		schema.DefaultRegistry().SchemaDrop("quanta", e.Table, lex.TokenTable)
-		var err error
-		src, err = source.NewQuantaSource("", consulAddr, *quantaPort, sessionPoolSize)
-		if err != nil {
-			u.Error(err)
-		}
-		schema.RegisterSourceAsSchema("quanta", src)
+		time.Sleep(time.Second * 5)
+		schema.DefaultRegistry().SchemaRefresh("quanta")
 	case shared.Create:
 		schema.DefaultRegistry().SchemaDrop("quanta", "quanta", lex.TokenSource)
 		var err error

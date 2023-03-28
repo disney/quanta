@@ -169,6 +169,16 @@ func (m *SessionPool) Recover(unflushedCh chan *shared.BatchBuffer) {
 	}
 }
 
+// Lock - Prevent operations while a table maintenance event is in progress
+func (m *SessionPool) Lock() {
+	m.sessPoolLock.Lock()
+}
+
+// Unlock - Allow operations after a table maintenance event is complete
+func (m *SessionPool) Unlock() {
+	m.sessPoolLock.Unlock()
+}
+
 // Metrics - Return pool size and usage.
 func (m *SessionPool) Metrics() (poolSize, inUse, pooled, maxUsed int) {
 

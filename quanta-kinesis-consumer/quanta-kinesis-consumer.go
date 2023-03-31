@@ -429,6 +429,10 @@ func (m *Main) schemaChangeListener(e shared.SchemaChangeEvent) {
 	case shared.Drop:
 		//m.sessionPool.Recover(nil)
 		u.Warnf("Dropped table %s", e.Table)
+		if e.Table == m.Index {
+			u.Errorf("The table [%s], for this consumer was dropped, exiting", e.Table)
+			os.Exit(1)
+		}
 	case shared.Modify:
 		u.Warnf("Truncated table %s", e.Table)
 	case shared.Create:

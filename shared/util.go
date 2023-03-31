@@ -155,6 +155,10 @@ func putRecursive(typ reflect.Type, value reflect.Value, consul *api.Client, roo
 func UnmarshalConsul(consul *api.Client, name string) (BasicTable, error) {
 
 	table := BasicTable{Name: name}
+	keys, _, _ := consul.KV().Keys("schema/" + name, "", nil)
+	if len(keys) == 0 {
+		return table, fmt.Errorf("Table %s not found.", name)
+	}
 	ps := reflect.ValueOf(&table)
 	err := getRecursive(reflect.TypeOf(table), ps.Elem(), consul, "schema/"+name)
 	return table, err

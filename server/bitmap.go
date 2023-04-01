@@ -675,23 +675,22 @@ func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 // Truncate - Truncate the in-memory data cache for a given index
 func (m *BitmapIndex) Truncate(index string) {
 
-	m.bitmapCacheLock.Lock()
-	m.bsiCacheLock.Lock()
-	defer m.bitmapCacheLock.Unlock()
-	defer m.bsiCacheLock.Unlock()
-
 	fm := m.bitmapCache[index]
 	for _, rm := range fm {
 		for _, tm := range rm {
 			for ts := range tm {
+				m.bitmapCacheLock.Lock()
 				delete(tm, ts)
+				m.bitmapCacheLock.Unlock()
 			}
 		}
 	}
 	bm := m.bsiCache[index]
 	for _, tm := range bm {
 		for ts := range tm {
+			m.bsiCacheLock.Lock()
 			delete(tm, ts)
+			m.bsiCacheLock.Unlock()
 		}
 	}
 }

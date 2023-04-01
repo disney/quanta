@@ -19,6 +19,7 @@ var (
 type Context struct {
 	ConsulAddr string `help:"Consul agent address/port." default:"127.0.0.1:8500"`
 	Port       int    `help:"Port number for Quanta service." default:"4000"`
+	Debug      bool   `help:"Print Debug messages."`
 }
 
 // VersionCmd - Version command
@@ -28,6 +29,7 @@ type VersionCmd struct {
 var cli struct {
 	ConsulAddr string        `default:"127.0.0.1:8500"`
 	Port       int           `default:"4000"`
+	Debug      bool          `default:"false"`
 	Create     CreateCmd     `cmd help:"Create table."`
 	Drop       DropCmd       `cmd help:"Drop table."`
 	Truncate   TruncateCmd   `cmd help:"Truncate table."`
@@ -45,7 +47,7 @@ var cli struct {
 func main() {
 
 	ctx := kong.Parse(&cli)
-	err := ctx.Run(&Context{ConsulAddr: cli.ConsulAddr, Port: cli.Port})
+	err := ctx.Run(&Context{ConsulAddr: cli.ConsulAddr, Port: cli.Port, Debug: cli.Debug})
 	ctx.FatalIfErrorf(err)
 }
 

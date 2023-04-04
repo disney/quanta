@@ -7,6 +7,11 @@
 # Test binary, build with `go test -c`
 *.test
 
+# test artifacts
+test/testdata/index
+examples/java_query/target/classes
+.vscode/
+
 # Ignore dependences downloaded
 vendor/
 

@@ -58,6 +58,7 @@ public class JavaQuantaSelectExample {
         st.close();
         System.out.format("elapsed time %d ms.\n\n", (System.currentTimeMillis() - start));
       } 
+      br.close();
       conn.close();
     }
     catch (Exception e) {

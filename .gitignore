@@ -16,6 +16,8 @@ test/testdata/
 test/testdata/index
 examples/java_query/target/classes
 .vscode/
+*/localClusterData
+.DS_Store
 
 # Ignore dependences downloaded
 vendor/

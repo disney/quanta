@@ -28,11 +28,11 @@ type Table struct {
 // Attribute - Field structure.
 type Attribute struct {
 	*shared.BasicAttribute
-	Parent           *Table
-	valueMap         map[interface{}]uint64
-	reverseMap       map[uint64]interface{}
-	mapperInstance   Mapper
-	localLock        sync.RWMutex
+	Parent         *Table
+	valueMap       map[interface{}]uint64
+	reverseMap     map[uint64]interface{}
+	mapperInstance Mapper
+	localLock      sync.RWMutex
 }
 
 const (
@@ -510,4 +510,3 @@ func ClearTableCache() {
 //func ReadUnlockChanges() {
 //	tableCacheLock.RUnlock()
 //}
-

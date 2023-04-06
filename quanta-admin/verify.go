@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+
 	"github.com/RoaringBitmap/roaring/roaring64"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
@@ -12,8 +13,8 @@ import (
 
 // VerifyCmd - Verify command
 type VerifyCmd struct {
-	Table     string `arg name:"table" help:"Table name."`
-	Field     string `arg name:"field" help:"Field name."`
+	Table     string `arg:"" name:"table" help:"Table name."`
+	Field     string `arg:"" name:"field" help:"Field name."`
 	RowID     uint64 `help:"Row id. (Omit for BSI)"`
 	Timestamp string `help:"Time quantum value. (Omit for no quantum)"`
 }
@@ -24,24 +25,24 @@ func (f *VerifyCmd) Run(ctx *Context) error {
 	conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
 	table, err := shared.LoadSchema("", f.Table, conn.Consul)
 	if err != nil {
-		return fmt.Errorf("Error loading table %s - %v", f.Table, err)
+		return fmt.Errorf("loading table %s - %v", f.Table, err)
 	}
 	field, err2 := table.GetAttribute(f.Field)
 	if err2 != nil {
-		return fmt.Errorf("Error getting field  %s - %v", f.Field, err2)
+		return fmt.Errorf("getting field  %s - %v", f.Field, err2)
 	}
 	if f.RowID > 0 && field.IsBSI() {
-		return fmt.Errorf("Field is a BSI and Rowid was specified, ignoring Rowid")
+		return fmt.Errorf("field is a BSI and Rowid was specified, ignoring Rowid")
 	}
 	if f.Timestamp != "" && table.TimeQuantumType == "" {
-		return fmt.Errorf("Table does not have time quantum, ignoring timestamp")
+		return fmt.Errorf("table does not have time quantum, ignoring timestamp")
 	}
 	if table.TimeQuantumType != "" && f.Timestamp == "" {
-		return fmt.Errorf("Table has time quantum type %s but timestamp not provided", table.TimeQuantumType)
+		return fmt.Errorf("table has time quantum type %s but timestamp not provided", table.TimeQuantumType)
 	}
 	ts, tf, err3 := shared.ToTQTimestamp(table.TimeQuantumType, f.Timestamp)
 	if err3 != nil {
-		return fmt.Errorf("Error ToTQTimestamp %v - TQType = %s, Timestamp = %s", err3, table.TimeQuantumType, f.Timestamp)
+		return fmt.Errorf("ToTQTimestamp %v - TQType = %s, Timestamp = %s", err3, table.TimeQuantumType, f.Timestamp)
 	}
 	if f.RowID == 0 {
 		f.RowID = 1

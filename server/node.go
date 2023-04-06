@@ -9,6 +9,12 @@ package server
 import (
 	"context"
 	"fmt"
+	"net"
+	"os"
+	"reflect"
+	"strings"
+	"time"
+
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
@@ -20,11 +26,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/testdata"
-	"net"
-	"os"
-	"reflect"
-	"strings"
-	"time"
 )
 
 const (
@@ -282,13 +283,13 @@ func (n *Node) Status(ctx context.Context, e *empty.Empty) (*pb.StatusMessage, e
 		return nil, err
 	}
 	return &pb.StatusMessage{
-		NodeState:   n.State.String(),
-		LocalIP:     ip.String(),
-		LocalPort:   uint32(n.ServicePort),
-		Version:     n.version,
-		Replicas:    uint32(n.Replicas),
-		ShardCount:  uint32(n.shardCount),
-		MemoryUsed:  uint32(n.memoryUsed),
+		NodeState:  n.State.String(),
+		LocalIP:    ip.String(),
+		LocalPort:  uint32(n.ServicePort),
+		Version:    n.version,
+		Replicas:   uint32(n.Replicas),
+		ShardCount: uint32(n.shardCount),
+		MemoryUsed: uint32(n.memoryUsed),
 	}, nil
 }
 
@@ -330,8 +331,9 @@ func (n *Node) JoinServices() {
 func (n *Node) InitServices() error {
 
 	u.Info("Services are initializing.")
-	for _, v := range n.localServices {
+	for i, v := range n.localServices {
 		if err := v.Init(); err != nil {
+			u.Error("InitServices fail", i, err)
 			return err
 		}
 	}

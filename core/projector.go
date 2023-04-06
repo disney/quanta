@@ -5,15 +5,17 @@ package core
 import (
 	"database/sql/driver"
 	"fmt"
+
 	//u "github.com/araddon/gou"
-	"github.com/RoaringBitmap/roaring/roaring64"
-	"github.com/disney/quanta/shared"
 	"math"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 	"unsafe"
+
+	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/disney/quanta/shared"
 )
 
 const (
@@ -148,7 +150,7 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 				p.driverTable, fka.FieldName)
 		}
 		// filter against relation foundset
-        driverSet = fkBsi.BatchEqual(0, signed)
+		driverSet = fkBsi.BatchEqual(0, signed)
 		//driverSet.And(fkBsi.BatchEqual(0, signed))
 	}
 
@@ -235,7 +237,7 @@ func (p *Projector) findRelationLink(tableName string) (*Attribute, bool) {
 }
 
 func (p *Projector) nextSets(columnIDs []uint64) (map[string]map[string]*roaring64.BSI,
-		map[string]map[string]*BitmapFieldResults, error) {
+	map[string]map[string]*BitmapFieldResults, error) {
 
 	bsiResults := make(map[string]map[string]*roaring64.BSI)
 	bitmapResults := make(map[string]map[string]*BitmapFieldResults)
@@ -824,7 +826,7 @@ func stringsPath(table *Table, field, path string, ts time.Time) string {
 	if table.TimeQuantumType == "YMDH" {
 		key := fmt.Sprintf("%s/%s/%s", table.Name, field, ts.Format(timeFmt))
 		fpath := fmt.Sprintf("/%s/%s/%s/%s/%s", table.Name, field, path,
-				fmt.Sprintf("%d%02d%02d", ts.Year(), ts.Month(), ts.Day()), ts.Format(timeFmt))
+			fmt.Sprintf("%d%02d%02d", ts.Year(), ts.Month(), ts.Day()), ts.Format(timeFmt))
 		lookupPath = key + "," + fpath
 	}
 	return lookupPath

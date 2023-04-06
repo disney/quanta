@@ -1,16 +1,8 @@
-//
 // Data Node launcher.
-//
 package main
 
 import (
 	"fmt"
-	u "github.com/araddon/gou"
-	"github.com/disney/quanta/server"
-	"github.com/disney/quanta/shared"
-	"github.com/hashicorp/consul/api"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -18,6 +10,13 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	u "github.com/araddon/gou"
+	"github.com/disney/quanta/server"
+	"github.com/disney/quanta/shared"
+	"github.com/hashicorp/consul/api"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 var (
@@ -52,7 +51,7 @@ func main() {
 		http.ListenAndServe(":2112", nil)
 	}()
 
-	u.Warnf("Node identifier '%s'", *hashKey)
+	u.Infof("Node identifier '%s'", *hashKey)
 	u.Infof("Connecting to Consul at: [%s] ...\n", *consul)
 	consulClient, err := api.NewClient(&api.Config{Address: *consul})
 	if err != nil {
@@ -96,6 +95,8 @@ func main() {
 		}
 	}()
 
+	os.Mkdir(*dataDir+"/bitmap", 0777)
+
 	start := time.Now()
 	err = m.InitServices()
 	elapsed := time.Since(start)
@@ -104,7 +105,7 @@ func main() {
 	}
 	log.Printf("Data node initialized in %v.", elapsed)
 
-	err = m.Join("quanta")
+	err = m.Join("quanta") // this is not meant to return
 	if err != nil {
 		u.Errorf("[node: Cannot initialize endpoint config: error: %s", err)
 	}

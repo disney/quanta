@@ -12,6 +12,8 @@ test/testdata/index
 examples/java_query/target/classes
 .vscode/
 
+.DS_Store
+
 # Ignore dependences downloaded
 vendor/
 

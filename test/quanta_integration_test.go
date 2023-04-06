@@ -29,6 +29,12 @@ type QuantaTestSuite struct {
 	store *shared.KVStore
 }
 
+// In order for 'go test' to run this suite, we need to create
+// a normal test function and pass our suite to suite.Run
+func TestQuantaTestSuite(t *testing.T) {
+	suite.Run(t, new(QuantaTestSuite))
+}
+
 func (suite *QuantaTestSuite) SetupSuite() {
 	var err error
 	suite.node, err = Setup() // harness setup
@@ -45,7 +51,6 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err)
 
 	u.SetupLogging("debug")
-
 
 	// load all of our built-in functions
 	builtins.LoadAllBuiltins()
@@ -65,10 +70,15 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err)
 
 	// load up vision test data (nested schema containing 3 separate tables)
+	fmt.Println("QuantaTestSuite SetupSuite before cities")
 	suite.loadData("cities", "./testdata/us_cities.parquet", conn)
+	fmt.Println("QuantaTestSuite SetupSuite after cities")
+	fmt.Println("QuantaTestSuite SetupSuite before cityzip")
 	suite.loadData("cityzip", "./testdata/us_cityzip.parquet", conn)
+	fmt.Println("QuantaTestSuite SetupSuite after cityzip")
 	//suite.insertData("cityzip", "./testdata/us_cityzip.parquet")
 	// suite.loadData("nba", "./testdata/nba.parquet")
+	fmt.Println("QuantaTestSuite SetupSuite done")
 
 }
 
@@ -100,6 +110,14 @@ func (suite *QuantaTestSuite) loadData(table, filePath string, conn *shared.Conn
 	return nil
 }
 
+func (suite *QuantaTestSuite) BeforeTest(suiteName, testName string) {
+	fmt.Println("BeforeTest", suiteName, testName)
+}
+
+func (suite *QuantaTestSuite) AfterTest(suiteName, testName string) {
+	fmt.Println("AfterTest", suiteName, testName)
+}
+
 func (suite *QuantaTestSuite) insertData(table, filePath string) error {
 
 	// Connect using GoLang database/sql driver.
@@ -112,9 +130,9 @@ func (suite *QuantaTestSuite) insertData(table, filePath string) error {
 	_, err = db.Exec(setter)
 	assert.NoError(suite.T(), err)
 
-    insertStmt, err := db.Prepare("insert into cityzip (id, zip, city, state) values (?, ?, ?, ?)")
+	insertStmt, err := db.Prepare("insert into cityzip (id, zip, city, state) values (?, ?, ?, ?)")
 	assert.NoError(suite.T(), err)
-    defer insertStmt.Close()
+	defer insertStmt.Close()
 
 	fr, err := local.NewLocalFileReader(filePath)
 	assert.Nil(suite.T(), err)
@@ -122,7 +140,7 @@ func (suite *QuantaTestSuite) insertData(table, filePath string) error {
 		log.Println("Can't open file", err)
 		return err
 	}
-	pr, err := reader.NewParquetReader(fr, nil,  4)
+	pr, err := reader.NewParquetReader(fr, nil, 4)
 	assert.Nil(suite.T(), err)
 	if err != nil {
 		log.Println("Can't create column reader", err)
@@ -136,7 +154,12 @@ func (suite *QuantaTestSuite) insertData(table, filePath string) error {
 	}
 
 	for _, v := range res {
-		x := v.(struct{Id string; Zip string; Name string; State string})
+		x := v.(struct {
+			Id    string
+			Zip   string
+			Name  string
+			State string
+		})
 		_, err := insertStmt.Exec(x.Id, x.Zip, x.Name, x.State)
 		assert.NoError(suite.T(), err)
 	}
@@ -226,12 +249,6 @@ func (suite *QuantaTestSuite) runDML(q string, args []interface{}) (error, int64
 	}
 	count, _ := result.RowsAffected()
 	return nil, count
-}
-
-// In order for 'go test' to run this suite, we need to create
-// a normal test function and pass our suite to suite.Run
-func TestQuantaTestSuite(t *testing.T) {
-	suite.Run(t, new(QuantaTestSuite))
 }
 
 // Test count query with nested data source

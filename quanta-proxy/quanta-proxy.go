@@ -4,12 +4,25 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"fmt"
+	"log"
+	"net"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"os/signal"
+	"regexp"
+	"runtime"
+	"runtime/debug"
+	"strings"
+	"sync"
+	"time"
+
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/expr"
 	"github.com/araddon/qlbridge/expr/builtins"
 	"github.com/araddon/qlbridge/lex"
-	"github.com/araddon/qlbridge/rel"
 	_ "github.com/araddon/qlbridge/qlbdriver"
+	"github.com/araddon/qlbridge/rel"
 	"github.com/araddon/qlbridge/schema"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -23,18 +36,6 @@ import (
 	"github.com/siddontang/go-mysql/server"
 	"github.com/siddontang/go-mysql/test_util/test_keys"
 	"gopkg.in/alecthomas/kingpin.v2"
-	"log"
-	"net"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
-	"os/signal"
-	"regexp"
-	"runtime"
-	"runtime/debug"
-	"strings"
-	"sync"
-	"time"
 
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/custom/functions"
@@ -63,28 +64,28 @@ var (
 	logging         *string
 	environment     *string
 	proxyHostPort   *string
-	username        *string
-	password        *string
-	reWhitespace    *regexp.Regexp
-	publicKeySet    []*jwk.Set
-	userPool        sync.Map
-	authProvider    *AuthProvider
-	userClaimsKey   string
-	metrics         *cloudwatch.CloudWatch
-	connectCount    *Counter
-	queryCount      *Counter
-	updateCount     *Counter
-	insertCount     *Counter
-	deleteCount     *Counter
-	connectCountL   *Counter
-	queryCountL     *Counter
-	updateCountL    *Counter
-	insertCountL    *Counter
-	deleteCountL    *Counter
-	queryTime       *Counter
-	updateTime      *Counter
-	insertTime      *Counter
-	deleteTime      *Counter
+	// unused username        *string
+	// unused password        *string
+	reWhitespace  *regexp.Regexp
+	publicKeySet  []*jwk.Set
+	userPool      sync.Map
+	authProvider  *AuthProvider
+	userClaimsKey string
+	metrics       *cloudwatch.CloudWatch
+	connectCount  *Counter
+	queryCount    *Counter
+	updateCount   *Counter
+	insertCount   *Counter
+	deleteCount   *Counter
+	connectCountL *Counter
+	queryCountL   *Counter
+	updateCountL  *Counter
+	insertCountL  *Counter
+	deleteCountL  *Counter
+	queryTime     *Counter
+	updateTime    *Counter
+	insertTime    *Counter
+	deleteTime    *Counter
 )
 
 func main() {
@@ -100,8 +101,8 @@ func main() {
 	region := app.Arg("region", "AWS region for cloudwatch metrics").Default("us-east-1").String()
 	tokenservicePort := app.Arg("tokenservice-port", "Token exchance service port").Default("4001").Int()
 	userKey := app.Flag("user-key", "Key used to get user id from JWT claims").Default("username").String()
-	username = app.Flag("username", "User account name for MySQL DB").Default("root").String()
-	password = app.Flag("password", "Password for account for MySQL DB (just press enter for now when logging in on mysql console)").Default("").String()
+	// unused username = app.Flag("username", "User account name for MySQL DB").Default("root").String()
+	// unused password = app.Flag("password", "Password for account for MySQL DB (just press enter for now when logging in on mysql console)").Default("").String()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 	poolSize := app.Flag("session-pool-size", "Session pool size").Int()
 
@@ -131,7 +132,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if publicKeyURL != nil {
+	if publicKeyURL != nil && len(*publicKeyURL) != 0 {
 		publicKeySet = make([]*jwk.Set, 0)
 		urls := strings.Split(*publicKeyURL, ",")
 		for _, url := range urls {
@@ -184,8 +185,8 @@ func main() {
 	schema.RegisterSourceAsSchema("quanta", src)
 
 	// Start metrics publisher
-	var ticker *time.Ticker
-	ticker = metricsTicker(src)
+	// var ticker *time.Ticker
+	ticker := metricsTicker(src)
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	go func() {
@@ -225,7 +226,7 @@ func main() {
 			return
 		}
 		go onConn(conn)
-		
+
 	}
 
 }
@@ -323,12 +324,12 @@ func (h *ProxyHandler) UseDB(dbName string) error {
 	return nil
 }
 
-func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool, 
-		ctx interface{}) (*mysql.Result, error) {
+func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool,
+	ctx interface{}) (*mysql.Result, error) {
 
 	var stmt *sql.Stmt
 	if ctx != nil {
-		stmt = h.stmts[ctx] 
+		stmt = h.stmts[ctx]
 	}
 	u.Debugf("found cached stmt %#p", stmt)
 
@@ -353,7 +354,7 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 	operation := strings.ToLower(ss[0])
 	switch operation {
 	case "begin", "commit", "rollback":
-		return nil, nil   // Just returns an "OK" packet
+		return nil, nil // Just returns an "OK" packet
 
 	case "select", "describe", "show":
 
@@ -573,7 +574,7 @@ func (h *ProxyHandler) HandleStmtPrepare(sql string) (params int, columns int, c
 
 // HandleStmtClose - Handle Close
 func (h *ProxyHandler) HandleStmtClose(ctx interface{}) error {
-	
+
 	stmt, ok := h.stmts[ctx]
 	if ok {
 		stmt.Close()

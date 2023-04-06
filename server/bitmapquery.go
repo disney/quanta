@@ -13,12 +13,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	"github.com/RoaringBitmap/roaring/roaring64"
 	u "github.com/araddon/gou"
+
 	// "github.com/golang/protobuf/ptypes/wrappers"
+	"time"
+
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
-	"time"
 )
 
 // Query API endpoint for client wrapper functions.
@@ -198,7 +201,7 @@ func truncateTime(tr time.Time, tq string) time.Time {
 
 // Walk the time range and assemble a union of all bitmap fields.
 func (m *BitmapIndex) timeRange(index, field string, rowID uint64, fromTime,
-		toTime time.Time, foundSet *roaring64.Bitmap, negate bool) (*roaring64.Bitmap, error) {
+	toTime time.Time, foundSet *roaring64.Bitmap, negate bool) (*roaring64.Bitmap, error) {
 
 	m.bitmapCacheLock.RLock()
 	defer m.bitmapCacheLock.RUnlock()
@@ -232,7 +235,7 @@ func (m *BitmapIndex) timeRange(index, field string, rowID uint64, fromTime,
 			} else {
 				a = append(a, bm.Bits)
 			}
-			u.Debugf("timeRange No Quantum selecting %s", hashKey)
+			// u.Debugf("timeRange No Quantum selecting %s", hashKey)
 			result = roaring64.ParOr(0, a...)
 		}
 	} else {
@@ -333,7 +336,7 @@ func (m *BitmapIndex) timeRangeBSI(index, field string, fromTime, toTime time.Ti
 					continue
 				}
 				if foundSet != nil {
-					var x *roaring64.BSI;
+					var x *roaring64.BSI
 					if negate {
 						x = bsi.BSI.NewBSIRetainSet(roaring64.AndNot(bsi.BSI.GetExistenceBitmap(), foundSet))
 					} else {
@@ -406,7 +409,6 @@ func (m *BitmapIndex) timeRangeExistence(index, field string, fromTime, toTime t
 	return roaring64.ParOr(0, results...), nil
 }
 
-//
 // Join - Once the client has mapreduced the initial query fragment results, A followup call is made to
 // the Join API.   This API is responsible for mapping the column ID spaces for the child index
 // to the column ID space of the parent (driver) index.  It does this by using the values contained
@@ -414,7 +416,6 @@ func (m *BitmapIndex) timeRangeExistence(index, field string, fromTime, toTime t
 //
 // Once these values are transposed they are returned as a roaring bitmap and intersected with
 // the parent index results to formulate the final results.
-//
 func (m *BitmapIndex) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinResponse, error) {
 
 	fromTime := time.Unix(0, req.FromTime)
@@ -475,9 +476,7 @@ func (m *BitmapIndex) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRe
 	return &pb.JoinResponse{Results: data}, nil
 }
 
-//
 // Projection - Retrieve bitmaps to be included in a result set projection.
-//
 func (m *BitmapIndex) Projection(ctx context.Context, req *pb.ProjectionRequest) (*pb.ProjectionResponse, error) {
 
 	u.Debugf("Projection retrieval started for %v - %v", req.Index, req.Fields)

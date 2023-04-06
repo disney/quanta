@@ -8,14 +8,15 @@ package main
 
 import (
 	"fmt"
-	u "github.com/araddon/gou"
-	"github.com/lestrrat-go/jwx/jwt"
 	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	u "github.com/araddon/gou"
+	"github.com/lestrrat-go/jwx/jwt"
 )
 
 var (
@@ -58,13 +59,10 @@ func (s *TokenExchangeService) HandleRequest(w http.ResponseWriter, r *http.Requ
 	switch r.Method {
 	case http.MethodPost:
 		s.CreateAccount(w, r)
-		break
 	case http.MethodGet:
 		SuccessResponse(&w, struct{}{})
-		break
 	default:
 		ErrorResponse(&w, 405, "Method not allowed", "Method not allowed", nil)
-		break
 	}
 }
 

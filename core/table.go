@@ -5,15 +5,15 @@ package core
 import (
 	"encoding/json"
 	"fmt"
-	u "github.com/araddon/gou"
-	"github.com/disney/quanta/shared"
-	"github.com/hashicorp/consul/api"
 	"io/ioutil"
 	"os"
 	"plugin"
 	"reflect"
 	"strings"
 	"sync"
+
+	"github.com/disney/quanta/shared"
+	"github.com/hashicorp/consul/api"
 )
 
 // Table - Table structure.
@@ -27,11 +27,11 @@ type Table struct {
 // Attribute - Field structure.
 type Attribute struct {
 	*shared.BasicAttribute
-	Parent           *Table
-	valueMap         map[interface{}]uint64
-	reverseMap       map[uint64]interface{}
-	mapperInstance   Mapper
-	localLock        sync.RWMutex
+	Parent         *Table
+	valueMap       map[interface{}]uint64
+	reverseMap     map[uint64]interface{}
+	mapperInstance Mapper
+	localLock      sync.RWMutex
 }
 
 const (
@@ -315,7 +315,7 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 		a.reverseMap[rowID] = value
 
 		v = rowID
-		u.Infof("Added enum for field = %s, value = %v, ID = %v", a.FieldName, value, v)
+		// u.Infof("Added enum for field = %s, value = %v, ID = %v", a.FieldName, value, v)
 	}
 	return v, nil
 }

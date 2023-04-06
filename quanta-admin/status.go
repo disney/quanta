@@ -2,12 +2,10 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/disney/quanta/core"
 )
 
-// StatusCmd - Status command
-type StatusCmd struct {
-}
 
 // Run - Status command implementation
 func (s *StatusCmd) Run(ctx *Context) error {
@@ -37,8 +35,8 @@ func (s *StatusCmd) Run(ctx *Context) error {
 				}
 			}
 		}
-		fmt.Printf("%-16s   %-8s  %-34s   %10d   %-7s  %s\n", node.Node.Address, status, node.Node.Datacenter, shards, 
-				core.Bytes(memory), version)
+		fmt.Printf("%-16s   %-8s  %-34s   %10d   %-7s  %s\n", node.Node.Address, status, node.Node.Datacenter, shards,
+			core.Bytes(memory), version)
 	}
 	fmt.Println()
 	status, active, size := conn.GetClusterState()

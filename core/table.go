@@ -438,13 +438,13 @@ func (a *Attribute) ToBackingValue(rowIDs []uint64, c *Session) (result string, 
 
 // Field Metadata struct
 type Field struct {
-	Name      string       `json:name`
-	Label     string       `json:label`
-	Fieldtype string       `json:fieldType`
-	MinValue  int          `json:minValue`
-	MaxValue  int          `json:maxValue`
-	Values    []FieldValue `json:values`
-	Indextype string       `json:indexType`
+	Name      string       `json:"name"`
+	Label     string       `json:"label"`
+	Fieldtype string       `json:"fieldType"`
+	MinValue  int          `json:"minValue"`
+	MaxValue  int          `json:"maxValue"`
+	Values    []FieldValue `json:"values"`
+	Indextype string       `json:"indexType"`
 }
 
 // FieldValue Metadata struct

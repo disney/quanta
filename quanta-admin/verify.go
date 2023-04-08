@@ -6,6 +6,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	pb "github.com/disney/quanta/grpc"
+	proxy "github.com/disney/quanta/quanta-proxy-lib"
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
 	//"time"
@@ -20,7 +21,7 @@ type VerifyCmd struct {
 }
 
 // Run - Verify implementation
-func (f *VerifyCmd) Run(ctx *Context) error {
+func (f *VerifyCmd) Run(ctx *proxy.Context) error {
 
 	conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
 	table, err := shared.LoadSchema("", f.Table, conn.Consul)

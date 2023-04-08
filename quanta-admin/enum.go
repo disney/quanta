@@ -3,31 +3,34 @@ package main
 import (
 	"context"
 	"fmt"
+
+	proxy "github.com/disney/quanta/quanta-proxy-lib"
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
+
 	//"time"
 	"reflect"
 )
 
 // VerifyEnumCmd - Verify command
 type VerifyEnumCmd struct {
-	Table     string `arg name:"table" help:"Table name."`
-	Field     string `arg name:"field" help:"Field name."`
+	Table     string `arg:"" name:"table" help:"Table name."`
+	Field     string `arg:"" name:"field" help:"Field name."`
 	RowID     uint64 `help:"Row id. (Omit for BSI)"`
 	Timestamp string `help:"Time quantum value. (Omit for no quantum)"`
 }
 
 // Run - VerifyEnum implementation
-func (f *VerifyEnumCmd) Run(ctx *Context) error {
+func (f *VerifyEnumCmd) Run(ctx *proxy.Context) error {
 
 	conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
 	table, err := shared.LoadSchema("", f.Table, conn.Consul)
 	if err != nil {
-		return fmt.Errorf("Error loading table %s - %v", f.Table, err)
+		return fmt.Errorf("loading table %s - %v", f.Table, err)
 	}
 	field, err2 := table.GetAttribute(f.Field)
 	if err2 != nil {
-		return fmt.Errorf("Error getting field  %s - %v", f.Field, err2)
+		return fmt.Errorf("getting field  %s - %v", f.Field, err2)
 	}
 	_ = field
 	/*

@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"log"
+
+	proxy "github.com/disney/quanta/quanta-proxy-lib"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	"log"
@@ -10,11 +13,11 @@ import (
 
 // DropCmd - Drop command
 type DropCmd struct {
-	Table string `arg name:"table" help:"Table name."`
+	Table string `arg:"" name:"table" help:"Table name."`
 }
 
 // Run - Drop command implementation
-func (c *DropCmd) Run(ctx *Context) error {
+func (c *DropCmd) Run(ctx *proxy.Context) error {
 
 	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
 	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})

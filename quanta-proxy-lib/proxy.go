@@ -1,4 +1,4 @@
-package main
+package proxy
 
 import (
 	"crypto/tls"
@@ -6,72 +6,45 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"net/http"
-	_ "net/http/pprof"
 	"os"
-	"os/signal"
 	"regexp"
-	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
-	u "github.com/araddon/gou"
-	"github.com/araddon/qlbridge/expr"
-	"github.com/araddon/qlbridge/expr/builtins"
 	"github.com/araddon/qlbridge/lex"
-	_ "github.com/araddon/qlbridge/qlbdriver"
 	"github.com/araddon/qlbridge/rel"
 	"github.com/araddon/qlbridge/schema"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
-	"github.com/hashicorp/consul/api"
+	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/shared"
+	"github.com/disney/quanta/source"
 	"github.com/lestrrat-go/jwx/jwk"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	mysql "github.com/siddontang/go-mysql/mysql"
+	"github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/server"
 	"github.com/siddontang/go-mysql/test_util/test_keys"
-	"gopkg.in/alecthomas/kingpin.v2"
 
-	"github.com/disney/quanta/core"
-	"github.com/disney/quanta/custom/functions"
-	"github.com/disney/quanta/shared"
-	"github.com/disney/quanta/sink"
-	"github.com/disney/quanta/source"
-)
-
-// Variables to identify the build
-var (
-	Version string
-	Build   string
-)
-
-// Exit Codes
-const (
-	Success         = 0
-	InvalidHostPort = 100
+	u "github.com/araddon/gou"
 )
 
 var (
-	src             *source.QuantaSource
-	sessionPoolSize int
-	quantaPort      *int
-	consulAddr      string
-	logging         *string
-	environment     *string
-	proxyHostPort   *string
-	// unused username        *string
-	// unused password        *string
-	reWhitespace  *regexp.Regexp
-	publicKeySet  []*jwk.Set
-	userPool      sync.Map
-	authProvider  *AuthProvider
-	userClaimsKey string
-	metrics       *cloudwatch.CloudWatch
+	Region          string
+	PublicKeySet    []*jwk.Set
+	UserPool        sync.Map
+	UserClaimsKey   string
+	Src             *source.QuantaSource
+	ConsulAddr      string
+	QuantaPort      int
+	SessionPoolSize int
+	metrics         *cloudwatch.CloudWatch
+
+	reWhitespace *regexp.Regexp
+
 	connectCount  *Counter
 	queryCount    *Counter
 	updateCount   *Counter
@@ -88,88 +61,14 @@ var (
 	deleteTime    *Counter
 )
 
-func main() {
+func Init() {
 
-	app := kingpin.New("quanta-proxy", "MySQL Proxy adapter to Quanta").DefaultEnvars()
-	app.Version("Version: " + Version + "\nBuild: " + Build)
-
-	logging = app.Flag("log-level", "Logging level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
-	environment = app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
-	proxyHostPort = app.Flag("proxy-host-port", "Host:port mapping of MySQL Proxy server").Default("0.0.0.0:4000").String()
-	quantaPort = app.Flag("quanta-port", "Port number for Quanta service").Default("4000").Int()
-	publicKeyURL := app.Arg("public-key-url", "URL for JWT public key.").String()
-	region := app.Arg("region", "AWS region for cloudwatch metrics").Default("us-east-1").String()
-	tokenservicePort := app.Arg("tokenservice-port", "Token exchance service port").Default("4001").Int()
-	userKey := app.Flag("user-key", "Key used to get user id from JWT claims").Default("username").String()
-	// unused username = app.Flag("username", "User account name for MySQL DB").Default("root").String()
-	// unused password = app.Flag("password", "Password for account for MySQL DB (just press enter for now when logging in on mysql console)").Default("").String()
-	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
-	poolSize := app.Flag("session-pool-size", "Session pool size").Int()
-
-	kingpin.MustParse(app.Parse(os.Args[1:]))
-
-	if strings.ToUpper(*logging) == "DEBUG" || strings.ToUpper(*logging) == "TRACE" {
-		if strings.ToUpper(*logging) == "TRACE" {
-			expr.Trace = true
-		}
-		u.SetupLogging("debug")
-	} else {
-		shared.InitLogging(*logging, *environment, "Proxy", Version, "Quanta")
-	}
-
-	go func() {
-		// Initialize Prometheus metrics endpoint.
-		http.Handle("/metrics", promhttp.Handler())
-		http.ListenAndServe(":2112", nil)
-	}()
-
-	consulAddr = *consul
-	log.Printf("Connecting to Consul at: [%s] ...\n", consulAddr)
-	consulConfig := &api.Config{Address: consulAddr}
-	errx := shared.RegisterSchemaChangeListener(consulConfig, schemaChangeListener)
-	if errx != nil {
-		u.Error(errx)
-		os.Exit(1)
-	}
-
-	if publicKeyURL != nil && len(*publicKeyURL) != 0 {
-		publicKeySet = make([]*jwk.Set, 0)
-		urls := strings.Split(*publicKeyURL, ",")
-		for _, url := range urls {
-			log.Printf("Retrieving JWT public key from [%s]", url)
-			keySet, err := jwk.Fetch(url)
-			if err != nil {
-				u.Error(err)
-				os.Exit(1)
-			}
-			publicKeySet = append(publicKeySet, keySet)
-		}
-	}
-	userClaimsKey = *userKey
-	// Start the token exchange service
-	log.Printf("Starting the token exchange service on port %d", *tokenservicePort)
-	authProvider = NewAuthProvider() // this instance is global used by tokenservice
-	StartTokenService(*tokenservicePort, authProvider)
-
-	// If the pool size is not configured then set it to the number of available CPUs
-	sessionPoolSize = *poolSize
-	if sessionPoolSize == 0 {
-		sessionPoolSize = runtime.NumCPU()
-		log.Printf("Session Pool Size not set, defaulting to number of available CPUs = %d", sessionPoolSize)
-	} else {
-		log.Printf("Session Pool Size = %d", sessionPoolSize)
-	}
-
-	// Match 2 or more whitespace chars inside string
+	// Initialize the logger?
+	// setup counters?
 	reWhitespace = regexp.MustCompile(`[\s\p{Zs}]{2,}`)
 
-	// load all of our built-in functions
-	builtins.LoadAllBuiltins()
-	sink.LoadAll()      // Register output sinks
-	functions.LoadAll() // Custom functions
-
 	sess, errx := session.NewSession(&aws.Config{
-		Region: aws.String(*region),
+		Region: aws.String(Region),
 	})
 	if errx != nil {
 		u.Error(errx)
@@ -177,83 +76,44 @@ func main() {
 	}
 	metrics = cloudwatch.New(sess)
 
-	var err error
-	src, err = source.NewQuantaSource("", consulAddr, *quantaPort, sessionPoolSize)
-	if err != nil {
-		u.Error(err)
-	}
-	schema.RegisterSourceAsSchema("quanta", src)
-
-	// Start metrics publisher
-	// var ticker *time.Ticker
-	ticker := metricsTicker(src)
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	go func() {
-		for range c {
-			u.Warn("Interrupted,  shutting down ...")
-			ticker.Stop()
-			src.Close()
-			os.Exit(0)
-		}
-	}()
-
-	queryCount = &Counter{}
-	updateCount = &Counter{}
-	insertCount = &Counter{}
-	deleteCount = &Counter{}
-	connectCount = &Counter{}
-	queryCountL = &Counter{}
-	updateCountL = &Counter{}
-	insertCountL = &Counter{}
-	deleteCountL = &Counter{}
-	connectCountL = &Counter{}
-	queryTime = &Counter{}
-	updateTime = &Counter{}
-	insertTime = &Counter{}
-	deleteTime = &Counter{}
-
-	// Start server endpoint
-	l, err := net.Listen("tcp", *proxyHostPort)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	for {
-		conn, err := l.Accept()
-		if err != nil {
-			u.Errorf(err.Error())
-			return
-		}
-		go onConn(conn)
-
-	}
-
 }
 
-func schemaChangeListener(e shared.SchemaChangeEvent) {
+// Variables to identify the build
+var (
+	Version string
+	Build   string
+)
+
+// Context - Global command line variables
+type Context struct {
+	ConsulAddr string `help:"Consul agent address/port." default:"127.0.0.1:8500"`
+	Port       int    `help:"Port number for Quanta service." default:"4000"`
+}
+
+func SchemaChangeListener(e shared.SchemaChangeEvent) {
 
 	core.ClearTableCache()
-	src.GetSessionPool().Recover(nil)
 	switch e.Event {
 	case shared.Drop:
-		log.Printf("Dropped table %s", e.Table)
-		src.GetSessionPool().Lock()
-		defer src.GetSessionPool().Unlock()
 		schema.DefaultRegistry().SchemaDrop("quanta", e.Table, lex.TokenTable)
+		log.Printf("Dropped table %s", e.Table)
 	case shared.Modify:
 		log.Printf("Truncated table %s", e.Table)
-		src.GetSessionPool().Lock()
-		defer src.GetSessionPool().Unlock()
-		time.Sleep(time.Second * 5)
-		schema.DefaultRegistry().SchemaRefresh("quanta")
 	case shared.Create:
-		schema.DefaultRegistry().SchemaRefresh("quanta")
+		Src.GetSessionPool().Recover(nil)
+		schema.DefaultRegistry().SchemaDrop("quanta", "quanta", lex.TokenSource)
+		var err error
+		Src, err = source.NewQuantaSource("", ConsulAddr, QuantaPort, SessionPoolSize)
+		if err != nil {
+			u.Error(err)
+		}
+		schema.RegisterSourceAsSchema("quanta", Src)
+		//schema.DefaultRegistry().SchemaRefresh("quanta")
 		log.Printf("Created table %s", e.Table)
 	}
 }
 
-func onConn(conn net.Conn) {
+func OnConn(conn net.Conn) {
 	var tlsConf = server.NewServerTLSConfig(test_keys.CaPem, test_keys.CertPem, test_keys.KeyPem, tls.VerifyClientCertIfGiven)
 	svr := server.NewServer("8.0.12", mysql.DEFAULT_COLLATION_ID, mysql.AUTH_NATIVE_PASSWORD, test_keys.PubPem, tlsConf)
 	authProvider := NewAuthProvider() // Per connection (session) instance
@@ -548,7 +408,7 @@ func (h *ProxyHandler) HandleStmtPrepare(sql string) (params int, columns int, c
 		// Prepare not implemented. Silently ignored and creates new stmt upon exec
 	case *rel.SqlInsert:
 		var table *schema.Table
-		table, err = src.Table(v.Table)
+		table, err = Src.Table(v.Table)
 		if err != nil {
 			return
 		}
@@ -680,7 +540,7 @@ func (c *Counter) Set(n int64) {
 	return
 }
 
-func metricsTicker(src *source.QuantaSource) *time.Ticker {
+func MetricsTicker(src *source.QuantaSource) *time.Ticker {
 	t := time.NewTicker(time.Second * 10)
 	start := time.Now()
 	lastTime := time.Now()
@@ -930,4 +790,22 @@ func publishMetrics(upTime time.Duration, lastPublishedAt time.Time, src *source
 		u.Error(err)
 	}
 	return time.Now()
+}
+
+func SetupCounters() {
+
+	queryCount = &Counter{}
+	updateCount = &Counter{}
+	insertCount = &Counter{}
+	deleteCount = &Counter{}
+	connectCount = &Counter{}
+	queryCountL = &Counter{}
+	updateCountL = &Counter{}
+	insertCountL = &Counter{}
+	deleteCountL = &Counter{}
+	connectCountL = &Counter{}
+	queryTime = &Counter{}
+	updateTime = &Counter{}
+	insertTime = &Counter{}
+	deleteTime = &Counter{}
 }

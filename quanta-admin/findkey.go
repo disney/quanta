@@ -3,22 +3,24 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
+
 	pb "github.com/disney/quanta/grpc"
+	proxy "github.com/disney/quanta/quanta-proxy-lib"
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
-	"time"
 )
 
 // FindKeyCmd - Find key command
 type FindKeyCmd struct {
-	Table     string `arg name:"table" help:"Table name."`
-	Field     string `arg name:"field" help:"Field name."`
+	Table     string `arg:"" name:"table" help:"Table name."`
+	Field     string `arg:"" name:"field" help:"Field name."`
 	RowID     uint64 `help:"Row id. (Omit for BSI)"`
 	Timestamp string `help:"Time quantum value. (Omit for no quantum)"`
 }
 
 // Run - FindKey command implementation
-func (f *FindKeyCmd) Run(ctx *Context) error {
+func (f *FindKeyCmd) Run(ctx *proxy.Context) error {
 
 	conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
 	table, err := shared.LoadSchema("", f.Table, conn.Consul)

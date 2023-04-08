@@ -4,11 +4,15 @@ import (
 	"fmt"
 
 	"github.com/disney/quanta/core"
+	proxy "github.com/disney/quanta/quanta-proxy-lib"
 )
 
+// StatusCmd - Status command
+type StatusCmd struct {
+}
 
 // Run - Status command implementation
-func (s *StatusCmd) Run(ctx *Context) error {
+func (s *StatusCmd) Run(ctx *proxy.Context) error {
 
 	conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
 

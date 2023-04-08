@@ -6,29 +6,10 @@ import (
 	"log"
 
 	"github.com/alecthomas/kong"
+	proxy "github.com/disney/quanta/quanta-proxy-lib"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 )
-
-// Variables to identify the build
-var (
-	Version string
-	Build   string
-)
-
-// Context - Global command line variables
-type Context struct {
-	ConsulAddr string `help:"Consul agent address/port." default:"127.0.0.1:8500"`
-	Port       int    `help:"Port number for Quanta service." default:"4000"`
-}
-
-// VersionCmd - Version command
-type VersionCmd struct {
-}
-
-// StatusCmd - Status command
-type StatusCmd struct {
-}
 
 var cli struct {
 	ConsulAddr  string         `default:"127.0.0.1:8500"`
@@ -50,14 +31,18 @@ var cli struct {
 func main() {
 
 	ctx := kong.Parse(&cli)
-	err := ctx.Run(&Context{ConsulAddr: cli.ConsulAddr, Port: cli.Port})
+	err := ctx.Run(&proxy.Context{ConsulAddr: cli.ConsulAddr, Port: cli.Port})
 	ctx.FatalIfErrorf(err)
 }
 
-// Run - Version command implementation
-func (v *VersionCmd) Run(ctx *Context) error {
+// VersionCmd - Version command
+type VersionCmd struct {
+}
 
-	fmt.Printf("Version: %s\n  Build: %s\n", Version, Build)
+// Run - Version command implementation
+func (v *VersionCmd) Run(ctx *proxy.Context) error {
+
+	fmt.Printf("Version: %s\n  Build: %s\n", proxy.Version, proxy.Build)
 	return nil
 }
 

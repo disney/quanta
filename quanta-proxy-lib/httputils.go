@@ -1,9 +1,10 @@
-package main
+package proxy
 
 import (
 	"encoding/json"
-	u "github.com/araddon/gou"
 	"net/http"
+
+	u "github.com/araddon/gou"
 )
 
 // ErrorResponse - Return an error response.

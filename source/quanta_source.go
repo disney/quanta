@@ -5,15 +5,16 @@ package source
 import (
 	"database/sql/driver"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"strings"
+
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/schema"
 	"github.com/araddon/qlbridge/value"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
-	"io/ioutil"
-	"os"
-	"strings"
 )
 
 const (
@@ -61,7 +62,8 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort, sessionPoolSize in
 	clientConn.Quorum = 3
 	if err := clientConn.Connect(consulClient); err != nil {
 		u.Error(err)
-		os.Exit(1)
+		// os.Exit(1)
+		fmt.Println("ignoring NewDefaultConnection error connecting to consul", err)
 	}
 
 	// Register for member leave/join notifications.
@@ -84,14 +86,14 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort, sessionPoolSize in
 func (m *QuantaSource) MemberLeft(nodeID string, index int) {
 
 	u.Warnf("node %v left the cluster, purging sessions", nodeID)
-	m.sessionPool.Recover(nil)  // TODO: Need to re-evalute this when inserts are fully implemented.
+	m.sessionPool.Recover(nil) // TODO: Need to re-evalute this when inserts are fully implemented.
 }
 
 // MemberJoined - A new node joined the cluster.
 func (m *QuantaSource) MemberJoined(nodeID, ipAddress string, index int) {
 
 	u.Warnf("node %v joined the cluster, purging sessions", nodeID)
-	m.sessionPool.Recover(nil)  // TODO: Need to re-evalute this when inserts are fully implemented.
+	m.sessionPool.Recover(nil) // TODO: Need to re-evalute this when inserts are fully implemented.
 }
 
 // GetSessionPool - Return the underlying session pool instance.

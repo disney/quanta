@@ -31,8 +31,8 @@ PKG_KCL=github.com/disney/quanta/${BIN_KCL}
 PKG_PRODUCER=github.com/disney/quanta/${BIN_PRODUCER}
 PKG_ADMIN=github.com/disney/quanta/${BIN_ADMIN}
 #PLATFORMS=darwin linux 
-PLATFORMS=linux 
-ARCHITECTURES=amd64
+PLATFORM=linux
+ARCHITECTURES=arm64 amd64
 VERSION=$(shell cat version.txt | grep quanta | cut -d' ' -f2)
 BUILD=`date +%FT%T%z`
 UNAME=$(shell uname)
@@ -58,19 +58,55 @@ vet:
 lint:
 	go get golang.org/x/lint/golint
 	golint -set_exit_status ${GOLIST}
+	#gas ${PKG}
 
 format:
 	go fmt ${PKG}
 
-build: format vet
-	go build -o ${BIN_DIR}/${BIN_NODE} ${LDFLAGS} ${PKG_NODE}
-	go build -o ${BIN_DIR}/${BIN_PROXY} ${LDFLAGS} ${PKG_PROXY}
-	go build -o ${BIN_DIR}/${BIN_ADMIN} ${LDFLAGS} ${PKG_ADMIN}
-	docker build -t containerregistry.disney.com/digital/quanta-proxy -f Docker/DeployProxyDockerfile .
+build: format vet build_proxy_docker
+	$(NOECHO) $(NOOP)
+
+build_node: format vet
+	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_NODE}-linux-arm ${LDFLAGS} ${PKG_NODE}
+
+build_admin: format vet
+	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_ADMIN} ${LDFLAGS} ${PKG_ADMIN}
+
+build_proxy: format vet
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_PROXY} \
+	))
 
 build_all: format vet
-	$(foreach GOOS, $(PLATFORMS),\
-	$(foreach GOARCH, $(ARCHITECTURES), $(shell export GOOS=$(GOOS); export GOARCH=$(GOARCH); go build -v -o $(BIN_DIR)/$(BIN)-$(GOOS)-$(GOARCH) $(LDFLAGS) $(PKG))))
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_PROXY} \
+	))
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_KINESIS)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_KINESIS} \
+	))
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_ADMIN)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_ADMIN} \
+	))
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_NODE)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_NODE} \
+	))
+
+build_kinesis_docker: build_all
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	docker build -t containerregistry.disney.com/digital/$(BIN_KINESIS)-$(PLATFORM)-$(GOARCH) --build-arg base="arm64v8/alpine" --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployKinesisConsumerDockerfile . \
+	))
+
+build_proxy_docker: build_proxy
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	docker build -t containerregistry.disney.com/digital/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH) --build-arg base="arm64v8/alpine" --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployProxyDockerfile . \
+	))
 
 test: build_all
 	# tests and code coverage
@@ -81,26 +117,29 @@ ifeq ($(UNAME), Darwin)
 	open ${COV_HTML}
 endif
 
-kinesis:
-	go build -o ${BIN_DIR}/${BIN_KINESIS} ${LDFLAGS} ${PKG_KINESIS}
-	docker build -t containerregistry.disney.com/digital/quanta-kinesis-consumer -f Docker/DeployKinesisConsumerDockerfile .
+kinesis: build_all
+	#CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_KINESIS} ${LDFLAGS} ${PKG_KINESIS}
+	#docker build -t containerregistry.disney.com/digital/quanta-kinesis-consumer -f Docker/DeployKinesisConsumerDockerfile .
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	docker build -t containerregistry.disney.com/digital/$(BIN_KINESIS)-$(PLATFORM)-$(GOARCH) --build-arg base="arm64v8/alpine" --build-arg arch="arm64" --build-arg platform="linux" -f Docker/DeployKinesisConsumerDockerfile . \
+	))
 
 kcl:
-	go build -o ${BIN_DIR}/${BIN_KCL} ${LDFLAGS} ${PKG_KCL}
+	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_KCL} ${LDFLAGS} ${PKG_KCL}
 
 admin:
-	go build -o ${BIN_DIR}/${BIN_ADMIN} ${LDFLAGS} ${PKG_ADMIN}
+	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_ADMIN} ${LDFLAGS} ${PKG_ADMIN}
 
 loader:
-	go build -o ${BIN_DIR}/${BIN_LOADER} ${LDFLAGS} ${PKG_LOADER}
-	docker build -t containerregistry.disney.com/digital/quanta-loader -f Docker/DeployLoaderDockerfile .
+	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_LOADER} ${LDFLAGS} ${PKG_LOADER}
 
 producer:
-	go build -o ${BIN_DIR}/${BIN_PRODUCER} ${LDFLAGS} ${PKG_PRODUCER}
+	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_PRODUCER} ${LDFLAGS} ${PKG_PRODUCER}
 	docker build -t containerregistry.disney.com/digital/quanta-s3-producer -f Docker/DeployProducerDockerfile .
 
 kcl:
-	go build -o ${BIN_DIR}/${BIN_KCL} ${LDFLAGS} ${PKG_KCL}
+	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_KCL} ${LDFLAGS} ${PKG_KCL}
 	docker build -t containerregistry.disney.com/digital/quanta-kcl-consumer -f Docker/DeployKCLConsumerDockerfile .
 
 docs: 

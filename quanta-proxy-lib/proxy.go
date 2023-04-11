@@ -90,7 +90,6 @@ type Context struct {
 	Port       int    `help:"Port number for Quanta service." default:"4000"`
 }
 
-
 func SchemaChangeListener(e shared.SchemaChangeEvent) {
 
 	core.ClearTableCache()
@@ -101,6 +100,7 @@ func SchemaChangeListener(e shared.SchemaChangeEvent) {
 	case shared.Modify:
 		log.Printf("Truncated table %s", e.Table)
 	case shared.Create:
+		log.Printf("SchemaChangeListener create %s", e.Table)
 		Src.GetSessionPool().Recover(nil)
 		schema.DefaultRegistry().SchemaDrop("quanta", "quanta", lex.TokenSource)
 		var err error
@@ -617,7 +617,7 @@ var (
 	})
 
 	pUptimeHours = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "uptime_hours",
+		Name: "uptime_hours_proxy", // uptime_hours conflicts with nodes
 		Help: "Hours of up time",
 	})
 

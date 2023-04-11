@@ -31,8 +31,8 @@ PKG_KCL=github.com/disney/quanta/${BIN_KCL}
 PKG_PRODUCER=github.com/disney/quanta/${BIN_PRODUCER}
 PKG_ADMIN=github.com/disney/quanta/${BIN_ADMIN}
 #PLATFORMS=darwin linux 
-PLATFORM=linux
-ARCHITECTURES=arm64 amd64
+PLATFORM?=linux
+ARCHITECTURES?=arm64 amd64
 VERSION=$(shell cat version.txt | grep quanta | cut -d' ' -f2)
 BUILD=`date +%FT%T%z`
 UNAME=$(shell uname)
@@ -99,13 +99,25 @@ build_all: format vet
 build_kinesis_docker: build_all
 	$(foreach GOARCH, $(ARCHITECTURES),\
 	$(shell export GOARCH=$(GOARCH);\
-	docker build -t containerregistry.disney.com/digital/$(BIN_KINESIS)-$(PLATFORM)-$(GOARCH) --build-arg base="arm64v8/alpine" --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployKinesisConsumerDockerfile . \
+	docker build -t containerregistry.disney.com/digital/$(BIN_KINESIS)-$(PLATFORM)-$(GOARCH):${VERSION} --build-arg base="arm64v8/alpine" --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployKinesisConsumerDockerfile . \
+	))
+
+push_kinesis_docker:
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	docker push containerregistry.disney.com/digital/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH):${VERSION} \
 	))
 
 build_proxy_docker: build_proxy
 	$(foreach GOARCH, $(ARCHITECTURES),\
 	$(shell export GOARCH=$(GOARCH);\
-	docker build -t containerregistry.disney.com/digital/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH) --build-arg base="arm64v8/alpine" --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployProxyDockerfile . \
+	docker build -t containerregistry.disney.com/digital/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH):${VERSION} --build-arg base="arm64v8/alpine" --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployProxyDockerfile . \
+	))
+
+push_proxy_docker:
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	docker push containerregistry.disney.com/digital/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH):${VERSION} \
 	))
 
 test: build_all

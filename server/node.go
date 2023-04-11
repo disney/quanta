@@ -171,6 +171,8 @@ func (n *Node) GetNodeID() string {
 // table.
 func (n *Node) Join(name string) error {
 
+	fmt.Println("Node Join: ", name)
+
 	n.serviceName = name
 	n.checkURL = "Status"
 	n.Stop = make(chan bool)

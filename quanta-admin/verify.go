@@ -79,16 +79,16 @@ func (f *VerifyCmd) Run(ctx *proxy.Context) error {
 	if len(indices) >= 1 {
 		var ip, nodeState string
 		if result, err := conn.Admin[indices[0]].Status(cx, &empty.Empty{}); err != nil {
-			fmt.Printf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", conn.Admin[0], err,
-				conn.ClientConnections()[indices[0]].Target()))
+			fmt.Printf("%v.Status(_) = _, %v, node = %s\n", conn.Admin[0], err,
+				conn.ClientConnections()[indices[0]].Target())
 		} else {
 			nodeState = result.NodeState
 			ip = result.LocalIP
 		}
 		res, err2 := bitClient.Client(indices[0]).SyncStatus(cx, req)
 		if err2 != nil {
-			fmt.Printf(fmt.Sprintf("%v.SyncStatus(_) = _, %v, node = %s\n", bitClient.Client(indices[0]), err2,
-				conn.ClientConnections()[indices[0]].Target()))
+			fmt.Printf("%v.SyncStatus(_) = _, %v, node = %s\n", bitClient.Client(indices[0]), err2,
+				conn.ClientConnections()[indices[0]].Target())
 		}
 
 		// Deserialize

@@ -12,7 +12,7 @@ import (
 
 // ShutdownCmd - Shutdown command
 type ShutdownCmd struct {
-	NodeIP string `arg name:"node-ip" help:"IP address of node to shutdown or ALL."`
+	NodeIP string `arg:"" name:"node-ip" help:"IP address of node to shutdown or ALL."`
 }
 
 // Run - Shutdown command implementation

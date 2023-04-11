@@ -15,6 +15,12 @@ package shared
 import (
 	"context"
 	"fmt"
+	"log"
+	"reflect"
+	"strings"
+	"sync"
+	"time"
+
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/golang/protobuf/ptypes/empty"
@@ -23,14 +29,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/testdata"
-	"log"
-	"reflect"
-	"strings"
-	"sync"
-	"time"
 )
 
-//
 // Conn - Client side cluster state and connection abstraction.
 //
 // ServiceName - Name of service i.e. "quanta" for registration with Consul.
@@ -49,7 +49,6 @@ import (
 // pollWait - Wait interval for node membership polling events.
 // nodes - List of nodes as currently registered with Consul.
 // NodeMap - Map cluster node keys to connection/client arrays.
-//
 type Conn struct {
 	ServiceName        string
 	Quorum             int
@@ -419,6 +418,7 @@ func (m *Conn) poll() {
 func (m *Conn) update() (err error) {
 
 	opts := &api.QueryOptions{WaitIndex: m.waitIndex}
+	// calls GET url=/v1/health/service/quanta?index=
 	serviceEntries, meta, err := m.Consul.Health().Service(m.ServiceName, "", false, opts)
 	if err != nil {
 		return err
@@ -426,10 +426,15 @@ func (m *Conn) update() (err error) {
 	if serviceEntries == nil {
 		return nil
 	}
+	fmt.Println("update serviceEntries:", serviceEntries, m.ServiceName)
+
+	// calls GET url=/v1/kv/config/clusterSizeTarget
 	m.clusterSizeTarget, err = GetClusterSizeTarget(m.Consul)
 	if err != nil {
 		return err
 	}
+	fmt.Println("update GetClusterSizeTarget:", m.clusterSizeTarget, m.ServiceName)
+
 	if m.clusterSizeTarget == 0 {
 		m.clusterSizeTarget = m.Replicas + 1
 		u.Warnf("ClusterSizeTarget not set, defaulting target to replicas + 1, currently %d", m.clusterSizeTarget)
@@ -585,7 +590,7 @@ func (m *Conn) CheckNodeForKey(key, nodeID string) (bool, int) {
 
 // SendMemberLeft - Notify listening service of MemberLeft event.
 func (m *Conn) SendMemberLeft(nodeID string, index int) {
-	
+
 	m.registerLock.RLock()
 	defer m.registerLock.RUnlock()
 
@@ -659,8 +664,8 @@ func (m *Conn) GetCachedNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, 
 
 	m.nodeMapLock.RLock()
 	defer m.nodeMapLock.RUnlock()
-	if m.ServicePort == 0 {   // test harness
-		return  &pb.StatusMessage{NodeState: "Active"}, nil
+	if m.ServicePort == 0 { // test harness
+		return &pb.StatusMessage{NodeState: "Active"}, nil
 	}
 	if clientIndex < 0 || clientIndex >= len(m.ids) {
 		return nil, fmt.Errorf("clientIndex %d is invalid", clientIndex)

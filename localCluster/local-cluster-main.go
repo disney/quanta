@@ -33,13 +33,23 @@ import (
 
 func main() {
 
-	StartNodes(3)
+	StartNodes(0, 1)
+	StartNodes(1, 1)
+	StartNodes(2, 1)
 
+	// go func() {
+	// 	time.Sleep(10 * time.Second)
+	// 	go StartNodes(1, 1)
+	// 	time.Sleep(10 * time.Second)
+	// 	go StartNodes(2, 1)
+	// }()
+
+	time.Sleep(2 * time.Second)
 	StartProxy(1)
 
 }
 
-func StartProxy(index int) {
+func StartProxy(count int) {
 	// app := kingpin.New("quanta-proxy", "MySQL Proxy adapter to Quanta").DefaultEnvars()
 	// app.Version("Version: " + Version + "\nBuild: " + Build)
 
@@ -57,6 +67,9 @@ func StartProxy(index int) {
 	// poolSize := app.Flag("session-pool-size", "Session pool size").Int()
 
 	// kingpin.MustParse(app.Parse(os.Args[1:]))
+
+	// for index := 0; index < count; index++ { // TODO: more than one proxy
+	index := 0
 
 	proxy.SetupCounters()
 	proxy.Init()
@@ -125,14 +138,19 @@ func StartProxy(index int) {
 	_ = sess
 	// metrics = cloudwatch.New(sess)
 
+	// configDir := "../test/testdata/config"
+	configDir := "../shared/testdata/config"
+
 	// Construct Quanta source
-	for i := 0; i < sessionPoolSize; i++ {
-		src, err := source.NewQuantaSource("", proxy.ConsulAddr, proxy.QuantaPort+1, sessionPoolSize)
-		if err != nil {
-			u.Error(err)
-		}
-		schema.RegisterSourceAsSchema("quanta-"+"node-"+strconv.Itoa(i), src)
+	// it's just one for a whole pool.
+	//for i := 0; i < sessionPoolSize; i++ {
+	src, err := source.NewQuantaSource(configDir, proxy.ConsulAddr, proxy.QuantaPort+1, sessionPoolSize)
+	if err != nil {
+		u.Error(err)
 	}
+	//schema.RegisterSourceAsSchema("quanta-node-"+strconv.Itoa(i), src)
+	schema.RegisterSourceAsSchema("quanta", src)
+	//}
 
 	// Start metrics publisher
 	// var ticker *time.Ticker
@@ -164,8 +182,8 @@ func StartProxy(index int) {
 	// deleteTime = &Counter{}
 
 	// Start server endpoint
-	portStr := strconv.FormatInt(int64(proxyHostPort), 32)
-	l, err := net.Listen("tcp", portStr)
+	portStr := strconv.FormatInt(int64(proxyHostPort), 10)
+	l, err := net.Listen("tcp", "127.0.0.1:"+portStr)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -181,26 +199,36 @@ func StartProxy(index int) {
 	}
 }
 
-func StartNodes(nodeCount int) {
+func StartNodes(nodeStart int, nodeCount int) {
 
-	index := 0
-	for index = 0; index < nodeCount; index++ {
+	Version := "v0.0.1"
+	Build := "2006-01-01"
 
-		Version := "v0.0.1"
-		Build := "2006-01-01"
+	environment := "DEV"
+	logLevel := "DEBUG"
 
-		hashKey := "node-" + strconv.Itoa(index)
+	shared.InitLogging(logLevel, environment, "Data-Node", Version, "Quanta")
+
+	index := nodeStart
+	// for index = nodeStart; index < nodeStart+nodeCount; index++
+	{
+		hashKey := "quanta-node-" + strconv.Itoa(index)
 		dataDir := "localClusterData/" + hashKey + "/data"
 		bindAddr := "127.0.0.1"
 		port := 4000 + index
 
 		consul := "127.0.0.1:8500"
-		environment := "DEV"
-		logLevel := "DEBUG"
 
 		memLimit := 0
 
-		shared.InitLogging(logLevel, environment, "Data-Node", Version, "Quanta")
+		// Create /bitmap data directory
+		fmt.Printf("Creating bitmap data directory: %s", dataDir+"/bitmap")
+		if _, err := os.Stat(dataDir + "/bitmap"); err != nil {
+			err = os.MkdirAll(dataDir+"/bitmap", 0777)
+			if err != nil {
+				u.Errorf("[node: Cannot initialize endpoint config: error: %s", err)
+			}
+		}
 
 		// go func() { // if we run this it has to be just once
 		// 	// Initialize Prometheus metrics endpoint.
@@ -216,19 +244,11 @@ func StartNodes(nodeCount int) {
 			log.Fatalf("[node: Cannot initialize endpoint config: error: %s", err)
 		}
 
-		// Create /bitmap data directory
-		fmt.Printf("Creating bitmap data directory: %s", dataDir+"/bitmap")
-		if _, err := os.Stat(dataDir + "/bitmap"); err != nil {
-			err = os.Mkdir(dataDir+"/bitmap", 0777)
-			if err != nil {
-				u.Errorf("[node: Cannot initialize endpoint config: error: %s", err)
-			}
-		}
-
 		m, err := server.NewNode(fmt.Sprintf("%v:%v", Version, Build), int(port), bindAddr, dataDir, hashKey, consulClient)
 		if err != nil {
 			u.Errorf("[node: Cannot initialize node config: error: %s", err)
 		}
+		m.ServiceName = "quanta" // not hashKey
 
 		kvStore := server.NewKVStore(m)
 		m.AddNodeService(kvStore)
@@ -271,6 +291,7 @@ func StartNodes(nodeCount int) {
 			if err != nil {
 				u.Errorf("[node: Cannot initialize endpoint config: error: %s", err)
 			}
+			fmt.Println("StartNodes returned from join")
 
 			<-m.Stop
 			select {
@@ -282,7 +303,7 @@ func StartNodes(nodeCount int) {
 			}
 		}()
 	}
-	for {
-		time.Sleep(1 * time.Second)
-	}
+	// for {
+	// 	time.Sleep(1 * time.Second)
+	// }
 }

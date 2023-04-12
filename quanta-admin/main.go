@@ -57,6 +57,7 @@ func getClientConnection(consulAddr string, port int) *shared.Conn {
 	}
 	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
 	conn := shared.NewDefaultConnection()
+	conn.ServiceName = "quanta-node"
 	conn.ServicePort = port
 	conn.Quorum = 0
 	if err := conn.Connect(consulClient); err != nil {

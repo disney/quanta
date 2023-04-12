@@ -63,7 +63,7 @@ lint:
 format:
 	go fmt ${PKG}
 
-build: format vet build_proxy_docker
+build: format vet build_proxy
 	$(NOECHO) $(NOOP)
 
 build_node: format vet
@@ -76,6 +76,20 @@ build_proxy: format vet
 	$(foreach GOARCH, $(ARCHITECTURES),\
 	$(shell export GOARCH=$(GOARCH);\
 	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_PROXY} \
+	))
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	docker build -t containerregistry.disney.com/digital/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH) --build-arg base="arm64v8/alpine" --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployProxyDockerfile . \
+	))
+
+build_kinesis: format vet
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_KINESIS)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_KINESIS} \
+	))
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	docker build -t containerregistry.disney.com/digital/$(BIN_KINESIS)-$(PLATFORM)-$(GOARCH) --build-arg base="arm64v8/alpine" --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployKinesisConsumerDockerfile . \
 	))
 
 build_all: format vet
@@ -96,28 +110,24 @@ build_all: format vet
 	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_NODE)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_NODE} \
 	))
 
-build_kinesis_docker: build_all
+push_kinesis_docker: build_all
 	$(foreach GOARCH, $(ARCHITECTURES),\
 	$(shell export GOARCH=$(GOARCH);\
 	docker build -t containerregistry.disney.com/digital/$(BIN_KINESIS)-$(PLATFORM)-$(GOARCH):${VERSION} --build-arg base="arm64v8/alpine" --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployKinesisConsumerDockerfile . \
 	))
-
-push_kinesis_docker:
 	$(foreach GOARCH, $(ARCHITECTURES),\
 	$(shell export GOARCH=$(GOARCH);\
-	docker push containerregistry.disney.com/digital/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH):${VERSION} \
+	docker push --quiet containerregistry.disney.com/digital/$(BIN_KINESIS)-$(PLATFORM)-$(GOARCH):${VERSION} \
 	))
 
-build_proxy_docker: build_proxy
+push_proxy_docker: build_all
 	$(foreach GOARCH, $(ARCHITECTURES),\
 	$(shell export GOARCH=$(GOARCH);\
 	docker build -t containerregistry.disney.com/digital/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH):${VERSION} --build-arg base="arm64v8/alpine" --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployProxyDockerfile . \
 	))
-
-push_proxy_docker:
 	$(foreach GOARCH, $(ARCHITECTURES),\
 	$(shell export GOARCH=$(GOARCH);\
-	docker push containerregistry.disney.com/digital/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH):${VERSION} \
+	docker push --quiet containerregistry.disney.com/digital/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH):${VERSION} \
 	))
 
 test: build_all
@@ -128,14 +138,6 @@ test: build_all
 ifeq ($(UNAME), Darwin)
 	open ${COV_HTML}
 endif
-
-kinesis: build_all
-	#CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_KINESIS} ${LDFLAGS} ${PKG_KINESIS}
-	#docker build -t containerregistry.disney.com/digital/quanta-kinesis-consumer -f Docker/DeployKinesisConsumerDockerfile .
-	$(foreach GOARCH, $(ARCHITECTURES),\
-	$(shell export GOARCH=$(GOARCH);\
-	docker build -t containerregistry.disney.com/digital/$(BIN_KINESIS)-$(PLATFORM)-$(GOARCH) --build-arg base="arm64v8/alpine" --build-arg arch="arm64" --build-arg platform="linux" -f Docker/DeployKinesisConsumerDockerfile . \
-	))
 
 kcl:
 	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_KCL} ${LDFLAGS} ${PKG_KCL}

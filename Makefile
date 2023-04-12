@@ -67,7 +67,7 @@ build: format vet build_proxy
 	$(NOECHO) $(NOOP)
 
 build_node: format vet
-	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_NODE}-linux-arm ${LDFLAGS} ${PKG_NODE}
+	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_NODE}-linux-arm64 ${LDFLAGS} ${PKG_NODE}
 
 build_admin: format vet
 	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_ADMIN} ${LDFLAGS} ${PKG_ADMIN}
@@ -147,6 +147,15 @@ admin:
 
 loader:
 	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_LOADER} ${LDFLAGS} ${PKG_LOADER}
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_LOADER)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_LOADER} \
+	))
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	docker build -t containerregistry.disney.com/digital/$(BIN_LOADER)-$(PLATFORM)-$(GOARCH) --build-arg base="arm64v8/alpine" --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployLoaderDockerfile . \
+	))
+
 
 producer:
 	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_PRODUCER} ${LDFLAGS} ${PKG_PRODUCER}

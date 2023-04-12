@@ -188,6 +188,8 @@ func (n *Node) Join(name string) error {
 		return fmt.Errorf("node: Connect failed: %v", err)
 	}
 
+	shared.SetClusterSizeTarget(n.consul, 3) // atw delete me this is just a test
+
 	n.State = Joining
 	n.JoinServices()
 
@@ -196,14 +198,18 @@ func (n *Node) Join(name string) error {
 
 func (n *Node) register() (err error) {
 
-	err = n.consul.Agent().ServiceRegister(&api.AgentServiceRegistration{
+	regParams := &api.AgentServiceRegistration{
 		Name: n.serviceName,
 		ID:   n.hashKey,
 		Check: &api.AgentServiceCheck{
 			GRPC:     fmt.Sprintf("%v:%v/%v", n.BindAddr, n.ServicePort, n.checkURL),
 			Interval: checkInterval.String(),
 		},
-	})
+		Tags: []string{"hashkey: " + n.hashKey},
+		Port: n.ServicePort,
+	}
+
+	err = n.consul.Agent().ServiceRegister(regParams)
 	return err
 }
 

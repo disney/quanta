@@ -536,6 +536,7 @@ func GetClusterSizeTarget(consul *api.Client) (int, error) {
 
 // SetClusterSizeTarget - Set the target cluster size.
 func SetClusterSizeTarget(consul *api.Client, size int) error {
+	
 	fmt.Println("SetClusterSizeTarget", size)
 
 	var kvPair api.KVPair

@@ -413,6 +413,19 @@ func (m *Conn) poll() {
 	}
 }
 
+func printServiceEntries(serviceEntries []*api.ServiceEntry) string {
+	str := ""
+	for _, entry := range serviceEntries {
+		// j, err := json.Marshal(entry)
+		// if err == nil {
+		// 	str += string(j) + "\n"
+		// }
+		//str += fmt.Sprint("Node.Node:", entry.Node.Node, " ", " id=", entry.Node.ID, " ")
+		str += fmt.Sprint("entry.Node.Node:", entry.Node.Node, " id=", entry.Node.ID, " ")
+	}
+	return str
+}
+
 // Update blocks until the service list changes or until the Consul agent's
 // timeout is reached (10 minutes by default).
 func (m *Conn) update() (err error) {
@@ -426,7 +439,8 @@ func (m *Conn) update() (err error) {
 	if serviceEntries == nil {
 		return nil
 	}
-	fmt.Println("update serviceEntries:", serviceEntries, m.ServiceName)
+	fmt.Println("update serviceEntries:", printServiceEntries(serviceEntries), m.ServiceName)
+	//fmt.Println("update serviceEntries:", len(serviceEntries), m.ServiceName)
 
 	// calls GET url=/v1/kv/config/clusterSizeTarget
 	m.clusterSizeTarget, err = GetClusterSizeTarget(m.Consul)
@@ -450,7 +464,10 @@ func (m *Conn) update() (err error) {
 			continue
 		}
 		if entry.Checks[0].Status == "passing" && entry.Checks[1].Status == "passing" {
-			node := strings.Split(entry.Node.Node, ".")[0]
+			// node := strings.Split(entry.Node.Node, ".")[0]
+			// let's not use the Node.Node, which is always like 'mbp-atw-2.lan' locally atw danger danger
+			// node = entry.Node.ID and the ID's all the same too
+			node := entry.Service.ID
 			idMap[node] = entry
 			ids = append(ids, node)
 		}
@@ -503,7 +520,7 @@ func (m *Conn) update() (err error) {
 	m.nodeMap = make(map[string]int)
 	for _, entry := range serviceEntries {
 		if entry.Service.ID == "shutdown" {
-			continue
+			continue  // when do we get this?
 		}
 		m.nodes = append(m.nodes, entry)
 	}
@@ -642,6 +659,10 @@ func (m *Conn) getNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error)
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
+
+	if clientIndex >= len(m.Admin) {
+		return nil, fmt.Errorf("clientIndex >= len(m.Admin) %d >= %d", clientIndex, len(m.Admin))
+	}
 
 	result, err := m.Admin[clientIndex].Status(ctx, &empty.Empty{})
 	if err != nil {

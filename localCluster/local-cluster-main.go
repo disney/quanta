@@ -45,7 +45,9 @@ func main() {
 	// }()
 
 	time.Sleep(2 * time.Second)
-	StartProxy(1)
+	//StartProxy(1)
+
+	time.Sleep(999999999 * time.Second)
 
 }
 
@@ -237,6 +239,7 @@ func StartNodes(nodeStart int, nodeCount int) {
 		// }()
 
 		u.Infof("Node identifier '%s'", hashKey)
+
 		u.Infof("Connecting to Consul at: [%s] ...\n", consul)
 		consulClient, err := api.NewClient(&api.Config{Address: consul})
 		if err != nil {
@@ -244,11 +247,13 @@ func StartNodes(nodeStart int, nodeCount int) {
 			log.Fatalf("[node: Cannot initialize endpoint config: error: %s", err)
 		}
 
-		m, err := server.NewNode(fmt.Sprintf("%v:%v", Version, Build), int(port), bindAddr, dataDir, hashKey, consulClient)
+		newNodeName := hashKey
+		// newNodeName = "quanta"
+		m, err := server.NewNode(fmt.Sprintf("%v:%v", Version, Build), int(port), bindAddr, dataDir, newNodeName, consulClient)
 		if err != nil {
 			u.Errorf("[node: Cannot initialize node config: error: %s", err)
 		}
-		m.ServiceName = "quanta" // not hashKey
+		m.ServiceName = "quanta-node" // not hashKey this doesn't work
 
 		kvStore := server.NewKVStore(m)
 		m.AddNodeService(kvStore)
@@ -286,8 +291,12 @@ func StartNodes(nodeStart int, nodeCount int) {
 		}
 		log.Printf("Node initialized in %v.", elapsed)
 
+		// not connected yet: shared.SetClusterSizeTarget(m.Consul, 3)
+
 		go func() {
-			err = m.Join("quanta-" + hashKey) // this does not return
+			// joinName := hashKey // "quanta-" + hashKey
+			joinName := "quanta-node" // this is the name for a cluster of nodes
+			err = m.Join(joinName)    // this does not return
 			if err != nil {
 				u.Errorf("[node: Cannot initialize endpoint config: error: %s", err)
 			}

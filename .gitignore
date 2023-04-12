@@ -11,6 +11,7 @@
 test/testdata/index
 examples/java_query/target/classes
 .vscode/
+localCluster/localClusterData/
 
 .DS_Store
 

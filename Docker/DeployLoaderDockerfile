@@ -1,8 +1,12 @@
 # quanta-loader within a Docker Container
 
-#FROM amd64/alpine:latest
-#FROM golang:1.13.1-alpine
-FROM frolvlad/alpine-glibc
+ARG base
+#FROM frolvlad/alpine-glibc
+#FROM arm64v8/alpine
+FROM $base
+
+ARG arch
+ARG platform
 
 LABEL version="1.0.0" \
   maintainer="Guy Molinari" \
@@ -17,7 +21,8 @@ RUN apk add --no-cache --update alpine-sdk
 # clean apk cache
 RUN rm -rf /var/cache/apk/*
 
-COPY ./bin/quanta-loader /usr/bin/quanta-loader
+
+COPY ./bin/quanta-loader-"$platform"-"$arch" /usr/bin/quanta-loader
 COPY ./Docker/loader_entrypoint.sh /usr/bin/entrypoint.sh
 
 RUN chmod 755 /usr/bin/quanta-loader

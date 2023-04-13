@@ -52,7 +52,7 @@ type Session struct {
 // TableBuffer - State info for table.
 type TableBuffer struct {
 	Table            *Table // table schema
-	sequencer        *shared.Sequencer
+	sequencerCache   map[int64]*shared.Sequencer
 	CurrentColumnID  uint64
 	CurrentTimestamp time.Time // Time quantum value
 	CurrentPKValue   []interface{}
@@ -66,6 +66,7 @@ type TableBuffer struct {
 func NewTableBuffer(table *Table) (*TableBuffer, error) {
 
 	tb := &TableBuffer{Table: table}
+	tb.sequencerCache = make(map[int64]*shared.Sequencer)
 	tb.PKMap = make(map[string]*Attribute)
 	tb.PKAttributes = make([]*Attribute, 0)
 	tb.CurrentTimestamp = time.Unix(0, 0)
@@ -86,6 +87,27 @@ func NewTableBuffer(table *Table) (*TableBuffer, error) {
 	}
 	return tb, err
 }
+
+
+// NextColumnID - Get a new column ID in the sequence for a given Time Quantum
+func (t *TableBuffer) NextColumnID(bi *shared.BitmapIndex) error {
+
+	sequencer, ok := t.sequencerCache[t.CurrentTimestamp.UnixNano()]
+	if !ok || sequencer.IsFullySubscribed() {
+		seq, err := bi.CheckoutSequence(t.Table.Name, t.PKAttributes[0].FieldName,
+			t.CurrentTimestamp, reservationSize)
+		if err != nil {
+			t.CurrentColumnID = 0
+			return fmt.Errorf("Sequencer checkout error for %s.%s - %v]", t.Table.Name,
+				t.PKAttributes[0].FieldName, err)
+		}
+		sequencer = seq
+		t.sequencerCache[t.CurrentTimestamp.UnixNano()] = sequencer
+	}
+	t.CurrentColumnID, _ = sequencer.Next()
+	return nil
+}
+
 
 //
 // OpenSession - Creates a connected session to the underlying core.
@@ -141,11 +163,6 @@ func OpenSession(path, name string, nested bool, conn *shared.Conn) (*Session, e
 	return s, nil
 }
 
-// SetDateFilter - Filter by date
-func (s *Session) SetDateFilter(filter *time.Time) {
-	s.DateFilter = filter
-}
-
 func recurseAndLoadTable(basePath string, kvStore *shared.KVStore, tableBuffers map[string]*TableBuffer, curTable *Table) error {
 
 	for _, v := range curTable.Attributes {
@@ -199,7 +216,7 @@ func (s *Session) IsDriverForJoin(table, joinCol string) bool {
 }
 
 // PutRow - Entry point.  Load a row of data from source (Parquet/Kinesis/Kafka)
-func (s *Session) PutRow(name string, row interface{}, providedColID uint64) error {
+func (s *Session) PutRow(name string, row interface{}, providedColID uint64, ignoreSourcePath, useNerd bool) error {
 
 	s.ResetRowCache()
 	pqTablePath := "/"
@@ -214,11 +231,11 @@ func (s *Session) PutRow(name string, row interface{}, providedColID uint64) err
 	} else {
 		return fmt.Errorf("cannot process row type %T", row)
 	}
-	return s.recursivePutRow(name, row, pqTablePath, providedColID, false)
+	return s.recursivePutRow(name, row, pqTablePath, providedColID, false, ignoreSourcePath, useNerd)
 }
 
 func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath string, providedColID uint64,
-	isChild bool) error {
+	isChild, ignoreSourcePath, useNerdCapitalization bool) error {
 
 	tbuf, ok := s.TableBuffers[name]
 	if !ok {
@@ -229,7 +246,8 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 
 	if curTable.PrimaryKey != "" {
 		// Here we force the primary key to be handled first for table so that columnID is established in tbuf
-		if hasValues, err := s.processPrimaryKey(tbuf, row, pqTablePath, providedColID, isChild); err != nil {
+		if hasValues, err := s.processPrimaryKey(tbuf, row, pqTablePath, providedColID, isChild, 
+				ignoreSourcePath, useNerdCapitalization); err != nil {
 			return err
 		} else if !hasValues {
 			return nil // nothing to do, no values in child relation
@@ -237,7 +255,8 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 	}
 
 	if curTable.SecondaryKeys != "" {
-		if err := s.processAlternateKeys(tbuf, row, pqTablePath, isChild); err != nil {
+		if err := s.processAlternateKeys(tbuf, row, pqTablePath, isChild, ignoreSourcePath, 
+				useNerdCapitalization); err != nil {
 			return err
 		}
 	}
@@ -261,7 +280,8 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 			} else if strings.HasPrefix(v.SourceName, "^") {
 				pqChildPath = fmt.Sprintf("%s.%s.list.element.%s", root, v.Parent.Name, v.SourceName[1:])
 			}
-			if err := s.recursivePutRow(v.ChildTable, row, pqChildPath, providedColID, true); err != nil {
+			if err := s.recursivePutRow(v.ChildTable, row, pqChildPath, providedColID, true, ignoreSourcePath, 
+					useNerdCapitalization); err != nil {
 				return err
 			}
 		} else if v.MappingStrategy == "ParentRelation" && v.ForeignKey != "" {
@@ -278,7 +298,7 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 					return fmt.Errorf("Not a nested import, source must be specified for %s", v.FieldName)
 				}
 
-				lookupKey, err := s.resolveFKLookupKey(&v, tbuf, row)
+				lookupKey, err := s.resolveFKLookupKey(&v, tbuf, row, ignoreSourcePath, useNerdCapitalization)
 				if err != nil {
 					return fmt.Errorf("resolveFKLookupKey %v", err)
 				}
@@ -303,7 +323,7 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 				}
 			}
 		} else {
-			vals, pqps, err := s.readColumn(row, pqTablePath, &v, isChild)
+			vals, pqps, err := s.readColumn(row, pqTablePath, &v, isChild, ignoreSourcePath, useNerdCapitalization)
 			if err != nil {
 				return fmt.Errorf("Parquet reader error - %v", err)
 			}
@@ -320,14 +340,15 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 	return nil
 }
 
-// This function ensures that each parquet column is read once and only once for each row
+// // This function ensures that each parquet column is read once and only once for each row
 func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
-	isChild bool) ([]interface{}, []string, error) {
+	isChild, ignoreSourcePath, useNerdCapitalization bool) ([]interface{}, []string, error) {
 
-	if v.SourceName == "" {
+	// If we are ignoring source path and it is not defined then this must be a defaulted value
+	if !ignoreSourcePath && v.SourceName == "" {
 		if v.DefaultValue != "" {
 			retVals := make([]interface{}, 0)
-			retVals = append(retVals, s.getDefaultValueForColumn(v, row))
+			retVals = append(retVals, s.getDefaultValueForColumn(v, row, ignoreSourcePath, useNerdCapitalization))
 			pqColPaths := []string{""}
 			return retVals, pqColPaths, nil
 		}
@@ -350,12 +371,26 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 			pqColPath = fmt.Sprintf("%s.list.element.%s", pqTablePath, source)
 			if !isChild {
 				pqColPath = fmt.Sprintf("%s.%s", pqTablePath, source)
+				if useNerdCapitalization {
+					pqColPath = fmt.Sprintf("%s.%s", pqTablePath, strings.Title(source))
+				}
 			}
-		}
-		if isParquet && strings.HasPrefix(source, "/") {
-			pqColPath = fmt.Sprintf("%s.%s", root, source[1:])
-		} else if strings.HasPrefix(source, "^") {
-			pqColPath = fmt.Sprintf("%s.%s.list.element.%s", root, v.Parent.Name, source[1:])
+			if !ignoreSourcePath {
+				if strings.HasPrefix(source, "/") {
+					pqColPath = fmt.Sprintf("%s.%s", root, source[1:])
+					if useNerdCapitalization {
+						pqColPath = fmt.Sprintf("%s.%s", strings.Title(root), strings.Title(source[1:]))
+					}
+				} else if strings.HasPrefix(source, "^") {
+					pqColPath = fmt.Sprintf("%s.%s.list.element.%s", root, v.Parent.Name, source[1:])
+				}
+			} else {
+				if useNerdCapitalization {
+					pqColPath = fmt.Sprintf("%s.%s", strings.Title(root), strings.Title(v.FieldName))
+				} else {
+					pqColPath = fmt.Sprintf("%s.%s", root, v.FieldName)
+				}
+			}
 		}
 		pqColPaths[i] = pqColPath
 		// Check cache first
@@ -368,7 +403,7 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 			//val, found = tbuf.rowCache[source[1:]]
 			var err error
 			found = true
-			if val, err = shared.GetPath(source[1:], tbuf.rowCache); err != nil {
+			if val, err = shared.GetPath(source[1:], tbuf.rowCache, ignoreSourcePath, useNerdCapitalization); err != nil {
 				found = false
 				if v.Required {
 					u.Warnf("field %s, source %s = %v", v.FieldName, source, err)
@@ -407,7 +442,8 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 				}
 				if str, ok := vals[0].(string); ok {
 					if str == "" {
-						vals[0] = fmt.Sprintf("%v", s.getDefaultValueForColumn(v, row))
+						vals[0] = fmt.Sprintf("%v", s.getDefaultValueForColumn(v, row, ignoreSourcePath, 
+							useNerdCapitalization))
 					}
 				}
 			}
@@ -442,40 +478,78 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 	return retVals, pqColPaths, nil
 }
 
-// Get the defalue value for a column (can be an expression)
-func (s *Session) getDefaultValueForColumn(a *Attribute, row interface{}) interface{} {
+// // Get the defalue value for a column (can be an expression)
+func (s *Session) getDefaultValueForColumn(a *Attribute, row interface{}, ignoreSourcePath, useNerd bool) interface{} {
 
-	r := row.(map[string]interface{})
+	// add ignoreSourcePath parameter
+
+	var (
+		val value.Value
+		ok bool
+		r interface{}
+	)
 	rm := make(map[string]interface{})
-	// convert source paths to fieldname paths in incoming row
-	if r != nil {
-		for _, v := range a.Parent.Attributes {
-			if v.SourceName == "" {
-				continue
-			}
-			var err error
-			var val interface{}
-			if val, err = shared.GetPath(v.SourceName[1:], row); err != nil {
-				val = r[v.SourceName]
-			}
-			rm[v.FieldName] = val
-		}
-	}
 
-	var ctx *datasource.ContextSimple
-	if r != nil {
-		ctx = datasource.NewContextSimpleNative(rm)
-	}
-	exprNode, _ := expr.ParseExpression(a.DefaultValue)
-	val, ok := vm.Eval(ctx, exprNode)
-	if !ok {
-		if exprNode != nil {
-			switch exprNode.NodeType() {
-				case "Func", "Identity":
-					return nil
+	// convert source paths to fieldname paths in incoming row
+	if r, ok = row.(*reader.ParquetReader); ok {
+		if r != nil {
+			for _, v := range a.Parent.Attributes {
+				if v.SourceName == "" {
+					continue
+				}
+				var err error
+				var val interface{}
+				if val, err = shared.GetPath(v.SourceName, row, ignoreSourcePath, useNerd); err != nil {
+					val = v.SourceName
+				}
+				rm[v.FieldName] = val
 			}
 		}
-		val = value.NewValue(a.DefaultValue)
+		var ctx *datasource.ContextSimple
+		if r != nil {
+			ctx = datasource.NewContextSimpleNative(rm)
+		}
+		exprNode, _ := expr.ParseExpression(a.DefaultValue)
+		val, ok = vm.Eval(ctx, exprNode)
+		if !ok {
+			if exprNode != nil {
+				switch exprNode.NodeType() {
+					case "Func", "Identity":
+						return nil
+				}
+			}
+			val = value.NewValue(a.DefaultValue)
+		}
+		// return fmt.Sprintf("%v", val.Value())
+	} else if r, ok = row.(map[string]interface{}); ok {
+		if r != nil {
+			for _, v := range a.Parent.Attributes {
+				if v.SourceName == "" {
+					continue
+				}
+				var err error
+				var val interface{}
+				if val, err = shared.GetPath(v.SourceName[1:], row, ignoreSourcePath, useNerd); err != nil {
+					val = r.(map[string]interface{})[v.SourceName]
+				}
+				rm[v.FieldName] = val
+			}
+		}
+		var ctx *datasource.ContextSimple
+		if r != nil {
+			ctx = datasource.NewContextSimpleNative(rm)
+		}
+		exprNode, _ := expr.ParseExpression(a.DefaultValue)
+		val, ok = vm.Eval(ctx, exprNode)
+		if !ok {
+			if exprNode != nil {
+				switch exprNode.NodeType() {
+					case "Func", "Identity":
+						return nil
+				}
+			}
+			val = value.NewValue(a.DefaultValue)
+		}
 	}
 	return fmt.Sprintf("%v", val.Value())
 }
@@ -489,7 +563,7 @@ func (s *Session) getDefaultValueForColumn(a *Attribute, row interface{}) interf
 // returns true if there are values to process.
 //
 func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTablePath string,
-	providedColID uint64, isChild bool) (bool, error) {
+	providedColID uint64, isChild, ignoreSourcePath, useNerdCapitalization bool) (bool, error) {
 
 	if tbuf.Table.TimeQuantumType == "" {
 		tbuf.CurrentTimestamp = time.Unix(0, 0)
@@ -500,7 +574,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 	var pkLookupVal strings.Builder
 	for i, pk := range tbuf.PKAttributes {
 		var cval interface{}
-		vals, pqps, err := s.readColumn(row, pqTablePath, pk, isChild)
+		vals, pqps, err := s.readColumn(row, pqTablePath, pk, isChild, ignoreSourcePath, useNerdCapitalization)
 		if err != nil {
 			return false, fmt.Errorf("readColumn for PK - %v", err)
 		}
@@ -522,34 +596,10 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		switch reflect.ValueOf(cval).Kind() {
 		case reflect.String:
 			// Do nothing already a string
-			if i == 0 {
+			if i == 0 {   // First field in PK is TQ (if TQ != "")
 				if pk.MappingStrategy == "SysMillisBSI" || pk.MappingStrategy == "SysMicroBSI" {
 					strVal := cval.(string)
-					loc, _ := time.LoadLocation("Local")
-					ts, err := dateparse.ParseIn(strVal, loc)
-					if err != nil {
-						return false, fmt.Errorf("Date parse error for PK field %s - value %s - %v",
-							pqColPaths[i], strVal, err)
-					}
-					tFormat := shared.YMDTimeFmt
-					if tbuf.Table.TimeQuantumType == "YMDH" {
-						tFormat = shared.YMDHTimeFmt
-					}
-					sf := ts.Format(tFormat)
-					tq, _ := time.Parse(tFormat, sf)
-					if s.DateFilter != nil && *s.DateFilter != tq {
-						// Filter is set and dates don't match so continue on.
-						return false, nil
-					}
-					if tbuf.CurrentTimestamp.UnixNano() > 0 && tbuf.CurrentTimestamp != tq {
-						/*
-						 * if the time partition value changes, then must get a new sequencer.
-						 * Doing this actually sucks because it will leave large gaps in sequence numbers.
-						 * Ideally we would load one time range at a time.  Better than a bug though.
-						 */
-						tbuf.sequencer = nil
-					}
-					tbuf.CurrentTimestamp = tq // Establish time quantum for record
+					tbuf.CurrentTimestamp, _, _ = shared.ToTQTimestamp(tbuf.Table.TimeQuantumType, strVal)
 				}
 			}
 		case reflect.Int64:
@@ -566,21 +616,15 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 					if pk.MappingStrategy == "SysMicroBSI" {
 						ts = time.Unix(0, orig*1000)
 					}
-					sf := ts.Format(tFormat)
-					tq, _ := time.Parse(tFormat, sf)
-					if s.DateFilter != nil && *s.DateFilter != tq {
-						// Fitler is set and dates don't match so continue on.
-						return false, nil
-					}
-					if tbuf.CurrentTimestamp.UnixNano() > 0 && tbuf.CurrentTimestamp != tq {
-						// See above comment.
-						tbuf.sequencer = nil
-					}
-					tbuf.CurrentTimestamp = tq // Establish time quantum for record
+					tbuf.CurrentTimestamp, _, _ = shared.ToTQTimestamp(tbuf.Table.TimeQuantumType, ts.Format(tFormat))
 				}
 			}
 		case reflect.Float64:
 			orig := cval.(float64)
+			f := fmt.Sprintf("%%10.%df", pk.Scale)
+			cval = fmt.Sprintf(f, orig)
+		case reflect.Float32:
+			orig := cval.(float32)
 			f := fmt.Sprintf("%%10.%df", pk.Scale)
 			cval = fmt.Sprintf(f, orig)
 		default:
@@ -596,8 +640,6 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 
 	// Can't use batch operation here unfortunately, but at least we have local batch cache
 	localKey := indexPath(tbuf, tbuf.PKAttributes[0].FieldName, tbuf.Table.PrimaryKey + ".PK")
-
-	//if lColID, ok := s.BatchBuffer.LookupLocalPKString(tbuf.Table.Name, tbuf.Table.PrimaryKey, pkLookupVal.String()); !ok {
 	if lColID, ok := s.BatchBuffer.LookupLocalCIDForString(localKey, pkLookupVal.String()); !ok {
 		var colID uint64
 		var errx error
@@ -610,23 +652,14 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		}
 		if found {
 			tbuf.CurrentColumnID = colID
+			return false, nil
 		} else {
 			if providedColID == 0 {
-				// Generate new ColumnID
-				if tbuf.sequencer == nil || tbuf.sequencer.IsFullySubscribed() {
-					seq, err := s.BitIndex.CheckoutSequence(tbuf.Table.Name, tbuf.PKAttributes[0].FieldName,
-						tbuf.CurrentTimestamp, reservationSize)
-					if err != nil {
-						return false, fmt.Errorf("Sequencer checkout error for %s.%s - %v]", tbuf.Table.Name,
-							tbuf.PKAttributes[0].FieldName, err)
-					}
-					tbuf.sequencer = seq
+				// Generate new ColumnID.   Lookup the sequencer from the local cache by TQ
+				errx = tbuf.NextColumnID(s.BitIndex)
+				if errx != nil {
+					return false, errx
 				}
-				newColumnID, _ := tbuf.sequencer.Next()
-				if newColumnID <= tbuf.CurrentColumnID {
-					u.Warnf("new sequencer columnID [%d] overlaps current [%d]", newColumnID, tbuf.CurrentColumnID)
-				}
-				tbuf.CurrentColumnID = newColumnID
 			} else {
 				tbuf.CurrentColumnID = providedColID
 			}
@@ -634,10 +667,12 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 			s.BatchBuffer.SetPartitionedString(localKey, pkLookupVal.String(), tbuf.CurrentColumnID)
 		}
 	} else {
+		tbuf.CurrentColumnID = lColID
 		if tbuf.Table.DisableDedup {
 			u.Infof("PK %s found in cache but dedup is disabled.  PK mapping error?", pkLookupVal.String())
+		} else {
+			return false, nil
 		}
-		tbuf.CurrentColumnID = lColID
 	}
 
 	// Map the value(s) and update table
@@ -656,7 +691,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 
 // Handle Secondary Keys.  Create the index in backing store
 func (s *Session) processAlternateKeys(tbuf *TableBuffer, row interface{}, pqTablePath string,
-	isChild bool) error {
+	isChild, ignoreSourcePath, useNerdCapitalization bool) error {
 
 	pqColPaths := make([]string, len(tbuf.SKMap))
 	var skLookupVal strings.Builder
@@ -664,7 +699,7 @@ func (s *Session) processAlternateKeys(tbuf *TableBuffer, row interface{}, pqTab
 	for k, keyAttrs := range tbuf.SKMap {
 		for _, v := range keyAttrs {
 			var cval interface{}
-			vals, pqps, err := s.readColumn(row, pqTablePath, v, isChild)
+			vals, pqps, err := s.readColumn(row, pqTablePath, v, isChild, ignoreSourcePath, useNerdCapitalization)
 			if err != nil {
 				return fmt.Errorf("readColumn for SK - %v", err)
 			}
@@ -769,7 +804,8 @@ func (s *Session) LookupKeyBatch(tbuf *TableBuffer, lookupVals map[interface{}]i
 }
 */
 
-func (s *Session) resolveFKLookupKey(v *Attribute, tbuf *TableBuffer, row interface{}) (string, error) {
+func (s *Session) resolveFKLookupKey(v *Attribute, tbuf *TableBuffer, row interface{}, 
+		ignoreSourcePath, useNerdCapitalization bool) (string, error) {
 
 	var retVal strings.Builder
 	root := "/"
@@ -777,7 +813,7 @@ func (s *Session) resolveFKLookupKey(v *Attribute, tbuf *TableBuffer, row interf
 		root = r.SchemaHandler.GetRootExName()
 	}
 	pqTablePath := fmt.Sprintf("%s.%s", root, tbuf.Table.Name)
-	vals, _, err := s.readColumn(row, pqTablePath, v, false)
+	vals, _, err := s.readColumn(row, pqTablePath, v, false, ignoreSourcePath, useNerdCapitalization)
 	if err != nil {
 		return "", err
 	}
@@ -806,14 +842,14 @@ func (s *Session) Flush() error {
 
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
-	if s.StringIndex != nil {
-		if err := s.StringIndex.Flush(); err != nil {
+	if s.BatchBuffer != nil {
+		if err := s.BatchBuffer.Flush(); err != nil {
 			u.Error(err)
 			return err
 		}
 	}
-	if s.BatchBuffer != nil {
-		if err := s.BatchBuffer.Flush(); err != nil {
+	if s.StringIndex != nil {
+		if err := s.StringIndex.Flush(); err != nil {
 			u.Error(err)
 			return err
 		}
@@ -952,3 +988,4 @@ func INT96ToTime(int96 string) time.Time {
 	days := binary.LittleEndian.Uint32([]byte(int96[8:]))
 	return fromJulianDay(int32(days), int64(nanos))
 }
+

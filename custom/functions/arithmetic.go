@@ -3,6 +3,7 @@ package functions
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
     //u "github.com/araddon/gou"
@@ -149,6 +150,16 @@ func (m *TimeDiff) Type() value.ValueType { return value.StringType }
 // Validate arguments
 func (m *TimeDiff) Validate(n *expr.FuncNode) (expr.EvaluatorFunc, error) {
 
+	if len(n.Args) == 3 {
+		outFormat := strings.ReplaceAll(n.Args[2].String(), "'", "")
+		switch outFormat {
+		case "duration", "nanoseconds", "microseconds", "milliseconds", "seconds", "minutes", "hours":
+			return timeDiffEval, nil
+		default:
+			return nil, fmt.Errorf("Unknown scale value %s", outFormat)
+		}
+	}
+
 	if len(n.Args) < 2 || len(n.Args) > 3 {
 		return nil, fmt.Errorf("Expected 2 or 3 args for TimeDiff(arg, arg, ...) but got %s", n)
 	}
@@ -188,7 +199,7 @@ func timeDiffEval(ctx expr.EvalContext, vals []value.Value) (value.Value, bool) 
 		value2 = t
 	}
 	if value1.IsZero() || value2.IsZero() {
-		return value.NewNilValue(), true
+		return value.NewStringValue(""), true
 	}
 
 	diff :=  value1.Sub(value2)

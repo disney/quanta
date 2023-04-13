@@ -8,6 +8,7 @@ import (
 
 var (
 	jsonData = `{
+		"testname":"mpath_test",
 		 "data": {
     		"partner": "espn",
     		"sku": "a3-f3fewa",
@@ -37,12 +38,20 @@ func TestPath(t *testing.T) {
 	assert.NoError(t, err)
 
 	var val interface{}
-	val, err = GetPath("metadata/1/receivedTimestamp", dat)
+	_, err = GetPath("metadata/1/receivedTimestamp", dat, false, false)
 	assert.Error(t, err, "Key not present. [Key:receivedTimestamp]")
-	val, err = GetPath("metadata/0/receivedTimestamp", dat)
+	val, err = GetPath("metadata/0/receivedTimestamp", dat, false, false)
 	assert.NoError(t, err)
 	assert.Equal(t, val, "12-14-1993")
-	val, err = GetPath("data/partner", dat)
+	val, err = GetPath("data/partner", dat, false, false)
 	assert.NoError(t, err)
 	assert.Equal(t, val, "espn")
+	val, err = GetPath("badpath/testname", dat, true, false)
+	assert.NoError(t, err)
+	assert.Equal(t, val, "mpath_test")
+	val, err = GetPath("/badpath/testname", dat, true, false)
+	assert.NoError(t, err)
+	assert.Equal(t, val, "mpath_test")
+	_, err = GetPath("/badpath/testname2", dat, true, false)
+	assert.Error(t, err, "Key not present. [Key:testname2]")
 }

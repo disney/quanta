@@ -5,6 +5,7 @@ import (
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	"log"
+	"time"
 )
 
 // DropCmd - Drop command
@@ -22,22 +23,41 @@ func (c *DropCmd) Run(ctx *Context) error {
 		return fmt.Errorf("Error connecting to consul %v", err)
 	}
 
+	if ctx.Debug {
+		fmt.Println("Checking for child dependencies.")
+	}
 	if err = checkForChildDependencies(consulClient, c.Table, "drop"); err != nil {
 		return err
 	}
 
+	if ctx.Debug {
+		fmt.Println("Acquiring distributed lock.")
+	}
 	lock, errx := shared.Lock(consulClient, "admin-tool", "admin-tool")
 	if errx != nil {
 		return errx
 	}
 	defer shared.Unlock(consulClient, lock)
-	err = nukeData(consulClient, ctx.Port, c.Table, "drop", false)
-	if err != nil {
-		return err
+
+	if ctx.Debug {
+		fmt.Println("Calling DeleteTable to remove table from consul and notify upstream clients.")
 	}
+
 	err = shared.DeleteTable(consulClient, c.Table)
 	if err != nil {
 		return fmt.Errorf("DeleteTable error %v", err)
+	}
+
+	// Give consumers time to flush and restart.
+	time.Sleep(time.Second * 5)
+
+	if ctx.Debug {
+		fmt.Println("Calling nukeData.")
+	}
+
+	err = nukeData(consulClient, ctx.Port, c.Table, "drop", false)
+	if err != nil {
+		return err
 	}
 
 	fmt.Printf("Successfully dropped table %s\n", c.Table)
@@ -67,7 +87,7 @@ func checkForChildDependencies(consul *api.Client, tableName, operation string) 
 	return nil
 }
 
-func nukeData(consul *api.Client, port int, tableName, operation string, retainEnums bool) error {
+func nukeData(consul *api.Client, port int, tableName, operation string, dropEnums bool) error {
 
 	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
 	conn := shared.NewDefaultConnection()
@@ -81,6 +101,10 @@ func nukeData(consul *api.Client, port int, tableName, operation string, retainE
 	err := services.TableOperation(tableName, operation)
 	if err != nil {
 		return fmt.Errorf("TableOperation error %v", err)
+	}
+	retainEnums := true
+	if dropEnums || operation == "drop" {
+		retainEnums = false
 	}
 	err = kvStore.DeleteIndicesWithPrefix(tableName, retainEnums)
 	if err != nil {

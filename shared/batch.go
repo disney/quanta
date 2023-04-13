@@ -52,6 +52,16 @@ func (c *BatchBuffer) Flush() error {
 	c.batchMutex.Lock()
 	defer c.batchMutex.Unlock()
 
+	if c.batchPartitionStr != nil {
+		for indexPath, valueMap := range c.batchPartitionStr {
+			if err := c.KVStore.BatchPut(indexPath, valueMap, true); err != nil {
+				return err
+			}
+		}
+		c.batchPartitionStr = nil
+		c.batchPartitionStrCount = 0
+	}
+
 	if c.batchSets != nil {
 		if err := c.BatchMutate(c.batchSets, false); err != nil {
 			return err
@@ -72,15 +82,6 @@ func (c *BatchBuffer) Flush() error {
 		}
 		c.batchValues = nil
 		c.batchValueCount = 0
-	}
-	if c.batchPartitionStr != nil {
-		for indexPath, valueMap := range c.batchPartitionStr {
-			if err := c.KVStore.BatchPut(indexPath, valueMap, true); err != nil {
-				return err
-			}
-		}
-		c.batchPartitionStr = nil
-		c.batchPartitionStrCount = 0
 	}
 	return nil
 }

@@ -65,14 +65,14 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err)
 
 	// load up vision test data (nested schema containing 3 separate tables)
-	suite.loadData("cities", "./testdata/us_cities.parquet", conn)
-	suite.loadData("cityzip", "./testdata/us_cityzip.parquet", conn)
+	suite.loadData("cities", "./testdata/us_cities.parquet", conn, false)
+	suite.loadData("cityzip", "./testdata/us_cityzip.parquet", conn, false)
 	//suite.insertData("cityzip", "./testdata/us_cityzip.parquet")
 	// suite.loadData("nba", "./testdata/nba.parquet")
 
 }
 
-func (suite *QuantaTestSuite) loadData(table, filePath string, conn *shared.Conn) error {
+func (suite *QuantaTestSuite) loadData(table, filePath string, conn *shared.Conn, ignoreSourcePath bool) error {
 
 	fr, err := local.NewLocalFileReader(filePath)
 	assert.Nil(suite.T(), err)
@@ -92,7 +92,7 @@ func (suite *QuantaTestSuite) loadData(table, filePath string, conn *shared.Conn
 	assert.NotNil(suite.T(), c)
 
 	for i := 1; i <= num; i++ {
-		err := c.PutRow(table, pr, 0)
+		err := c.PutRow(table, pr, 0, ignoreSourcePath, false)
 		assert.Nil(suite.T(), err)
 	}
 	c.Flush()

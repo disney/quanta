@@ -58,7 +58,6 @@ vet:
 lint:
 	go get golang.org/x/lint/golint
 	golint -set_exit_status ${GOLIST}
-	#gas ${PKG}
 
 format:
 	go fmt ${PKG}
@@ -94,6 +93,7 @@ admin:
 
 loader:
 	go build -o ${BIN_DIR}/${BIN_LOADER} ${LDFLAGS} ${PKG_LOADER}
+	docker build -t containerregistry.disney.com/digital/quanta-loader -f Docker/DeployLoaderDockerfile .
 
 producer:
 	go build -o ${BIN_DIR}/${BIN_PRODUCER} ${LDFLAGS} ${PKG_PRODUCER}

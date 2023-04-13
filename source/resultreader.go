@@ -271,7 +271,8 @@ func (m *ResultReader) Run() error {
 	//projFields := make([]string, 0)
 	var projFields []string
 	var rowCols map[string]int
-	m.sql.p.Proj, colNames, rowCols, projFields, _, err = createFinalProjection(orig, m.sql.tbl.Schema, "")
+	m.sql.p.Proj, colNames, rowCols, projFields, _, err = createProjection(orig, m.sql.tbl.Schema, "", 
+		m.sql.whereProj)
 	if err != nil {
 		return err
 	}

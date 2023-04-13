@@ -53,8 +53,6 @@ func (m *SessionPool) newSessionPoolEntry() *sessionPoolEntry {
 
 func (m *SessionPool) getPoolByTableName(tableName string) *sessionPoolEntry {
 
-	m.sessPoolLock.Lock()
-	defer m.sessPoolLock.Unlock()
 	var cp *sessionPoolEntry
 	var found bool
 	if cp, found = m.sessPoolMap[tableName]; !found {
@@ -67,6 +65,8 @@ func (m *SessionPool) getPoolByTableName(tableName string) *sessionPoolEntry {
 // Borrow - Get a pooled connection.
 func (m *SessionPool) Borrow(tableName string) (*Session, error) {
 
+	m.sessPoolLock.Lock()
+	defer m.sessPoolLock.Unlock()
 	cp := m.getPoolByTableName(tableName)
 	select {
 	case <-m.semaphores:
@@ -79,7 +79,7 @@ func (m *SessionPool) Borrow(tableName string) (*Session, error) {
 		case r := <-cp.pool:
 			var err error
 			if m.schema != nil && m.schema.Since(time.Until(r.CreatedAt)) {
-				u.Debugf("pooled connection is stale after schema change, refreshing.")
+				u.Warnf("pooled connection is stale after schema change, refreshing.")
 				r.CloseSession()
 				r, err = m.NewSession(tableName)
 				if err != nil {
@@ -102,6 +102,8 @@ func (m *SessionPool) Borrow(tableName string) (*Session, error) {
 // Return - Return a connection to the pool.
 func (m *SessionPool) Return(tableName string, conn *Session) {
 
+	m.sessPoolLock.Lock()
+	defer m.sessPoolLock.Unlock()
 	conn.Flush()
 	cp := m.getPoolByTableName(tableName)
 	select {
@@ -165,6 +167,16 @@ func (m *SessionPool) Recover(unflushedCh chan *shared.BatchBuffer) {
 			}
 		}
 	}
+}
+
+// Lock - Prevent operations while a table maintenance event is in progress
+func (m *SessionPool) Lock() {
+	m.sessPoolLock.Lock()
+}
+
+// Unlock - Allow operations after a table maintenance event is complete
+func (m *SessionPool) Unlock() {
+	m.sessPoolLock.Unlock()
 }
 
 // Metrics - Return pool size and usage.

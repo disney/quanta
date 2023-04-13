@@ -103,6 +103,7 @@ func (m BoolDirectMapper) MapValue(attr *Attribute, val interface{},
 			result = uint64(1)
 		}
 	default:
+		err = fmt.Errorf("%v: No handling for type '%T'", val, val)
 		return
 	}
 	if c != nil {
@@ -221,6 +222,8 @@ func (m FloatScaleBSIMapper) MapValue(attr *Attribute, val interface{},
 	switch val.(type) {
 	case float64:
 		floatVal = val.(float64)
+	case float32:
+		floatVal = float64(val.(float32))
 	case uint64:
 		floatVal = float64(val.(uint64))
 	case int64:
@@ -438,6 +441,10 @@ func (m SysMillisBSIMapper) MapValue(attr *Attribute, val interface{},
 	switch val.(type) {
 	case string:
 		strVal := val.(string)
+		if strVal == "" || strVal == "NULL" {
+			result = uint64(0)
+			return
+		}
 		loc, _ := time.LoadLocation("Local")
 		var t time.Time
 		t, err = dateparse.ParseIn(strVal, loc)
@@ -482,6 +489,10 @@ func (m SysMicroBSIMapper) MapValue(attr *Attribute, val interface{},
 	switch val.(type) {
 	case string:
 		strVal := val.(string)
+		if strVal == "" || strVal == "NULL" {
+			result = uint64(0)
+			return
+		}
 		loc, _ := time.LoadLocation("Local")
 		var t time.Time
 		t, err = dateparse.ParseIn(strVal, loc)
@@ -526,6 +537,10 @@ func (m SysSecBSIMapper) MapValue(attr *Attribute, val interface{},
 	switch val.(type) {
 	case string:
 		strVal := val.(string)
+		if strVal == "" || strVal == "NULL" {
+			result = uint64(0)
+			return
+		}
 		loc, _ := time.LoadLocation("Local")
 		var t time.Time
 		t, err = dateparse.ParseIn(strVal, loc)

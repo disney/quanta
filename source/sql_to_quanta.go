@@ -74,6 +74,8 @@ type SQLToQuanta struct {
 	q              *shared.BitmapQuery
 	defaultWhere   bool
 	needsPolyFill  bool // polyfill?
+	funcAliases    map[string]struct{}
+	whereProj      map[string]*core.Attribute
 }
 
 // NewSQLToQuanta - Construct a new SQLToQuanta query translator.
@@ -83,6 +85,8 @@ func NewSQLToQuanta(s *QuantaSource, t *schema.Table) *SQLToQuanta {
 		schema: t.Schema,
 		s:      s,
 	}
+	m.funcAliases = make(map[string]struct{})
+	m.whereProj = make(map[string]*core.Attribute)
 	return m
 }
 
@@ -132,9 +136,6 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	sessionMap[exec.GROUPBY_MAKER] = func(ctx *plan.Context, p *plan.GroupBy) exec.TaskRunner {
 		return NewNopTask(ctx)
 	}
-	sessionMap[exec.WHERE_MAKER] = func(ctx *plan.Context, p *plan.Where) exec.TaskRunner {
-		return NewNopTask(ctx)
-	}
 	sessionMap[exec.PROJECTION_MAKER] = func(ctx *plan.Context, p *plan.Projection) exec.TaskRunner {
 		return NewQuantaProjection(ctx)
 	}
@@ -164,10 +165,16 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	m.TaskBase = exec.NewTaskBase(p.Context())
 
 	p.SourceExec = true
-	m.p = p
 	m.q = shared.NewBitmapQuery()
 	frag := m.q.NewQueryFragment()
 
+	p.Complete = true
+	if m.needsPolyFill {
+		p.Custom["poly_fill"] = true
+		//u.Warnf("%p  need to signal poly-fill", m)
+	//} else {
+	//	p.Complete = true
+	}
 	m.p = p
 	req := p.Stmt.Source
 
@@ -214,9 +221,6 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 
 	m.offset = req.Offset
 	m.limit = req.Limit
-	if m.limit == 0 {
-		m.limit = DefaultLimit
-	}
 
 	table := m.conn.TableBuffers[m.tbl.Name].Table
 
@@ -228,6 +232,13 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 		m.defaultWhere = true
 	}
 
+	// Evaluate the Select columns make sure we can pass them down or polyfill
+	err = m.walkSelectList(frag)
+	if err != nil {
+		u.Warnf("Could Not evaluate Columns/Aggs %s %v", req.Columns.String(), err)
+		return nil, err
+	}
+
 	// if Where.Source is not nil then it is a subquery where clause that is walked separately via the planner
 	if req.Where != nil && req.Where.Source == nil {
 		_, err = m.walkNode(req.Where.Expr, frag)
@@ -235,13 +246,6 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 			u.Warnf("Could Not evaluate Where Node %s %v", req.Where.Expr.String(), err)
 			return nil, err
 		}
-	}
-
-	// Evaluate the Select columns make sure we can pass them down or polyfill
-	err = m.walkSelectList(frag)
-	if err != nil {
-		u.Warnf("Could Not evaluate Columns/Aggs %s %v", req.Columns.String(), err)
-		return nil, err
 	}
 
 	/*
@@ -271,11 +275,36 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	   }
 	*/
 
-	if m.needsPolyFill {
-		p.Custom["poly_fill"] = true
-		//u.Warnf("%p  need to signal poly-fill", m)
+	if m.p.Complete {
+		sessionMap[exec.WHERE_MAKER] = func(ctx *plan.Context, p *plan.Where) exec.TaskRunner {
+			return NewNopTask(ctx)
+		}
+		v := sessionMap[exec.WHERE_MAKER]
+		sk := SchemaInfoString{k: exec.WHERE_MAKER}
+		p.Context().Session.Put(sk, nil, value.NewValue(v))
 	} else {
-		p.Complete = true
+		dm := make(map[string]value.Value)
+		dm[exec.WHERE_MAKER] = value.NilValueVal
+		p.Context().Session.Delete(dm)
+		//p.Context().Projection.Proj.Final = false
+		// Make sure identities in WHERE are in the result set
+		ids := expr.FindAllIdentities(req.Where.Expr)
+		for _, n := range ids {
+			var tableName, fieldName string
+			l, r, isLr := n.LeftRight()
+			if isLr {
+				tableName = l
+				fieldName = r
+			} else {
+				fieldName = n.Text
+				tableName = m.tbl.Name
+			}
+			table := m.conn.TableBuffers[tableName].Table
+			if attr, err := table.GetAttribute(fieldName); err == nil {
+				f := fmt.Sprintf("%s.%s", tableName, fieldName)
+				m.whereProj[f] = attr
+			}
+		}
 	}
 
 	if m.startDate == "" || table.TimeQuantumType == "" {
@@ -290,6 +319,21 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	}
 	m.q.FromTime = m.startDate
 	m.q.ToTime = m.endDate
+
+	if m.q.GetRootIndex() == "" && len(m.funcAliases) > 0 {
+		// root index is empty because there was no predicate for the backend.  Create a new default query.
+		if m.limit == 0 {
+			return nil, fmt.Errorf("If there is a post process filter predicate then you must specify limit")
+		}
+		pka, _ := table.GetPrimaryKeyInfo()
+		m.q = shared.NewBitmapQuery()
+		m.q.ToTime = m.endDate
+		p := m.q.NewQueryFragment()
+		p.SetNullPredicate(m.tbl.Name, pka[0].FieldName)
+		p.Operation = "DIFFERENCE"
+		p.Negate = true
+		m.q.AddFragment(p)
+	}
 
 	return nil, nil
 }
@@ -553,8 +597,27 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 	rhval, rhok, isRident := m.eval(node.Args[1])
 	_, rhisnull := node.Args[1].(*expr.NullNode)
 	if !lhok {
-		u.Warnf("not ok: %v  l:%v  r:%v", node, lhval, rhval)
-		return nil, fmt.Errorf("could not evaluate left arg: %v", node.String())
+		// if the lvalue is a function that takes identity nodes then a "WHERE" processor is required.
+		if m.p.Complete && node.Args[0].NodeType() == "Func" {
+			for _, x := range node.Args[0].(*expr.FuncNode).Args {
+				if x.NodeType() == "Identity" {
+					m.p.Complete = false
+					break
+				}
+			}
+		}
+		if m.p.Complete {
+			// if the lvalue references a function in the select list then post process "WHERE"
+			if n, isId := node.Args[0].(*expr.IdentityNode); isId {
+				if _, ok := m.funcAliases[n.Text]; ok {
+					m.p.Complete = false
+				}
+			}
+		}
+		if m.p.Complete {
+			u.Warnf("not ok: %v  l:%v  r:%v", node, lhval, rhval)
+			return nil, fmt.Errorf("could not evaluate left arg: %v", node.String())
+		}
 	}
 	if !rhok && !rhisnull {
 		exprNode, _ := expr.ParseExpression(node.Args[1].String())
@@ -730,6 +793,10 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 
 func (m *SQLToQuanta) handleBSI(op string, lhval, rhval value.Value, q *shared.QueryFragment) error {
 
+	if lhval == nil {  // silently ignore
+		return nil
+	}
+
 	nm := lhval.ToString()
 	fr, ft, err := m.ResolveField(nm)
 	if !ft || err != nil {
@@ -841,8 +908,9 @@ func (m *SQLToQuanta) eval(arg expr.Node) (value.Value, bool, bool) {
 }
 
 
-func (m *SQLToQuanta) checkFuncArgs(f *expr.FuncNode) error {
+func (m *SQLToQuanta) checkFuncArgs(f *expr.FuncNode) (int, error) {
 
+	idCount := 0
 	for _, x := range f.Args {
 		ids := expr.FindAllIdentities(x)
 		for _, n := range ids {
@@ -858,11 +926,12 @@ func (m *SQLToQuanta) checkFuncArgs(f *expr.FuncNode) error {
 			table := m.conn.TableBuffers[tableName].Table
 			_, err := table.GetAttribute(fieldName)
 			if err != nil {
-				return fmt.Errorf("cannot resolve field %s.%s in %v() function argument", tableName, fieldName, f.Name)
+				return 0, fmt.Errorf("cannot resolve field %s.%s in %v() function argument", tableName, fieldName, f.Name)
 			}
 		}
+		idCount += len(ids)
 	}
-	return nil
+	return idCount, nil
 }
 
 // Aggregations from the <select_list>
@@ -870,6 +939,23 @@ func (m *SQLToQuanta) checkFuncArgs(f *expr.FuncNode) error {
 //    SELECT <select_list> FROM ... WHERE
 //
 func (m *SQLToQuanta) walkSelectList(q *shared.QueryFragment) error {
+
+	// Do a dup check to make sure columns are aliased first.
+	dupMap := make(map[string]*rel.Column, len(m.sel.Columns))
+	for i := 0;  i < len(m.sel.Columns); i++ {
+		c := m.sel.Columns[i]
+		if c.As != "" {
+			if _, found := dupMap[c.As]; found {
+				return fmt.Errorf("Duplicate column %s found at position %d, needs alias", c.As, i)
+			}
+			dupMap[c.As] = c
+			continue
+		}
+		if _, found := dupMap[c.SourceOriginal]; found {
+			return fmt.Errorf("Duplicate column %s found at position %d, needs alias", c.SourceOriginal, i)
+		}
+		dupMap[c.SourceOriginal] = c
+	}
 
 	for i := len(m.sel.Columns) - 1; i >= 0; i-- {
 		col := m.sel.Columns[i]
@@ -888,12 +974,17 @@ func (m *SQLToQuanta) walkSelectList(q *shared.QueryFragment) error {
    				if curNode.Missing && curNode.Name != "min" && curNode.Name != "max" && curNode.Name != "topn" {
 					return fmt.Errorf("func %q not found while processing select list", curNode.Name)
 				}
-				if err := m.checkFuncArgs(curNode); err != nil {
+				count, err := m.checkFuncArgs(curNode)
+				if err != nil {
 					return err
+				}
+				if count > 0 {
+					// Has identity arguments add to function aliases list
+					m.funcAliases[col.As] = struct{}{}
 				}
 				// All Func Nodes are Aggregates?
 				//esm, err := m.walkAggs(curNode)
-				err := m.walkAggs(curNode, q)
+				err = m.walkAggs(curNode, q)
 				if err != nil {
 					return err
 				}
@@ -1148,6 +1239,11 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 	if m.q.IsEmpty() {
 		return nil, fmt.Errorf("query must have a predicate")
 	}
+
+	if m.limit == 0 {
+		m.limit = DefaultLimit
+	}
+
 	if m.p == nil {
 		//u.Debugf("custom? %v", p.Custom)
 		// If we are operating in distributed mode it hasn't
@@ -1187,18 +1283,20 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 	}
 
 	var err error
-	m.conn, err = m.s.sessionPool.Borrow(m.q.GetRootIndex())
+	//m.conn, err = m.s.sessionPool.Borrow(m.q.GetRootIndex())
+	m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
 	if err != nil {
 		return nil, fmt.Errorf("Error opening Quanta session %v", err)
 	}
-	defer m.s.sessionPool.Return(m.q.GetRootIndex(), m.conn)
+	//defer m.s.sessionPool.Return(m.q.GetRootIndex(), m.conn)
+	defer m.s.sessionPool.Return(m.tbl.Name, m.conn)
 	ctx := p.Context()
 	//hasJoin := len(p.Stmt.Source.From) > 0
 	//u.Infof("Projection:  %T:%p   %T:%p", proj, proj, proj.Proj, proj.Proj)
 	hasAliasedStar := len(ctx.Projection.Proj.Columns) == 1 &&
 		strings.HasSuffix(ctx.Projection.Proj.Columns[0].As, ".*")
 	if p.Stmt.Source.Star || hasAliasedStar {
-		ctx.Projection.Proj, _, _, _, _, err = createFinalProjection(p.Stmt.Source, p.Schema, "")
+		ctx.Projection.Proj, _, _, _, _, err = createProjection(p.Stmt.Source, p.Schema, "", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -1273,8 +1371,8 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 	// }
 
 	// Where clause will be processed in the source, so replace where clause with a filter that resolves to true
-	dummyWhere, _ := expr.ParseExpression("1=1")
-	m.sel.Where = rel.NewSqlWhere(dummyWhere)
+	//dummyWhere, _ := expr.ParseExpression("1=1")
+	//m.sel.Where = rel.NewSqlWhere(dummyWhere)
 
 	//u.LogTraceDf(u.WARN, 16, "hello")
 	resultReader := NewResultReader(m.conn, m, response, m.limit, m.offset)
@@ -1440,7 +1538,7 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 				if f.Name == colName {
 					found = true
 					idx := colNames[colName]
-					if len(row) <= i-1 {
+					if len(row) <= i-1 || len(row) != len(cols) {
 						u.Errorf("bad column count?  %d vs %d  col: %+v", len(row), i, f)
 					} else {
 						switch val := row[i].(type) {
@@ -1517,14 +1615,12 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 	}
 
 	// Begin critical section
-	err = m.conn.PutRow(table.Name, vMap, colID)
+	err = m.conn.PutRow(table.Name, vMap, colID, false, false)
 	if err != nil {
 		return nil, err
 	}
 
 	newKey := datasource.NewKeyCol("id", "fixme")
-	m.conn.Flush()
-	m.s.sessionPool.Return(table.Name, m.conn)
 
 	// End critical section
 	return newKey, nil
@@ -1552,8 +1648,6 @@ func (m *SQLToQuanta) updateRow(table string, columnID uint64, updValueMap map[s
 			return 0, err
 		}
 	}
-	m.conn.Flush()
-	m.s.sessionPool.Return(m.tbl.Name, m.conn)
 	return 1, nil
 }
 

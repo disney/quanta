@@ -172,7 +172,10 @@ func (c *BitmapIndex) query(query *pb.BitmapQuery) (*roaring64.Bitmap, error) {
 	if len(existences) > 0 {
 		existence = roaring64.ParOr(0, existences...)
 	}
-	result := roaring64.ParOr(0, union, existence)
+	result := union
+	if result.GetCardinality() == 0 {
+		result = existence
+	}
 
 	if len(orDifferences) > 0 {
 		diff := make([]*roaring64.Bitmap, 0)

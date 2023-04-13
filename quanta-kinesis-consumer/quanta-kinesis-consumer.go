@@ -4,13 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/araddon/dateparse"
+	"log"
+	"net/http"
+	_ "net/http/pprof"
+	"net/url"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
+
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/datasource"
 	"github.com/araddon/qlbridge/expr"
+	"github.com/araddon/qlbridge/expr/builtins"
 	"github.com/araddon/qlbridge/value"
 	"github.com/araddon/qlbridge/vm"
-	"github.com/araddon/qlbridge/expr/builtins"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis/types"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
@@ -22,42 +31,32 @@ import (
 	"github.com/disney/quanta/custom/functions"
 	"github.com/disney/quanta/shared"
 	"github.com/hamba/avro"
-	"github.com/harlow/kinesis-consumer"
+	consumer "github.com/harlow/kinesis-consumer"
 	store "github.com/harlow/kinesis-consumer/store/ddb"
 	"github.com/hashicorp/consul/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/stvp/rendezvous"
+	"golang.org/x/sync/errgroup"
 	"gopkg.in/alecthomas/kingpin.v2"
-	"log"
-	"net/http"
-	"net/url"
-	_ "net/http/pprof"
-	"os"
-	"os/signal"
-	"runtime"
-	"runtime/debug"
-	"sync"
-	"time"
 )
 
 // Variables to identify the build
 var (
-	Version  string
-	Build	string
+	Version             string
+	Build	            string
+	ShardChannelSize    = 10000
 	EPOCH, _ = time.ParseInLocation(time.RFC3339, "2000-01-01T00:00:00+00:00", time.UTC)
 )
 
 // Exit Codes
 const (
 	Success = 0
-	//partitionChannelSize = 10000
-	partitionChannelSize = 2000000
-	batchSize			= 100000
 	appName			  = "Kinesis-Consumer"
 )
 
-// Main strct defines command line arguments variables and various global meta-data associated with record loads.
+// Main struct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
 	Stream				string
 	Region				string
@@ -86,13 +85,14 @@ type Main struct {
 	Collate				bool
 	Preselector			expr.Node
 	selectorIdentities  []string
-	partitionMap		map[string]*Partition
-	partitionLock		sync.Mutex
-	timeLocation		*time.Location
+	ShardKey            string
+	HashTable           *rendezvous.Table
+	shardChannels       map[string]chan map[string]interface{}
+	eg                  errgroup.Group
+	cancelFunc          context.CancelFunc
+	CommitIntervalMs    int
 	processedRecs		*Counter
 	processedRecL		*Counter
-	sessionPool			*core.SessionPool
-	sessionPoolSize		int
 	scanInterval		int
 	metrics				*cloudwatch.CloudWatch
 }
@@ -107,11 +107,7 @@ func NewMain() *Main {
 		processedRecs: &Counter{},
 		processedRecL: &Counter{},
 		errorCount:	&Counter{},
-		poolPercent:   &Counter{},
-		partitionMap:  make(map[string]*Partition),
 	}
-	loc, _ := time.LoadLocation("UTC")
-	m.timeLocation = loc
 	return m
 }
 
@@ -122,10 +118,10 @@ func main() {
 
 	stream := app.Arg("stream", "Kinesis stream name.").Required().String()
 	index := app.Arg("index", "Table name (root name if nested schema)").Required().String()
+	shardKey := app.Arg("shard-key", "Shard Key").Required().String()
 	region := app.Arg("region", "AWS region").Default("us-east-1").String()
 	port := app.Flag("port", "Port number for service").Default("4000").Int32()
 	bufSize := app.Flag("buf-size", "Buffer size").Default("1000000").Int32()
-	poolSize := app.Flag("session-pool-size", "Session pool size").Int()
 	withAssumeRoleArn := app.Flag("assume-role-arn", "Assume role ARN.").String()
 	withAssumeRoleArnRegion := app.Flag("assume-role-arn-region", "Assume role ARN region.").String()
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
@@ -135,9 +131,9 @@ func main() {
 	checkpointTable := app.Flag("checkpoint-table", "DynamoDB checkpoint table name.").String()
 	avroPayload := app.Flag("avro-payload", "Payload is Avro.").Bool()
 	deaggregate := app.Flag("deaggregate", "Incoming payload records are aggregated.").Bool()
-	collate := app.Flag("collate", "Collate and partation shards.").Bool()
 	preselector := app.Flag("preselector", "Filter expression (url encoded).").String()
 	scanInterval := app.Flag("scan-interval", "Scan interval (milliseconds)").Default("1000").Int()
+	commitInterval := app.Flag("commit-interval", "Commit interval (milliseconds)").Int()
 	logLevel := app.Flag("log-level", "Log Level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
@@ -162,13 +158,11 @@ func main() {
 	log.Printf("Index name %v.", main.Index)
 	log.Printf("Buffer size %d.", main.BufferSize)
 	log.Printf("Scan interval (milliseconds) %d.", main.scanInterval)
-	// If the pool size is not configured then set it to the number of available CPUs
-	main.sessionPoolSize = *poolSize
-	if main.sessionPoolSize == 0 {
-		main.sessionPoolSize = runtime.NumCPU()
-		log.Printf("Session Pool Size not set, defaulting to number of available CPUs = %d", main.sessionPoolSize)
+	if *commitInterval == 0 {
+		log.Printf("Commits will occur after each row.")
 	} else {
-		log.Printf("Session Pool Size = %d", main.sessionPoolSize)
+		main.CommitIntervalMs = *commitInterval
+		log.Printf("Commits will occur every %d milliseconds.", main.CommitIntervalMs)
 	}
 	log.Printf("Service port %d.", main.Port)
 	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
@@ -192,9 +186,16 @@ func main() {
 		}
 		log.Printf("DynamoDB checkpoint table name [%s]", main.CheckpointTable)
 	}
-	if *collate {
-		main.Collate = true
-		log.Printf("Shard collation enabled.")
+	if shardKey != nil  {
+		v := *shardKey
+		var path string
+		if v[0] == '/' {
+			path = v[1:]
+		} else {
+			path = v
+		}
+		main.ShardKey = path
+		log.Printf("Shard key = %v.", main.ShardKey)
 	}
 	if *withAssumeRoleArn != "" {
 		main.AssumeRoleArn = *withAssumeRoleArn
@@ -252,108 +253,61 @@ func main() {
 	var ticker *time.Ticker
 	ticker = main.printStats()
 
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
 	go func() {
 		for range c {
-			u.Infof("Interrupted,  Bytes processed: %s, Records: %v", core.Bytes(main.totalBytes.Get()),
+			u.Warnf("Interrupted,  Bytes processed: %s, Records: %v", core.Bytes(main.totalBytes.Get()),
 				main.totalRecs.Get())
-			//main.consumer.Close()
-			ticker.Stop()
-			os.Exit(0)
-		}
-	}()
-
-	// Main processing loop
-	go func() {
-		for  {
-			select {
-			case _, done := <-c:
-				if done {
-					break
-				}
-			default:
-			}
-			err = main.consumer.Scan(context.TODO(), main.scanAndProcess)
-			if err != nil {
-				u.Errorf("scan error: %v", err)
-				u.Errorf("Re-initializing.")
-    			if main.ShardCount, err = main.Init(); err != nil {
-        			u.Error(err)
-					u.Errorf("Exiting process.")
-        			os.Exit(1)
-    			}
-				//os.Exit(1)
+			u.Errorf("Interrupt received, calling cancel function")
+			if main.cancelFunc != nil {
+				main.cancelFunc()
 			}
 		}
 	}()
 
-	// Stale partition cleanup
-	go func() {
-		for {
-			itemsOutstanding := 0
-			stalePartitions := 0
-			main.partitionLock.Lock()
-			for k, v := range main.partitionMap {
-				if time.Since(v.ModTime) >= time.Duration(1000*time.Second) {
-					stalePartitions++
-					if len(v.Data) == 0 {
-						delete(main.partitionMap, k)
-					}
-				}
-				if time.Since(v.ModTime) >= time.Duration(10*time.Second) || len(v.Data) >= batchSize {
-					batch := v.GetDataRows()
-					key := k
-					go func(rows []map[string]interface{}, part string) {
-						if err := main.processBatch(rows, part); err != nil {
-							if err == core.ErrPoolDrained {
-								// Couldn't process, put data back in partition channel
-								time.Sleep(1 * time.Second)
-								main.getPartition(part).PutDataRows(rows)
-							} else {
-								main.errorCount.Add(1)
-								u.Error(err)
-							}
-						}
-					}(batch, key)
-				}
-				itemsOutstanding += len(v.Data)
-			}
-			main.partitionLock.Unlock()
-			poolSize, inUse, _, _ := main.sessionPool.Metrics()
-			if itemsOutstanding > 0 {
-				u.Infof("Partitions %d, Outstanding Items = %d, Processors in use = %d",
-					len(main.partitionMap), itemsOutstanding, inUse)
-			}
-			main.poolPercent.Set(int64(float64(inUse/poolSize) * 100))
-			select {
-			case _, done := <-c:
-				if done {
-					break
-				}
-			case <-time.After(1 * time.Second):
-			}
+	// Main processing loop will continue forever until a SIGKILL is received.
+	var ctx context.Context
+	for  {
+		ctx, main.cancelFunc = context.WithCancel(context.Background())
+		scanErr := main.consumer.Scan(ctx, main.scanAndProcess)
+		main.destroy()
+		if err := main.eg.Wait(); err != nil {
+			u.Errorf("session error: %v", err)
 		}
-	}()
+		if scanErr != nil {
+			u.Errorf("scan error: %v", scanErr)
+		} else {
+			u.Warnf("Received Cancellation.")
+		}
+		if main.InitialPos == "TRIM_HORIZON" {
+			u.Error("can't re-initialize 'in-place' if set to TRIM_HORIZON, exiting")
+			os.Exit(1)
+		}
+		u.Warnf("Re-initializing.")
+		if main.ShardCount, err = main.Init(); err != nil {
+			u.Errorf("initialization error: %v", err)
+			u.Errorf("Exiting process.")
+			os.Exit(1)
+		}
+	}
+	ticker.Stop()
+}
 
-	<-c
+func (m *Main) destroy() {
+
+	m.cancelFunc = nil
+	for _, v := range m.shardChannels {
+		close(v)
+	}
+	time.Sleep(time.Second * 5)  // Allow time for completion
 }
 
 func (m *Main) scanAndProcess(v *consumer.Record) error {
 
-	ts, err := dateparse.ParseIn(*v.PartitionKey, m.timeLocation)
-	if err != nil {
-		u.Errorf("Date parse error for partition key %s - %v", *v.PartitionKey, err)
-		os.Exit(1)
-	}
-	tFormat := shared.YMDTimeFmt
-	if m.Table.TimeQuantumType == "YMDH" {
-		tFormat = shared.YMDHTimeFmt
-	}
-	partition := ts.Format(tFormat)
-
 	out := make(map[string]interface{})
 
+	var err error
 	if m.IsAvro {
 		err = avro.Unmarshal(m.Schema, v.Data, &out)
 	} else {
@@ -372,24 +326,19 @@ func (m *Main) scanAndProcess(v *consumer.Record) error {
 		}
 	}
 
-	if m.ShardCount > 1 && m.Collate {
-		c := m.getPartition(partition)
-		select {
-		case c.Data <- out:
+	// push into the appropriate shard channel
+	if key, err := shared.GetPath(m.ShardKey, out, false, false); err != nil {
+		return err
+	} else {
+		shard := m.HashTable.GetN(1, key.(string))
+		ch, ok := m.shardChannels[shard[0]]
+		if !ok {
+			return fmt.Errorf("Cannot locate channel for shard key %v", key)
 		}
-	} else { // Bypass partition worker dispatching
-		err := shared.Retry(3, 5 * time.Second, func() (err error) {
-			err = m.processBatch([]map[string]interface{}{out}, partition)
-			return
-		})
-		if err != nil {
-			u.Errorf("processBatch ERROR %v", err)
-			return nil // continue processing
-		}
+		ch <- out
+		m.totalRecs.Add(1)
+		m.totalBytes.Add(len(v.Data))
 	}
-	m.totalRecs.Add(1)
-	m.totalBytes.Add(len(v.Data))
-
 	return nil // continue scanning
 }
 
@@ -407,13 +356,6 @@ func (m *Main) preselect(row map[string]interface{}) bool {
 		os.Exit(1)
 	}
 
-/*
-	selectit := val.Value().(bool) 
-	if selectit {
-		u.Errorf("%#v - %#v", ctx, row)
-		os.Exit(1)
-	}
-*/
 	return val.Value().(bool)
 }
 
@@ -427,40 +369,11 @@ func (m *Main) buildEvalContext(row map[string]interface{}) *datasource.ContextS
 		} else {
 			path = v
 		}
-		if l, err := shared.GetPath(path, row); err == nil {
+		if l, err := shared.GetPath(path, row, false, false); err == nil {
 			data[v] = l
 		}
 	}
 	return datasource.NewContextSimpleNative(data)
-}
-
-func (m *Main) processBatch(rows []map[string]interface{}, partition string) error {
-
-	defer func() {
-		if r := recover(); r != nil {
-			err := fmt.Errorf("Panic recover: \n" + string(debug.Stack()))
-			u.Error(err)
-		}
-	}()
-
-	conn, err := m.sessionPool.Borrow(m.Index)
-	if err != nil {
-		if err == core.ErrPoolDrained {
-			return err
-		}
-		return fmt.Errorf("Error opening Quanta session %v", err)
-	}
-	defer m.sessionPool.Return(m.Index, conn)
-	for i := 0; i < len(rows); i++ {
-		err = conn.PutRow(m.Index, rows[i], 0)
-		if err != nil {
-			u.Errorf("ERROR in PutRow, partition %s - %v", partition, err)
-			m.errorCount.Add(1)
-			continue
-		}
-		m.processedRecs.Add(1)
-	}
-	return nil
 }
 
 func exitErrorf(msg string, args ...interface{}) {
@@ -468,6 +381,7 @@ func exitErrorf(msg string, args ...interface{}) {
 	os.Exit(1)
 }
 
+/*
 // MemberLeft - Implements member leave notification due to failure.
 func (m *Main) MemberLeft(nodeID string, index int) {
 
@@ -503,18 +417,26 @@ func (m *Main) recoverInflight(recoverFunc func(unflushedCh chan *shared.BatchBu
 		u.Errorf("recoverInflight error closing session %v", err)
 	}
 }
+*/
+
 
 func (m *Main) schemaChangeListener(e shared.SchemaChangeEvent) {
 
-	core.ClearTableCache()
+	if m.cancelFunc != nil {
+		m.cancelFunc()
+	}
 	switch e.Event {
 	case shared.Drop:
-		m.sessionPool.Recover(nil)
+		//m.sessionPool.Recover(nil)
 		u.Warnf("Dropped table %s", e.Table)
+		if e.Table == m.Index {
+			u.Errorf("The table [%s], for this consumer was dropped, exiting", e.Table)
+			os.Exit(1)
+		}
 	case shared.Modify:
 		u.Warnf("Truncated table %s", e.Table)
 	case shared.Create:
-		m.sessionPool.Recover(nil)
+		//m.sessionPool.Recover(nil)
 		u.Warnf("Created table %s", e.Table)
 	}
 }
@@ -544,9 +466,7 @@ func (m *Main) Init() (int, error) {
 	}
 
 	// Register member leave/join
-	clientConn.RegisterService(m)
-
-	m.sessionPool = core.NewSessionPool(clientConn, nil, "", m.sessionPoolSize)
+	//clientConn.RegisterService(m)
 
 	m.Table, err = shared.LoadSchema("", m.Index, consulClient)
 	if err != nil {
@@ -613,64 +533,44 @@ func (m *Main) Init() (int, error) {
 		return 0, err
 	}
 	m.metrics = cloudwatch.New(sess)
+
+	// Initialize shard channels
+	u.Warnf("Shard count = %d", shardCount)
+	m.shardChannels = make(map[string]chan map[string]interface{})
+	shardIds := make([]string, shardCount)
+	core.ClearTableCache()
+	for i := 0; i < shardCount; i++ {
+		k := fmt.Sprintf("shard%v", i)
+		shardIds[i] = k
+		m.shardChannels[k] = make(chan map[string]interface{}, ShardChannelSize)
+		shardId := k
+		m.eg.Go(func() error {
+			conn, err := core.OpenSession("", m.Index, false, clientConn)
+			if err != nil {
+				return err
+			}
+			nextCommit := time.Now().Add(time.Millisecond * time.Duration(m.CommitIntervalMs))
+			for data := range m.shardChannels[shardId] {
+				err = conn.PutRow(m.Index, data, 0, false, false)
+				if err != nil {
+					u.Errorf("ERROR in PutRow, shard %s - %v", shardId, err)
+					m.errorCount.Add(1)
+					return err
+				}
+				m.processedRecs.Add(1)
+				if time.Now().After(nextCommit) {
+					conn.Flush()
+					nextCommit = time.Now().Add(time.Millisecond * time.Duration(m.CommitIntervalMs))
+				}
+			}
+			conn.CloseSession()
+			return nil
+		})
+	}
+	m.HashTable = rendezvous.New(shardIds)
 	u.Infof("Created consumer. ")
 
 	return shardCount, nil
-}
-
-// Partition - A partition is a Quanta concept and defines an daily or hourly time segment.
-type Partition struct {
-	ModTime	  time.Time
-	PartitionKey string
-	Data		 chan map[string]interface{}
-}
-
-// NewPartition - Construct a new partition.
-func NewPartition(partition string) *Partition {
-	return &Partition{PartitionKey: partition, Data: make(chan map[string]interface{}, partitionChannelSize),
-		ModTime: time.Now().UTC()}
-}
-
-// GetDataRows - Extract data rows from partition channel.  Number of rows are larger of outstanding data or batchSize.
-func (p *Partition) GetDataRows() []map[string]interface{} {
-
-	size := len(p.Data)
-	if size > batchSize {
-		size = batchSize
-	}
-	rows := make([]map[string]interface{}, size)
-	for i := 0; i < len(rows); i++ {
-		select {
-		case row := <-p.Data:
-			rows[i] = row
-		}
-	}
-	return rows
-}
-
-// PutDataRows - Put batch back in channel for retry.
-func (p *Partition) PutDataRows(rows []map[string]interface{}) {
-
-	for i := 0; i < len(rows); i++ {
-		select {
-		case p.Data <- rows[i]:
-		}
-	}
-}
-
-// Lookup partition with the intent to write to it
-func (m *Main) getPartition(partition string) *Partition {
-
-	m.partitionLock.Lock()
-	defer m.partitionLock.Unlock()
-
-	c, ok := m.partitionMap[partition]
-	if !ok {
-		c = NewPartition(partition)
-		m.partitionMap[partition] = c
-	}
-	c.ModTime = time.Now().UTC()
-	return c
 }
 
 // printStats outputs to Log current status of Kinesis consumer
@@ -738,55 +638,14 @@ var (
 		Name: "uptime_hours",
 		Help: "Hours of up time",
 	})
-
-	connPoolSize = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "connection_pool_size",
-		Help: "The size of the Quanta session pool",
-	})
-
-	connInUse = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "connections_in_use",
-		Help: "Number of Quanta sessions currently (actively) in use.",
-	})
-
-	connPooled = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "connections_in_pool",
-		Help: "Number of Quanta sessions currently pooled.",
-	})
-
-	connMaxInUse = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "max_connections_in_use",
-		Help: "Maximum nunber of Quanta sessions in use.",
-	})
 )
 
 func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) time.Time {
 
-	connectionPoolSize, connectionsInUse, pooled, maxUsed := m.sessionPool.Metrics()
 	interval := time.Since(lastPublishedAt).Seconds()
 	_, err := m.metrics.PutMetricData(&cloudwatch.PutMetricDataInput{
 		Namespace: aws.String("Quanta-Consumer/Records"),
 		MetricData: []*cloudwatch.MetricDatum{
-			{
-				MetricName: aws.String("ConnectionPoolSize"),
-				Unit:	   aws.String("Count"),
-				Value:	  aws.Float64(float64(connectionPoolSize)),
-			},
-			{
-				MetricName: aws.String("ConnectionsInUse"),
-				Unit:	   aws.String("Count"),
-				Value:	  aws.Float64(float64(connectionsInUse)),
-			},
-			{
-				MetricName: aws.String("MaxConnectionsInUse"),
-				Unit:	   aws.String("Count"),
-				Value:	  aws.Float64(float64(maxUsed)),
-			},
-			{
-				MetricName: aws.String("ConnectionsInPool"),
-				Unit:	   aws.String("Count"),
-				Value:	  aws.Float64(float64(pooled)),
-			},
 			{
 				MetricName: aws.String("Arrived"),
 				Unit:	   aws.String("Count"),
@@ -886,10 +745,6 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 	processedBytes.Set(float64(m.totalBytes.Get()))
 	processedBytesPerSec.Set(float64(m.totalBytes.Get()-m.totalBytesL.Get()) / interval)
 	uptimeHours.Set(float64(upTime) / float64(1000000000*3600))
-	connPoolSize.Set(float64(connectionPoolSize))
-	connInUse.Set(float64(connectionsInUse))
-	connMaxInUse.Set(float64(maxUsed))
-	connPooled.Set(float64(pooled))
 
 	m.totalRecsL.Set(m.totalRecs.Get())
 	m.processedRecL.Set(m.processedRecs.Get())

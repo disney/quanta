@@ -1,4 +1,5 @@
 #!/bin/sh
+
 BOOL_FLAGS=""
 if [ -n "$INITIAL_POSITION" ]
 then
@@ -39,13 +40,16 @@ then
     	BOOL_FLAGS=${BOOL_FLAGS}" --assume-role-arn-region=${ASSUME_ROLE_ARN_REGION}"
 	fi
 fi
-if [ -n "$SESSION_POOL_SIZE" ]
-then
-    BOOL_FLAGS=${BOOL_FLAGS}" --session-pool-size=${SESSION_POOL_SIZE}"
-fi
 if [ -n "$PRESELECTOR" ]
 then
     BOOL_FLAGS=${BOOL_FLAGS}" --preselector="${PRESELECTOR}""
 fi
-exec /usr/bin/quanta-kinesis-consumer ${STREAM} ${INDEX} ${REGION} ${BOOL_FLAGS}
-
+if [ -n "$SCAN_INTERVAL" ]
+then
+    BOOL_FLAGS=${BOOL_FLAGS}" --scan-interval="${SCAN_INTERVAL}""
+fi
+if [ -n "$COMMIT_INTERVAL" ]
+then
+    BOOL_FLAGS=${BOOL_FLAGS}" --commit-interval="${COMMIT_INTERVAL}""
+fi
+exec /usr/bin/quanta-kinesis-consumer ${STREAM} ${INDEX} ${SHARD_KEY} ${REGION} ${BOOL_FLAGS}

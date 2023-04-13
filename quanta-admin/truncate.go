@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
+	"time"
 )
 
 // TruncateCmd - Truncate command
 type TruncateCmd struct {
 	Table       string `arg name:"table" help:"Table name."`
-	RetainEnums bool   `help:"Retain enumeration data for StringEnum types."`
+	DropEnums   bool   `help:"Drop enumeration data for StringEnum types."`
 	Force       bool   `help:"Force override of constraints."`
 }
 
@@ -38,7 +39,10 @@ func (c *TruncateCmd) Run(ctx *Context) error {
 		return fmt.Errorf("updateModTimeForTable  error %v", err)
 	}
 
-	err = nukeData(consulClient, ctx.Port, c.Table, "truncate", c.RetainEnums)
+	// Give consumers time to flush and restart.
+	time.Sleep(time.Second * 5)
+
+	err = nukeData(consulClient, ctx.Port, c.Table, "truncate", c.DropEnums)
 	if err != nil {
 		return err
 	}

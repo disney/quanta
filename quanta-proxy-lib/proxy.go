@@ -88,6 +88,7 @@ var (
 type Context struct {
 	ConsulAddr string `help:"Consul agent address/port." default:"127.0.0.1:8500"`
 	Port       int    `help:"Port number for Quanta service." default:"4000"`
+	Debug      bool   `help:"Enable debug logging."`
 }
 
 func SchemaChangeListener(e shared.SchemaChangeEvent) {

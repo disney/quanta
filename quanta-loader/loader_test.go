@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -39,12 +40,12 @@ func setupSuite(tb testing.T) func(tb testing.T) {
 }
 
 func notTestVersionBuild(t *testing.T) {
-	if len(Version) <= 0 {
-		t.Errorf("Version string length was empty, zero or less; got: %s", Version)
-	}
-	if len(Build) <= 0 {
-		t.Errorf("Build string length was empty, zero or less; got: %s", Build)
-	}
+	// if len(Version) <= 0 {
+	// 	t.Errorf("Version string length was empty, zero or less; got: %s", Version)
+	// }
+	// if len(Build) <= 0 {
+	// 	t.Errorf("Build string length was empty, zero or less; got: %s", Build)
+	// }
 }
 
 var _ = notTestVersionBuild
@@ -68,7 +69,7 @@ func TestLocalS3(t *testing.T) {
 		t.Errorf("Error listing buckets: %s", err)
 	}
 	_ = buckets
-	// fmt.Printf("Buckets: %v", buckets)
+	fmt.Printf("Buckets: %v", buckets)
 
 	bucketout, err := S3svc.CreateBucket(&s3.CreateBucketInput{Bucket: aws.String("quanta-test-data")})
 	if err != nil {
@@ -83,9 +84,9 @@ func TestLocalS3(t *testing.T) {
 		t.Errorf("Error listing buckets: %s", err)
 	}
 	_ = buckets
-	// for _, bucket := range buckets.Buckets {
-	// 	fmt.Printf("Bucket: %s", *bucket.Name)
-	// }
+	for _, bucket := range buckets.Buckets {
+		fmt.Printf("Bucket: %s", *bucket.Name)
+	}
 
 	putObjectInput := &s3.PutObjectInput{
 		Body:   aws.ReadSeekCloser(strings.NewReader("../test/testdata/us_cityzip")),
@@ -104,7 +105,24 @@ func TestLocalS3(t *testing.T) {
 	fmt.Println("\nPutObjectOutput: ", putout)
 }
 
+type customResolver struct {
+}
+
+func (res customResolver) ResolveEndpoint(service, region string) (awsv2.Endpoint, error) {
+	if service == s3.ServiceID {
+		return awsv2.Endpoint{
+			PartitionID:       "aws",
+			URL:               "http://localhost:4566",
+			SigningRegion:     "us-east-1",
+			HostnameImmutable: true,
+		}, nil
+	}
+	return awsv2.Endpoint{}, &awsv2.EndpointNotFoundError{}
+}
+
 func TestInitLoaderMain(t *testing.T) {
+
+	TestLocalS3(t) // populate s3
 
 	teardownSuite := setupSuite(*t)
 	defer teardownSuite(*t)
@@ -151,18 +169,21 @@ func TestInitLoaderMain(t *testing.T) {
 	main := NewMain()
 	main.AWSRegion = "us-east-1"
 	main.Port = 4000
-	// main.BucketPath = "quanta-test-data/2017/01/01/00/00/00"
 	main.ConsulAddr = "localhost:8500"
 
-	session, err := session.NewSession()
-	if err != nil {
-		t.Errorf("Error creating session: %s", err)
-	}
-	session.Config.WithEndpoint("http://localhost:4566")
-	session.Config.WithS3ForcePathStyle(true)
-	session.Config.WithRegion(main.AWSRegion)
+	resolver := customResolver{}
 
-	err = main.Init("quanta-node", session)
+	cfg := awsv2.Config{
+		Region: main.AWSRegion,
+		//Endpoint: "http://localhost:4566",
+		EndpointResolver: resolver,
+	}
+
+	// session.Config.WithEndpoint("http://localhost:4566")
+	// session.Config.WithS3ForcePathStyle(true)
+	// session.Config.WithRegion(main.AWSRegion)
+
+	err = main.Init("quanta-node", &cfg)
 	if err != nil {
 		t.Errorf("Error initializing main: %s", err)
 	}

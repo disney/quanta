@@ -7,7 +7,7 @@ import (
 	proxy "github.com/disney/quanta/quanta-proxy-lib"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
-	"log"
+
 	"time"
 )
 

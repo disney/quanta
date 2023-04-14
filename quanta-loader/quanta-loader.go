@@ -14,18 +14,22 @@ import (
 	"sync"
 	"time"
 
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
+
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	"github.com/xitongsys/parquet-go/reader"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/alecthomas/kingpin.v2"
+
+	pgs3 "github.com/xitongsys/parquet-go-source/s3v2"
 )
 
 // Variables to identify the build
@@ -131,8 +135,8 @@ func main() {
 		log.Printf("Column names are capitalized in the source file, normalizing to lower case.")
 	}
 
-	var sess *session.Session // nil means do the default s3 session
-	if err := main.Init("quanta", sess); err != nil {
+	var cfg *awsv2.Config // nil means do the default s3 session, localstack needs a custom config
+	if err := main.Init("quanta", cfg); err != nil {
 		log.Fatal(err)
 	}
 
@@ -237,7 +241,6 @@ func (m *Main) LoadBucketContents() {
 		m.Bucket = bucket
 	}
 	params := &s3.ListObjectsV2Input{Bucket: awsv2.String(m.Bucket)}
-	params := &s3.ListObjectsV2Input{Bucket: awsv2.String(m.Bucket)}
 	if m.Prefix != "" {
 		params.Prefix = awsv2.String(m.Prefix)
 		params.Prefix = awsv2.String(m.Prefix)
@@ -282,8 +285,6 @@ func (m *Main) processRowsForFile(s3object types.Object, dbConn *core.Session) {
 
 	pf, err1 := pgs3.NewS3FileReaderWithClient(context.Background(), m.S3svc, m.Bucket,
 		*awsv2.String(*s3object.Key))
-	pf, err1 := pgs3.NewS3FileReaderWithClient(context.Background(), m.S3svc, m.Bucket,
-		*awsv2.String(*s3object.Key))
 	if err1 != nil {
 		log.Fatal(err1)
 	}
@@ -313,7 +314,7 @@ func (m *Main) processRowsForFile(s3object types.Object, dbConn *core.Session) {
 // Init function initilizations loader.
 // Establishes session with bitmap server and AWS S3 client
 // serviceName is 'quanta' or 'quanta-node' in loacl-cluster
-func (m *Main) Init(serviceName string, sess *session.Session) error {
+func (m *Main) Init(serviceName string, cfgP *awsv2.Config) error {
 
 	consul, err := api.NewClient(&api.Config{Address: m.ConsulAddr})
 	if err != nil {
@@ -328,15 +329,24 @@ func (m *Main) Init(serviceName string, sess *session.Session) error {
 		log.Fatal(err)
 	}
 
-	if sess == nil {
-		// Initialize S3 client
-		sess, err = session.NewSession(&aws.Config{
-			Region: aws.String(m.AWSRegion)},
-		)
-		if err != nil {
-			return fmt.Errorf("creating S3 session: %v", err)
-		}
+	// Initialize S3 client
+	var cfg awsv2.Config
+	if cfgP == nil {
+		cfg, err = config.LoadDefaultConfig(context.TODO())
+	} else {
+		cfg = *cfgP
 	}
+
+	// if sess == nil {
+	// 	// Initialize S3 client
+	// 	sess, err = session.NewSession(&aws.Config{
+	// 		Region: aws.String(m.AWSRegion)},
+	// 	)
+	// 	if err != nil {
+	// 		return fmt.Errorf("creating S3 session: %v", err)
+	// 	}
+	// }
+	//sess.Config
 
 	if m.AssumeRoleArn != "" {
 		client := sts.NewFromConfig(cfg)
@@ -365,7 +375,7 @@ func (m *Main) Init(serviceName string, sess *session.Session) error {
 	}
 
 	if m.S3svc == nil {
-		return fmt.Errorf("Failed creating S3 session.")
+		return fmt.Errorf("failed creating S3 session.")
 	}
 
 	return nil

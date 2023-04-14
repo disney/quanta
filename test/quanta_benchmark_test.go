@@ -33,9 +33,9 @@ type QuantaTestSuite2 struct {
 // In order for 'go test' to run this suite, we need to create
 // a normal test function and pass our suite to suite.Run
 func BenchmarkQuantaTestSuite(t *testing.B) {
-	//suite.Run(t, new(QuantaTestSuite2))
 	suite := new(QuantaTestSuite2)
-	suite.SetupSuite()
+	_ = suite
+	// atw fixme: suite.SetupSuite()
 }
 
 func (suite *QuantaTestSuite2) SetupSuite() {

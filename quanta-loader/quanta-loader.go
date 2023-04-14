@@ -3,6 +3,16 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"path"
+	"runtime"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/araddon/dateparse"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -15,15 +25,6 @@ import (
 	"github.com/xitongsys/parquet-go/reader"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/alecthomas/kingpin.v2"
-	"log"
-	"os"
-	"os/signal"
-	"path"
-	"runtime"
-	"sort"
-	"strings"
-	"sync"
-	"time"
 )
 
 // Variables to identify the build
@@ -57,8 +58,8 @@ type Main struct {
 	ConsulAddr   string
 	ConsulClient *api.Client
 	DateFilter   *time.Time
-	lock         *api.Lock
-	apiHost      *shared.Conn
+	// unused lock         *api.Lock
+	apiHost *shared.Conn
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -118,7 +119,8 @@ func main() {
 		log.Printf("Filtering data for time partition %s.", sf)
 	}
 
-	if err := main.Init(); err != nil {
+	var sess *session.Session // nil means do the default s3 session
+	if err := main.Init("quanta", sess); err != nil {
 		log.Fatal(err)
 	}
 
@@ -202,15 +204,13 @@ func main() {
 
 }
 
-func exitErrorf(msg string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, msg+"\n", args...)
-	os.Exit(1)
-}
+// func exitErrorf(msg string, args ...interface{}) {  unused
+// 	fmt.Fprintf(os.Stderr, msg+"\n", args...)
+// 	os.Exit(1)
+// }
 
-//
 // LoadBucketContents - List S3 objects from AWS bucket based on command line argument of the bucket name
 // S3 does not actually support nested buckets, instead they use a file prefix.
-//
 func (m *Main) LoadBucketContents() {
 
 	m.Bucket = path.Dir(m.BucketPath)
@@ -235,9 +235,9 @@ func (m *Main) LoadBucketContents() {
 	ret := make([]*s3.Object, 0)
 	err := m.S3svc.ListObjectsV2Pages(params,
 		func(page *s3.ListObjectsV2Output, lastPage bool) bool {
-			for _, v := range page.Contents {
-				ret = append(ret, v)
-			}
+			///for _, v := range page.Contents {
+			ret = append(ret, page.Contents...)
+			///}
 			return true
 		},
 	)
@@ -294,7 +294,8 @@ func (m *Main) processRowsForFile(s3object *s3.Object, dbConn *core.Session) {
 
 // Init function initilizations loader.
 // Establishes session with bitmap server and AWS S3 client
-func (m *Main) Init() error {
+// serviceName is 'quanta' or 'quanta-node' in loacl-cluster
+func (m *Main) Init(serviceName string, sess *session.Session) error {
 
 	consul, err := api.NewClient(&api.Config{Address: m.ConsulAddr})
 	if err != nil {
@@ -304,17 +305,19 @@ func (m *Main) Init() error {
 	m.apiHost = shared.NewDefaultConnection()
 	m.apiHost.ServicePort = m.Port
 	m.apiHost.Quorum = 3
+	m.apiHost.ServiceName = serviceName
 	if err = m.apiHost.Connect(consul); err != nil {
 		log.Fatal(err)
 	}
 
-	// Initialize S3 client
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(m.AWSRegion)},
-	)
-
-	if err != nil {
-		return fmt.Errorf("Creating S3 session: %v", err)
+	if sess == nil {
+		// Initialize S3 client
+		sess, err = session.NewSession(&aws.Config{
+			Region: aws.String(m.AWSRegion)},
+		)
+		if err != nil {
+			return fmt.Errorf("creating S3 session: %v", err)
+		}
 	}
 
 	// Create S3 service client

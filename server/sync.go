@@ -143,9 +143,10 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 			fmt.Errorf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", m.Admin[ci], err, targetIP))
 	}
 
+	// atw turned off 
 	// Verify that client stub IP (targetIP) is the same as the new nodes IP returned by status.
-	// targetIP eg 127.0.0.1:4000 in local mode
-	// status.LocalIP eg fe80::1 in local mode so, atw don't do this check in local mode.
+	// eg targetIP eg 127.0.0.1:4000 in local mode
+	// eg status.LocalIP eg fe80::1 in local mode so, atw don't do this check in local mode.
 	if !strings.HasPrefix(targetIP, status.LocalIP) {
 		fmt.Println("Stub IP", targetIP, "does not match new node (remote) = ", status.LocalIP)
 		// return &wrappers.Int64Value{Value: int64(-1)},

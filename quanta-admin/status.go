@@ -17,8 +17,8 @@ func (s *StatusCmd) Run(ctx *proxy.Context) error {
 	conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
 
 	fmt.Println()
-	fmt.Println("ADDRESS            STATUS    DATA CENTER                              SHARDS   MEMORY   VERSION")
-	fmt.Println("================   ======    ==================================   ==========   =======  =========================")
+	fmt.Println("ADDRESS  : PORT          STATUS    DATA CENTER                          SHARDS       MEMORY   VERSION")
+	fmt.Println("================         ======    ==================================   ==========   =======  =========================")
 	for _, node := range conn.Nodes() {
 		status := "Left"
 		version := ""
@@ -39,7 +39,7 @@ func (s *StatusCmd) Run(ctx *proxy.Context) error {
 				}
 			}
 		}
-		fmt.Printf("%-16s   %-8s  %-34s   %10d   %-7s  %s\n", node.Node.Address, status, node.Node.Datacenter, shards,
+		fmt.Printf("%-16s:%5d   %-8s  %-34s   %10d   %-7s  %s\n", node.Node.Address, node.Service.Port, status, node.Node.Datacenter, shards,
 			core.Bytes(memory), version)
 	}
 	fmt.Println()

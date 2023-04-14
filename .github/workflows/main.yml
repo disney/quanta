@@ -40,7 +40,7 @@ jobs:
           pwd
           ls -lah
           echo "--------"
-          cd /home/runner/work/quanta/root  
+          cd /home/runner/work  
           pwd
           ls -lah
           echo "--------"

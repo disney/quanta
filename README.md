@@ -1,9 +1,12 @@
-[![](https://godoc.org/github.com/awootton/quanta?status.svg)](http://godoc.org/github.com/awootton/quanta) 
-[![Go Report Card](https://goreportcard.com/badge/github.com/awootton/quanta)](https://goreportcard.com/report/github.com/awootton/quanta) 
 
 # Quanta
 
 Quanta - Generalized roaring bitmap based HTAP database engine.
+
+
+[![](https://godoc.org/github.com/awootton/quanta?status.svg)](http://godoc.org/github.com/awootton/quanta) 
+[![Go Report Card](https://goreportcard.com/badge/github.com/awootton/quanta)](https://goreportcard.com/report/github.com/awootton/quanta) 
+
 
 It is built around the [Roaring Bitmap Libraries](http://RoaringBitmap.org) and emulates a subset of the MySQL networking protocol.  In many ways it can be used as a drop in replacement for the MySQL engine.  It does not currently implement transactions and stored procedure (although user defined functions (UDF) is supported.).  This approach enables access to a large ecosystem of database drivers and tools.
 

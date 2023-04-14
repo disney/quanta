@@ -127,7 +127,10 @@ type myCredentialsProvider struct {
 }
 
 func (p myCredentialsProvider) Retrieve(ctx context.Context) (awsv2.Credentials, error) {
-	return awsv2.Credentials{}, nil
+	return awsv2.Credentials{
+		AccessKeyID:     "test",
+		SecretAccessKey: "test-localstack-don-t-care",
+	}, nil
 }
 
 func TestInitLoaderMain(t *testing.T) {

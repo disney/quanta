@@ -26,9 +26,20 @@ jobs:
           awslocal s3 mb s3://test
           awslocal s3 ls
           echo "Test Execution complete!"    
-          cd ..   
+          /home/runner/work/quanta  
           pwd
           ls -lah
+          /home/runner/work/quanta/quanta  
+          pwd
+          ls -lah
+          /home/runner/work/quanta/root  
+          pwd
+          ls -lah
+
+          /home/runner/work/quanta/docker  
+          pwd
+          ls -lah
+
 
       - name: Set up Go
         uses: actions/setup-go@v3

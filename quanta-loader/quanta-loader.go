@@ -2,19 +2,8 @@ package main
 
 import (
 	"context"
-	"fmt"
-
-
-	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/disney/quanta/core"
-	"github.com/disney/quanta/shared"
-	"github.com/hashicorp/consul/api"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -25,16 +14,15 @@ import (
 	"sync"
 	"time"
 
-	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
-	pgs3 "github.com/xitongsys/parquet-go-source/s3v2"
 	"github.com/xitongsys/parquet-go/reader"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -54,29 +42,29 @@ const (
 
 // Main strct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
-	Index        string
-	BufferSize   uint
-	BucketPath   string
-	Bucket       string
-	Prefix       string
-	Pattern      string
-	AWSRegion    string
-	S3svc         *s3.Client
-	S3files      []types.Object
-	AssumeRoleArn string
-	Acl          string
-	SseKmsKeyID  string	
-	totalBytes   int64
-	bytesLock    sync.RWMutex
-	totalRecs    *Counter
-	Port         int
-	IsNested     bool
-	ConsulAddr   string
-	ConsulClient *api.Client
-	DateFilter   *time.Time
-	lock         *api.Lock
-	apiHost      *shared.Conn
-	ignoreSourcePath bool
+	Index              string
+	BufferSize         uint
+	BucketPath         string
+	Bucket             string
+	Prefix             string
+	Pattern            string
+	AWSRegion          string
+	S3svc              *s3.Client
+	S3files            []types.Object
+	AssumeRoleArn      string
+	Acl                string
+	SseKmsKeyID        string
+	totalBytes         int64
+	bytesLock          sync.RWMutex
+	totalRecs          *Counter
+	Port               int
+	IsNested           bool
+	ConsulAddr         string
+	ConsulClient       *api.Client
+	DateFilter         *time.Time
+	lock               *api.Lock
+	apiHost            *shared.Conn
+	ignoreSourcePath   bool
 	nerdCapitalization bool
 }
 
@@ -105,8 +93,8 @@ func main() {
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	isNested := app.Flag("nested", "Input data is a nested schema. The <index> parameter is root.").Bool()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
-	ignoreSourcePath := app.Flag("ignore-source-path","Ignore the source path into the parquet file.").Bool()
-	nerdCapitalization := app.Flag("nerd-capitalization","For parquet, field names are capitalized.").Bool()
+	ignoreSourcePath := app.Flag("ignore-source-path", "Ignore the source path into the parquet file.").Bool()
+	nerdCapitalization := app.Flag("nerd-capitalization", "For parquet, field names are capitalized.").Bool()
 
 	shared.InitLogging("WARN", *environment, "Loader", Version, "Quanta")
 
@@ -143,7 +131,8 @@ func main() {
 		log.Printf("Column names are capitalized in the source file, normalizing to lower case.")
 	}
 
-	if err := main.Init(); err != nil {
+	var sess *session.Session // nil means do the default s3 session
+	if err := main.Init("quanta", sess); err != nil {
 		log.Fatal(err)
 	}
 
@@ -224,15 +213,13 @@ func main() {
 
 }
 
-func exitErrorf(msg string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, msg+"\n", args...)
-	os.Exit(1)
-}
+// func exitErrorf(msg string, args ...interface{}) {  unused
+// 	fmt.Fprintf(os.Stderr, msg+"\n", args...)
+// 	os.Exit(1)
+// }
 
-//
 // LoadBucketContents - List S3 objects from AWS bucket based on command line argument of the bucket name
 // S3 does not actually support nested buckets, instead they use a file prefix.
-//
 func (m *Main) LoadBucketContents() {
 
 	m.Bucket = path.Dir(m.BucketPath)
@@ -259,7 +246,7 @@ func (m *Main) LoadBucketContents() {
 	paginator := s3.NewListObjectsV2Paginator(m.S3svc, params, func(o *s3.ListObjectsV2PaginatorOptions) {
 		o.Limit = 10
 	})
-	
+
 	var err error
 	var output *s3.ListObjectsV2Output
 	ret := make([]types.Object, 0)
@@ -277,14 +264,14 @@ func (m *Main) LoadBucketContents() {
 	}
 
 	if err != nil {
-			var bne *types.NoSuchBucket
-			if errors.As(err, &bne) {
-				log.Fatal(fmt.Errorf("%v %v", *bne, err.Error()))
-			} else {
-				log.Fatal(err.Error())
-			}
+		var bne *types.NoSuchBucket
+		if errors.As(err, &bne) {
+			log.Fatal(fmt.Errorf("%v %v", *bne, err.Error()))
+		} else {
+			log.Fatal(err.Error())
 		}
-	
+	}
+
 	sort.Slice(ret, func(i, j int) bool {
 		return ret[i].Size > ret[j].Size
 	})
@@ -325,7 +312,8 @@ func (m *Main) processRowsForFile(s3object types.Object, dbConn *core.Session) {
 
 // Init function initilizations loader.
 // Establishes session with bitmap server and AWS S3 client
-func (m *Main) Init() error {
+// serviceName is 'quanta' or 'quanta-node' in loacl-cluster
+func (m *Main) Init(serviceName string, sess *session.Session) error {
 
 	consul, err := api.NewClient(&api.Config{Address: m.ConsulAddr})
 	if err != nil {
@@ -335,30 +323,34 @@ func (m *Main) Init() error {
 	m.apiHost = shared.NewDefaultConnection()
 	m.apiHost.ServicePort = m.Port
 	m.apiHost.Quorum = 3
+	m.apiHost.ServiceName = serviceName
 	if err = m.apiHost.Connect(consul); err != nil {
 		log.Fatal(err)
 	}
 
-	// Initialize S3 client
-	cfg, err := config.LoadDefaultConfig(context.TODO())
-
-	if err != nil {
-		return fmt.Errorf("Creating S3 session: %v", err)
+	if sess == nil {
+		// Initialize S3 client
+		sess, err = session.NewSession(&aws.Config{
+			Region: aws.String(m.AWSRegion)},
+		)
+		if err != nil {
+			return fmt.Errorf("creating S3 session: %v", err)
+		}
 	}
 
-	if m.AssumeRoleArn != "" {		
+	if m.AssumeRoleArn != "" {
 		client := sts.NewFromConfig(cfg)
 		provider := stscreds.NewAssumeRoleProvider(client, m.AssumeRoleArn)
 
 		if err != nil {
-			return fmt.Errorf("Failed to retrieve credentials: %v",err)
+			return fmt.Errorf("Failed to retrieve credentials: %v", err)
 		}
 
 		cfg.Credentials = awsv2.NewCredentialsCache(provider)
-		_,err = cfg.Credentials.Retrieve(context.TODO())
+		_, err = cfg.Credentials.Retrieve(context.TODO())
 		if err != nil {
 			return fmt.Errorf("Failed to retrieve credentials from cache: %v", err)
-		}	
+		}
 
 		m.S3svc = s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.Region = m.AWSRegion
@@ -366,7 +358,7 @@ func (m *Main) Init() error {
 			o.RetryMaxAttempts = 10
 		})
 	} else {
-		m.S3svc = s3.NewFromConfig(cfg, 	func(o *s3.Options) {
+		m.S3svc = s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.Region = m.AWSRegion
 			o.RetryMaxAttempts = 10
 		})
@@ -430,5 +422,3 @@ func (c *Counter) Get() (ret int64) {
 	c.lock.Unlock()
 	return
 }
-
-

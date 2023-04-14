@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/disney/quanta/custom/functions"
 	proxy "github.com/disney/quanta/quanta-proxy-lib"
+	"github.com/disney/quanta/test"
 
 	"github.com/disney/quanta/server"
 	"github.com/disney/quanta/shared"
@@ -33,9 +34,9 @@ import (
 
 func main() {
 
-	StartNodes(0, 1)
-	StartNodes(1, 1)
-	StartNodes(2, 1)
+	test.StartNodes(0, 1)
+	test.StartNodes(1, 1)
+	test.StartNodes(2, 1)
 
 	// go func() {
 	// 	time.Sleep(10 * time.Second)
@@ -52,23 +53,6 @@ func main() {
 }
 
 func StartProxy(count int) {
-	// app := kingpin.New("quanta-proxy", "MySQL Proxy adapter to Quanta").DefaultEnvars()
-	// app.Version("Version: " + Version + "\nBuild: " + Build)
-
-	// logging = app.Flag("log-level", "Logging level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
-	// environment = app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
-	// proxyHostPort = app.Flag("proxy-host-port", "Host:port mapping of MySQL Proxy server").Default("0.0.0.0:4000").String()
-	// quantaPort = app.Flag("quanta-port", "Port number for Quanta service").Default("4000").Int()
-	// publicKeyURL := app.Arg("public-key-url", "URL for JWT public key.").String()
-	// region := app.Arg("region", "AWS region for cloudwatch metrics").Default("us-east-1").String()
-	// tokenservicePort := app.Arg("tokenservice-port", "Token exchance service port").Default("4001").Int()
-	// userKey := app.Flag("user-key", "Key used to get user id from JWT claims").Default("username").String()
-	// // unused username = app.Flag("username", "User account name for MySQL DB").Default("root").String()
-	// // unused password = app.Flag("password", "Password for account for MySQL DB (just press enter for now when logging in on mysql console)").Default("").String()
-	// consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
-	// poolSize := app.Flag("session-pool-size", "Session pool size").Int()
-
-	// kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	// for index := 0; index < count; index++ { // TODO: more than one proxy
 	index := 0
@@ -141,7 +125,8 @@ func StartProxy(count int) {
 	// metrics = cloudwatch.New(sess)
 
 	// configDir := "../test/testdata/config"
-	configDir := "../shared/testdata/config"
+	//configDir := "../shared/testdata/config"
+	configDir := "../configuration"
 
 	// Construct Quanta source
 	// it's just one for a whole pool.
@@ -152,36 +137,6 @@ func StartProxy(count int) {
 	}
 	//schema.RegisterSourceAsSchema("quanta-node-"+strconv.Itoa(i), src)
 	schema.RegisterSourceAsSchema("quanta", src)
-	//}
-
-	// Start metrics publisher
-	// var ticker *time.Ticker
-	// ticker := metricsTicker(src)
-	// c := make(chan os.Signal, 1)
-	// signal.Notify(c, os.Interrupt)
-	// go func() {
-	// 	for range c {
-	// 		u.Warn("Interrupted,  shutting down ...")
-	// 		ticker.Stop()
-	// 		src.Close()
-	// 		os.Exit(0)
-	// 	}
-	// }()
-
-	// queryCount = &Counter{}
-	// updateCount = &Counter{}
-	// insertCount = &Counter{}
-	// deleteCount = &Counter{}
-	// connectCount = &Counter{}
-	// queryCountL = &Counter{}
-	// updateCountL = &Counter{}
-	// insertCountL = &Counter{}
-	// deleteCountL = &Counter{}
-	// connectCountL = &Counter{}
-	// queryTime = &Counter{}
-	// updateTime = &Counter{}
-	// insertTime = &Counter{}
-	// deleteTime = &Counter{}
 
 	// Start server endpoint
 	portStr := strconv.FormatInt(int64(proxyHostPort), 10)
@@ -201,7 +156,8 @@ func StartProxy(count int) {
 	}
 }
 
-func StartNodes(nodeStart int, nodeCount int) {
+// moved to test/harness.go
+func xxStartNodes(nodeStart int, nodeCount int) {
 
 	Version := "v0.0.1"
 	Build := "2006-01-01"

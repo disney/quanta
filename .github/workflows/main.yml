@@ -43,11 +43,7 @@ jobs:
           cd /home/runner/work  
           pwd
           ls -lah
-          echo "--------"
-          cd /home/runner/work/quanta/docker  
-          pwd
-          ls -lah
-
+          
           echo "--------"
           cd /home/  
           pwd

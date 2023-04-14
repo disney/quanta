@@ -20,7 +20,7 @@ jobs:
       - name: Start consul
         run: |
           docker pull consul
-          docker run -d -p 8500:8500  -p 8600:8600/udp --name=badger consul agent -dev 
+          docker run -d -p 8500:8500  -p 8600:8600/udp --name=badger consul agent -dev -client=0.0.0.0
           echo "consul Startup complete"
 
       - name: Run some Tests against LocalStack

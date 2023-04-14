@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -120,6 +121,15 @@ func (res customResolver) ResolveEndpoint(service, region string) (awsv2.Endpoin
 	return awsv2.Endpoint{}, &awsv2.EndpointNotFoundError{}
 }
 
+type myCredentialsProvider struct {
+	// Retrieve returns nil if it successfully retrieved the value.
+	// Error is returned if the value were not obtainable, or empty.
+}
+
+func (p myCredentialsProvider) Retrieve(ctx context.Context) (awsv2.Credentials, error) {
+	return awsv2.Credentials{}, nil
+}
+
 func TestInitLoaderMain(t *testing.T) {
 
 	TestLocalS3(t) // populate s3
@@ -172,11 +182,14 @@ func TestInitLoaderMain(t *testing.T) {
 	main.ConsulAddr = "localhost:8500"
 
 	resolver := customResolver{}
+	credProvider := myCredentialsProvider{}
 
 	cfg := awsv2.Config{
 		Region: main.AWSRegion,
 		//Endpoint: "http://localhost:4566",
 		EndpointResolver: resolver,
+
+		Credentials: credProvider,
 	}
 
 	// session.Config.WithEndpoint("http://localhost:4566")
@@ -189,6 +202,10 @@ func TestInitLoaderMain(t *testing.T) {
 	}
 	main.BucketPath = "quanta-test-data"
 	main.LoadBucketContents()
+
+	if len(main.S3files) != 1 {
+		t.Errorf("Error loading bucket , wanted 1: got %v", len(main.S3files))
+	}
 
 	log.Printf("S3 bucket %s contains %d files for processing.", main.BucketPath, len(main.S3files))
 

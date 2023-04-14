@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -19,15 +21,20 @@ import (
 
 	We could use a suite but for now we'll want to run each test individually in debug mode
 
- */
+*/
 
 // You can use testing.T, if you want to test the code without benchmarking
 func setupSuite(tb testing.T) func(tb testing.T) {
 	fmt.Println("setup suite")
 
+	// TODO: put StartNode in here
+
+	// add the S3 setup here
+
 	// Return a function to teardown the test
 	return func(tb testing.T) {
 		fmt.Println("teardown suite")
+		// put Stop >- true in here
 	}
 }
 
@@ -60,22 +67,25 @@ func TestLocalS3(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error listing buckets: %s", err)
 	}
-	fmt.Printf("Buckets: %v", buckets)
+	_ = buckets
+	// fmt.Printf("Buckets: %v", buckets)
 
 	bucketout, err := S3svc.CreateBucket(&s3.CreateBucketInput{Bucket: aws.String("quanta-test-data")})
 	if err != nil {
 		t.Errorf("Error creating bucket: %s", err)
 		fmt.Println("Error creating bucket:", err.Error())
 	}
-	fmt.Printf("Bucketout: %v", bucketout)
+	_ = bucketout
+	// fmt.Printf("Bucketout: %v", bucketout)
 
 	buckets, err = S3svc.ListBuckets(nil)
 	if err != nil {
 		t.Errorf("Error listing buckets: %s", err)
 	}
-	for _, bucket := range buckets.Buckets {
-		fmt.Printf("Bucket: %s", *bucket.Name)
-	}
+	_ = buckets
+	// for _, bucket := range buckets.Buckets {
+	// 	fmt.Printf("Bucket: %s", *bucket.Name)
+	// }
 
 	putObjectInput := &s3.PutObjectInput{
 		Body:   aws.ReadSeekCloser(strings.NewReader("../test/testdata/us_cityzip")),
@@ -91,7 +101,7 @@ func TestLocalS3(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error putting object: %s", err)
 	}
-	fmt.Println("PutObjectOutput: ", putout)
+	fmt.Println("\nPutObjectOutput: ", putout)
 }
 
 func TestInitLoaderMain(t *testing.T) {
@@ -99,23 +109,44 @@ func TestInitLoaderMain(t *testing.T) {
 	teardownSuite := setupSuite(*t)
 	defer teardownSuite(*t)
 
-	m0, _ := test.StartNodes(0, 1) // from localCluster/local-cluster-main.go
-	m1, _ := test.StartNodes(1, 1)
-	m2, _ := test.StartNodes(2, 1)
+	weStartedTheCluster := false
+	// check to see if the cluster is running already
+	// if not, start it
 
-	defer func() {
-		m0.Stop <- true
-		m1.Stop <- true
-		m2.Stop <- true
-	}()
-
-	// this is too slow
-	//fmt.Println("Waiting for nodes to start...", m2.State)
-	for m0.State != server.Active || m1.State != server.Active || m2.State != server.Active {
-		time.Sleep(100 * time.Millisecond)
-		//fmt.Println("Waiting for nodes...", m2.State)
+	result := "[]"
+	res, err := http.Get("http://localhost:8500/v1/health/service/quanta-node")
+	if err == nil {
+		resBody, err := io.ReadAll(res.Body)
+		if err == nil {
+			result = string(resBody)
+		}
+	} else {
+		fmt.Println("is consul not running?")
 	}
-	//fmt.Println("done Waiting for nodes to start...", m2.State)
+	isNotRunning := strings.HasPrefix(result, "[]") || strings.Contains(result, "critical")
+
+	var m0, m1, m2 *server.Node
+	if isNotRunning {
+		weStartedTheCluster = true
+		m0, _ = test.StartNodes(0, 1) // from localCluster/local-cluster-main.go
+		m1, _ = test.StartNodes(1, 1)
+		m2, _ = test.StartNodes(2, 1)
+		// this is too slow
+		//fmt.Println("Waiting for nodes to start...", m2.State)
+		for m0.State != server.Active || m1.State != server.Active || m2.State != server.Active {
+			time.Sleep(100 * time.Millisecond)
+			//fmt.Println("Waiting for nodes...", m2.State)
+		}
+		//fmt.Println("done Waiting for nodes to start...", m2.State)
+
+	}
+	defer func() {
+		if weStartedTheCluster {
+			m0.Stop <- true
+			m1.Stop <- true
+			m2.Stop <- true
+		}
+	}()
 
 	main := NewMain()
 	main.AWSRegion = "us-east-1"

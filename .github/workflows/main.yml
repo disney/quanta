@@ -1,4 +1,4 @@
-name: localstack-action-example
+name: build
 on: push
 jobs:
   example-job:

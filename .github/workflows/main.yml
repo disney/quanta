@@ -25,7 +25,8 @@ jobs:
         run: |
           awslocal s3 mb s3://test
           awslocal s3 ls
-          echo "Test Execution complete!"       
+          echo "Test Execution complete!"    
+          cd ..   
           pwd
           ls -lah
 

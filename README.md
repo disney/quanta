@@ -1,3 +1,6 @@
+[![](https://godoc.org/github.com/awootton/quanta?status.svg)](http://godoc.org/github.com/awootton/quanta) 
+[![Go Report Card](https://goreportcard.com/badge/github.com/awootton/quanta)](https://goreportcard.com/report/github.com/awootton/quanta) 
+
 # Quanta
 
 Quanta - Generalized roaring bitmap based HTAP database engine.

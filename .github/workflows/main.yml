@@ -4,7 +4,7 @@ jobs:
   example-job:
     runs-on: ubuntu-latest
     steps:
-      - name: Start LocalStack and consul
+      - name: Start LocalStack
         env:
           LOCALSTACK_API_KEY: ${{ secrets.LOCALSTACK_API_KEY }}
         run: |
@@ -16,28 +16,40 @@ jobs:
           localstack wait -t 30                     # to become ready before timing out 
           echo "Startup complete"      
 
+
+      - name: Start consul
+
           docker pull consul
-          # docker start consul 
-          docker run -d -p 8500:8500  -p 8600:8600/udp --name=badger \
-          consul agent -dev 
+          docker run -d -p 8500:8500  -p 8600:8600/udp --name=badger consul agent -dev 
+          echo "consul Startup complete"
 
       - name: Run some Tests against LocalStack
         run: |
           awslocal s3 mb s3://test
           awslocal s3 ls
           echo "Test Execution complete!"  
-            
+          echo "--------"
+          pwd
+          ls -lah
+          echo "--------"
           cd /home/runner/work/quanta  
           pwd
           ls -lah
+          echo "--------"
           cd /home/runner/work/quanta/quanta  
           pwd
           ls -lah
+          echo "--------"
           cd /home/runner/work/quanta/root  
           pwd
           ls -lah
-
+          echo "--------"
           cd /home/runner/work/quanta/docker  
+          pwd
+          ls -lah
+
+          echo "--------"
+          cd /home/  
           pwd
           ls -lah
 

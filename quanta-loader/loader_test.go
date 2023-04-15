@@ -12,8 +12,8 @@ import (
 
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/disney/quanta/server"
 	"github.com/disney/quanta/test"
 )
@@ -51,61 +51,6 @@ func notTestVersionBuild(t *testing.T) {
 
 var _ = notTestVersionBuild
 
-func TestLocalS3(t *testing.T) {
-
-	teardownSuite := setupSuite(*t)
-	defer teardownSuite(*t)
-
-	session, err := session.NewSession()
-	if err != nil {
-		t.Errorf("Error creating session: %s", err)
-	}
-	session.Config.WithEndpoint("http://localhost:4566")
-	session.Config.WithS3ForcePathStyle(true) // very important
-
-	S3svc := s3.New(session, &aws.Config{Region: aws.String("us-east-1")})
-
-	buckets, err := S3svc.ListBuckets(nil)
-	if err != nil {
-		t.Errorf("Error listing buckets: %s", err)
-	}
-	_ = buckets
-	fmt.Printf("Buckets: %v", buckets)
-
-	bucketout, err := S3svc.CreateBucket(&s3.CreateBucketInput{Bucket: aws.String("quanta-test-data")})
-	if err != nil {
-		t.Errorf("Error creating bucket: %s", err)
-		fmt.Println("Error creating bucket:", err.Error())
-	}
-	_ = bucketout
-	// fmt.Printf("Bucketout: %v", bucketout)
-
-	buckets, err = S3svc.ListBuckets(nil)
-	if err != nil {
-		t.Errorf("Error listing buckets: %s", err)
-	}
-	_ = buckets
-	for _, bucket := range buckets.Buckets {
-		fmt.Printf("Bucket: %s", *bucket.Name)
-	}
-
-	putObjectInput := &s3.PutObjectInput{
-		Body:   aws.ReadSeekCloser(strings.NewReader("../test/testdata/us_cityzip")),
-		Bucket: aws.String("quanta-test-data"),
-		Key:    aws.String("us_cityzip"),
-		Metadata: map[string]*string{
-			"metadata1": aws.String("value1"),
-			"metadata2": aws.String("value2"),
-		},
-	}
-
-	putout, err := S3svc.PutObject(putObjectInput)
-	if err != nil {
-		t.Errorf("Error putting object: %s", err)
-	}
-	fmt.Println("\nPutObjectOutput: ", putout)
-}
-
 type customResolver struct {
 }
 
@@ -133,6 +78,70 @@ func (p myCredentialsProvider) Retrieve(ctx context.Context) (awsv2.Credentials,
 	}, nil
 }
 
+func TestLocalS3(t *testing.T) {
+
+	teardownSuite := setupSuite(*t)
+	defer teardownSuite(*t)
+
+	// session, err := session.NewSession()
+	// if err != nil {
+	// 	t.Errorf("Error creating session: %s", err)
+	// }
+	// session.Config.WithEndpoint("http://localhost:4566")
+	// session.Config.WithS3ForcePathStyle(true) // very important
+
+	resolver := customResolver{}
+	credProvider := myCredentialsProvider{}
+
+	cfg := awsv2.Config{
+		Region: "us-east-1",
+		//Endpoint: "http://localhost:4566",
+		EndpointResolver: resolver,
+		Credentials:      credProvider,
+	}
+
+	S3svc := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.UsePathStyle = true
+	})
+
+	bin := &s3.ListBucketsInput{}
+	buckets, err := S3svc.ListBuckets(context.TODO(), bin)
+	if err != nil {
+		t.Errorf("Error listing buckets: %s", err)
+	}
+	_ = buckets
+	fmt.Printf("Buckets: %v", buckets)
+
+	bucketout, err := S3svc.CreateBucket(context.TODO(), &s3.CreateBucketInput{Bucket: aws.String("quanta-test-data")})
+	if err != nil {
+		t.Errorf("Error creating bucket: %s", err)
+		fmt.Println("Error creating bucket:", err.Error())
+	}
+	_ = bucketout
+	// fmt.Printf("Bucketout: %v", bucketout)
+
+	buckets, err = S3svc.ListBuckets(context.TODO(), bin)
+	if err != nil {
+		t.Errorf("Error listing buckets: %s", err)
+	}
+	_ = buckets
+	for _, bucket := range buckets.Buckets {
+		fmt.Printf("Bucket: %s", *bucket.Name)
+	}
+
+	putObjectInput := &s3.PutObjectInput{
+		Body:   aws.ReadSeekCloser(strings.NewReader("../test/testdata/us_cityzip")),
+		Bucket: aws.String("quanta-test-data"),
+		Key:    aws.String("us_cityzip"),
+	}
+
+	putout, err := S3svc.PutObject(context.TODO(), putObjectInput)
+	if err != nil {
+		t.Errorf("Error putting object: %s", err)
+	}
+	fmt.Println("\nPutObjectOutput: ", putout)
+}
+
 func TestInitLoaderMain(t *testing.T) {
 
 	TestLocalS3(t) // populate s3
@@ -154,6 +163,8 @@ func TestInitLoaderMain(t *testing.T) {
 	} else {
 		fmt.Println("is consul not running?")
 	}
+	fmt.Println("result:", result)
+
 	isNotRunning := strings.HasPrefix(result, "[]") || strings.Contains(result, "critical")
 
 	var m0, m1, m2 *server.Node
@@ -191,8 +202,7 @@ func TestInitLoaderMain(t *testing.T) {
 		Region: main.AWSRegion,
 		//Endpoint: "http://localhost:4566",
 		EndpointResolver: resolver,
-
-		Credentials: credProvider,
+		Credentials:      credProvider,
 	}
 
 	// session.Config.WithEndpoint("http://localhost:4566")

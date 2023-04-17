@@ -19,8 +19,17 @@ jobs:
 
       - name: Start consul
         run: |
-          docker pull consul
-          docker run -d -p 8500:8500  -p 8600:8600/udp --name=badger consul agent -dev -client=0.0.0.0
+
+          wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+          sudo apt update && sudo apt install consul
+
+          consul agent -dev &
+          
+          # docker pull consul 
+          # -d 
+          # docker run -p 8500:8500  -p 8600:8600/udp -p 4000:4000 -p 4001:4001 -p 4002:4002 --name=badger consul agent -dev -client="0.0.0.0" 
+
           echo "consul Startup complete"
 
       - name: Run some Tests against LocalStack
@@ -28,26 +37,6 @@ jobs:
           awslocal s3 mb s3://test
           awslocal s3 ls
           echo "Test Execution complete!"  
-          echo "--------"
-          pwd
-          ls -lah
-          echo "--------"
-          cd /home/runner/work/quanta  
-          pwd
-          ls -lah
-          echo "--------"
-          cd /home/runner/work/quanta/quanta  
-          pwd
-          ls -lah
-          echo "--------"
-          cd /home/runner/work  
-          pwd
-          ls -lah
-          
-          echo "--------"
-          cd /home/  
-          pwd
-          ls -lah
 
       - uses: actions/checkout@v3
 

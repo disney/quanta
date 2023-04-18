@@ -179,8 +179,7 @@ func TestInitLoaderMain(t *testing.T) {
 			time.Sleep(100 * time.Millisecond)
 			//fmt.Println("Waiting for nodes...", m2.State)
 		}
-		//fmt.Println("done Waiting for nodes to start...", m2.State)
-
+		//fmt.Println("done Waiting for nodes to start...", m2.State
 	}
 	defer func() {
 		if weStartedTheCluster {
@@ -189,6 +188,9 @@ func TestInitLoaderMain(t *testing.T) {
 			m2.Stop <- true
 		}
 	}()
+
+	// start up proxy.
+	test.StartProxy(1)
 
 	main := NewMain()
 	main.AWSRegion = "us-east-1"
@@ -221,5 +223,8 @@ func TestInitLoaderMain(t *testing.T) {
 	}
 
 	log.Printf("S3 bucket %s contains %d files for processing.", main.BucketPath, len(main.S3files))
+
+	// file := main.S3files[0]
+	// finish me  main.processRowsForFile(file, conn)
 
 }

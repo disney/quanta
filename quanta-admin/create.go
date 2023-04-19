@@ -2,20 +2,22 @@ package main
 
 import (
 	"fmt"
+	"log"
+
+	proxy "github.com/disney/quanta/quanta-proxy-lib"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
-	"log"
 )
 
 // CreateCmd - Create command
 type CreateCmd struct {
-	Table     string `arg name:"table" help:"Table name."`
+	Table     string `arg:"" name:"table" help:"Table name."`
 	SchemaDir string `help:"Base directory containing schema files." default:"./config"`
 	Confirm   bool   `help:"Confirm deployment."`
 }
 
 // Run - Create command implementation
-func (c *CreateCmd) Run(ctx *Context) error {
+func (c *CreateCmd) Run(ctx *proxy.Context) error {
 
 	fmt.Printf("Configuration directory = %s\n", c.SchemaDir)
 	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)

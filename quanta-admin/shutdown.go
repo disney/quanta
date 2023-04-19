@@ -3,18 +3,20 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
+
+	proxy "github.com/disney/quanta/quanta-proxy-lib"
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
-	"strings"
 )
 
 // ShutdownCmd - Shutdown command
 type ShutdownCmd struct {
-	NodeIP string `arg name:"node-ip" help:"IP address of node to shutdown or ALL."`
+	NodeIP string `arg:"" name:"node-ip" help:"IP address of node to shutdown or ALL."`
 }
 
 // Run - Shutdown command implementation
-func (s *ShutdownCmd) Run(ctx *Context) error {
+func (s *ShutdownCmd) Run(ctx *proxy.Context) error {
 
 	conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
 	cx, cancel := context.WithTimeout(context.Background(), shared.Deadline)

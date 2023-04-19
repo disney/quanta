@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+
+	proxy "github.com/disney/quanta/quanta-proxy-lib"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 )
@@ -11,7 +13,7 @@ type TablesCmd struct {
 }
 
 // Run - Show tables implementation
-func (t *TablesCmd) Run(ctx *Context) error {
+func (t *TablesCmd) Run(ctx *proxy.Context) error {
 
 	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
 	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})

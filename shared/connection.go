@@ -15,6 +15,12 @@ package shared
 import (
 	"context"
 	"fmt"
+	"log"
+	"reflect"
+	"strings"
+	"sync"
+	"time"
+
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/golang/protobuf/ptypes/empty"
@@ -23,14 +29,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/testdata"
-	"log"
-	"reflect"
-	"strings"
-	"sync"
-	"time"
 )
 
-//
 // Conn - Client side cluster state and connection abstraction.
 //
 // ServiceName - Name of service i.e. "quanta" for registration with Consul.
@@ -49,7 +49,6 @@ import (
 // pollWait - Wait interval for node membership polling events.
 // nodes - List of nodes as currently registered with Consul.
 // NodeMap - Map cluster node keys to connection/client arrays.
-//
 type Conn struct {
 	ServiceName        string
 	Quorum             int
@@ -414,11 +413,25 @@ func (m *Conn) poll() {
 	}
 }
 
+func printServiceEntries(serviceEntries []*api.ServiceEntry) string {
+	str := ""
+	for _, entry := range serviceEntries {
+		// j, err := json.Marshal(entry)
+		// if err == nil {
+		// 	str += string(j) + "\n"
+		// }
+		//str += fmt.Sprint("Node.Node:", entry.Node.Node, " ", " id=", entry.Node.ID, " ")
+		str += fmt.Sprint("entry.Node.Node:", entry.Node.Node, " id=", entry.Node.ID, " ")
+	}
+	return str
+}
+
 // Update blocks until the service list changes or until the Consul agent's
 // timeout is reached (10 minutes by default).
 func (m *Conn) update() (err error) {
 
 	opts := &api.QueryOptions{WaitIndex: m.waitIndex}
+	// calls GET url=/v1/health/service/quanta?index=
 	serviceEntries, meta, err := m.Consul.Health().Service(m.ServiceName, "", false, opts)
 	if err != nil {
 		return err
@@ -426,10 +439,16 @@ func (m *Conn) update() (err error) {
 	if serviceEntries == nil {
 		return nil
 	}
+	fmt.Println("update serviceEntries:", printServiceEntries(serviceEntries), m.ServiceName)
+	//fmt.Println("update serviceEntries:", len(serviceEntries), m.ServiceName)
+
+	// calls GET url=/v1/kv/config/clusterSizeTarget
 	m.clusterSizeTarget, err = GetClusterSizeTarget(m.Consul)
 	if err != nil {
 		return err
 	}
+	fmt.Println("update GetClusterSizeTarget:", m.clusterSizeTarget, m.ServiceName)
+
 	if m.clusterSizeTarget == 0 {
 		m.clusterSizeTarget = m.Replicas + 1
 		u.Warnf("ClusterSizeTarget not set, defaulting target to replicas + 1, currently %d", m.clusterSizeTarget)
@@ -445,7 +464,10 @@ func (m *Conn) update() (err error) {
 			continue
 		}
 		if entry.Checks[0].Status == "passing" && entry.Checks[1].Status == "passing" {
-			node := strings.Split(entry.Node.Node, ".")[0]
+			// node := strings.Split(entry.Node.Node, ".")[0]
+			// let's not use the Node.Node, which is always like 'mbp-atw-2.lan' locally atw danger danger
+			// node = entry.Node.ID and the ID's all the same too
+			node := entry.Service.ID
 			idMap[node] = entry
 			ids = append(ids, node)
 		}
@@ -498,7 +520,7 @@ func (m *Conn) update() (err error) {
 	m.nodeMap = make(map[string]int)
 	for _, entry := range serviceEntries {
 		if entry.Service.ID == "shutdown" {
-			continue
+			continue  // when do we get this?
 		}
 		m.nodes = append(m.nodes, entry)
 	}
@@ -585,7 +607,7 @@ func (m *Conn) CheckNodeForKey(key, nodeID string) (bool, int) {
 
 // SendMemberLeft - Notify listening service of MemberLeft event.
 func (m *Conn) SendMemberLeft(nodeID string, index int) {
-	
+
 	m.registerLock.RLock()
 	defer m.registerLock.RUnlock()
 
@@ -638,6 +660,10 @@ func (m *Conn) getNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error)
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
 
+	if clientIndex >= len(m.Admin) {
+		return nil, fmt.Errorf("clientIndex >= len(m.Admin) %d >= %d", clientIndex, len(m.Admin))
+	}
+
 	result, err := m.Admin[clientIndex].Status(ctx, &empty.Empty{})
 	if err != nil {
 		return nil, fmt.Errorf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", m.Admin[clientIndex], err,
@@ -659,8 +685,8 @@ func (m *Conn) GetCachedNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, 
 
 	m.nodeMapLock.RLock()
 	defer m.nodeMapLock.RUnlock()
-	if m.ServicePort == 0 {   // test harness
-		return  &pb.StatusMessage{NodeState: "Active"}, nil
+	if m.ServicePort == 0 { // test harness
+		return &pb.StatusMessage{NodeState: "Active"}, nil
 	}
 	if clientIndex < 0 || clientIndex >= len(m.ids) {
 		return nil, fmt.Errorf("clientIndex %d is invalid", clientIndex)

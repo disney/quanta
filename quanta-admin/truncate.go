@@ -2,20 +2,23 @@ package main
 
 import (
 	"fmt"
+
+	"time"
+
+	proxy "github.com/disney/quanta/quanta-proxy-lib"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
-	"time"
 )
 
 // TruncateCmd - Truncate command
 type TruncateCmd struct {
-	Table       string `arg name:"table" help:"Table name."`
-	DropEnums   bool   `help:"Drop enumeration data for StringEnum types."`
-	Force       bool   `help:"Force override of constraints."`
+	Table     string `arg:"" name:"table" help:"Table name."`
+	DropEnums bool   `help:"Drop enumeration data for StringEnum types."`
+	Force     bool   `help:"Force override of constraints."`
 }
 
 // Run - Truncate command implementation
-func (c *TruncateCmd) Run(ctx *Context) error {
+func (c *TruncateCmd) Run(ctx *proxy.Context) error {
 
 	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
 	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})

@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/disney/quanta/core"
+	proxy "github.com/disney/quanta/quanta-proxy-lib"
 )
 
 // StatusCmd - Status command
@@ -10,13 +12,13 @@ type StatusCmd struct {
 }
 
 // Run - Status command implementation
-func (s *StatusCmd) Run(ctx *Context) error {
+func (s *StatusCmd) Run(ctx *proxy.Context) error {
 
 	conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
 
 	fmt.Println()
-	fmt.Println("ADDRESS            STATUS    DATA CENTER                              SHARDS   MEMORY   VERSION")
-	fmt.Println("================   ======    ==================================   ==========   =======  =========================")
+	fmt.Println("ADDRESS  : PORT          STATUS    DATA CENTER                          SHARDS       MEMORY   VERSION")
+	fmt.Println("================         ======    ==================================   ==========   =======  =========================")
 	for _, node := range conn.Nodes() {
 		status := "Left"
 		version := ""
@@ -37,8 +39,8 @@ func (s *StatusCmd) Run(ctx *Context) error {
 				}
 			}
 		}
-		fmt.Printf("%-16s   %-8s  %-34s   %10d   %-7s  %s\n", node.Node.Address, status, node.Node.Datacenter, shards, 
-				core.Bytes(memory), version)
+		fmt.Printf("%-16s:%5d   %-8s  %-34s   %10d   %-7s  %s\n", node.Node.Address, node.Service.Port, status, node.Node.Datacenter, shards,
+			core.Bytes(memory), version)
 	}
 	fmt.Println()
 	status, active, size := conn.GetClusterState()

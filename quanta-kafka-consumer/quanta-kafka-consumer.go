@@ -10,11 +10,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 	"gopkg.in/alecthomas/kingpin.v2"
-	"gopkg.in/confluentinc/confluent-kafka-go.v1/kafka"
+	// "gopkg.in/confluentinc/confluent-kafka-go.v1/kafka"
 )
 
 // Variables to identify the build

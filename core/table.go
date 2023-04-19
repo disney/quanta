@@ -28,11 +28,11 @@ type Table struct {
 // Attribute - Field structure.
 type Attribute struct {
 	*shared.BasicAttribute
-	Parent           *Table
-	valueMap         map[interface{}]uint64
-	reverseMap       map[uint64]interface{}
-	mapperInstance   Mapper
-	localLock        sync.RWMutex
+	Parent         *Table
+	valueMap       map[interface{}]uint64
+	reverseMap     map[uint64]interface{}
+	mapperInstance Mapper
+	localLock      sync.RWMutex
 }
 
 const (
@@ -334,7 +334,6 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 
 		v = rowID
 		u.Infof("Added enum for field = %s, value = %v, ID = %v", a.FieldName, value, v)
-
 		la.localLock.Unlock()
 		la.localLock.RLock()
 	}
@@ -439,13 +438,13 @@ func (a *Attribute) ToBackingValue(rowIDs []uint64, c *Session) (result string, 
 
 // Field Metadata struct
 type Field struct {
-	Name      string       `json:name`
-	Label     string       `json:label`
-	Fieldtype string       `json:fieldType`
-	MinValue  int          `json:minValue`
-	MaxValue  int          `json:maxValue`
-	Values    []FieldValue `json:values`
-	Indextype string       `json:indexType`
+	Name      string       `json:"name"`
+	Label     string       `json:"label"`
+	Fieldtype string       `json:"fieldType"`
+	MinValue  int          `json:"minValue"`
+	MaxValue  int          `json:"maxValue"`
+	Values    []FieldValue `json:"values"`
+	Indextype string       `json:"indexType"`
 }
 
 // FieldValue Metadata struct
@@ -511,4 +510,3 @@ func ClearTableCache() {
 //func ReadUnlockChanges() {
 //	tableCacheLock.RUnlock()
 //}
-

@@ -4,8 +4,20 @@
 *.so
 *.dylib
 
+.vscode/
+examples/java_query/target/
+*/localClusterData/
+test/testdata/
+
 # Test binary, build with `go test -c`
 *.test
+
+# test artifacts
+test/testdata/index
+examples/java_query/target/classes
+.vscode/
+*/localClusterData
+.DS_Store
 
 # Ignore dependences downloaded
 vendor/

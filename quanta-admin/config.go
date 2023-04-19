@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"strconv"
+
+	proxy "github.com/disney/quanta/quanta-proxy-lib"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
-	"strconv"
 )
 
 // ConfigCmd - Configuration  command
@@ -14,7 +16,7 @@ type ConfigCmd struct {
 }
 
 // Run - Config command implementation.
-func (c *ConfigCmd) Run(ctx *Context) error {
+func (c *ConfigCmd) Run(ctx *proxy.Context) error {
 
 	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
 	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})

@@ -32,7 +32,8 @@ type QuantaTestSuite struct {
 // In order for 'go test' to run this suite, we need to create
 // a normal test function and pass our suite to suite.Run
 func TestQuantaTestSuite(t *testing.T) {
-	// atw put this back: suite.Run(t, new(QuantaTestSuite))
+	// atw put this back:
+	// suite.Run(t, new(QuantaTestSuite))
 }
 
 func (suite *QuantaTestSuite) SetupSuite() {
@@ -68,6 +69,14 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err)
 	err = ctx.GrantRole(rbac.DomainUser, "USER001", "quanta", true)
 	assert.NoError(suite.T(), err)
+
+	// load the data if not loaded
+	results, _, err := suite.runQuery("select count(*) from cities", nil)
+	assert.NoError(suite.T(), err)
+	assert.Greater(suite.T(), len(results), 0)
+	fmt.Println("row count of cities = ", results[0])
+	needsLoading := results[0] == "0"
+	_ = needsLoading
 
 	// load up vision test data (nested schema containing 3 separate tables)
 	suite.loadData("cities", "./testdata/us_cities.parquet", conn, false)

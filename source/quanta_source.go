@@ -44,7 +44,7 @@ type QuantaSource struct {
 	sessionPool   *core.SessionPool
 }
 
-// NewQuantaSource - Construct a QuantaSource.
+// NewQuantaSource - Construct a QuantaSource. For Proxy
 func NewQuantaSource(baseDir, consulAddr string, servicePort, sessionPoolSize int) (*QuantaSource, error) {
 
 	m := &QuantaSource{}
@@ -61,7 +61,7 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort, sessionPoolSize in
 	clientConn.ServicePort = servicePort
 	clientConn.Quorum = 3
 	if err := clientConn.Connect(consulClient); err != nil {
-		u.Error(err)
+		u.Error(err) // node: quorum size 0 currently,  must be at least 3 to handle requests for service quanta
 		// os.Exit(1)
 		fmt.Println("ignoring NewDefaultConnection error connecting to consul", err)
 	}

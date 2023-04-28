@@ -77,6 +77,8 @@ type Conn struct {
 	clusterSizeTarget  int
 	nodeStatusMap      map[string]*pb.StatusMessage
 	activeCount        int
+
+	IsLocalCluster bool
 }
 
 // NewDefaultConnection - Configure a connection with default values.
@@ -183,7 +185,7 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 				return fmt.Errorf("client: can't create Consul API client: %s", err)
 			}
 		}
-		err = m.update()
+		err = m.Update()
 		if err != nil {
 			return fmt.Errorf("node: can't fetch %s services list: %s", m.ServiceName, err)
 		}
@@ -270,8 +272,9 @@ func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.Client
 
 	for i, id := range m.ids {
 		entry := m.idMap[id]
+		nodeConnPort := entry.Service.Port //  m.ServicePort
 		nodeConns[i], err = grpc.Dial(fmt.Sprintf("%s:%d", entry.Node.Address,
-			m.ServicePort), m.grpcOpts...)
+			nodeConnPort), m.grpcOpts...)
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
 		}
@@ -297,6 +300,10 @@ func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.Client
    WriteIntentAll
 */
 func (m *Conn) SelectNodes(key interface{}, op OpType) ([]int, error) {
+
+	if len(m.nodeStatusMap) == 0 {
+		m.Update() // atw - populate the map of consul nodes now
+	}
 
 	m.nodeMapLock.RLock()
 	defer m.nodeMapLock.RUnlock()
@@ -405,7 +412,7 @@ func (m *Conn) poll() {
 			}
 			return
 		case <-time.After(m.pollWait):
-			err = m.update()
+			err = m.Update()
 			if err != nil {
 				u.Errorf("[client %s] error: %s", m.ServiceName, err)
 			}
@@ -428,7 +435,7 @@ func printServiceEntries(serviceEntries []*api.ServiceEntry) string {
 
 // Update blocks until the service list changes or until the Consul agent's
 // timeout is reached (10 minutes by default).
-func (m *Conn) update() (err error) {
+func (m *Conn) Update() (err error) {
 
 	opts := &api.QueryOptions{WaitIndex: m.waitIndex}
 	// calls GET url=/v1/health/service/quanta?index=
@@ -481,8 +488,9 @@ func (m *Conn) update() (err error) {
 				// insert new connection and admin stub
 				m.clientConn = append(m.clientConn, nil)
 				copy(m.clientConn[index+1:], m.clientConn[index:])
+				servicePort := entry.Service.Port // m.ServicePort
 				m.clientConn[index], err = grpc.Dial(fmt.Sprintf("%s:%d", entry.Node.Address,
-					m.ServicePort), m.grpcOpts...)
+					servicePort), m.grpcOpts...)
 				if err != nil {
 					return err
 				}
@@ -520,7 +528,7 @@ func (m *Conn) update() (err error) {
 	m.nodeMap = make(map[string]int)
 	for _, entry := range serviceEntries {
 		if entry.Service.ID == "shutdown" {
-			continue  // when do we get this?
+			continue // when do we get this?
 		}
 		m.nodes = append(m.nodes, entry)
 	}

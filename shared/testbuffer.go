@@ -3,9 +3,10 @@ package shared
 // Shared buffer for in-memory stack testing
 
 import (
-	"google.golang.org/grpc/test/bufconn"
 	"net"
 	"time"
+
+	"google.golang.org/grpc/test/bufconn"
 )
 
 var (

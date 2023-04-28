@@ -333,7 +333,7 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 		a.reverseMap[rowID] = value
 
 		v = rowID
-		u.Infof("Added enum for field = %s, value = %v, ID = %v", a.FieldName, value, v)
+		// atw u.Infof("Added enum for field = %s, value = %v, ID = %v", a.FieldName, value, v)
 		la.localLock.Unlock()
 		la.localLock.RLock()
 	}
@@ -372,7 +372,7 @@ func (a *Attribute) GetValueForID(id uint64) (interface{}, error) {
 	lookupName := a.Parent.Name + SEP + a.FieldName + ".StringEnum"
 	x, err := a.Parent.kvStore.Items(lookupName, reflect.String, reflect.Uint64)
 	if err != nil {
-		return nil, fmt.Errorf("ERROR: Cannot open enum for table %s, field %s. [%v]", a.Parent.Name,
+		return nil, fmt.Errorf("ERROR: GetValueForID cannot open enum for table %s, field %s. [%v]", a.Parent.Name,
 			a.FieldName, err)
 	}
 	for kk, vv := range x {
@@ -473,7 +473,7 @@ func (t *Table) LoadFieldValues() (fieldMap map[string]*Field, err error) {
 		lookupName := t.Name + SEP + attr.FieldName + ".StringEnum"
 		x, err := t.kvStore.Items(lookupName, reflect.String, reflect.Uint64)
 		if err != nil {
-			return nil, fmt.Errorf("ERROR: Cannot open enum for table %s, field %s. [%v]", t.Name,
+			return nil, fmt.Errorf("ERROR: LoadFieldValues cannot open enum for table %s, field %s. [%v]", t.Name,
 				attr.FieldName, err)
 		}
 		for kk, vv := range x {

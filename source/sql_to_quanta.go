@@ -172,8 +172,8 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	if m.needsPolyFill {
 		p.Custom["poly_fill"] = true
 		//u.Warnf("%p  need to signal poly-fill", m)
-	//} else {
-	//	p.Complete = true
+		//} else {
+		//	p.Complete = true
 	}
 	m.p = p
 	req := p.Stmt.Source
@@ -342,7 +342,6 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 // nested structure for quanta queries if possible.
 //
 // - if can't express logic we need to allow qlbridge to poly-fill
-//
 func (m *SQLToQuanta) walkNode(cur expr.Node, q *shared.QueryFragment) (value.Value, error) {
 	//u.Debugf("WalkNode: %#v", cur)
 	switch curNode := cur.(type) {
@@ -383,8 +382,7 @@ func (m *SQLToQuanta) walkNode(cur expr.Node, q *shared.QueryFragment) (value.Va
 
 // Tri Nodes expressions:
 //
-//     <expression> [NOT] BETWEEN <expression> AND <expression>
-//
+//	<expression> [NOT] BETWEEN <expression> AND <expression>
 func (m *SQLToQuanta) walkFilterTri(node *expr.TriNode, q *shared.QueryFragment) (value.Value, error) {
 
 	if node.Negated() {
@@ -515,8 +513,7 @@ func (m *SQLToQuanta) walkFilterTri(node *expr.TriNode, q *shared.QueryFragment)
 
 // Array Nodes expressions:
 //
-//    year IN (1990,1992)  =>
-//
+//	year IN (1990,1992)  =>
 func (m *SQLToQuanta) walkArrayNode(node *expr.ArrayNode, q *shared.QueryFragment) (value.Value, error) {
 
 	terms := make([]interface{}, 0, len(node.Args))
@@ -539,13 +536,12 @@ func (m *SQLToQuanta) walkArrayNode(node *expr.ArrayNode, q *shared.QueryFragmen
 
 // Binary Node:   operations for >, >=, <, <=, =, !=, AND, OR, Like, IN
 //
-//    x = y             =>   db.users.find({field: {"$eq": value}})
-//    x != y            =>   db.inventory.find( { qty: { $ne: 20 } } )
+//	x = y             =>   db.users.find({field: {"$eq": value}})
+//	x != y            =>   db.inventory.find( { qty: { $ne: 20 } } )
 //
-//    x like "list%"    =>   db.users.find( { user_id: /^list/ } )
-//    x like "%list%"   =>   db.users.find( { user_id: /bc/ } )
-//    x IN [a,b,c]      =>   db.users.find( { user_id: {"$in":[a,b,c] } } )
-//
+//	x like "list%"    =>   db.users.find( { user_id: /^list/ } )
+//	x like "%list%"   =>   db.users.find( { user_id: /bc/ } )
+//	x IN [a,b,c]      =>   db.users.find( { user_id: {"$in":[a,b,c] } } )
 func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFragment) (value.Value, error) {
 
 	// If we have to recurse deeper for AND, OR operators
@@ -793,7 +789,7 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 
 func (m *SQLToQuanta) handleBSI(op string, lhval, rhval value.Value, q *shared.QueryFragment) error {
 
-	if lhval == nil {  // silently ignore
+	if lhval == nil { // silently ignore
 		return nil
 	}
 
@@ -879,7 +875,8 @@ func (m *SQLToQuanta) walkFilterUnary(node *expr.UnaryNode, q *shared.QueryFragm
 }
 
 // eval() returns
-//     value, isOk, isIdentity
+//
+//	value, isOk, isIdentity
 func (m *SQLToQuanta) eval(arg expr.Node) (value.Value, bool, bool) {
 	switch arg := arg.(type) {
 	case *expr.NumberNode, *expr.StringNode:
@@ -906,7 +903,6 @@ func (m *SQLToQuanta) eval(arg expr.Node) (value.Value, bool, bool) {
 	}
 	return nil, false, false
 }
-
 
 func (m *SQLToQuanta) checkFuncArgs(f *expr.FuncNode) (int, error) {
 
@@ -936,13 +932,12 @@ func (m *SQLToQuanta) checkFuncArgs(f *expr.FuncNode) (int, error) {
 
 // Aggregations from the <select_list>
 //
-//    SELECT <select_list> FROM ... WHERE
-//
+//	SELECT <select_list> FROM ... WHERE
 func (m *SQLToQuanta) walkSelectList(q *shared.QueryFragment) error {
 
 	// Do a dup check to make sure columns are aliased first.
 	dupMap := make(map[string]*rel.Column, len(m.sel.Columns))
-	for i := 0;  i < len(m.sel.Columns); i++ {
+	for i := 0; i < len(m.sel.Columns); i++ {
 		c := m.sel.Columns[i]
 		if c.As != "" {
 			if _, found := dupMap[c.As]; found {
@@ -971,7 +966,11 @@ func (m *SQLToQuanta) walkSelectList(q *shared.QueryFragment) error {
 			// case *expr.UnaryNode:
 			//     return m.walkUnary(curNode)
 			case *expr.FuncNode:
-   				if curNode.Missing && curNode.Name != "min" && curNode.Name != "max" && curNode.Name != "topn" {
+				// sum? avg? add? FIXME:  need to check if this is an aggregate function
+				if curNode.Missing && curNode.Name != "min" &&
+					curNode.Name != "max" && curNode.Name != "topn" &&
+					curNode.Name != "count" && curNode.Name != "sum" && curNode.Name != "avg" &&
+					curNode.Name != "add" { // atw added count, sum, avg, add
 					return fmt.Errorf("func %q not found while processing select list", curNode.Name)
 				}
 				count, err := m.checkFuncArgs(curNode)
@@ -1061,14 +1060,15 @@ func (m *SQLToQuanta) walkAggs(cur expr.Node, q *shared.QueryFragment) error {
 // Take an expression func, ensure we don't do runtime-checking (as the function)
 // doesn't really exist, then map that function to an Mongo Aggregation/MapReduce function
 //
-//    min, max, avg, sum, cardinality, terms
+//	min, max, avg, sum, cardinality, terms
 //
 // Single Value Aggregates:
-//       min, max, avg, sum, cardinality, count
+//
+//	min, max, avg, sum, cardinality, count
 //
 // MultiValue aggregates:
-//      terms, ??
 //
+//	terms, ??
 func (m *SQLToQuanta) walkAggFunc(node *expr.FuncNode, q *shared.QueryFragment) error {
 	switch funcName := strings.ToLower(node.Name); funcName {
 	case "max", "min", "avg", "sum", "cardinality":
@@ -1200,8 +1200,8 @@ func (m *SQLToQuanta) walkAggFunc(node *expr.FuncNode, q *shared.QueryFragment) 
 			//return M{"exists": M{"field": val.ToString()}}, nil
 		}
 
-	//default:
-	//	u.Warnf("not implemented ")
+		//default:
+		//	u.Warnf("not implemented ")
 	}
 	u.Debugf("func:  %v", q)
 	if q != nil {
@@ -1406,7 +1406,8 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 }
 
 // CreateMutator part of Mutator interface to allow data sources create a stateful
-//  mutation context for update/delete operations.
+//
+//	mutation context for update/delete operations.
 func (m *SQLToQuanta) CreateMutator(pc interface{}) (schema.ConnMutator, error) {
 	if ctx, ok := pc.(*plan.Context); ok && ctx != nil {
 		m.TaskBase = exec.NewTaskBase(ctx)
@@ -1663,8 +1664,8 @@ func (m *SQLToQuanta) Delete(key driver.Value) (int, error) {
 }
 
 // DeleteExpression - delete by expression (where clause)
-//  - For where columns we can query
-//  - for others we might have to do a select -> delete
+//   - For where columns we can query
+//   - for others we might have to do a select -> delete
 func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, error) {
 
 	u.Debugf("In delete?  %v   %T", where, p)

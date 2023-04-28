@@ -91,26 +91,52 @@ type Context struct {
 	Debug      bool   `help:"Enable debug logging."`
 }
 
+// func xxxSchemaChangeListener(e shared.SchemaChangeEvent) { // old version
+
+// 	core.ClearTableCache()
+// 	switch e.Event {
+// 	case shared.Drop:
+// 		schema.DefaultRegistry().SchemaDrop("quanta", e.Table, lex.TokenTable)
+// 		log.Printf("Dropped table %s", e.Table)
+// 	case shared.Modify:
+// 		log.Printf("Truncated table %s", e.Table)
+// 	case shared.Create:
+// 		log.Printf("SchemaChangeListener create %s", e.Table) // how can this possibly be working?
+// 		if Src.GetSessionPool() != nil {
+// 			Src.GetSessionPool().Recover(nil)
+// 		}
+// 		schema.DefaultRegistry().SchemaDrop("quanta", "quanta", lex.TokenSource)
+// 		var err error
+// 		Src, err = source.NewQuantaSource("", ConsulAddr, QuantaPort, SessionPoolSize)
+// 		if err != nil {
+// 			u.Error(err)
+// 		}
+// 		schema.RegisterSourceAsSchema("quanta", Src)
+// 		//schema.DefaultRegistry().SchemaRefresh("quanta")
+// 		log.Printf("Created table %s", e.Table)
+// 	}
+// }
+
 func SchemaChangeListener(e shared.SchemaChangeEvent) {
 
 	core.ClearTableCache()
+	if Src != nil && Src.GetSessionPool() != nil {
+		Src.GetSessionPool().Recover(nil)
+	}
 	switch e.Event {
 	case shared.Drop:
-		schema.DefaultRegistry().SchemaDrop("quanta", e.Table, lex.TokenTable)
 		log.Printf("Dropped table %s", e.Table)
+		Src.GetSessionPool().Lock()
+		defer Src.GetSessionPool().Unlock()
+		schema.DefaultRegistry().SchemaDrop("quanta", e.Table, lex.TokenTable)
 	case shared.Modify:
 		log.Printf("Truncated table %s", e.Table)
+		Src.GetSessionPool().Lock()
+		defer Src.GetSessionPool().Unlock()
+		time.Sleep(time.Second * 5)
+		schema.DefaultRegistry().SchemaRefresh("quanta")
 	case shared.Create:
-		log.Printf("SchemaChangeListener create %s", e.Table)
-		Src.GetSessionPool().Recover(nil)
-		schema.DefaultRegistry().SchemaDrop("quanta", "quanta", lex.TokenSource)
-		var err error
-		Src, err = source.NewQuantaSource("", ConsulAddr, QuantaPort, SessionPoolSize)
-		if err != nil {
-			u.Error(err)
-		}
-		schema.RegisterSourceAsSchema("quanta", Src)
-		//schema.DefaultRegistry().SchemaRefresh("quanta")
+		schema.DefaultRegistry().SchemaRefresh("quanta")
 		log.Printf("Created table %s", e.Table)
 	}
 }

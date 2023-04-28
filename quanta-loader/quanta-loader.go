@@ -313,7 +313,7 @@ func (m *Main) processRowsForFile(s3object types.Object, dbConn *core.Session) {
 
 // Init function initilizations loader.
 // Establishes session with bitmap server and AWS S3 client
-// serviceName is 'quanta' or 'quanta-node' in loacl-cluster
+// serviceName is 'quanta' or 'quanta' in local-cluster // localcluster was quanta-node
 func (m *Main) Init(serviceName string, cfgP *awsv2.Config) error {
 
 	consul, err := api.NewClient(&api.Config{Address: m.ConsulAddr})

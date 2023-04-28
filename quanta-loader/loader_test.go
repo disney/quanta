@@ -154,7 +154,7 @@ func TestInitLoaderMain(t *testing.T) {
 	// if not, start it
 
 	result := "[]"
-	res, err := http.Get("http://localhost:8500/v1/health/service/quanta-node")
+	res, err := http.Get("http://localhost:8500/v1/health/service/quanta") // was quanta-node
 	if err == nil {
 		resBody, err := io.ReadAll(res.Body)
 		if err == nil {
@@ -168,11 +168,12 @@ func TestInitLoaderMain(t *testing.T) {
 	isNotRunning := strings.HasPrefix(result, "[]") || strings.Contains(result, "critical")
 
 	var m0, m1, m2 *server.Node
+	var proxyControl *test.LocalProxyControl
 	if isNotRunning {
 		weStartedTheCluster = true
-		m0, _ = test.StartNodes(0, 1) // from localCluster/local-cluster-main.go
-		m1, _ = test.StartNodes(1, 1)
-		m2, _ = test.StartNodes(2, 1)
+		m0, _ = test.StartNodes(0) // from localCluster/local-cluster-main.go
+		m1, _ = test.StartNodes(1)
+		m2, _ = test.StartNodes(2)
 		// this is too slow
 		//fmt.Println("Waiting for nodes to start...", m2.State)
 		for m0.State != server.Active || m1.State != server.Active || m2.State != server.Active {
@@ -180,17 +181,19 @@ func TestInitLoaderMain(t *testing.T) {
 			//fmt.Println("Waiting for nodes...", m2.State)
 		}
 		//fmt.Println("done Waiting for nodes to start...", m2.State
+
+		// start up proxy.
+		proxyControl = test.StartProxy(1, "") // like ./testdata/config
+
 	}
 	defer func() {
 		if weStartedTheCluster {
+			proxyControl.Stop <- true
 			m0.Stop <- true
 			m1.Stop <- true
 			m2.Stop <- true
 		}
 	}()
-
-	// start up proxy.
-	test.StartProxy(1)
 
 	main := NewMain()
 	main.AWSRegion = "us-east-1"
@@ -211,7 +214,7 @@ func TestInitLoaderMain(t *testing.T) {
 	// session.Config.WithS3ForcePathStyle(true)
 	// session.Config.WithRegion(main.AWSRegion)
 
-	err = main.Init("quanta-node", &cfg)
+	err = main.Init("quanta", &cfg) // quanta-node
 	if err != nil {
 		t.Errorf("Error initializing main: %s", err)
 	}
@@ -225,6 +228,14 @@ func TestInitLoaderMain(t *testing.T) {
 	log.Printf("S3 bucket %s contains %d files for processing.", main.BucketPath, len(main.S3files))
 
 	// file := main.S3files[0]
-	// finish me  main.processRowsForFile(file, conn)
+	// // finish me
+	// tableName := "us_cityzip"
+	// main.Index = tableName
+	// path := ""
+	// conn, err := core.OpenSession(path, main.Index, main.IsNested, main.apiHost)
+	// if err != nil {
+	// 	t.Errorf("Error opening session: %s", err)
+	// }
+	// main.processRowsForFile(file, conn)
 
 }

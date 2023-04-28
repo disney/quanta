@@ -4,12 +4,13 @@ package shared
 
 import (
 	"fmt"
-	"github.com/araddon/qlbridge/value"
-	"github.com/hashicorp/consul/api"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"os"
 	"strings"
+
+	"github.com/araddon/qlbridge/value"
+	"github.com/hashicorp/consul/api"
+	"gopkg.in/yaml.v2"
 )
 
 // BasicTable - Table structure.

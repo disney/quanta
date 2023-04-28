@@ -35,7 +35,8 @@ type QuantaTestSuite2 struct {
 func BenchmarkQuantaTestSuite(t *testing.B) {
 	suite := new(QuantaTestSuite2)
 	_ = suite
-	// atw fixme: suite.SetupSuite()
+	// atw fixme:
+	// suite.SetupSuite()
 }
 
 func (suite *QuantaTestSuite2) SetupSuite() {

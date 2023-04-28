@@ -156,7 +156,7 @@ func putRecursive(typ reflect.Type, value reflect.Value, consul *api.Client, roo
 func UnmarshalConsul(consul *api.Client, name string) (BasicTable, error) {
 
 	table := BasicTable{Name: name}
-	keys, _, _ := consul.KV().Keys("schema/" + name, "", nil)
+	keys, _, _ := consul.KV().Keys("schema/"+name, "", nil)
 	if len(keys) == 0 {
 		return table, fmt.Errorf("Table %s not found.", name)
 	}
@@ -404,6 +404,8 @@ func Lock(consul *api.Client, lockName, processName string) (*api.Lock, error) {
 
 	lock, err := consul.LockOpts(opts)
 
+	u.Debugf("Lock lock.Unlock all starting")
+
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	go func() {
@@ -540,7 +542,7 @@ func GetClusterSizeTarget(consul *api.Client) (int, error) {
 
 // SetClusterSizeTarget - Set the target cluster size.
 func SetClusterSizeTarget(consul *api.Client, size int) error {
-	
+
 	fmt.Println("SetClusterSizeTarget", size)
 
 	var kvPair api.KVPair

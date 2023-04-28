@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -21,7 +20,6 @@ import (
 	"github.com/disney/quanta/sink"
 	"github.com/disney/quanta/source"
 	"github.com/hashicorp/consul/api"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	u "github.com/araddon/gou"
 	"github.com/araddon/qlbridge/expr"
@@ -69,7 +67,7 @@ func RemoveContents(path string) error {
 	return nil
 }
 
-func StartNodes(nodeStart int, nodeCount int) (*server.Node, error) {
+func StartNodes(nodeStart int) (*server.Node, error) {
 
 	Version := "v0.0.1"
 	Build := "2006-01-01"
@@ -85,7 +83,7 @@ func StartNodes(nodeStart int, nodeCount int) (*server.Node, error) {
 		hashKey := "quanta-node-" + strconv.Itoa(index)
 		dataDir := "localClusterData/" + hashKey + "/data"
 		bindAddr := "127.0.0.1"
-		port := 4000 + index
+		port := 4010 + index
 
 		consul := bindAddr + ":8500"
 
@@ -121,7 +119,8 @@ func StartNodes(nodeStart int, nodeCount int) (*server.Node, error) {
 		if err != nil {
 			u.Errorf("[node: Cannot initialize node config: error: %s", err)
 		}
-		m.ServiceName = "quanta-node" // not hashKey this doesn't work
+		m.ServiceName = "quanta" // not hashKey this doesn't work was "quanta-node" (atw)
+		m.IsLocalCluster = true
 
 		kvStore := server.NewKVStore(m)
 		m.AddNodeService(kvStore)
@@ -135,22 +134,6 @@ func StartNodes(nodeStart int, nodeCount int) (*server.Node, error) {
 		// Start listening endpoint
 		m.Start()
 
-		// Start metrics publisher thread
-		// todo: ticker := metricsTicker(m)
-
-		// elsewhere
-		// c := make(chan os.Signal, 1)
-		// signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
-		// go func() {
-		// 	for range c {
-		// 		u.Errorf("Interrupt signal received.  Starting Shutdown...")
-		// 		ticker.Stop()
-		// 		m.Leave()
-		// 		time.Sleep(5)
-		// 		os.Exit(0)
-		// 	}
-		// }()
-
 		start := time.Now()
 		err = m.InitServices()
 		elapsed := time.Since(start)
@@ -159,12 +142,9 @@ func StartNodes(nodeStart int, nodeCount int) (*server.Node, error) {
 		}
 		log.Printf("Node initialized in %v.", elapsed)
 
-		// not connected yet: shared.SetClusterSizeTarget(m.Consul, 3)
-
 		go func() {
-			// joinName := hashKey // "quanta-" + hashKey
-			joinName := "quanta-node" // this is the name for a cluster of nodes
-			err = m.Join(joinName)    // this does not return
+			joinName := "quanta"   // this is the name for a cluster of nodes was "quanta-node"
+			err = m.Join(joinName) // this does not return
 			if err != nil {
 				u.Errorf("[node: Cannot initialize endpoint config: error: %s", err)
 			}
@@ -186,7 +166,15 @@ func StartNodes(nodeStart int, nodeCount int) (*server.Node, error) {
 	// }
 }
 
-func StartProxy(count int) {
+type LocalProxyControl struct {
+	Stop chan bool
+}
+
+func StartProxy(count int, testDataPath string) *LocalProxyControl {
+
+	localProxy := &LocalProxyControl{}
+
+	fmt.Println("Starting proxy")
 
 	// for index := 0; index < count; index++ { // TODO: more than one proxy
 	index := 0
@@ -199,8 +187,8 @@ func StartProxy(count int) {
 	Version := "1.0.0"
 	proxy.ConsulAddr = "127.0.0.1:8500"
 	// cognito url for token service publicKeyURL := "" // unused
-	proxy.QuantaPort = 4000
-	proxyHostPort := 4040 + index
+	proxy.QuantaPort = 4010
+	proxyHostPort := 4000 + index
 
 	// region := "us-east-1"
 
@@ -213,11 +201,11 @@ func StartProxy(count int) {
 		shared.InitLogging(logging, environment, "Proxy", Version, "Quanta")
 	}
 
-	go func() {
-		// Initialize Prometheus metrics endpoint.
-		http.Handle("/metrics", promhttp.Handler())
-		http.ListenAndServe(":2112", nil)
-	}()
+	// go func() { // FIXME: do this later
+	// 	// Initialize Prometheus metrics endpoint.
+	// 	http.Handle("/metrics", promhttp.Handler())
+	// 	http.ListenAndServe(":2112", nil)
+	// }()
 
 	log.Printf("Connecting to Consul at: [%s] ...\n", proxy.ConsulAddr)
 	consulConfig := &api.Config{Address: proxy.ConsulAddr}
@@ -226,6 +214,8 @@ func StartProxy(count int) {
 		u.Error(errx)
 		os.Exit(1)
 	}
+
+	fmt.Println("Proxy RegisterSchemaChangeListener done")
 
 	poolSize := 3
 
@@ -248,33 +238,26 @@ func StartProxy(count int) {
 	sink.LoadAll()      // Register output sinks
 	functions.LoadAll() // Custom functions
 
-	// sess, errx := session.NewSession(&aws.Config{
-	// 	Region: aws.String(region),
-	// })
-	// if errx != nil {
-	// 	u.Error(errx)
-	// 	os.Exit(1)
-	// }
-	// _ = sess
-	// metrics = cloudwatch.New(sess)
+	// start cloud watch or prometheus metrics?
 
-	// configDir := "../test/testdata/config"
-	//configDir := "../shared/testdata/config"
-	configDir := "../configuration" // do we really want this here?
+	fmt.Println("Proxy before NewQuantaSource")
 
 	// Construct Quanta source
-	// it's just one for a whole pool.
-	//for i := 0; i < sessionPoolSize; i++ {
-	src, err := source.NewQuantaSource(configDir, proxy.ConsulAddr, proxy.QuantaPort+1, sessionPoolSize) // do we really want this here?
+
+	configDir := ""
+	src, err := source.NewQuantaSource(configDir, proxy.ConsulAddr, proxy.QuantaPort, sessionPoolSize) // do we really want this here?
 	if err != nil {
 		u.Error(err)
 	}
-	//schema.RegisterSourceAsSchema("quanta-node-"+strconv.Itoa(i), src)
-	schema.RegisterSourceAsSchema("quanta", src)
+	fmt.Println("Proxy after NewQuantaSource")
+
+	schema.RegisterSourceAsSchema("quanta", src) // what does this do?  can we do it later? atw
+
+	fmt.Println("Proxy after RegisterSourceAsSchema")
 
 	// Start server endpoint
 	portStr := strconv.FormatInt(int64(proxyHostPort), 10)
-	l, err := net.Listen("tcp", "127.0.0.1:"+portStr)
+	l, err := net.Listen("tcp", "0.0.0.0:"+portStr)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -289,4 +272,14 @@ func StartProxy(count int) {
 			go proxy.OnConn(conn)
 		}
 	}()
+
+	go func(localProxy *LocalProxyControl) {
+
+		<-localProxy.Stop
+		fmt.Println("Stopping proxy")
+		// and ??
+
+	}(localProxy)
+
+	return localProxy
 }

@@ -3,15 +3,6 @@ package core
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/araddon/dateparse"
-	u "github.com/araddon/gou"
-	"github.com/araddon/qlbridge/datasource"
-	"github.com/araddon/qlbridge/expr"
-	"github.com/araddon/qlbridge/value"
-	"github.com/araddon/qlbridge/vm"
-	"github.com/disney/quanta/shared"
-	"github.com/json-iterator/go"
-	"github.com/xitongsys/parquet-go/reader"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -19,6 +10,16 @@ import (
 	"sync"
 	"time"
 	"unsafe"
+
+	"github.com/araddon/dateparse"
+	u "github.com/araddon/gou"
+	"github.com/araddon/qlbridge/datasource"
+	"github.com/araddon/qlbridge/expr"
+	"github.com/araddon/qlbridge/value"
+	"github.com/araddon/qlbridge/vm"
+	"github.com/disney/quanta/shared"
+	jsoniter "github.com/json-iterator/go"
+	"github.com/xitongsys/parquet-go/reader"
 )
 
 var (
@@ -88,7 +89,6 @@ func NewTableBuffer(table *Table) (*TableBuffer, error) {
 	return tb, err
 }
 
-
 // NextColumnID - Get a new column ID in the sequence for a given Time Quantum
 func (t *TableBuffer) NextColumnID(bi *shared.BitmapIndex) error {
 
@@ -108,11 +108,8 @@ func (t *TableBuffer) NextColumnID(bi *shared.BitmapIndex) error {
 	return nil
 }
 
-
-//
 // OpenSession - Creates a connected session to the underlying core.
 // (This is intentionally not thread-safe for maximum throughput.)
-//
 func OpenSession(path, name string, nested bool, conn *shared.Conn) (*Session, error) {
 
 	if name == "" {
@@ -189,12 +186,12 @@ func recurseAndLoadTable(basePath string, kvStore *shared.KVStore, tableBuffers 
 // IsDriverForTables - Is this the driver table?
 func (s *Session) IsDriverForTables(tables []string) bool {
 
-    for _, v := range tables {
-        if _, ok := s.TableBuffers[v]; !ok {
-            return false
-        }
-    }
-    return true
+	for _, v := range tables {
+		if _, ok := s.TableBuffers[v]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // IsDriverForJoin - Is this the driver table?
@@ -204,10 +201,10 @@ func (s *Session) IsDriverForJoin(table, joinCol string) bool {
 	if !ok {
 		return false
 	}
-    attr, err := tbuf.Table.GetAttribute(joinCol)
-    if err != nil {
-        return false
-    }
+	attr, err := tbuf.Table.GetAttribute(joinCol)
+	if err != nil {
+		return false
+	}
 	if attr.ForeignKey == "" {
 		return false
 	}
@@ -246,8 +243,8 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 
 	if curTable.PrimaryKey != "" {
 		// Here we force the primary key to be handled first for table so that columnID is established in tbuf
-		if hasValues, err := s.processPrimaryKey(tbuf, row, pqTablePath, providedColID, isChild, 
-				ignoreSourcePath, useNerdCapitalization); err != nil {
+		if hasValues, err := s.processPrimaryKey(tbuf, row, pqTablePath, providedColID, isChild,
+			ignoreSourcePath, useNerdCapitalization); err != nil {
 			return err
 		} else if !hasValues {
 			return nil // nothing to do, no values in child relation
@@ -255,8 +252,8 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 	}
 
 	if curTable.SecondaryKeys != "" {
-		if err := s.processAlternateKeys(tbuf, row, pqTablePath, isChild, ignoreSourcePath, 
-				useNerdCapitalization); err != nil {
+		if err := s.processAlternateKeys(tbuf, row, pqTablePath, isChild, ignoreSourcePath,
+			useNerdCapitalization); err != nil {
 			return err
 		}
 	}
@@ -280,8 +277,8 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 			} else if strings.HasPrefix(v.SourceName, "^") {
 				pqChildPath = fmt.Sprintf("%s.%s.list.element.%s", root, v.Parent.Name, v.SourceName[1:])
 			}
-			if err := s.recursivePutRow(v.ChildTable, row, pqChildPath, providedColID, true, ignoreSourcePath, 
-					useNerdCapitalization); err != nil {
+			if err := s.recursivePutRow(v.ChildTable, row, pqChildPath, providedColID, true, ignoreSourcePath,
+				useNerdCapitalization); err != nil {
 				return err
 			}
 		} else if v.MappingStrategy == "ParentRelation" && v.ForeignKey != "" {
@@ -414,7 +411,7 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 			if (found && v.Required && val == nil) || (!found && v.Required) {
 				return nil, nil, fmt.Errorf("field %s - %s is required", v.FieldName, source)
 			}
-			if aryVal, ok := val.([]interface{}); ok {  // JSON array is StringEnum multi value
+			if aryVal, ok := val.([]interface{}); ok { // JSON array is StringEnum multi value
 				s := make([]string, len(aryVal))
 				for x, y := range aryVal {
 					s[x] = fmt.Sprint(y)
@@ -442,7 +439,7 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 				}
 				if str, ok := vals[0].(string); ok {
 					if str == "" {
-						vals[0] = fmt.Sprintf("%v", s.getDefaultValueForColumn(v, row, ignoreSourcePath, 
+						vals[0] = fmt.Sprintf("%v", s.getDefaultValueForColumn(v, row, ignoreSourcePath,
 							useNerdCapitalization))
 					}
 				}
@@ -485,8 +482,8 @@ func (s *Session) getDefaultValueForColumn(a *Attribute, row interface{}, ignore
 
 	var (
 		val value.Value
-		ok bool
-		r interface{}
+		ok  bool
+		r   interface{}
 	)
 	rm := make(map[string]interface{})
 
@@ -514,8 +511,8 @@ func (s *Session) getDefaultValueForColumn(a *Attribute, row interface{}, ignore
 		if !ok {
 			if exprNode != nil {
 				switch exprNode.NodeType() {
-					case "Func", "Identity":
-						return nil
+				case "Func", "Identity":
+					return nil
 				}
 			}
 			val = value.NewValue(a.DefaultValue)
@@ -544,8 +541,8 @@ func (s *Session) getDefaultValueForColumn(a *Attribute, row interface{}, ignore
 		if !ok {
 			if exprNode != nil {
 				switch exprNode.NodeType() {
-					case "Func", "Identity":
-						return nil
+				case "Func", "Identity":
+					return nil
 				}
 			}
 			val = value.NewValue(a.DefaultValue)
@@ -554,14 +551,12 @@ func (s *Session) getDefaultValueForColumn(a *Attribute, row interface{}, ignore
 	return fmt.Sprintf("%v", val.Value())
 }
 
-//
 // Complete handling of primary key.
-//    1. Uniqueness check against value in KVStore
-//    2. ColumnID establishment for all fields in this row.  Generate if provided value = 0
-//    3. Value mapping.
+//  1. Uniqueness check against value in KVStore
+//  2. ColumnID establishment for all fields in this row.  Generate if provided value = 0
+//  3. Value mapping.
 //
 // returns true if there are values to process.
-//
 func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTablePath string,
 	providedColID uint64, isChild, ignoreSourcePath, useNerdCapitalization bool) (bool, error) {
 
@@ -596,7 +591,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		switch reflect.ValueOf(cval).Kind() {
 		case reflect.String:
 			// Do nothing already a string
-			if i == 0 {   // First field in PK is TQ (if TQ != "")
+			if i == 0 { // First field in PK is TQ (if TQ != "")
 				if pk.MappingStrategy == "SysMillisBSI" || pk.MappingStrategy == "SysMicroBSI" {
 					strVal := cval.(string)
 					tbuf.CurrentTimestamp, _, _ = shared.ToTQTimestamp(tbuf.Table.TimeQuantumType, strVal)
@@ -639,7 +634,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 	}
 
 	// Can't use batch operation here unfortunately, but at least we have local batch cache
-	localKey := indexPath(tbuf, tbuf.PKAttributes[0].FieldName, tbuf.Table.PrimaryKey + ".PK")
+	localKey := indexPath(tbuf, tbuf.PKAttributes[0].FieldName, tbuf.Table.PrimaryKey+".PK")
 	if lColID, ok := s.BatchBuffer.LookupLocalCIDForString(localKey, pkLookupVal.String()); !ok {
 		var colID uint64
 		var errx error
@@ -747,7 +742,7 @@ func (s *Session) processAlternateKeys(tbuf *TableBuffer, row interface{}, pqTab
 		}
 		//s.BatchBuffer.SetKeyString(tbuf.Table.Name, k, secondaryKey, skLookupVal.String(),
 		//	tbuf.CurrentColumnID)
-		lookupKey := indexPath(tbuf, tbuf.PKAttributes[0].FieldName, k + ".SK")
+		lookupKey := indexPath(tbuf, tbuf.PKAttributes[0].FieldName, k+".SK")
 		s.BatchBuffer.SetPartitionedString(lookupKey, skLookupVal.String(), tbuf.CurrentColumnID)
 		i++
 	}
@@ -756,11 +751,11 @@ func (s *Session) processAlternateKeys(tbuf *TableBuffer, row interface{}, pqTab
 
 func (s *Session) lookupColumnID(tbuf *TableBuffer, lookupVal, fkFieldSpec string) (uint64, bool, error) {
 
-    kvIndex := indexPath(tbuf, tbuf.PKAttributes[0].FieldName, tbuf.Table.PrimaryKey + ".PK")
+	kvIndex := indexPath(tbuf, tbuf.PKAttributes[0].FieldName, tbuf.Table.PrimaryKey+".PK")
 
 	if fkFieldSpec != "" {
 		// Use the secondary/alternate key specification.  In this case tbuf is the FK table
-    	kvIndex = indexPath(tbuf, tbuf.PKAttributes[0].FieldName, fkFieldSpec + ".SK")
+		kvIndex = indexPath(tbuf, tbuf.PKAttributes[0].FieldName, fkFieldSpec+".SK")
 	}
 	kvResult, err := s.KVStore.Lookup(kvIndex, lookupVal, reflect.Uint64, true)
 	if err != nil {
@@ -780,7 +775,7 @@ func indexPath(tbuf *TableBuffer, field, path string) string {
 		ts := tbuf.CurrentTimestamp
 		key := fmt.Sprintf("%s/%s/%s", tbuf.Table.Name, field, ts.Format(timeFmt))
 		fpath := fmt.Sprintf("/%s/%s/%s/%s/%s", tbuf.Table.Name, field, path,
-				fmt.Sprintf("%d%02d%02d", ts.Year(), ts.Month(), ts.Day()), ts.Format(timeFmt))
+			fmt.Sprintf("%d%02d%02d", ts.Year(), ts.Month(), ts.Day()), ts.Format(timeFmt))
 		lookupPath = key + "," + fpath
 	}
 	return lookupPath
@@ -804,8 +799,8 @@ func (s *Session) LookupKeyBatch(tbuf *TableBuffer, lookupVals map[interface{}]i
 }
 */
 
-func (s *Session) resolveFKLookupKey(v *Attribute, tbuf *TableBuffer, row interface{}, 
-		ignoreSourcePath, useNerdCapitalization bool) (string, error) {
+func (s *Session) resolveFKLookupKey(v *Attribute, tbuf *TableBuffer, row interface{},
+	ignoreSourcePath, useNerdCapitalization bool) (string, error) {
 
 	var retVal strings.Builder
 	root := "/"
@@ -988,4 +983,3 @@ func INT96ToTime(int96 string) time.Time {
 	days := binary.LittleEndian.Uint32([]byte(int96[8:]))
 	return fromJulianDay(int32(days), int64(nanos))
 }
-

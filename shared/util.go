@@ -264,7 +264,7 @@ func TableExists(consul *api.Client, name string) (bool, error) {
 		return false, fmt.Errorf("table name must not be empty")
 	}
 
-	path := fmt.Sprintf("schema/%s/primaryKey", name)
+	path := fmt.Sprintf("schema/%s/modificationTime", name)
 	kvPair, _, err := consul.KV().Get(path, nil)
 	if err != nil {
 		return false, fmt.Errorf("TableExists: %v", err)

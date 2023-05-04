@@ -291,11 +291,16 @@ func (m *JoinMerge) Run() error {
 		return fmt.Errorf("driver table not specified")
 	}
 
+	for k, v := range foundSets {
+		u.Debugf("TABLE = %v, COUNT = %d", k, v.GetCardinality())
+	}
+
 	joinTypes := make(map[string]bool)
 	negate := false
 	for _, v := range m.aliases {
 		if v.JoinExpr != nil && v.JoinExpr.(*expr.BinaryNode).Operator.T == lex.TokenNE {
 			negate = true
+			u.Debugf("JOINEXPR = %#v, NEGATE = %v", v.JoinExpr, negate)
 		}
 		if v.Name == m.driverTable {
 			continue
@@ -345,6 +350,7 @@ func (m *JoinMerge) Run() error {
 		if err != nil {
 			return err
 		}
+		u.Debugf("FP = %#v, CN = %#v, RN = %#v, PROJF = %#v, JF = %#v", fp, cn, rn, projFields, joinFields)
 		if len(orig.From) == 1 {  // Assume Subquery
 			_, cn, projFields, joinFields, err = createFinalProjectionFromMaps(orig, m.aliases, m.allTables, 
 					m.Ctx.Schema, m.driverTable)
@@ -364,6 +370,8 @@ func (m *JoinMerge) Run() error {
 			return err2
 		}
 		isExport := false
+		u.Debugf("DRIVERTABLE = %v, NEGATE PROJECTION = %v", m.driverTable, negate)
+
 
 		// Parallelize projection for SELECT ... INTO
 		if orig.Into != nil {
@@ -430,12 +438,29 @@ func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitma
 		}
 	}
 
-	rs, err := client.Join(table, joinCols, fromTime, toTime, foundSet, filterSetArray, negate)
+	u.Debugf("TABLE %s, JOINCOLS = %#v, FS = %d, FILTER = %#v, NEGATE = %v", table, joinCols, 
+		foundSet.GetCardinality(), filterSetArray, negate)
+
+	rs, err := client.Join(table, joinCols, fromTime, toTime, foundSet, filterSetArray, false)
 	if err != nil {
 		return nil, false, err
 	}
+	if negate {
+		childTransposed := rs.GetExistenceBitmap()
+		parent := filterSetArray[0]
+		driver := roaring64.AndNot(parent, childTransposed)
+		rsa := roaring64.NewBSI(0, 1)
+		var i uint64
+		var da []uint64
+		da = driver.ToArray()
+		for i = 0; i < uint64(len(da)); i++ {
+			rsa.SetValue(i, int64(1))
+		}
+		rs = rsa
+		u.Debugf("PARENT = %d, CHILD = %d,  FDIFF %d",  parent.GetCardinality(), childTransposed.GetCardinality(), 
+			driver.GetCardinality())
+	}
 	return rs, isOuter, nil
-
 }
 
 func cleanup(client *shared.BitmapIndex) error {

@@ -284,10 +284,12 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 					continue
 				}
 				// Process PK Index
-				pkIndex := fmt.Sprintf("%s%s%s.PK", key, sep, table.PrimaryKey)
-				err = m.indexKVPush(peerKVClient, newKVClient, pkIndex)
-				if err != nil {
-					u.Errorf("error pushing index %s for table %s - %v", pkIndex, indexName, err)
+				if table.PrimaryKey != "" {
+					pkIndex := fmt.Sprintf("%s%s%s.PK", key, sep, table.PrimaryKey)
+					err = m.indexKVPush(peerKVClient, newKVClient, pkIndex)
+					if err != nil {
+						u.Errorf("error pushing index %s for table %s - %v", pkIndex, indexName, err)
+					}
 				}
 				// Process SK Indices if any
 				for _, v := range strings.Split(table.SecondaryKeys, ",") {

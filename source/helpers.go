@@ -73,7 +73,8 @@ func decorateRow(row []driver.Value, proj *rel.Projection, rowCols map[string]in
 		ri, rok := rowCols[v.As]
 		if rok {
 			newRow[i] = fmt.Sprintf("%s", row[ri])
-		} else if v.As == "@rownum" {
+		//} else if v.As == "@rownum" {
+		} else if strings.HasSuffix(v.As, "@rownum") {
 			newRow[i] = fmt.Sprintf("%d", columnID)
 		}
 		if v.Col.Expr.NodeType() != "Func" {
@@ -256,7 +257,8 @@ func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel
 				}
 			} else {
 				colName := v.As
-				if colName == "@rownum" {
+				//if colName == "@rownum" {
+				if strings.HasSuffix(colName, "@rownum") {
 					ret.AddColumn(v, value.IntType)
 				} else if vt, ok := table.Column(v.SourceField); ok {
 					ret.AddColumn(v, vt)
@@ -396,7 +398,8 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 					p := fmt.Sprintf("%s.%s", table.Name, y.Name)
 					if _, ok := projColsMap[p]; !ok {
 						rowCols[y.Name] = len(projCols)
-						if y.Name != "@rownum" {
+						//if y.Name != "@rownum" {
+						if !strings.HasSuffix(y.Name, "@rownum") {
 							projColsMap[p] = len(projCols) - 1
 							projCols = append(projCols, p)
 						}

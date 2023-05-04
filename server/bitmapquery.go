@@ -446,7 +446,8 @@ func (m *BitmapIndex) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRe
 	minCardIndex := 0
 	for i, v := range req.FkFields {
 		start := time.Now()
-		bsi, err := m.timeRangeBSI(req.DriverIndex, v, fromTime, toTime, foundSet, req.Negate)
+		//bsi, err := m.timeRangeBSI(req.DriverIndex, v, fromTime, toTime, foundSet, req.Negate)
+		bsi, err := m.timeRangeBSI(req.DriverIndex, v, fromTime, toTime, foundSet, false)
 		if err != nil {
 			err2 := fmt.Errorf("Cannot find FK BSI for %s %s - %v", req.DriverIndex, v, err)
 			return nil, err2
@@ -503,6 +504,10 @@ func (m *BitmapIndex) Projection(ctx context.Context, req *pb.ProjectionRequest)
 	start := time.Now()
 	var err2 error
 	for _, v := range req.Fields {
+		attr, err := m.getFieldConfig(req.Index, v)
+		if err != nil {
+			return nil, err
+		}
 		if _, ok := m.bitmapCache[req.Index][v]; ok {
 			var x *roaring64.Bitmap
 			for _, row := range m.listAllRowIDs(req.Index, v) {
@@ -532,6 +537,12 @@ func (m *BitmapIndex) Projection(ctx context.Context, req *pb.ProjectionRequest)
 				return nil, fmt.Errorf("Error marshalling BSI for field %s, [%v]", v, err2)
 			}
 			bsiResults = append(bsiResults, bsir)
+		} else {
+			if attr.IsBSI() {
+				bsir := &pb.BSIResult{Field: v}
+				bsir.Bitmaps, _ = m.newBSIBitmap(req.Index, v).MarshalBinary()
+				bsiResults = append(bsiResults, bsir)
+			}
 		}
 	}
 	elapsed := time.Since(start)

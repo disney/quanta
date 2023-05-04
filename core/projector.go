@@ -5,7 +5,7 @@ package core
 import (
 	"database/sql/driver"
 	"fmt"
-	//u "github.com/araddon/gou"
+	u "github.com/araddon/gou"
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/disney/quanta/shared"
 	"math"
@@ -109,11 +109,15 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 		// retrieve relation BSI(s)
 		rs := make(map[string]*roaring64.Bitmap)
 		rs[p.driverTable] = p.foundSets[p.driverTable]
-		bsir, _, err := p.retrieveBitmapResults(rs, p.joinAttributes, p.negate)
+		u.Debugf("GET DRIVER = %v, BSI = %d", p.driverTable, rs[p.driverTable].GetCardinality())
+		bsir, _, err := p.retrieveBitmapResults(rs, p.joinAttributes, false)
 		if err != nil {
 			return nil, err
 		}
 		p.fkBSI = bsir[p.driverTable]
+		for k, v := range p.fkBSI {
+			u.Debugf("RESULTS FK BSI  %v = %d ", k, v.GetCardinality())
+		}
 	}
 	p.projFieldMap = projFieldMap
 
@@ -121,23 +125,22 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 		p.joinTypes = make(map[string]bool)
 	}
 	// If a joinType is missing then assume inner.  The value is true for inner joins, false for outer.
+	innerJoin := true
+	if jt, found := p.joinTypes[p.driverTable]; found {
+		innerJoin = jt
+	}
+	u.Debugf("INNER JOIN = %v", innerJoin)
 
 	driverSet := p.foundSets[p.driverTable]
 	// filter out entries from driver found set not contained within FKBSIs
 	for k, v := range p.foundSets {
-		if k == p.driverTable {
-			continue
-		}
-		innerJoin := true
-		if jt, found := p.joinTypes[k]; found {
-			innerJoin = jt
-		}
 		if !innerJoin {
 			continue
 		}
-		// Convert contents of relation foundset from unsigned to signed
-		unsigned := v.ToArray()
-		signed := *(*[]int64)(unsafe.Pointer(&unsigned))
+		if k == p.driverTable {
+			continue
+		}
+		// If it is an anti-join (negate) then retrieve the primary key BSI.
 		fka, ok := p.findRelationLink(k)
 		if !ok {
 			return nil, fmt.Errorf("NewProjection: Cannot resolve FK relationship for %s", k)
@@ -147,14 +150,26 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 			return nil, fmt.Errorf("NewProjection: FK BSI lookup failed for %s - %s",
 				p.driverTable, fka.FieldName)
 		}
-		// filter against relation foundset
-        driverSet = fkBsi.BatchEqual(0, signed)
-		//driverSet.And(fkBsi.BatchEqual(0, signed))
+
+		// Anti-join
+		if negate {
+			u.Debugf("FKBSI  %v = %d", k, fkBsi.GetCardinality())
+			newSet := fkBsi.Transpose()
+			driverSet = v
+			driverSet.AndNot(newSet)
+			u.Debugf("AFTER DIFF FS FOR %v = %d", k, driverSet.GetCardinality())
+		} else {
+			// Convert contents of relation foundset from unsigned to signed
+			unsigned := v.ToArray()
+			signed := *(*[]int64)(unsafe.Pointer(&unsigned))
+
+			// filter against relation foundset
+        	driverSet = fkBsi.BatchEqual(0, signed)
+		}
 	}
 
 	p.resultIterator = driverSet.ManyIterator()
 
-//u.Warnf("PROJ FIELDS = %#v", p.projFieldMap)
 	return p, nil
 }
 
@@ -202,9 +217,16 @@ func (p *Projector) retrieveBitmapResults(foundSets map[string]*roaring64.Bitmap
 	bitmapResults := make(map[string]map[string]*BitmapFieldResults)
 
 	for k, v := range foundSets {
-		bsir, bitr, err := p.connection.BitIndex.Projection(k, fieldNames[k], p.fromTime, p.toTime, v, negate)
+		if len(fieldNames[k]) == 0 {
+			continue
+		}
+		u.Debugf("TABLE = %v, FIELDNAMES = %#v, FS = %d, NEGATE = %v", k, fieldNames[k], v.GetCardinality(), negate)
+		bsir, bitr, err := p.connection.BitIndex.Projection(k, fieldNames[k], p.fromTime, p.toTime, v, false)
 		if err != nil {
 			return nil, nil, err
+		}
+		for k, v := range bsir {
+			u.Debugf("BSIR %v = %d", k, v.GetCardinality())
 		}
 		for field, r := range bitr {
 			if _, ok := bitmapResults[k]; !ok {
@@ -277,6 +299,7 @@ func (p *Projector) nextSets(columnIDs []uint64) (map[string]map[string]*roaring
 			newSet.And(v)
 		}
 		rs[k] = newSet
+		//bsir, bitr, err := p.retrieveBitmapResults(rs, p.projAttributes, p.negate)
 		bsir, bitr, err := p.retrieveBitmapResults(rs, p.projAttributes, false)
 		if err != nil {
 			return nil, nil, err

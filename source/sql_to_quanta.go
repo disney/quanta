@@ -24,6 +24,7 @@ import (
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/rbac"
 	"github.com/disney/quanta/shared"
+	"github.com/RoaringBitmap/roaring/roaring64"
 )
 
 var (
@@ -76,6 +77,7 @@ type SQLToQuanta struct {
 	needsPolyFill  bool // polyfill?
 	funcAliases    map[string]struct{}
 	whereProj      map[string]*core.Attribute
+	rowNumSet	   *roaring64.Bitmap
 }
 
 // NewSQLToQuanta - Construct a new SQLToQuanta query translator.
@@ -87,17 +89,20 @@ func NewSQLToQuanta(s *QuantaSource, t *schema.Table) *SQLToQuanta {
 	}
 	m.funcAliases = make(map[string]struct{})
 	m.whereProj = make(map[string]*core.Attribute)
+	m.rowNumSet = roaring64.NewBitmap()
 	return m
 }
 
 // ResolveField - Resolve a attribute by name.
 func (m *SQLToQuanta) ResolveField(name string) (field *core.Attribute, isBSI bool, err error) {
 
+	table := m.conn.TableBuffers[m.tbl.Name].Table
 	if name == "@rownum" {
+		field = table.GetRownumAttribute()
+		isBSI = true
 		return
 	}
 	isBSI = false
-	table := m.conn.TableBuffers[m.tbl.Name].Table
 	field, err = table.GetAttribute(name)
 	if err != nil {
 		return
@@ -196,6 +201,9 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 				// Validate join nodes
 				for _, y := range x.JoinNodes() {
 					foundCriteria = true
+					if y.String() == "@rownum" { // join on @rownum possible
+						continue
+					}
 					field, ok := table.FieldMap[y.String()]
 					if !ok {
 						return nil, fmt.Errorf("invalid field %s in join criteria [%v]", y.String(), x)
@@ -596,7 +604,25 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 	lhval, lhok, isLident := m.eval(node.Args[0])
 	rhval, rhok, isRident := m.eval(node.Args[1])
 	_, rhisnull := node.Args[1].(*expr.NullNode)
-	if !lhok {
+	lhisrownum := false
+	if lhok && rhok && !rhisnull {
+		if n, isId := node.Args[0].(*expr.IdentityNode); isId {
+			// is Lvalue a @rownum?
+			if strings.HasSuffix(n.Text, "@rownum") {
+				// Keep the expression processor happy, this query will never be run
+				lhisrownum = true 
+				lhval = value.NewStringValue("@rownum")
+				lhok = true
+				isLident = true
+				if v, ok := rhval.Value().(int64); ok {
+					m.rowNumSet.Add(uint64(v))
+				} else {
+					return nil, fmt.Errorf("value for [%v] cannot be cast to an uint64 from %T", lhval, rhval.Value())
+				}
+			}
+		}
+	}
+	if !lhok && !lhisrownum {
 		// if the lvalue is a function that takes identity nodes then a "WHERE" processor is required.
 		if m.p.Complete && node.Args[0].NodeType() == "Func" {
 			for _, x := range node.Args[0].(*expr.FuncNode).Args {
@@ -1357,7 +1383,14 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 
 	m.q.Dump()
 	start := time.Now()
-	response, err = m.conn.BitIndex.Query(m.q)
+	// If querying by row number no need to send query to backend.  Will only do a projection inside the resultreader.
+	if m.rowNumSet.GetCardinality() > 0 {
+		response =  &shared.BitmapQueryResponse{Success: true}
+		response.Results = m.rowNumSet
+		response.Count = m.rowNumSet.GetCardinality()
+	} else {
+		response, err = m.conn.BitIndex.Query(m.q)
+	}
 	elapsed := time.Since(start)
 	u.Debugf("Elapsed time %s\n", elapsed)
 	u.Debugf("SQL = %v\n", m.sel)
@@ -1453,10 +1486,16 @@ func (m *SQLToQuanta) PatchWhere(ctx context.Context, where expr.Node, patch int
 
 	m.q.FromTime = m.startDate
 	m.q.ToTime = m.endDate
-
-	response, err := m.conn.BitIndex.Query(m.q)
-	if err != nil {
-		return 0, fmt.Errorf("Update query failed - %v", err)
+	var response *shared.BitmapQueryResponse
+	if m.rowNumSet.GetCardinality() > 0 {
+		response =  &shared.BitmapQueryResponse{Success: true}
+		response.Results = m.rowNumSet
+		response.Count = m.rowNumSet.GetCardinality()
+	} else {
+		response, err = m.conn.BitIndex.Query(m.q)
+		if err != nil {
+			return 0, fmt.Errorf("Update query failed - %v", err)
+		}
 	}
 
 	results := response.Results.ToArray()
@@ -1546,12 +1585,20 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 							if val != "" {
 								curRow[idx] = val
 								//vMap[colName] = val
-								vMap[f.Collation] = val
+								if f.Collation != "-" {
+									vMap[f.Collation] = val
+								} else {
+									vMap[colName] = val
+								}
 							}
 						case []byte, int, int64, bool, time.Time, float64:
 							curRow[idx] = val
 							//vMap[colName] = val
-							vMap[f.Collation] = val
+							if f.Collation != "-" {
+								vMap[f.Collation] = val
+							} else {
+								vMap[colName] = val
+							}
 						case []value.Value:
 							switch f.ValueType() {
 							case value.StringsType:
@@ -1703,9 +1750,15 @@ func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, err
 
 	m.q.Dump()
 	var response *shared.BitmapQueryResponse
-	response, err = m.conn.BitIndex.Query(m.q)
-	if err != nil {
-		return 0, err
+	if m.rowNumSet.GetCardinality() > 0 {
+		response =  &shared.BitmapQueryResponse{Success: true}
+		response.Results = m.rowNumSet
+		response.Count = m.rowNumSet.GetCardinality()
+	} else {
+		response, err = m.conn.BitIndex.Query(m.q)
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	err = m.conn.BitIndex.BulkClear(m.q.GetRootIndex(), m.q.FromTime, m.q.ToTime, response.Results)

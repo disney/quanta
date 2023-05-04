@@ -11,6 +11,7 @@ import (
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -164,7 +165,7 @@ func (m *ResultReader) Run() error {
 		msg := datasource.NewContextSimpleNative(dataMap)
 		outCh <- msg
 		return nil
-	} else if cols[0].As == "@rownum" && len(cols) == 1 {
+	} else if strings.HasSuffix(cols[0].As, "@rownum") && len(cols) == 1 {
 		outputRownumMessages(outCh, m.response.Results, m.limit, m.offset)
 		return nil
 	}

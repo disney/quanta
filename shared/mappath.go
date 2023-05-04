@@ -66,7 +66,8 @@ func GetBasePath(source string, useNerdCapitalization bool) string {
 	if useNerdCapitalization {
 		source = strings.Title(source)
 	}
-	if strings.Count(source, "/") > 1 || !strings.HasPrefix(source, "/") {
+	//if strings.Count(source, "/") > 1 || !strings.HasPrefix(source, "/") {
+	if strings.Count(source, "/") > 1 {
 		idx := strings.LastIndex(source, "/")
 		source = source[idx:]
 	}

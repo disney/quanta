@@ -20,6 +20,7 @@ BIN_KINESIS=quanta-kinesis-consumer
 BIN_PRODUCER=quanta-s3-kinesis-producer
 BIN_KCL=quanta-kcl-consumer
 BIN_ADMIN=quanta-admin
+BIN_RBAC=quanta-rbac-util
 COVERAGE_DIR=coverage
 COV_PROFILE=${COVERAGE_DIR}/test-coverage.txt
 COV_HTML=${COVERAGE_DIR}/test-coverage.html
@@ -30,6 +31,7 @@ PKG_KINESIS=github.com/disney/quanta/${BIN_KINESIS}
 PKG_KCL=github.com/disney/quanta/${BIN_KCL}
 PKG_PRODUCER=github.com/disney/quanta/${BIN_PRODUCER}
 PKG_ADMIN=github.com/disney/quanta/${BIN_ADMIN}
+PKG_RBAC=github.com/disney/quanta/${BIN_RBAC}
 #PLATFORMS=darwin linux 
 PLATFORM?=linux
 ARCHITECTURES?=arm64 amd64
@@ -58,7 +60,6 @@ vet:
 lint:
 	go get golang.org/x/lint/golint
 	golint -set_exit_status ${GOLIST}
-	#gas ${PKG}
 
 format:
 	go fmt ${PKG}
@@ -95,6 +96,10 @@ build_all: format vet
 	$(shell export GOARCH=$(GOARCH);\
 	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_NODE)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_NODE} \
 	))
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_RBAC)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_RBAC} \
+	))
 
 push_kinesis_docker: build_all
 	$(foreach GOARCH, $(ARCHITECTURES),\
@@ -106,6 +111,18 @@ push_proxy_docker: build_all
 	$(foreach GOARCH, $(ARCHITECTURES),\
 	$(shell export GOARCH=$(GOARCH);\
 	docker buildx build --push --platform linux/${GOARCH} -t containerregistry.disney.com/digital/$(BIN_PROXY):${VERSION}-$(GOARCH) --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployProxyDockerfile . \
+	))
+
+build_proxy_docker: build_all
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	docker build -t containerregistry.disney.com/digital/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH) --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployProxyDockerfile . \
+	))
+
+build_kinesis_docker: build_all
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	docker build -t containerregistry.disney.com/digital/$(BIN_KINESIS)-$(PLATFORM)-$(GOARCH) --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployKinesisConsumerDockerfile . \
 	))
 
 test: build_all

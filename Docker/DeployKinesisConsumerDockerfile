@@ -1,7 +1,6 @@
 # quanta-kinesis-consumer within a Docker Container
 
-ARG base
-FROM $base
+FROM alpine:latest
 
 ARG arch
 ARG platform

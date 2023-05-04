@@ -1,9 +1,6 @@
 # quanta-proxy within a Docker Container
 
-ARG base
-#FROM frolvlad/alpine-glibc
-#FROM arm64v8/alpine
-FROM $base
+FROM alpine:latest
 
 ARG arch
 ARG platform

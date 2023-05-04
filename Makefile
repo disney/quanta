@@ -100,6 +100,10 @@ build_all: format vet
 	$(shell export GOARCH=$(GOARCH);\
 	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_RBAC)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_RBAC} \
 	))
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_LOADER)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_LOADER} \
+	))
 
 push_kinesis_docker: build_all
 	$(foreach GOARCH, $(ARCHITECTURES),\
@@ -111,6 +115,12 @@ push_proxy_docker: build_all
 	$(foreach GOARCH, $(ARCHITECTURES),\
 	$(shell export GOARCH=$(GOARCH);\
 	docker buildx build --push --platform linux/${GOARCH} -t containerregistry.disney.com/digital/$(BIN_PROXY):${VERSION}-$(GOARCH) --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployProxyDockerfile . \
+	))
+
+push_loader_docker: build_all
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	docker buildx build --push --platform linux/${GOARCH} -t containerregistry.disney.com/digital/$(BIN_LOADER):${VERSION}-$(GOARCH) --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployLoaderDockerfile . \
 	))
 
 build_proxy_docker: build_all

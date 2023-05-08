@@ -17,7 +17,6 @@ import (
 	"github.com/araddon/qlbridge/plan"
 	"github.com/araddon/qlbridge/rel"
 	"github.com/disney/quanta/core"
-	"github.com/disney/quanta/shared"
 )
 
 var (
@@ -26,8 +25,6 @@ var (
 	// Ensure that we implement the Task Runner interface
 	_ exec.TaskRunner = (*JoinMerge)(nil)
 )
-
-// TODO: General cleanup.   Pass QuantaSource in so that core.Session pooling is implemented.
 
 // JoinMerge - Scans 2 source tasks for rows, calls server side join transpose
 type JoinMerge struct {
@@ -358,11 +355,20 @@ func (m *JoinMerge) Run() error {
 				return err
 			}
 		}
-		con, err := m.makeBufferedConnection(m.driverTable)
-		if err != nil {
-			return err
+		val, found := m.Ctx.Session.Get(sessionPool)
+		if !found {
+			return fmt.Errorf("cannot obtain session pool from session")
 		}
-		defer con.CloseSession()
+		sessionPool, ok := val.Value().(*core.SessionPool)
+		if !ok {
+			return fmt.Errorf("cannot cast session pool from stashed value")
+		}
+		
+		con, err := sessionPool.Borrow(m.driverTable)
+		if err != nil {
+			return fmt.Errorf("connot borrow a connection from the pool.");
+		}
+		defer sessionPool.Return(m.driverTable, con)
 		// driver table found set may have been reduced by join results
 		proj, err2 := core.NewProjection(con, foundSets, joinFields, projFields, m.driverTable,
 			fromTime, toTime, joinTypes, negate)
@@ -386,41 +392,23 @@ func (m *JoinMerge) Run() error {
 	return nil
 }
 
-func (m *JoinMerge) makeBufferedConnection(driverTable string) (*core.Session, error) {
-
-	port, ok := m.Ctx.Session.Get(servicePort)
-	if !ok {
-		return nil, fmt.Errorf("cannot obtain service port from session")
-	}
-	basePath, ok := m.Ctx.Session.Get(basePath)
-	if !ok {
-		return nil, fmt.Errorf("cannot obtain base path from session")
-	}
-	clientConn := shared.NewDefaultConnection()
-	clientConn.ServicePort = int(port.Value().(int64))
-	clientConn.Quorum = 3
-	if err := clientConn.Connect(nil); err != nil {
-		return nil, fmt.Errorf("error opening quanta connection - %v", err)
-	}
-	return core.OpenSession(basePath.ToString(), driverTable, false, clientConn)
-}
 
 func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitmap,
 	fromTime, toTime int64, negate bool) (*roaring64.BSI, bool, error) {
 
-	conn := shared.NewDefaultConnection()
-	port, ok := m.Ctx.Session.Get(servicePort)
+	val, found := m.Ctx.Session.Get(sessionPool)
+	if !found {
+		return nil, false, fmt.Errorf("cannot obtain session pool from session")
+	}
+	sessionPool, ok := val.Value().(*core.SessionPool)
 	if !ok {
-		return nil, false, fmt.Errorf("cannot obtain service port from session")
+		return nil, false, fmt.Errorf("cannot cast session pool from stashed value")
 	}
-	conn.ServicePort = int(port.Value().(int64))
-	if err := conn.Connect(nil); err != nil {
-		u.Errorf("%v", err)
-		return nil, false, err
+	con, err := sessionPool.Borrow(table)
+	if err != nil {
+		return nil, false, fmt.Errorf("connot borrow a connection from the pool.");
 	}
-
-	client := shared.NewBitmapIndex(conn)
-	defer cleanup(client)
+	defer sessionPool.Return(table, con)
 
 	joinCols := make([]string, 0)
 	filterSetArray := make([]*roaring64.Bitmap, 0)
@@ -441,7 +429,7 @@ func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitma
 	u.Debugf("TABLE %s, JOINCOLS = %#v, FS = %d, FILTER = %#v, NEGATE = %v", table, joinCols, 
 		foundSet.GetCardinality(), filterSetArray, negate)
 
-	rs, err := client.Join(table, joinCols, fromTime, toTime, foundSet, filterSetArray, false)
+	rs, err := con.BitIndex.Join(table, joinCols, fromTime, toTime, foundSet, filterSetArray, false)
 	if err != nil {
 		return nil, false, err
 	}
@@ -463,11 +451,3 @@ func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitma
 	return rs, isOuter, nil
 }
 
-func cleanup(client *shared.BitmapIndex) error {
-
-	if err := client.Disconnect(); err != nil {
-		u.Errorf("%v", err)
-		return err
-	}
-	return nil
-}

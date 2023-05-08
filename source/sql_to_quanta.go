@@ -40,10 +40,10 @@ var (
 )
 
 const (
-	servicePort  = "SERVICE_PORT"
 	basePath     = "BASE_PATH"
 	metadataPath = "METADATA_PATH"
 	userIDKey    = "@userid"
+	sessionPool  = "SESSION_POOL"
 )
 
 // SQLToQuanta Convert a Sql Query to a Quanta query
@@ -136,7 +136,7 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	// Create a session if one doesn't exist and add the join strategy indicator
 	// Add indicators to create no-op tasks for where clauses and groupby
 	sessionMap := make(map[string]interface{})
-	sessionMap[servicePort] = m.s.sessionPool.AppHost.ServicePort
+	sessionMap[sessionPool] = m.s.sessionPool
 	sessionMap[basePath] = m.conn.BasePath
 	sessionMap[exec.GROUPBY_MAKER] = func(ctx *plan.Context, p *plan.GroupBy) exec.TaskRunner {
 		return NewNopTask(ctx)

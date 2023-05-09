@@ -703,6 +703,7 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 								if m.endDate == "" {
 									end := ts.AddDate(0, 0, 1)
 									m.endDate = end.Format(shared.YMDHTimeFmt)
+u.Warnf("SETTING DATE RANGE IN EQUALS? %v - %v", m.startDate, m.endDate)
 								}
 							}
 						}
@@ -867,6 +868,7 @@ func (m *SQLToQuanta) handleBSI(op string, lhval, rhval value.Value, q *shared.Q
 				if m.endDate == "" && (op == "LE" || op == "LT") {
 					end := ts.AddDate(0, 0, 1)
 					m.endDate = end.Format(shared.YMDHTimeFmt)
+u.Warnf("SETTING DATE RANGE IN handleBSI %v - %v", m.startDate, m.endDate)
 				}
 			}
 		}

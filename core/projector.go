@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unsafe"
 )
 
 const (
@@ -151,29 +150,15 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 				p.driverTable, fka.FieldName)
 		}
 
+		u.Debugf("FKBSI  %v = %d", k, fkBsi.GetCardinality())
+		newSet := fkBsi.Transpose()
+		driverSet = v
+
 		// Anti-join
 		if negate {
-			u.Debugf("FKBSI  %v = %d", k, fkBsi.GetCardinality())
-			newSet := fkBsi.Transpose()
-			driverSet = v
 			driverSet.AndNot(newSet)
-			u.Debugf("AFTER DIFF FS FOR %v = %d", k, driverSet.GetCardinality())
 		} else {
-			// Convert contents of relation foundset from unsigned to signed
-			u.Debugf("FILTERSET = %d", v.GetCardinality())
-			unsigned := v.ToArray()
-			signed := *(*[]int64)(unsafe.Pointer(&unsigned))
-
-			// filter against relation foundset
-        	driverSet = fkBsi.BatchEqual(0, signed)
-/*
-			newSet := fkBsi.Transpose()
-			u.Debugf("NEWSET = %d", newSet.GetCardinality())
-			u.Debugf("FOUNDSET = %d", v.GetCardinality())
-			driverSet = v
 			driverSet.And(newSet)
-*/
-			u.Debugf("DRIVERSET = %d", driverSet.GetCardinality())
 		}
 	}
 

@@ -976,17 +976,14 @@ func (m *SQLToQuanta) walkSelectList(q *shared.QueryFragment) error {
 	dupMap := make(map[string]*rel.Column, len(m.sel.Columns))
 	for i := 0;  i < len(m.sel.Columns); i++ {
 		c := m.sel.Columns[i]
-u.Warnf("SELECT LIST %#v", c)
 		if c.As != "" {
 			if _, found := dupMap[c.As]; found {
-u.Warnf("HERE 1 %#v", dupMap)
 				return fmt.Errorf("Duplicate column %s found at position %d, needs alias", c.As, i)
 			}
 			dupMap[c.As] = c
 			continue
 		}
 		if _, found := dupMap[c.SourceOriginal]; found {
-u.Warnf("HERE 2 %#v ORIG = %v", dupMap, c.SourceOriginal)
 			return fmt.Errorf("Duplicate column %s found at position %d, needs alias", c.SourceOriginal, i)
 		}
 		dupMap[c.SourceOriginal] = c

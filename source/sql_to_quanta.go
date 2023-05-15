@@ -189,7 +189,6 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	// is in p.Context().Stmt.  Verify that the original join syntax was correct.
 	processingOrig := true
 	if orig, ok := p.Context().Stmt.(*rel.SqlSelect); ok {
-u.Warnf("ORIG = #%v - CURR = #%v", orig, req)
 		processingOrig = orig == req
 		if len(orig.From) > 1 {
 			foundCriteria := false

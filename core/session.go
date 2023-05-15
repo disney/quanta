@@ -226,6 +226,16 @@ func (s *Session) IsDriverForJoin(table, joinCol string) bool {
 	return true
 }
 
+// CurrentColumnID - Returns the current column ID after call to PutRow
+func (s *Session) CurrentColumnID(name string) (uint64, error) {
+	tbuf, ok := s.TableBuffers[name]
+	if !ok {
+		return 0, fmt.Errorf("cannot locate buffer for table %s", name)
+	}
+	return tbuf.CurrentColumnID, nil
+}
+
+
 // PutRow - Entry point.  Load a row of data from source (Parquet/Kinesis/Kafka)
 func (s *Session) PutRow(name string, row interface{}, providedColID uint64, ignoreSourcePath, useNerd bool) error {
 

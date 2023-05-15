@@ -282,6 +282,8 @@ github.com/guymolinari/qlbridge v0.0.0-20230503234940-956f31abaeac h1:tUqtM2+teH
 github.com/guymolinari/qlbridge v0.0.0-20230503234940-956f31abaeac/go.mod h1:4SL2pGOyW3H4a/mckpnbrp38ixt2Xw8yCnbzsrI3WM4=
 github.com/guymolinari/qlbridge v0.0.0-20230509175016-a5ddf6234b0c h1:FH4oPezHl+sizZn7zuflWMJGgyxUmVrDMoZ76oL6564=
 github.com/guymolinari/qlbridge v0.0.0-20230509175016-a5ddf6234b0c/go.mod h1:4SL2pGOyW3H4a/mckpnbrp38ixt2Xw8yCnbzsrI3WM4=
+github.com/guymolinari/qlbridge v0.0.0-20230515120909-7e2ea9549f6c h1:DRhOa4Kx9Mab4kI7r22jjGAXYf6e82At8gBIs9+2FOs=
+github.com/guymolinari/qlbridge v0.0.0-20230515120909-7e2ea9549f6c/go.mod h1:4SL2pGOyW3H4a/mckpnbrp38ixt2Xw8yCnbzsrI3WM4=
 github.com/hamba/avro v1.6.0 h1:a9tNvjpZVfDQQJWSM2g8hUc7gYacKZkHF3OK0w49UXY=
 github.com/hamba/avro v1.6.0/go.mod h1:iKbXifVeT1gOHU+Eqe8wWziE745Z+Aa/6sbJnWeSW5A=
 github.com/harlow/kinesis-consumer v0.3.5 h1:xeiDp2frP8DdKDeOzVuS+vaBX03JjifQO/Apzu4IOMA=

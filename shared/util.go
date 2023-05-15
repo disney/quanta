@@ -300,7 +300,9 @@ func CheckParentRelation(consul *api.Client, table *BasicTable) (bool, error) {
 	var err error
 	for _, v := range table.Attributes {
 		if v.ForeignKey != "" {
-			ok, err = TableExists(consul, v.ForeignKey)
+			s := strings.Split(v.ForeignKey, ".")
+			tab := s[0]
+			ok, err = TableExists(consul, tab)
 			if err != nil {
 				err = fmt.Errorf("CheckParentRelation error: %v", err)
 				ok = false

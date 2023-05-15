@@ -406,6 +406,9 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 				}
 				trxColumnIDs = p.transposeFKColumnIDs(bsiResults[p.driverTable][key], columnIDs)
 				if v.MappingStrategy == "ParentRelation" {
+					if strings.HasSuffix(v.ForeignKey, "@rownum") {
+						continue
+					}
 					if len(relBuf.PKAttributes) > 1 {
 						return nil, fmt.Errorf("Projector error - Can only support single PK with link [%s]", key)
 					}
@@ -483,7 +486,7 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 				return
 			}
 			if relBuf, ok := p.connection.TableBuffers[relation]; ok {
-				if len(relBuf.PKAttributes) > 1 {
+				if len(relBuf.PKAttributes) > 1 && !strings.HasSuffix(v.ForeignKey, "@rownum") {
 					err = fmt.Errorf("Projector error - Can only support single PK with link [%s]", v.FieldName)
 					return
 				}

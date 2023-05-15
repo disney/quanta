@@ -1668,8 +1668,12 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 	if err != nil {
 		return nil, err
 	}
+	colID, err = m.conn.CurrentColumnID(table.Name)
+	if err != nil {
+		return nil, err
+	}
 
-	newKey := datasource.NewKeyCol("id", "fixme")
+	newKey := datasource.NewKeyCol("@rownum", value.NewIntValue(int64(colID)))
 
 	// End critical section
 	return newKey, nil

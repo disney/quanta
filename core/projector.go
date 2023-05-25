@@ -114,9 +114,6 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 			return nil, err
 		}
 		p.fkBSI = bsir[p.driverTable]
-		for k, v := range p.fkBSI {
-			u.Debugf("RESULTS FK BSI  %v = %d ", k, v.GetCardinality())
-		}
 	}
 	p.projFieldMap = projFieldMap
 
@@ -131,6 +128,12 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 	u.Debugf("INNER JOIN = %v", innerJoin)
 
 	driverSet := p.foundSets[p.driverTable]
+	// For inner joins filter out any rows in the driver table not in fkBSI link
+	if innerJoin && !negate {
+		for _, v := range p.fkBSI {
+			driverSet.And(v.GetExistenceBitmap())
+		}
+	}
 	// filter out entries from driver found set not contained within FKBSIs
 	for k, v := range p.foundSets {
 		if !innerJoin {
@@ -152,14 +155,14 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 
 		u.Debugf("FKBSI  %v = %d", k, fkBsi.GetCardinality())
 		newSet := fkBsi.Transpose()
-		driverSet = v
-
+		filterSet := v.Clone()
 		// Anti-join
 		if negate {
-			driverSet.AndNot(newSet)
+			filterSet.AndNot(newSet)
 		} else {
-			driverSet.And(newSet)
+			filterSet.And(newSet)
 		}
+		p.foundSets[k] = filterSet
 	}
 
 	p.resultIterator = driverSet.ManyIterator()
@@ -219,9 +222,6 @@ func (p *Projector) retrieveBitmapResults(foundSets map[string]*roaring64.Bitmap
 		if err != nil {
 			return nil, nil, err
 		}
-		for k, v := range bsir {
-			u.Debugf("BSIR %v = %d", k, v.GetCardinality())
-		}
 		for field, r := range bitr {
 			if _, ok := bitmapResults[k]; !ok {
 				bitmapResults[k] = make(map[string]*BitmapFieldResults)
@@ -260,10 +260,7 @@ func (p *Projector) nextSets(columnIDs []uint64) (map[string]map[string]*roaring
 	rs := make(map[string]*roaring64.Bitmap)
 	driverSet := roaring64.BitmapOf(columnIDs...)
 	rs[p.driverTable] = driverSet
-	allAttr := make([]*Attribute, 0)
-	allAttr = append(allAttr, p.projAttributes...)
-	allAttr = append(allAttr, p.joinAttributes...)
-	bsir, bitr, err := p.retrieveBitmapResults(rs, allAttr, false)
+	bsir, bitr, err := p.retrieveBitmapResults(rs, p.projAttributes, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -443,6 +440,7 @@ func (p *Projector) transposeFKColumnIDs(fkBSI *roaring64.BSI, columnIDs []uint6
 	newColumnIDs = newSet.ToArray()
 	return
 }
+
 
 func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]interface{},
 	bsiResults map[string]map[string]*roaring64.BSI,

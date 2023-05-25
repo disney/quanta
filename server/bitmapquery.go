@@ -526,7 +526,8 @@ func (m *BitmapIndex) Projection(ctx context.Context, req *pb.ProjectionRequest)
 		}
 		if _, ok := m.bsiCache[req.Index][v]; ok {
 			var bsi *BSIBitmap
-			if bsi, err2 = m.timeRangeBSI(req.Index, v, fromTime, toTime, foundSet, req.Negate); err2 != nil {
+			//if bsi, err2 = m.timeRangeBSI(req.Index, v, fromTime, toTime, foundSet, req.Negate); err2 != nil {
+			if bsi, err2 = m.timeRangeBSI(req.Index, v, fromTime, toTime, foundSet, false); err2 != nil {
 				return nil, fmt.Errorf("Error ranging projection BSI for %s %s - %v", req.Index, v, err2)
 			}
 			if bsi.GetCardinality() == 0 {
@@ -538,7 +539,7 @@ func (m *BitmapIndex) Projection(ctx context.Context, req *pb.ProjectionRequest)
 			}
 			bsiResults = append(bsiResults, bsir)
 		} else {
-			if attr.IsBSI() {
+			if attr.IsBSI() || attr.MappingStrategy == "ParentRelation" {
 				bsir := &pb.BSIResult{Field: v}
 				bsir.Bitmaps, _ = m.newBSIBitmap(req.Index, v).MarshalBinary()
 				bsiResults = append(bsiResults, bsir)

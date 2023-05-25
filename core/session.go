@@ -313,8 +313,8 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 			if !s.Nested {
 				// Directly provided parent columnID
 				if v.Type == "Integer" && (!relBuf.HasPrimaryKey() || fkFieldSpec == "@rownum") {
-					//vals, _, err := s.readColumn(row, pqTablePath, &v, false, ignoreSourcePath, useNerdCapitalization)
-					vals, _, err := s.readColumn(row, pqTablePath, &v, false, true, false)
+					vals, _, err := s.readColumn(row, pqTablePath, &v, false, ignoreSourcePath, useNerdCapitalization)
+					//vals, _, err := s.readColumn(row, pqTablePath, &v, false, true, false)
 					if err != nil {
 						return err
 					}
@@ -332,7 +332,8 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 					//	return fmt.Errorf("Not a nested import, source must be specified for %s", v.FieldName)
 					//}
 	
-					lookupKey, err := s.resolveFKLookupKey(&v, tbuf, row, ignoreSourcePath, useNerdCapitalization)
+					//lookupKey, err := s.resolveFKLookupKey(&v, tbuf, row, ignoreSourcePath, useNerdCapitalization)
+					lookupKey, err := s.resolveFKLookupKey(&v, tbuf, row, true, false)
 					if err != nil {
 						return fmt.Errorf("resolveFKLookupKey %v", err)
 					}
@@ -358,8 +359,7 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 				}
 			}
 		} else {
-			//vals, pqps, err := s.readColumn(row, pqTablePath, &v, isChild, ignoreSourcePath, useNerdCapitalization)
-			vals, pqps, err := s.readColumn(row, pqTablePath, &v, isChild, true, false)
+			vals, pqps, err := s.readColumn(row, pqTablePath, &v, isChild, ignoreSourcePath, useNerdCapitalization)
 			if err != nil {
 				return fmt.Errorf("Parquet reader error - %v", err)
 			}
@@ -381,13 +381,14 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 	isChild, ignoreSourcePath, useNerdCapitalization bool) ([]interface{}, []string, error) {
 
 	// If we are ignoring source path and it is not defined then this must be a defaulted value
-	if !ignoreSourcePath && v.SourceName == "" {
-		if v.DefaultValue != "" {
+	//if !ignoreSourcePath && v.SourceName == "" {
+	if  v.DefaultValue != "" {
+		//if v.DefaultValue != "" {
 			retVals := make([]interface{}, 0)
 			retVals = append(retVals, s.getDefaultValueForColumn(v, row, ignoreSourcePath, useNerdCapitalization))
 			pqColPaths := []string{""}
 			return retVals, pqColPaths, nil
-		}
+		//}
 		//return nil, nil, fmt.Errorf("readColumn: attribute sourceName is empty for %s", v.FieldName)
 		return nil, []string{""}, nil
 	}
@@ -623,7 +624,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 			if isChild { // Nothing to do here, no child value
 				return false, nil
 			}
-			return false, fmt.Errorf("empty or nil value for PK field %s, len %d", pqColPaths[i],
+			return false, fmt.Errorf("empty or nil value for PK field %s - %s, len %d", pk.FieldName, pqColPaths[i],
 				len(vals))
 		}
 		if len(vals) > 1 {
@@ -860,10 +861,11 @@ func (s *Session) resolveFKLookupKey(v *Attribute, tbuf *TableBuffer, row interf
 
 	var retVal strings.Builder
 	root := "/"
+	pqTablePath := fmt.Sprintf("%s%s", root, tbuf.Table.Name)
 	if r, ok := row.(*reader.ParquetReader); ok {
 		root = r.SchemaHandler.GetRootExName()
+		pqTablePath = fmt.Sprintf("%s.%s", root, tbuf.Table.Name)
 	}
-	pqTablePath := fmt.Sprintf("%s.%s", root, tbuf.Table.Name)
 	vals, _, err := s.readColumn(row, pqTablePath, v, false, ignoreSourcePath, useNerdCapitalization)
 	if err != nil {
 		return "", err

@@ -107,6 +107,10 @@ func (m *SQLToQuanta) ResolveField(name string) (field *core.Attribute, isBSI bo
 	if err != nil {
 		return
 	}
+	if field.MappingStrategy == "ParentRelation" {
+		isBSI = true
+		return
+	}
 	if core.MapperTypeFromString(field.MappingStrategy).IsBSI() {
 		isBSI = true
 	}
@@ -707,7 +711,6 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 								if m.endDate == "" {
 									end := ts.AddDate(0, 0, 1)
 									m.endDate = end.Format(shared.YMDHTimeFmt)
-u.Warnf("SETTING DATE RANGE IN EQUALS? %v - %v", m.startDate, m.endDate)
 								}
 							}
 						}

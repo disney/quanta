@@ -127,11 +127,14 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 	}
 	u.Debugf("INNER JOIN = %v", innerJoin)
 
-	driverSet := p.foundSets[p.driverTable]
+
+	driverSet := p.foundSets[p.driverTable].Clone()
 	// For inner joins filter out any rows in the driver table not in fkBSI link
-	if innerJoin && !negate {
-		for _, v := range p.fkBSI {
-			driverSet.And(v.GetExistenceBitmap())
+	if innerJoin {
+		if !negate {
+			for _, v := range p.fkBSI {
+				driverSet.And(v.GetExistenceBitmap())
+			}
 		}
 	}
 	// filter out entries from driver found set not contained within FKBSIs
@@ -159,6 +162,8 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 		// Anti-join
 		if negate {
 			filterSet.AndNot(newSet)
+			driverSet = v.Clone()
+			driverSet.AndNot(newSet)
 		} else {
 			filterSet.And(newSet)
 		}

@@ -1,6 +1,6 @@
 # quanta-loader within a Docker Container
 
-FROM alpine:latest
+FROM containerregistry.disney.com/digital/quanta-alpine:3.18
 
 ARG arch
 ARG platform
@@ -10,14 +10,6 @@ LABEL version="1.0.0" \
   maintainer.email="molinariguy@gmail.com" \
   description="Builds Generic Docker image for use in production deployment of Quanta Loader" \
   repository="https://github.com/disney/quanta"
-
-# Update 
-RUN apk update
-RUN apk upgrade
-RUN apk add --no-cache --update alpine-sdk
-# clean apk cache
-RUN rm -rf /var/cache/apk/*
-
 
 COPY ./bin/quanta-loader-"$platform"-"$arch" /usr/bin/quanta-loader
 COPY ./Docker/loader_entrypoint.sh /usr/bin/entrypoint.sh

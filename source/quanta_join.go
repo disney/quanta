@@ -50,7 +50,9 @@ func NewQuantaJoinMerge(ctx *plan.Context, l, r exec.TaskRunner, p *plan.JoinMer
 	m.ltask = l
 	m.rtask = r
 	m.leftStmt = p.LeftFrom
+	u.Debugf("LEFT STMT = %#v", p.LeftFrom)
 	m.rightStmt = p.RightFrom
+	u.Debugf("RIGHT STMT = %#v", p.RightFrom)
 	orig := m.Ctx.Stmt.(*rel.SqlSelect)
 	m.allTables = make([]string, len(orig.From))
 	m.aliases = make(map[string]*rel.SqlSource)
@@ -300,12 +302,11 @@ func (m *JoinMerge) Run() error {
 			u.Debugf("JOINEXPR = %#v, NEGATE = %v", v.JoinExpr, negate)
 		}
 		if v.Name == m.driverTable {
-			continue
-		}
-		if v.JoinType == lex.TokenInner {
-			joinTypes[v.Name] = true
-		} else {
-			joinTypes[v.Name] = false
+			if v.JoinType == lex.TokenInner {
+				joinTypes[v.Name] = true
+			} else {
+				joinTypes[v.Name] = false
+			}
 		}
 	}
 
@@ -320,10 +321,19 @@ func (m *JoinMerge) Run() error {
 			ct, _ := rs.Sum(rs.GetExistenceBitmap())
 			// This test is necessary only if the foreign key can contain NULL values (which is the point of OUTER joins)
 			// A corner case can exist if there are no predicates in which case there are cancelling AndNot operations
-			if (isOuter) && (!lisdefaultedpredicate || !risdefaultedpredicate) {
-				driverSet := foundSets[m.driverTable]
-				diff := roaring64.AndNot(driverSet, rs.GetExistenceBitmap()).GetCardinality()
-				ct = int64(diff)
+			//if isOuter && (!lisdefaultedpredicate || !risdefaultedpredicate) {
+_ = lisdefaultedpredicate
+_ = risdefaultedpredicate
+			if isOuter {
+				orbm := rs.GetExistenceBitmap()
+				for k, v := range foundSets {
+					if k == m.driverTable {
+						continue
+					}
+					orbm.Or(v)
+					
+				}
+				ct = int64(orbm.GetCardinality())
 			}
 			//u.Debugf("%p RESULT = %d", m, ct)
 			vals := make([]driver.Value, 2)

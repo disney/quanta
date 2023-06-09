@@ -330,7 +330,11 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 				colNames[y.Name] = i
 				p := fmt.Sprintf("%s.%s", x.Name, y.Name)
 				if _, ok := projColsMap[p]; !ok {
-					rowCols[y.Name] = len(projCols)
+					if len(tableMap) == 1 {
+						rowCols[y.Name] = len(projCols)
+					} else {
+						rowCols[fmt.Sprintf("%s.%s", table2AliasMap[x.Name], y.Name)] = len(projCols)
+					}
 					if y.Name != "@rownum" {
 						projColsMap[p] = len(projCols) - 1
 						projCols = append(projCols, p)

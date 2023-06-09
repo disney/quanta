@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 )
 
 const (
@@ -117,6 +118,7 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 	}
 	p.projFieldMap = projFieldMap
 
+	p.joinTypes = joinTypes
 	if p.joinTypes == nil {
 		p.joinTypes = make(map[string]bool)
 	}
@@ -139,9 +141,6 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 	}
 	// filter out entries from driver found set not contained within FKBSIs
 	for k, v := range p.foundSets {
-		if !innerJoin {
-			continue
-		}
 		if k == p.driverTable {
 			continue
 		}
@@ -165,9 +164,14 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 			driverSet = v.Clone()
 			driverSet.AndNot(newSet)
 		} else {
-			filterSet.And(newSet)
+			//filterSet.And(newSet)
+			if innerJoin {
+				unsigned := v.ToArray()
+				signed := *(*[]int64)(unsafe.Pointer(&unsigned))
+				driverSet = fkBsi.BatchEqual(0, signed).Clone()
+			}
 		}
-		p.foundSets[k] = filterSet
+		//p.foundSets[k] = filterSet
 	}
 
 	p.resultIterator = driverSet.ManyIterator()
@@ -603,8 +607,12 @@ func (p *Projector) checkColumnID(v *Attribute, cID uint64,
 			if b, fok := bsiResults[r.Parent.Name][r.FieldName]; !fok {
 				err = fmt.Errorf("bsi lookup failed for %s - %s", r.Parent.Name, r.FieldName)
 			} else {
-				val, _ := b.GetValue(cID)
-				colID = uint64(val)
+				val, found := b.GetValue(cID)
+				if found {
+					colID = uint64(val)
+				} else {
+					colID = cID
+				}
 			}
 		}
 	} else {

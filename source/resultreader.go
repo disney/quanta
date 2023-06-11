@@ -174,7 +174,7 @@ func (m *ResultReader) Run() error {
 		projFields := []string{fmt.Sprintf("%s.%s", m.sql.tbl.Name, m.sql.aggField)}
 		foundSet := make(map[string]*roaring64.Bitmap)
 		foundSet[m.sql.tbl.Name] = m.response.Results
-		proj, errx := core.NewProjection(m.conn, foundSet, nil, projFields, "",
+		proj, errx := core.NewProjection(m.conn, foundSet, nil, projFields, "", "",
 			fromTime.UnixNano(), toTime.UnixNano(), nil, false)
 		if errx != nil {
 			return errx
@@ -235,7 +235,7 @@ func (m *ResultReader) Run() error {
 			projFields := []string{fmt.Sprintf("%s.%s", m.sql.tbl.Name, m.sql.aggField)}
 			foundSet := make(map[string]*roaring64.Bitmap)
 			foundSet[m.sql.tbl.Name] = m.response.Results
-			proj, err3 := core.NewProjection(m.conn, foundSet, nil, projFields, "",
+			proj, err3 := core.NewProjection(m.conn, foundSet, nil, projFields, "", "",
 				fromTime.UnixNano(), toTime.UnixNano(), nil, false)
 			if err3 != nil {
 				return err3
@@ -288,7 +288,7 @@ func (m *ResultReader) Run() error {
 
 	foundSet := make(map[string]*roaring64.Bitmap)
 	foundSet[m.sql.tbl.Name] = m.response.Results
-	proj, err3 := core.NewProjection(m.conn, foundSet, nil, projFields, "",
+	proj, err3 := core.NewProjection(m.conn, foundSet, nil, projFields, "", "",
 		fromTime.UnixNano(), toTime.UnixNano(), nil, false)
 	if err3 != nil {
 		return err3

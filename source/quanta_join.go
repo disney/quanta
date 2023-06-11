@@ -380,7 +380,7 @@ _ = risdefaultedpredicate
 		}
 		defer sessionPool.Return(m.driverTable, con)
 		// driver table found set may have been reduced by join results
-		proj, err2 := core.NewProjection(con, foundSets, joinFields, projFields, m.driverTable,
+		proj, err2 := core.NewProjection(con, foundSets, joinFields, projFields, m.driverTable, m.leftStmt.Name,
 			fromTime, toTime, joinTypes, negate)
 		if err2 != nil {
 			return err2

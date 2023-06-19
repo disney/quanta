@@ -296,19 +296,17 @@ func (m *JoinMerge) Run() error {
 
 	joinTypes := make(map[string]bool)
 	negate := false
+	innerJoin := false
 	for _, v := range m.aliases {
 		if v.JoinExpr != nil && v.JoinExpr.(*expr.BinaryNode).Operator.T == lex.TokenNE {
 			negate = true
 			u.Debugf("JOINEXPR = %#v, NEGATE = %v", v.JoinExpr, negate)
 		}
-		if v.Name == m.driverTable {
-			if v.JoinType == lex.TokenInner {
-				joinTypes[v.Name] = true
-			} else {
-				joinTypes[v.Name] = false
-			}
+		if v.JoinType == lex.TokenInner {
+			innerJoin = true
 		}
 	}
+	joinTypes[m.driverTable] = innerJoin
 
 	if orig.IsAggQuery() {
 		nm := m.Ctx.Projection.Proj.Columns[0].As
@@ -325,15 +323,16 @@ func (m *JoinMerge) Run() error {
 _ = lisdefaultedpredicate
 _ = risdefaultedpredicate
 			if isOuter {
-				orbm := rs.GetExistenceBitmap()
+				bm := roaring64.NewBitmap()
 				for k, v := range foundSets {
 					if k == m.driverTable {
 						continue
 					}
-					orbm.Or(v)
+					bm = v.Clone()
+					bm.AndNot(rs.GetExistenceBitmap())
 					
 				}
-				ct = int64(orbm.GetCardinality())
+				ct += int64(bm.GetCardinality())
 			}
 			//u.Debugf("%p RESULT = %d", m, ct)
 			vals := make([]driver.Value, 2)

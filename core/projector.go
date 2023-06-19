@@ -133,15 +133,16 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 
 
 	driverSet := p.foundSets[p.childTable].Clone()
-	if p.leftTable != "" {
-		driverSet = p.foundSets[p.leftTable].Clone()
-	}
 	// For inner joins filter out any rows in the child table not in fkBSI link
 	if p.innerJoin {
 		if !negate {
 			for _, v := range p.fkBSI {
 				driverSet.And(v.GetExistenceBitmap())
 			}
+		}
+	} else {
+		if p.leftTable != p.childTable {
+			driverSet = p.foundSets[p.leftTable].Clone()
 		}
 	}
 	// filter out entries from child found set not contained within FKBSIs
@@ -170,10 +171,13 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 			driverSet.AndNot(newSet)
 		} else {
 			//filterSet.And(newSet)
-			if p.innerJoin && p.childTable == p.leftTable {
-				unsigned := v.ToArray()
-				signed := *(*[]int64)(unsafe.Pointer(&unsigned))
-				driverSet = fkBsi.BatchEqual(0, signed).Clone()
+			if p.innerJoin {
+				if p.childTable == p.leftTable {
+					unsigned := v.ToArray()
+					signed := *(*[]int64)(unsafe.Pointer(&unsigned))
+					driverSet = fkBsi.BatchEqual(0, signed).Clone()
+				}
+		
 			}
 		}
 		//p.foundSets[k] = filterSet
@@ -248,7 +252,7 @@ func (p *Projector) retrieveBitmapResults(foundSets map[string]*roaring64.Bitmap
 	return bsiResults, bitmapResults, nil
 }
 
-// findRelation - Retrieves the foreign key BSI field to be used for join projections
+// findRelationLink - Retrieves the foreign key BSI field to be used for join projections
 func (p *Projector) findRelationLink(tableName string) (*Attribute, bool) {
 	attr := append(p.joinAttributes, p.projAttributes...)
 	for _, v := range attr {
@@ -283,6 +287,23 @@ func (p *Projector) filterChild(parentSet *roaring64.Bitmap) (*roaring64.Bitmap,
 		return driverSet, nil
 }
 
+// For a given parent columnID, return the children
+func (p *Projector) getChildren(parent uint64) ([]uint64, error) {
+
+		fka, ok := p.findRelationLink(p.leftTable)
+		if !ok {
+			return nil, fmt.Errorf("getChildren: Cannot resolve FK relationship for %s", p.leftTable)
+		}
+		fkBsi, ok2 := p.fkBSI[fka.FieldName]
+		if !ok2 {
+			return nil, fmt.Errorf("getChildren: FK BSI lookup failed for %s.%s", p.leftTable, fka.FieldName)
+		}
+
+		result := fkBsi.CompareValue(0, roaring64.EQ, int64(parent), 0, nil)
+		return result.ToArray(), nil
+}
+
+
 func (p *Projector) nextSets(columnIDs []uint64) (map[string]map[string]*roaring64.BSI,
 		map[string]map[string]*BitmapFieldResults, error) {
 
@@ -292,7 +313,7 @@ func (p *Projector) nextSets(columnIDs []uint64) (map[string]map[string]*roaring
 	rs := make(map[string]*roaring64.Bitmap)
 	driverSet := roaring64.BitmapOf(columnIDs...)
 	rs[p.childTable] = driverSet
-	if p.childTable != p.leftTable {
+	if !p.innerJoin && p.childTable != p.leftTable {
 		childSet, err := p.filterChild(driverSet)
 		if err != nil {
 			return nil, nil, err
@@ -300,7 +321,15 @@ func (p *Projector) nextSets(columnIDs []uint64) (map[string]map[string]*roaring
 		rs[p.childTable] = childSet
 	}
 
-	bsir, bitr, err := p.retrieveBitmapResults(rs, p.projAttributes, false)
+	attr := p.projAttributes
+	for _, a := range p.joinAttributes {
+		l := fmt.Sprintf("%s.%s", a.Parent.Name, a.FieldName)
+		if _, ok := p.projFieldMap[l]; !ok {
+			attr = append(attr, a)
+		}
+	}
+
+	bsir, bitr, err := p.retrieveBitmapResults(rs, attr, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -341,9 +370,10 @@ func (p *Projector) nextSets(columnIDs []uint64) (map[string]map[string]*roaring
 }
 
 // Next - Return next projection batch.  This can be called by multiple threads in parallel for maximum throughput.
-func (p *Projector) Next(count int) (columnIDs []uint64, rows [][]driver.Value, err error) {
+func (p *Projector) Next(count int) (resultIDs []uint64, rows [][]driver.Value, err error) {
 
-	columnIDs = make([]uint64, count)
+	columnIDs := make([]uint64, count)
+	resultIDs = make([]uint64, 0)
 	rows = make([][]driver.Value, 0)
 	p.stateGuard.Lock()
 	actualCount := p.resultIterator.NextMany(columnIDs)
@@ -394,12 +424,29 @@ func (p *Projector) Next(count int) (columnIDs []uint64, rows [][]driver.Value, 
 	}
 
 	for _, v := range columnIDs {
-		row, e := p.getRow(v, strMap, bsir, bitr)
-		if e != nil {
-			err = e
-			return
+		children := make([]uint64, 0)
+		if !p.innerJoin {
+			children, err  = p.getChildren(v)
 		}
-		rows = append(rows, row)
+		if len(children) > 0 {
+			for _, w := range children {
+				row, e := p.getRow(v, strMap, bsir, bitr, w)
+				if e != nil {
+					err = e
+					return
+				}
+				rows = append(rows, row)
+				resultIDs = append(resultIDs, v)
+			}
+		} else {
+			row, e := p.getRow(v, strMap, bsir, bitr, 0)
+			if e != nil {
+				err = e
+				return
+			}
+			rows = append(rows, row)
+			resultIDs = append(resultIDs, v)
+		}
 	}
 	return
 }
@@ -458,7 +505,7 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 		}
 		var lBatch map[interface{}]interface{}
 		var err error
-		if lookupAttribute.Parent.Name != p.childTable && p.childTable == p.leftTable {
+		if v.MappingStrategy == "ParentRelation" || (p.innerJoin && v.Parent.Name != p.childTable) {
 			lBatch, err = p.getPartitionedStrings(lookupAttribute, trxColumnIDs)
 		} else {
 			lBatch, err = p.getPartitionedStrings(lookupAttribute, columnIDs)
@@ -466,7 +513,7 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 		if err != nil {
 			return nil, err
 		}
-		strMap[v.FieldName] = lBatch
+		strMap[fmt.Sprintf("%s.%s", v.Parent.Name, v.FieldName)] = lBatch
 	}
 
 	return strMap, nil
@@ -481,9 +528,10 @@ func (p *Projector) transposeFKColumnIDs(fkBSI *roaring64.BSI, columnIDs []uint6
 }
 
 
+// Emit a row
 func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]interface{},
 	bsiResults map[string]map[string]*roaring64.BSI,
-	bitmapResults map[string]map[string]*BitmapFieldResults) (row []driver.Value, err error) {
+	bitmapResults map[string]map[string]*BitmapFieldResults, child uint64) (row []driver.Value, err error) {
 
 	row = make([]driver.Value, len(p.projFieldMap))
 	for _, v := range p.projAttributes {
@@ -492,7 +540,7 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 			continue
 		}
 		if v.MappingStrategy == "StringHashBSI" {
-			cid, err2 := p.checkColumnID(v, colID, bsiResults)
+			cid, err2 := p.checkColumnID(v, colID, child, bsiResults)
 			if err2 != nil {
 				if !p.innerJoin {
 					row[i] = "NULL"
@@ -501,7 +549,7 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 				err = err2
 				return
 			}
-			if str, ok := strMap[v.FieldName][cid]; ok {
+			if str, ok := strMap[fmt.Sprintf("%s.%s", v.Parent.Name, v.FieldName)][cid]; ok {
 				if str == "" {
 					row[i] = "NULL"
 				} else {
@@ -525,16 +573,20 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 				}
 				pv := relBuf.PKAttributes[0]
 				if pv.MappingStrategy == "StringHashBSI" {
-					bsi, found := bsiResults[v.Parent.Name][v.FieldName]
-					if !found {
-						row[i] = "NULL"
-						continue
-					}
-					if val, ok := bsi.GetValue(colID); ok {
-						if str, ok := strMap[v.FieldName][uint64(val)]; ok {
-							row[i] = str
-						} else {
+					cid, err2 := p.checkColumnID(v, colID, child, bsiResults)
+					if err2 != nil {
+						if !p.innerJoin {
 							row[i] = "NULL"
+							continue
+						}
+						err = err2
+						return
+					}
+					if str, ok := strMap[fmt.Sprintf("%s.%s", v.Parent.Name, v.FieldName)][cid]; ok {
+						if str == "" {
+							row[i] = "NULL"
+						} else {
+							row[i] = str
 						}
 					} else {
 						row[i] = "NULL"
@@ -551,7 +603,7 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 				row[i] = "NULL"
 				continue
 			}
-			cid, err2 := p.checkColumnID(v, colID, bsiResults)
+			cid, err2 := p.checkColumnID(v, colID, child, bsiResults)
 			if err2 != nil {
 				if !p.innerJoin {
 					row[i] = "NULL"
@@ -600,7 +652,7 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 			continue
 		}
 
-		cid, err2 := p.checkColumnID(v, colID, bsiResults)
+		cid, err2 := p.checkColumnID(v, colID, child, bsiResults)
 		if err2 != nil {
 			if !p.innerJoin {
 				row[i] = "NULL"
@@ -622,10 +674,30 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 }
 
 // If field is in a join table then transpose the column ID
-func (p *Projector) checkColumnID(v *Attribute, cID uint64,
+func (p *Projector) checkColumnID(v *Attribute, cID, child uint64,
 	bsiResults map[string]map[string]*roaring64.BSI) (colID uint64, err error) {
 
-	if p.childTable != "" && v.Parent.Name != p.childTable {
+	if child > 0 && v.Parent.Name == p.childTable {
+		cID = child
+	}
+	if v.MappingStrategy == "ParentRelation" {
+		if child == 0 && p.innerJoin {
+			child = cID
+		}
+		if b, fok := bsiResults[v.Parent.Name][v.FieldName]; fok {
+			val, found := b.GetValue(child)
+			if found {
+				colID = uint64(val)
+				u.Debugf("PARENT RELATION FOUND %s.%s - COLID = %d, CHILD = %d", v.Parent.Name, v.FieldName, colID, child)
+				return
+			}
+		}
+	}
+	if (p.innerJoin || child > 0) && p.childTable != "" && v.Parent.Name != p.childTable {
+		if child == 0 && !p.innerJoin {
+			colID = 0
+			return
+		}
 		if r, ok := p.findRelationLink(v.Parent.Name); !ok {
 			err = fmt.Errorf("findRelationLink failed for %s", v.Parent.Name)
 		} else {
@@ -636,16 +708,19 @@ func (p *Projector) checkColumnID(v *Attribute, cID uint64,
 				val, found := b.GetValue(cID)
 				if found {
 					colID = uint64(val)
-//u.Warnf("FOUND %s.%s - COLID = %d", v.Parent.Name, v.FieldName, colID)
+					u.Debugf("FOUND %s.%s - COLID = %d, CHILD = %d", v.Parent.Name, v.FieldName, colID, child)
 				} else {
 					colID = cID
-//u.Warnf("NOT FOUND %s.%s - COLID = %d", v.Parent.Name, v.FieldName, colID)
+					u.Debugf("NOT FOUND %s.%s - COLID = %d", v.Parent.Name, v.FieldName, colID)
 				}
 			}
 		}
 	} else {
 		colID = cID
-//u.Warnf("SKIPPING %s.%s - COLID = %d", v.Parent.Name, v.FieldName, colID)
+		if child == 0 && v.Parent.Name == p.childTable && !p.innerJoin {
+			colID = 0
+		}
+		u.Debugf("SKIPPING %s.%s - COLID = %d, CHILD = %d", v.Parent.Name, v.FieldName, colID, child)
 	}
 	return
 }

@@ -198,7 +198,7 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 			foundCriteria := false
 			foundParentRelation := false
 			tables := make([]string, 0)
-			for _, x := range orig.From {
+			for i, x := range orig.From {
 				table, err := p.Context().Schema.Table(x.Name)
 				if err != nil {
 					return nil, fmt.Errorf("invalid table %s in join criteria [%v]", x.Name, x)
@@ -216,6 +216,10 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 					}
 					if field.Extra == "ParentRelation" {
 						foundParentRelation = true
+						if i < len(orig.From) - 1 && orig.From[i + 1].JoinType == lex.TokenOuter && len(tables) == 1  {
+							return nil, fmt.Errorf("right outer joins not supported, make %s the leftmost table",
+								 orig.From[i + 1].Name)
+						}
 						continue // Its a relation so we're good
 					}
 					if field.Key != "-" {

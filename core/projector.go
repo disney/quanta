@@ -131,6 +131,10 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 	}
 	u.Debugf("INNER JOIN = %v", p.innerJoin)
 
+	if len(p.joinTypes) == 0 && len(foundSets) > 1 {
+		return nil, fmt.Errorf("join criteria missing")
+	}
+
 
 	driverSet := p.foundSets[p.childTable].Clone()
 	// For inner joins filter out any rows in the child table not in fkBSI link
@@ -708,10 +712,10 @@ func (p *Projector) checkColumnID(v *Attribute, cID, child uint64,
 				val, found := b.GetValue(cID)
 				if found {
 					colID = uint64(val)
-					u.Debugf("FOUND %s.%s - COLID = %d, CHILD = %d", v.Parent.Name, v.FieldName, colID, child)
+					//u.Debugf("FOUND %s.%s - COLID = %d, CHILD = %d", v.Parent.Name, v.FieldName, colID, child)
 				} else {
 					colID = cID
-					u.Debugf("NOT FOUND %s.%s - COLID = %d", v.Parent.Name, v.FieldName, colID)
+					//u.Debugf("NOT FOUND %s.%s - COLID = %d", v.Parent.Name, v.FieldName, colID)
 				}
 			}
 		}
@@ -720,7 +724,7 @@ func (p *Projector) checkColumnID(v *Attribute, cID, child uint64,
 		if child == 0 && v.Parent.Name == p.childTable && !p.innerJoin {
 			colID = 0
 		}
-		u.Debugf("SKIPPING %s.%s - COLID = %d, CHILD = %d", v.Parent.Name, v.FieldName, colID, child)
+		//u.Debugf("SKIPPING %s.%s - COLID = %d, CHILD = %d", v.Parent.Name, v.FieldName, colID, child)
 	}
 	return
 }

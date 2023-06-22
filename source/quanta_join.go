@@ -37,6 +37,7 @@ type JoinMerge struct {
 	allTables   []string
 	driverTable string
 	aliases     map[string]*rel.SqlSource
+	isSubQuery  bool
 }
 
 // NewQuantaJoinMerge - Construct a QuantaJoinMerge task.
@@ -55,6 +56,7 @@ func NewQuantaJoinMerge(ctx *plan.Context, l, r exec.TaskRunner, p *plan.JoinMer
 	u.Debugf("RIGHT STMT = %#v", p.RightFrom)
 	orig := m.Ctx.Stmt.(*rel.SqlSelect)
 	m.allTables = make([]string, len(orig.From))
+	m.isSubQuery = len(orig.From) == 1
 	m.aliases = make(map[string]*rel.SqlSource)
 	for i, v := range orig.From {
 		m.allTables[i] = v.Name
@@ -302,7 +304,7 @@ func (m *JoinMerge) Run() error {
 			negate = true
 			u.Debugf("JOINEXPR = %#v, NEGATE = %v", v.JoinExpr, negate)
 		}
-		if v.JoinType == lex.TokenInner {
+		if v.JoinType == lex.TokenInner || (m.isSubQuery && !negate) {
 			innerJoin = true
 		}
 	}
@@ -357,12 +359,14 @@ _ = risdefaultedpredicate
 			return err
 		}
 		u.Debugf("FP = %#v, CN = %#v, RN = %#v, PROJF = %#v, JF = %#v", fp, cn, rn, projFields, joinFields)
-		if len(orig.From) == 1 {  // Assume Subquery
-			_, cn, projFields, joinFields, err = createFinalProjectionFromMaps(orig, m.aliases, m.allTables, 
+		if m.isSubQuery {
+			u.Debugf("LEN ALLTABLES = %d", len(m.allTables))
+			_, cn, rn, projFields, joinFields, err = createFinalProjectionFromMaps(orig, m.aliases, m.allTables, 
 					m.Ctx.Schema, m.driverTable)
 			if err != nil {
 				return err
 			}
+			u.Debugf("SUBQUERY CN = %#v, RN = %#v, PROJF = %#v, JF = %#v", cn, rn, projFields, joinFields)
 		}
 		val, found := m.Ctx.Session.Get(sessionPool)
 		if !found {

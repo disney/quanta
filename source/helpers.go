@@ -61,7 +61,8 @@ loopExit:
 func decorateRow(row []driver.Value, proj *rel.Projection, rowCols map[string]int, columnID uint64) []driver.Value {
 
 	newRow := make([]driver.Value, len(proj.Columns))
-	cpyRow := make([]driver.Value, len(row))
+	//cpyRow := make([]driver.Value, len(row))
+	cpyRow := make([]driver.Value, len(rowCols))
 	copy(cpyRow, row)
 	for i, v := range cpyRow {
 		if v == "NULL" {
@@ -73,7 +74,6 @@ func decorateRow(row []driver.Value, proj *rel.Projection, rowCols map[string]in
 		ri, rok := rowCols[v.As]
 		if rok {
 			newRow[i] = fmt.Sprintf("%s", row[ri])
-		//} else if v.As == "@rownum" {
 		} else if strings.HasSuffix(v.As, "@rownum") {
 			newRow[i] = fmt.Sprintf("%d", columnID)
 		}
@@ -145,7 +145,8 @@ func outputProjection(outCh exec.MessageChan, sigChan exec.SigChan, proj *core.P
 					return nil
 				}
 				for i, columnID := range colIDs {
-					rows[i] = decorateRow(rows[i], pro, rowCols, columnID)
+					//rows[i] = decorateRow(rows[i], pro, rowCols, columnID)
+					rows[i] = decorateRow(rows[i], pro, colNames, columnID)
 					if isDistinct {
 						var sb strings.Builder
 						for _, fld := range rows[i] {
@@ -188,22 +189,20 @@ func outputProjection(outCh exec.MessageChan, sigChan exec.SigChan, proj *core.P
 }
 
 func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel.SqlSource, allTables []string, 
-		sch *schema.Schema, driverTable string) (*rel.Projection, map[string]int, []string, []string, error) {
+		sch *schema.Schema, driverTable string) (*rel.Projection, map[string]int, map[string]int, []string, 
+		[]string, error) {
 
 	tableMap := make(map[string]*schema.Table)
 	projCols := make([]string, 0)
 	projColsMap := make(map[string]struct{}, 0)
 	joinCols := make([]string, 0)
-	for _, i := range allTables {
-		table, err := sch.Table(i)
+
+	for _, v := range aliasMap {
+		table, err := sch.Table(v.Name)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, err
 		}
-		tableMap[i] = table
-		v, ok := aliasMap[i]
-		if !ok {
-			return nil, nil, nil, nil, fmt.Errorf("no aliasMap entry for %s", i)
-		}
+		tableMap[v.Name] = table
 		for _, y := range v.JoinNodes() {
 			if v.Name == driverTable {
 				joinCols = append(joinCols, fmt.Sprintf("%s.%s", v.Name, y.String()))
@@ -212,19 +211,27 @@ func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel
 	}
 
 	ret := rel.NewProjection()
-	colNames := make(map[string]int)
+	rowNames := make(map[string]int)
 	if orig.Star {
 		i := 0
-		for _, x := range allTables {
-			table := tableMap[x]
+		for _, x := range aliasMap {
+			table := tableMap[x.Name]
 			for _, y := range table.Fields {
 				if y.Collation != "-" && strings.HasPrefix(y.Key, "FK:") {
 					continue
 				}
-				ret.AddColumn(rel.NewColumn(y.Name), y.ValueType())
-				colNames[y.Name] = i
-				p := fmt.Sprintf("%s.%s", x, y.Name)
+				p := fmt.Sprintf("%s.%s", x.Name, y.Name)
+				z := p
+/*
+				if x.Alias != "" {
+					z = fmt.Sprintf("%s.%s", x.Alias, y.Name)
+				}
+*/
+				ret.AddColumn(rel.NewColumn(p), y.ValueType())
 				if _, ok := projColsMap[p]; !ok {
+					if x.Name == orig.From[0].Name {
+						rowNames[z] = len(projCols)
+					}
 					projCols = append(projCols, p)
 					projColsMap[p] = struct{}{}
 				}
@@ -248,8 +255,8 @@ func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel
 						continue
 					}
 					ret.AddColumn(rel.NewColumn(fmt.Sprintf("%s", y.Name)), y.ValueType())
-					colNames[y.Name] = i
 					p := fmt.Sprintf("%s.%s", table.Name, y.Name)
+					rowNames[p] = i
 					if _, ok := projColsMap[p]; !ok {
 						projCols = append(projCols, p)
 					}
@@ -263,11 +270,11 @@ func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel
 				} else if vt, ok := table.Column(v.SourceField); ok {
 					ret.AddColumn(v, vt)
 				} else {
-					return nil, nil, nil, nil,
+					return nil, nil, nil, nil, nil,
 						fmt.Errorf("createFinalProjectionFromMaps: schema lookup fail for %s.%s", table.Name, v.SourceField)
 				}
-				colNames[colName] = i
 				p := fmt.Sprintf("%s.%s", table.Name, v.SourceField)
+				rowNames[p] = i
 				if _, ok := projColsMap[p]; !ok {
 					projCols = append(projCols, p)
 				}
@@ -275,8 +282,19 @@ func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel
 			}
 		}
 	}
+	colNames := make(map[string]int)
+	if orig.Star {
+		table := tableMap[orig.From[0].Name]
+		for i, y := range table.Fields {
+			colNames[y.Name] = i
+		}
+	} else {
+		for i, v := range orig.Columns {
+			colNames[v.SourceField] = i
+		}
+	}
 	ret.Final = true
-	return ret, colNames, projCols, joinCols, nil
+	return ret, colNames, rowNames, projCols, joinCols, nil
 }
 
 func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable string, 
@@ -289,7 +307,6 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 	projCols := make([]string, 0)
 	projColsMap := make(map[string]int, 0)
 	joinCols := make([]string, 0)
-	isSingleTable := len(orig.From) == 1
 	for _, v := range orig.From {
 		table, err := sch.Table(v.Name)
 		if err != nil {
@@ -308,7 +325,7 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 			}
 		}
 	}
-
+	isSingleTable := len(tableMap) == 1 || len(orig.From) == 1
 	ret := rel.NewProjection()
 	colNames := make(map[string]int)
 	rownumOffset := 0

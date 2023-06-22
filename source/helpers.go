@@ -221,16 +221,10 @@ func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel
 					continue
 				}
 				p := fmt.Sprintf("%s.%s", x.Name, y.Name)
-				z := p
-/*
-				if x.Alias != "" {
-					z = fmt.Sprintf("%s.%s", x.Alias, y.Name)
-				}
-*/
 				ret.AddColumn(rel.NewColumn(p), y.ValueType())
 				if _, ok := projColsMap[p]; !ok {
 					if x.Name == orig.From[0].Name {
-						rowNames[z] = len(projCols)
+						rowNames[p] = len(projCols)
 					}
 					projCols = append(projCols, p)
 					projColsMap[p] = struct{}{}
@@ -346,7 +340,7 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 				}
 				p := fmt.Sprintf("%s.%s", x.Name, y.Name)
 				if _, ok := projColsMap[p]; !ok {
-					if len(tableMap) == 1 {
+					if isSingleTable {
 						rowCols[y.Name] = len(projCols)
 						colNames[y.Name] = i
 					} else {
@@ -365,7 +359,7 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 		// add the original projection to return
 		for _, v := range orig.Columns {
 			var table *schema.Table
-			l, _, isAliased := v.LeftRight()
+			l, r, isAliased := v.LeftRight()
 			if isAliased {
 				table = tableMap[aliasMap[l].Source.From[0].Name]
 			} else {
@@ -373,7 +367,11 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 			}
 			_, isIdent := v.Expr.(*expr.IdentityNode)
 			if vt, ok := table.Column(v.SourceField); ok && isIdent {
-				ret.AddColumn(v, vt)
+				if isAliased {
+					ret.AddColumn(rel.NewColumn(fmt.Sprintf("%s.%s", l, r)), vt)
+				} else {
+					ret.AddColumn(v, vt)
+				}
 				p := fmt.Sprintf("%s.%s", table.Name, v.SourceField)
 				if _, ok := projColsMap[p]; !ok {
 					projCols = append(projCols, p)
@@ -415,8 +413,9 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 					if y.Collation != "-" && strings.HasPrefix(y.Key, "FK:") {
 						continue
 					}
-					ret.AddColumn(rel.NewColumn(fmt.Sprintf("%s", y.Name)), y.ValueType())
-					colNames[y.Name] = i
+					q := fmt.Sprintf("%s.%s", l, y.Name)
+					ret.AddColumn(rel.NewColumn(q), y.ValueType())
+					colNames[q] = i
 					p := fmt.Sprintf("%s.%s", table.Name, y.Name)
 					if _, ok := projColsMap[p]; !ok {
 						rowCols[y.Name] = len(projCols)
@@ -428,8 +427,14 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 					}
 					i++
 				}
+				// delete the x.* column
 			} else {
+				v := z.Col
+				l, r, isAliased := v.LeftRight()
 				colName := r
+				if isAliased {
+					colName = fmt.Sprintf("%s.%s", l, r)
+				}
 				colNames[colName] = i + rownumOffset
 				if colName == "@rownum" {
 					rownumOffset++
@@ -449,14 +454,29 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 				i++
 			}
 		}
+		// remove the x.* items
+		ret2 := make([]*rel.ResultColumn, len(ret.Columns))
+		copy(ret2, ret.Columns)
+		for i, z := range ret2 {
+			v := z.Col
+			_, r, isAliased := v.LeftRight()
+			if isAliased && r == "*" {
+				copy(ret2[i:], ret2[i+1:])
+			}
+		}
+		ret.Columns = ret2
 		// The projection and proj columns list should be done, now create rowCols
 		for _, z := range ret.Columns {
 			v := z.Col
-			l, _, isAliased := v.LeftRight()
+			if v.Star {
+				continue
+			}
+			l, r, isAliased := v.LeftRight()
 			colName := v.As
 			var table *schema.Table
 			if isAliased {
 				table = tableMap[aliasMap[l].Name]
+				colName = fmt.Sprintf("%s.%s", l, r)
 			} else {
 				table = tableMap[orig.From[0].Name]
 			}

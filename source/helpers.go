@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	//u "github.com/araddon/gou"
+	u "github.com/araddon/gou"
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/araddon/qlbridge/datasource"
 	"github.com/araddon/qlbridge/exec"
@@ -61,8 +61,8 @@ loopExit:
 func decorateRow(row []driver.Value, proj *rel.Projection, rowCols map[string]int, columnID uint64) []driver.Value {
 
 	newRow := make([]driver.Value, len(proj.Columns))
-	//cpyRow := make([]driver.Value, len(row))
-	cpyRow := make([]driver.Value, len(rowCols))
+	cpyRow := make([]driver.Value, len(row))
+	//cpyRow := make([]driver.Value, len(rowCols))
 	copy(cpyRow, row)
 	for i, v := range cpyRow {
 		if v == "NULL" {
@@ -73,7 +73,12 @@ func decorateRow(row []driver.Value, proj *rel.Projection, rowCols map[string]in
 	for i, v := range proj.Columns {
 		ri, rok := rowCols[v.As]
 		if rok {
-			newRow[i] = fmt.Sprintf("%s", row[ri])
+			if ri < len(row) {
+				newRow[i] = fmt.Sprintf("%s", row[ri])
+			} else {
+				u.Debugf("could not find index %v in incoming row at col %d - %#v, len(row) = %d, ROW = %#v", ri, i, v, len(row), row)
+				newRow[i] = "NULL"
+			}
 		} else if strings.HasSuffix(v.As, "@rownum") {
 			newRow[i] = fmt.Sprintf("%d", columnID)
 		}
@@ -145,8 +150,7 @@ func outputProjection(outCh exec.MessageChan, sigChan exec.SigChan, proj *core.P
 					return nil
 				}
 				for i, columnID := range colIDs {
-					//rows[i] = decorateRow(rows[i], pro, rowCols, columnID)
-					rows[i] = decorateRow(rows[i], pro, colNames, columnID)
+					rows[i] = decorateRow(rows[i], pro, rowCols, columnID)
 					if isDistinct {
 						var sb strings.Builder
 						for _, fld := range rows[i] {
@@ -482,6 +486,9 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 			}
 			if _, ok :=  rowCols[colName]; !ok {
 				p := fmt.Sprintf("%s.%s", table.Name, v.SourceField)
+				if isAliased {
+					p = fmt.Sprintf("%s.%s", table.Name, r)
+				}
 				if pv, ok := projColsMap[p]; ok {
 					rowCols[colName] = pv
 				}

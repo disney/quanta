@@ -62,7 +62,6 @@ func decorateRow(row []driver.Value, proj *rel.Projection, rowCols map[string]in
 
 	newRow := make([]driver.Value, len(proj.Columns))
 	cpyRow := make([]driver.Value, len(row))
-	//cpyRow := make([]driver.Value, len(rowCols))
 	copy(cpyRow, row)
 	for i, v := range cpyRow {
 		if v == "NULL" {
@@ -76,7 +75,8 @@ func decorateRow(row []driver.Value, proj *rel.Projection, rowCols map[string]in
 			if ri < len(row) {
 				newRow[i] = fmt.Sprintf("%s", row[ri])
 			} else {
-				u.Debugf("could not find index %v in incoming row at col %d - %#v, len(row) = %d, ROW = %#v", ri, i, v, len(row), row)
+				u.Errorf("could not find index %v in incoming row at col %d - %#v, len(row) = %d, ROW = %#v", 
+					ri, i, v, len(row), row)
 				newRow[i] = "NULL"
 			}
 		} else if strings.HasSuffix(v.As, "@rownum") {
@@ -198,7 +198,7 @@ func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel
 
 	tableMap := make(map[string]*schema.Table)
 	projCols := make([]string, 0)
-	projColsMap := make(map[string]struct{}, 0)
+	projColsMap := make(map[string]int, 0)
 	joinCols := make([]string, 0)
 
 	for _, v := range aliasMap {
@@ -225,13 +225,13 @@ func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel
 					continue
 				}
 				p := fmt.Sprintf("%s.%s", x.Name, y.Name)
-				ret.AddColumn(rel.NewColumn(p), y.ValueType())
+				ret.AddColumn(rel.NewColumn(y.Name), y.ValueType())
 				if _, ok := projColsMap[p]; !ok {
 					if x.Name == orig.From[0].Name {
-						rowNames[p] = len(projCols)
+						rowNames[y.Name] = len(projCols)
 					}
+					projColsMap[p] = len(projCols)
 					projCols = append(projCols, p)
-					projColsMap[p] = struct{}{}
 				}
 				i++
 			}
@@ -254,15 +254,15 @@ func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel
 					}
 					ret.AddColumn(rel.NewColumn(fmt.Sprintf("%s", y.Name)), y.ValueType())
 					p := fmt.Sprintf("%s.%s", table.Name, y.Name)
-					rowNames[p] = i
+					//rowNames[p] = i
 					if _, ok := projColsMap[p]; !ok {
+						projColsMap[p] = len(projCols)
 						projCols = append(projCols, p)
 					}
 					i++
 				}
 			} else {
 				colName := v.As
-				//if colName == "@rownum" {
 				if strings.HasSuffix(colName, "@rownum") {
 					ret.AddColumn(v, value.IntType)
 				} else if vt, ok := table.Column(v.SourceField); ok {
@@ -272,8 +272,10 @@ func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel
 						fmt.Errorf("createFinalProjectionFromMaps: schema lookup fail for %s.%s", table.Name, v.SourceField)
 				}
 				p := fmt.Sprintf("%s.%s", table.Name, v.SourceField)
-				rowNames[p] = i
+				//rowNames[p] = i
+				//rowNames[colName] = i
 				if _, ok := projColsMap[p]; !ok {
+					projColsMap[p] = len(projCols)
 					projCols = append(projCols, p)
 				}
 				i++
@@ -288,9 +290,20 @@ func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel
 		}
 	} else {
 		for i, v := range orig.Columns {
-			colNames[v.SourceField] = i
+			colName := v.As
+/*
+			l, r, isAliased := v.LeftRight()
+			_, isFunc := v.Expr.(*expr.FuncNode)
+			if isAliased && !isFunc {
+				colName = fmt.Sprintf("%s.%s", l, r)
+				colNames[v.SourceField] = i
+			}
+*/
+			colNames[colName] = i
 		}
 	}
+
+	ret, rowNames = createRowCols(ret, tableMap, aliasMap, projCols, projColsMap, rowNames, orig.From[0].Name)
 	ret.Final = true
 	return ret, colNames, rowNames, projCols, joinCols, nil
 }
@@ -362,9 +375,10 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 	} else {
 		// add the original projection to return
 		for _, v := range orig.Columns {
+			_, isFunc := v.Expr.(*expr.FuncNode)
 			var table *schema.Table
 			l, r, isAliased := v.LeftRight()
-			if isAliased {
+			if isAliased && !isFunc {
 				table = tableMap[aliasMap[l].Source.From[0].Name]
 			} else {
 				table = tableMap[orig.From[0].Name]
@@ -431,7 +445,6 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 					}
 					i++
 				}
-				// delete the x.* column
 			} else {
 				v := z.Col
 				l, r, isAliased := v.LeftRight()
@@ -457,50 +470,68 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 				}
 				i++
 			}
+
 		}
-		// remove the x.* items
-		ret2 := make([]*rel.ResultColumn, len(ret.Columns))
-		copy(ret2, ret.Columns)
-		for i, z := range ret2 {
-			v := z.Col
-			_, r, isAliased := v.LeftRight()
-			if isAliased && r == "*" {
-				copy(ret2[i:], ret2[i+1:])
-			}
+		ret, rowCols = createRowCols(ret, tableMap, aliasMap, projCols, projColsMap, rowCols, orig.From[0].Name)
+	}
+
+	return ret, colNames, rowCols, projCols, joinCols, nil
+}
+
+
+func createRowCols(ret *rel.Projection, tableMap map[string]*schema.Table, aliasMap map[string]*rel.SqlSource,
+		projCols []string, projColsMap, rowCols map[string]int, origFrom string) (*rel.Projection, map[string]int) {
+
+	// remove the x.* items
+	ret2 := make([]*rel.ResultColumn, len(ret.Columns))
+	copy(ret2, ret.Columns)
+	for i, z := range ret2 {
+		v := z.Col
+		_, r, isAliased := v.LeftRight()
+		if isAliased && r == "*" {
+			copy(ret2[i:], ret2[i+1:])
 		}
-		ret.Columns = ret2
-		// The projection and proj columns list should be done, now create rowCols
-		for _, z := range ret.Columns {
-			v := z.Col
-			if v.Star {
-				continue
-			}
-			l, r, isAliased := v.LeftRight()
-			colName := v.As
-			var table *schema.Table
+	}
+	ret.Columns = ret2
+	// The projection and proj columns list should be done, now create rowCols
+	for _, z := range ret.Columns {
+		v := z.Col
+		if v.Star {
+			continue
+		}
+		_, isFunc := v.Expr.(*expr.FuncNode)
+		l, r, isAliased := v.LeftRight()
+		colName := v.As
+		if isFunc {
+			colName = v.SourceField
+		}
+		var table *schema.Table
+		if isAliased && !isFunc {
+			table = tableMap[aliasMap[l].Name]
+			colName = fmt.Sprintf("%s.%s", l, r)
+		} else {
+			table = tableMap[origFrom]
+		}
+		if _, ok := rowCols[colName]; !ok {
+			p := fmt.Sprintf("%s.%s", table.Name, v.SourceField)
 			if isAliased {
-				table = tableMap[aliasMap[l].Name]
-				colName = fmt.Sprintf("%s.%s", l, r)
-			} else {
-				table = tableMap[orig.From[0].Name]
+				p = fmt.Sprintf("%s.%s", table.Name, r)
 			}
-			if _, ok :=  rowCols[colName]; !ok {
-				p := fmt.Sprintf("%s.%s", table.Name, v.SourceField)
-				if isAliased {
-					p = fmt.Sprintf("%s.%s", table.Name, r)
-				}
-				if pv, ok := projColsMap[p]; ok {
-					rowCols[colName] = pv
-				}
-			}
-		}
-		// Handle case where there are function arguments not in select list or predicate
-		for i, v := range projCols {
-			cn := strings.Split(v, ".")[1]
-			if _, ok2 := rowCols[cn]; !ok2 {
-				rowCols[cn] = i
+			if pv, ok := projColsMap[p]; ok {
+				rowCols[colName] = pv
 			}
 		}
 	}
-	return ret, colNames, rowCols, projCols, joinCols, nil
+u.Errorf("HERE ROWCOLS BEFORE %#v", rowCols)
+	// Handle case where there are function arguments not in select list or predicate
+	for i, v := range projCols {
+		cn := strings.Split(v, ".")[1]
+		if _, ok2 := rowCols[cn]; !ok2 {
+			rowCols[cn] = i
+		}
+	}
+u.Errorf("HERE ROWCOLS AFTER %#v", rowCols)
+
+	return ret, rowCols
 }
+

@@ -493,7 +493,6 @@ func createRowCols(ret *rel.Projection, tableMap map[string]*schema.Table, alias
 	}
 	ret.Columns = ret2
 	// The projection and proj columns list should be done, now create rowCols
-u.Errorf("PROJ STUFF MAP = %#v, ARY = %#v", projColsMap, projCols)
 	for _, z := range ret.Columns {
 		v := z.Col
 		_, isFunc := v.Expr.(*expr.FuncNode)

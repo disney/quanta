@@ -256,8 +256,8 @@ func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel
 					p := fmt.Sprintf("%s.%s", table.Name, y.Name)
 					//rowNames[p] = i
 					if _, ok := projColsMap[p]; !ok {
-						projColsMap[p] = len(projCols)
 						projCols = append(projCols, p)
+						projColsMap[p] = len(projCols)
 					}
 					i++
 				}
@@ -437,10 +437,9 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 					p := fmt.Sprintf("%s.%s", table.Name, y.Name)
 					if _, ok := projColsMap[p]; !ok {
 						rowCols[y.Name] = len(projCols)
-						//if y.Name != "@rownum" {
 						if !strings.HasSuffix(y.Name, "@rownum") {
-							projColsMap[p] = len(projCols) - 1
 							projCols = append(projCols, p)
+							projColsMap[p] = len(projCols) - 1
 						}
 					}
 					i++
@@ -494,11 +493,9 @@ func createRowCols(ret *rel.Projection, tableMap map[string]*schema.Table, alias
 	}
 	ret.Columns = ret2
 	// The projection and proj columns list should be done, now create rowCols
+u.Errorf("PROJ STUFF MAP = %#v, ARY = %#v", projColsMap, projCols)
 	for _, z := range ret.Columns {
 		v := z.Col
-		if v.Star {
-			continue
-		}
 		_, isFunc := v.Expr.(*expr.FuncNode)
 		l, r, isAliased := v.LeftRight()
 		colName := v.As
@@ -522,7 +519,6 @@ func createRowCols(ret *rel.Projection, tableMap map[string]*schema.Table, alias
 			}
 		}
 	}
-u.Errorf("HERE ROWCOLS BEFORE %#v", rowCols)
 	// Handle case where there are function arguments not in select list or predicate
 	for i, v := range projCols {
 		cn := strings.Split(v, ".")[1]
@@ -530,7 +526,6 @@ u.Errorf("HERE ROWCOLS BEFORE %#v", rowCols)
 			rowCols[cn] = i
 		}
 	}
-u.Errorf("HERE ROWCOLS AFTER %#v", rowCols)
 
 	return ret, rowCols
 }

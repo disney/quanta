@@ -334,6 +334,9 @@ func (m StringEnumMapper) MapValue(attr *Attribute, val interface{},
 	case int32:
 		strVal := fmt.Sprintf("%d", val.(int32))
 		multi = []string{strVal}
+	case int64:
+		strVal := fmt.Sprintf("%d", val.(int64))
+		multi = []string{strVal}
 	default:
 		return 0, fmt.Errorf("cannot cast '%s' from '%T' to a string", attr.FieldName, val)
 	}

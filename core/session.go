@@ -565,15 +565,19 @@ func (s *Session) getDefaultValueForColumn(a *Attribute, row interface{}, ignore
 	} else if r, ok = row.(map[string]interface{}); ok {
 		if r != nil {
 			for _, v := range a.Parent.Attributes {
-				if v.SourceName == "" {
-					continue
+				source := v.SourceName
+				if source == "" {
+					source = v.FieldName
 				}
 				var err error
 				var val interface{}
-				if val, err = shared.GetPath(v.SourceName[1:], row, ignoreSourcePath, useNerd); err != nil {
-					val = r.(map[string]interface{})[v.SourceName]
+				if val, err = shared.GetPath(source, row, ignoreSourcePath, useNerd); err == nil {
+					val = r.(map[string]interface{})[source]
+					rm[v.FieldName] = val
+					if v.FieldName == a.FieldName {
+						return fmt.Sprintf("%v", val)
+					}
 				}
-				rm[v.FieldName] = val
 			}
 		}
 		var ctx *datasource.ContextSimple

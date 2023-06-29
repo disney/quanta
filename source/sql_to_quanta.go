@@ -1559,6 +1559,7 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 	switch q := m.stmt.(type) {
 	case *rel.SqlInsert:
 		cols = q.ColumnNames()
+
 	case *rel.SqlUpdate:
 		return nil, fmt.Errorf("should not be here - Update happen via PatchWhere")
 	default:
@@ -1573,6 +1574,11 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 
 	for i, f := range m.tbl.Fields {
 		colNames[f.Name] = i
+	}
+	for i, v := range cols {
+		if _, ok := colNames[v];!ok {
+			return nil, fmt.Errorf("column name '%s' not found at position %d", v, i)
+		}
 	}
 	curRow := make([]interface{}, len(m.tbl.Fields))
 	tbuf := m.conn.TableBuffers[m.tbl.Name]

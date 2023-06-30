@@ -394,7 +394,8 @@ func Lock(consul *api.Client, lockName, processName string) (*api.Lock, error) {
 	opts := &api.LockOptions{
 		Key:		lockName + "/1",
 		Value:	  []byte("lock set by " + processName),
-		SessionTTL: "10s",
+		//SessionTTL: "10s",
+		LockTryOnce: true,
 		/*
 		   		SessionOpts: &api.SessionEntry{
 			 	Checks:   []string{"check1", "check2"},

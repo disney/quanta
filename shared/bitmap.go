@@ -613,7 +613,7 @@ func (c *BitmapIndex) TableOperation(table, operation string) error {
 func (c *BitmapIndex) tableOperationClient(client pb.BitmapIndexClient, req *pb.TableOperationRequest,
 	clientIndex int) error {
 
-	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	ctx, cancel := context.WithTimeout(context.Background(), OpDeadline)
 	defer cancel()
 
 	if _, err := client.TableOperation(ctx, req); err != nil {

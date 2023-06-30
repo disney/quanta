@@ -268,6 +268,12 @@ func LoadSchema(path string, name string, consulClient *api.Client) (*BasicTable
 // GetAttribute - Get a tables attribute by name.
 func (t *BasicTable) GetAttribute(name string) (*BasicAttribute, error) {
 
+	if t == nil {
+		return nil, fmt.Errorf("assertion failure: receiver for table is nil for fieldname", name)
+	}
+	if t.attributeNameMap == nil {
+		return nil, fmt.Errorf("assertion failure: attributeNameMap for table %s is nil for fieldname", t.Name, name)
+	}
 	if attr, ok := t.attributeNameMap[name]; ok {
 		return attr, nil
 	}

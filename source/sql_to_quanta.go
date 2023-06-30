@@ -76,6 +76,7 @@ type SQLToQuanta struct {
 	defaultWhere   bool
 	needsPolyFill  bool // polyfill?
 	funcAliases    map[string]struct{}
+	identAliases   map[string]expr.Node
 	whereProj      map[string]*core.Attribute
 	rowNumSet	   *roaring64.Bitmap
 }
@@ -88,6 +89,7 @@ func NewSQLToQuanta(s *QuantaSource, t *schema.Table) *SQLToQuanta {
 		s:      s,
 	}
 	m.funcAliases = make(map[string]struct{})
+	m.identAliases = make(map[string]expr.Node)
 	m.whereProj = make(map[string]*core.Attribute)
 	m.rowNumSet = roaring64.NewBitmap()
 	return m
@@ -614,6 +616,14 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 	}
 
 	lhval, lhok, isLident := m.eval(node.Args[0])
+	if !lhok {
+		aliased, ok := m.identAliases[node.Args[0].String()]
+		if ok {
+			lhval = value.NewStringValue(aliased.String())
+			lhok = true
+			isLident = true
+		}
+	}
 	rhval, rhok, isRident := m.eval(node.Args[1])
 	_, rhisnull := node.Args[1].(*expr.NullNode)
 	lhisrownum := false
@@ -1050,6 +1060,9 @@ func (m *SQLToQuanta) walkSelectList(q *shared.QueryFragment) error {
 				colName := curNode.String()
 				if _, r, isAliased := curNode.LeftRight(); isAliased {
 					colName = r
+				}
+				if col.As != colName {
+					m.identAliases[col.As] = curNode
 				}
 				_, _, err := m.ResolveField(colName)
 				if err != nil {

@@ -539,7 +539,10 @@ func (c *BitmapIndex) Projection(index string, fields []string, fromTime, toTime
 	aggbsiResults := make(map[string]*roaring64.BSI)
 	for k, v := range bsiResults {
 		bsi := roaring64.NewDefaultBSI()
-		bsi.ParOr(0, v...)
+		//bsi.ParOr(0, v...)
+		for _, z := range v {
+			bsi.ParOr(0, z)
+		}
 		aggbsiResults[k] = bsi
 	}
 	aggbitmapResults := make(map[string]map[uint64]*roaring64.Bitmap)

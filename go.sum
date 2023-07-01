@@ -49,8 +49,6 @@ github.com/DataDog/sketches-go v0.0.0-20190923095040-43f19ad77ff7/go.mod h1:Q5Db
 github.com/Jeffail/tunny v0.0.0-20190930221602-f13eb662a36a h1:sk14oPN106XTe3WzOIaVGq+cFh1sh4z++2pAg2j4XCo=
 github.com/Jeffail/tunny v0.0.0-20190930221602-f13eb662a36a/go.mod h1:BX3q3G70XX0UmIkDWfDHoDRquDS1xFJA5VTbMf+14wM=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
-github.com/RoaringBitmap/roaring v0.9.4 h1:ckvZSX5gwCRaJYBNe7syNawCU5oruY9gQmjXlp4riwo=
-github.com/RoaringBitmap/roaring v0.9.4/go.mod h1:icnadbWcNyfEHlYdr+tDlOTih1Bf/h+rzPpv4sbomAA=
 github.com/RoaringBitmap/roaring v1.3.0 h1:aQmu9zQxDU0uhwR8SXOH/OrqEf+X8A0LQmwW3JX8Lcg=
 github.com/RoaringBitmap/roaring v1.3.0/go.mod h1:plvDsJQpxOC5bw8LRteu/MLWHsHez/3y6cubLI4/1yE=
 github.com/akrylysov/pogreb v0.9.1 h1:kO4TD2qaiCD0TtIjEj3ta1rCTMtyp61RxuD4cet7S14=

@@ -1585,13 +1585,27 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 	var colID uint64 = 0
 	colNames := make(map[string]int, len(m.tbl.Fields))
 
+	foundKey := false
+	var keyName string
 	for i, f := range m.tbl.Fields {
 		colNames[f.Name] = i
+		if f.Key == "PK" && keyName == "" {
+			keyName = f.Name
+		}
 	}
 	for i, v := range cols {
+		if strings.HasSuffix(v, "@rownum") || v == keyName {
+			if !foundKey {
+				foundKey = true
+			}
+			continue
+		}
 		if _, ok := colNames[v];!ok {
 			return nil, fmt.Errorf("column name '%s' not found at position %d", v, i)
 		}
+	}
+	if !foundKey {
+		return nil, fmt.Errorf("a primary key column must be specified")
 	}
 	curRow := make([]interface{}, len(m.tbl.Fields))
 	tbuf := m.conn.TableBuffers[m.tbl.Name]
@@ -1601,6 +1615,9 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 	switch valT := val.(type) {
 	case []driver.Value:
 		row = valT
+		if len(row) != len(cols) {
+			return nil, fmt.Errorf("column and value counts differ")
+		}
 		//u.Infof("row:  %v", row)
 		//u.Infof("row len=%v   fieldlen=%v col len=%v", len(row), len(m.tbl.Fields), len(cols))
 		for j, f := range m.tbl.Fields {

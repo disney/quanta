@@ -442,6 +442,9 @@ func (m *SQLToQuanta) walkFilterTri(node *expr.TriNode, q *shared.QueryFragment)
 			u.Errorf(err.Error())
 			return nil, err
 		}
+		if fr.Type == "String" {
+			return nil, fmt.Errorf("BETWEEN not supported for string types '%s'", nm)
+		}
 		/*
 		   if !arg2val.Type().IsNumeric() && arg2val.Type() != value.TimeType {
 		       err := fmt.Errorf("BETWEEN value compared to '%s' must be numeric or date It is %T ", nm, arg2val)
@@ -854,6 +857,10 @@ func (m *SQLToQuanta) handleBSI(op string, lhval, rhval value.Value, q *shared.Q
 		}
 		err := fmt.Errorf("operation %s not supported for non-range field '%s'", op, nm)
 		u.Errorf(err.Error())
+		return err
+	}
+	if fr.Type == "String" {
+		err = fmt.Errorf("%s not supported for string types '%s'", op, nm)
 		return err
 	}
 	if fr.Type == "Float" {

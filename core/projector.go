@@ -140,9 +140,11 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 	// For inner joins filter out any rows in the child table not in fkBSI link
 	if p.innerJoin {
 		if !negate {
+/*
 			for _, v := range p.fkBSI {
 				driverSet.And(v.GetExistenceBitmap())
 			}
+*/
 		}
 	} else {
 		if p.leftTable != p.childTable {
@@ -174,17 +176,15 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 			driverSet = v.Clone()
 			driverSet.AndNot(newSet)
 		} else {
-			//filterSet.And(newSet)
+			filterSet.And(newSet)
 			if p.innerJoin {
-				if p.childTable == p.leftTable {
-					unsigned := v.ToArray()
-					signed := *(*[]int64)(unsafe.Pointer(&unsigned))
-					driverSet = fkBsi.BatchEqual(0, signed).Clone()
-				}
+				unsigned := filterSet.ToArray()
+				signed := *(*[]int64)(unsafe.Pointer(&unsigned))
+				driverSet = fkBsi.BatchEqual(0, signed).Clone()
 		
 			}
 		}
-		//p.foundSets[k] = filterSet
+		p.foundSets[k] = filterSet
 	}
 
 	p.resultIterator = driverSet.ManyIterator()

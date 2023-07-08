@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"database/sql"
 	"fmt"
@@ -136,12 +137,12 @@ func main() {
 		urls := strings.Split(*publicKeyURL, ",")
 		for _, url := range urls {
 			log.Printf("Retrieving JWT public key from [%s]", url)
-			keySet, err := jwk.Fetch(url)
+			keySet, err := jwk.Fetch(context.Background(), url)
 			if err != nil {
 				u.Error(err)
 				os.Exit(1)
 			}
-			publicKeySet = append(publicKeySet, keySet)
+			publicKeySet = append(publicKeySet, &keySet)
 		}
 	}
 	userClaimsKey = *userKey

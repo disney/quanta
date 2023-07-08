@@ -33,7 +33,7 @@ require (
 	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.15.2 // indirect
 	github.com/leekchan/timeutil v0.0.0-20150802142658-28917288c48d // indirect
-	github.com/lestrrat-go/jwx v1.0.8
+	github.com/lestrrat-go/jwx v1.2.26
 	github.com/lytics/datemath v0.0.0-20180727225141-3ada1c10b5de // indirect
 	github.com/mattn/go-colorable v0.1.7 // indirect
 	github.com/mb0/glob v0.0.0-20160210091149-1eb79d2de6c4 // indirect
@@ -41,18 +41,19 @@ require (
 	github.com/mssola/user_agent v0.5.2 // indirect
 	github.com/pborman/uuid v1.2.1
 	github.com/prometheus/client_golang v1.11.0
+	github.com/prometheus/procfs v0.7.3 // indirect
 	github.com/rlmcpherson/s3gof3r v0.5.0
 	github.com/siddontang/go-mysql v1.1.0
 	github.com/steakknife/bloomfilter v0.0.0-20180922174646-6819c0d2a570
 	github.com/steakknife/hamming v0.0.0-20180906055917-c99c65617cd3 // indirect
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.8.4
 	github.com/stvp/rendezvous v0.0.0-20151118195501-67b5f26b3e18
 	github.com/vmware/vmware-go-kcl v1.5.0
 	github.com/xitongsys/parquet-go v1.5.5-0.20201031234703-4d9f11317375
 	github.com/xitongsys/parquet-go-source v0.0.0-20220527110425-ba4adb87a31b
-	golang.org/x/net v0.5.0
+	golang.org/x/net v0.10.0
 	golang.org/x/sync v0.1.0
-	golang.org/x/text v0.6.0
+	golang.org/x/text v0.9.0
 	google.golang.org/grpc v1.53.0
 	google.golang.org/protobuf v1.31.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6

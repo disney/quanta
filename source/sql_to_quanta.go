@@ -77,6 +77,7 @@ type SQLToQuanta struct {
 	needsPolyFill  bool // polyfill?
 	funcAliases    map[string]struct{}
 	identAliases   map[string]expr.Node
+	tableAliases   map[string]string
 	whereProj      map[string]*core.Attribute
 	rowNumSet	   *roaring64.Bitmap
 }
@@ -90,22 +91,41 @@ func NewSQLToQuanta(s *QuantaSource, t *schema.Table) *SQLToQuanta {
 	}
 	m.funcAliases = make(map[string]struct{})
 	m.identAliases = make(map[string]expr.Node)
+	m.tableAliases = make(map[string]string)
 	m.whereProj = make(map[string]*core.Attribute)
 	m.rowNumSet = roaring64.NewBitmap()
 	return m
 }
 
-// ResolveField - Resolve a attribute by name.
-func (m *SQLToQuanta) ResolveField(name string) (field *core.Attribute, isBSI bool, err error) {
+//ResolveTable - ResolveTable name from an IdentityNode expression
+func (m *SQLToQuanta) ResolveTable(node expr.Node) string {
+	
+	if n, isId := node.(*expr.IdentityNode); isId {
+		if l, _, isLR := n.LeftRight(); isLR {
+			if t, ok := m.tableAliases[l]; ok {
+				return t
+			}
+		}
+	}
+	return m.tbl.Name
+}
 
-	table := m.conn.TableBuffers[m.tbl.Name].Table
-	if name == "@rownum" {
+
+// ResolveField - Resolve a attribute by name.
+func (m *SQLToQuanta) ResolveField(tableName, fieldName string) (field *core.Attribute, isBSI bool, err error) {
+
+	var table *core.Table
+	table, err = core.LoadTable(m.conn.BasePath, m.conn.KVStore, tableName, m.conn.KVStore.Conn.Consul)
+	if err != nil {
+		return 
+	}
+	if fieldName == "@rownum" {
 		field = table.GetRownumAttribute()
 		isBSI = true
 		return
 	}
 	isBSI = false
-	field, err = table.GetAttribute(name)
+	field, err = table.GetAttribute(fieldName)
 	if err != nil {
 		return
 	}
@@ -195,7 +215,18 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	// is in p.Context().Stmt.  Verify that the original join syntax was correct.
 	processingOrig := true
 	if orig, ok := p.Context().Stmt.(*rel.SqlSelect); ok {
-		processingOrig = orig == req
+		processingOrig = orig.From[0].Name == req.From[0].Name
+		if len(orig.From) == 1 && req.Where != nil && req.Where.Source != nil {
+			x := orig.From[0]
+			if _, tok :=  m.tableAliases[x.Name]; !tok {
+				m.tableAliases[x.Name] = x.Name
+			}
+			if x.Alias != "" {
+				if _, aok :=  m.tableAliases[x.Alias]; !aok {
+					m.tableAliases[x.Alias] = x.Name
+				}
+			}
+		}
 		if len(orig.From) > 1 {
 			foundCriteria := false
 			foundParentRelation := false
@@ -204,6 +235,14 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 				table, err := p.Context().Schema.Table(x.Name)
 				if err != nil {
 					return nil, fmt.Errorf("invalid table %s in join criteria [%v]", x.Name, x)
+				}
+				if _, tok :=  m.tableAliases[x.Name]; !tok {
+					m.tableAliases[x.Name] = x.Name
+				}
+				if x.Alias != "" {
+					if _, aok :=  m.tableAliases[x.Alias]; !aok {
+						m.tableAliases[x.Alias] = x.Name
+					}
 				}
 				tables = append(tables, x.Name)
 				// Validate join nodes
@@ -236,6 +275,13 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 			if !foundParentRelation && m.conn.IsDriverForTables(tables) {
 				return nil, fmt.Errorf("join criteria missing (no relation )")
 			}
+			// parse the predicate and check for errors
+			if processingOrig && orig.Where != nil {
+				_, errx := m.walkNode(orig.Where.Expr, shared.NewBitmapQuery().NewQueryFragment())
+				if errx != nil {
+					return nil, errx
+				}
+			}
 		}
 	}
 
@@ -256,7 +302,7 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	if processingOrig {
 		err = m.walkSelectList(frag)
 		if err != nil {
-			u.Warnf("Could Not evaluate Columns/Aggs %s %v", req.Columns.String(), err)
+			u.Warnf("Could Not evaluate Columns/Aggs %s %v", m.sel.Columns.String(), err)
 			return nil, err
 		}
 	}
@@ -431,7 +477,7 @@ func (m *SQLToQuanta) walkFilterTri(node *expr.TriNode, q *shared.QueryFragment)
 			m.endDate = arg3val.ToString()
 			return nil, nil
 		}
-		fr, ft, err := m.ResolveField(nm)
+		fr, ft, err := m.ResolveField(m.ResolveTable(node.Args[1]), nm)
 		if !ft || err != nil {
 			if ft {
 				err := fmt.Errorf("BETWEEN error %v", err)
@@ -619,6 +665,13 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 	}
 
 	lhval, lhok, isLident := m.eval(node.Args[0])
+	if n, isId := node.Args[0].(*expr.IdentityNode); lhok && isId {
+		if l, r, hasLeft := n.LeftRight(); hasLeft && l != m.tbl.Name {
+			if _, tok := m.tableAliases[l]; !tok {
+				return nil, fmt.Errorf("cannot find a table alias for '%v' on field '%v'", l, r)
+			}
+		}
+	}
 	if !lhok {
 		aliased, ok := m.identAliases[node.Args[0].String()]
 		if ok {
@@ -695,7 +748,7 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 		// The $eq expression is equivalent to { field: <value> }.
 		if lhval != nil && (rhval != nil || rhisnull) {
 			// Add a Bitmap or BSI EQ query to tree lhval is frame, rhval is rowID (mapped)
-			if f, isBSI, err := m.ResolveField(lhval.ToString()); err == nil {
+			if f, isBSI, err := m.ResolveField(m.ResolveTable(node), lhval.ToString()); err == nil {
 				if rhisnull {
 					q.Operation = "DIFFERENCE" // Avoid conversion to UNION, corrected server side.
 					q.SetNullPredicate(f.Parent.Name, f.FieldName)
@@ -741,16 +794,16 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 			}
 		}
 	case lex.TokenLE:
-		return nil, m.handleBSI("LE", lhval, rhval, q)
+		return nil, m.handleBSI("LE", lhval, rhval, q, node.Args[0])
 	case lex.TokenLT:
-		return nil, m.handleBSI("LT", lhval, rhval, q)
+		return nil, m.handleBSI("LT", lhval, rhval, q, node.Args[0])
 	case lex.TokenGE:
-		return nil, m.handleBSI("GE", lhval, rhval, q)
+		return nil, m.handleBSI("GE", lhval, rhval, q, node.Args[0])
 	case lex.TokenGT:
-		return nil, m.handleBSI("GT", lhval, rhval, q)
+		return nil, m.handleBSI("GT", lhval, rhval, q, node.Args[0])
 	case lex.TokenLike:
 		nm := lhval.ToString()
-		fr, ft, err := m.ResolveField(nm)
+		fr, ft, err := m.ResolveField(m.ResolveTable(node), nm)
 		if !ft || err != nil {
 			if err != nil {
 				u.Warnf("!= error %v", err)
@@ -775,7 +828,8 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 		switch vt := rhval.(type) {
 		case value.SliceValue:
 			nm := lhval.ToString()
-			fr, ft, err := m.ResolveField(nm)
+			tableName := m.ResolveTable(node)
+			fr, ft, err := m.ResolveField(tableName, nm)
 			if !ft || err != nil {
 				if err != nil {
 					u.Warnf("!= error %v", err)
@@ -783,7 +837,7 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 				}
 				firstTime := true
 				for _, v := range vt.Values() {
-					rowID, err := m.conn.MapValue(m.tbl.Name, nm, v, false)
+					rowID, err := m.conn.MapValue(tableName, nm, v, false)
 					if err != nil {
 						u.Warnf("not ok: %v  l:%v  r:%v", node, nm, v)
 						return nil, err
@@ -811,8 +865,9 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 				}
 			} else {
 				values := make([]int64, 0)
+				tableName := m.ResolveTable(node)
 				for _, v := range vt.Values() {
-					rowID, err := m.conn.MapValue(m.tbl.Name, nm, v, false)
+					rowID, err := m.conn.MapValue(tableName, nm, v, false)
 					if err != nil {
 						u.Warnf("not ok: %v  l:%v  r:%v", node, nm, v)
 						return nil, err
@@ -842,14 +897,15 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 	return nil, fmt.Errorf("not implemented %v", node.String())
 }
 
-func (m *SQLToQuanta) handleBSI(op string, lhval, rhval value.Value, q *shared.QueryFragment) error {
+func (m *SQLToQuanta) handleBSI(op string, lhval, rhval value.Value, q *shared.QueryFragment, node expr.Node) error {
 
 	if lhval == nil {  // silently ignore
 		return nil
 	}
 
 	nm := lhval.ToString()
-	fr, ft, err := m.ResolveField(nm)
+	tableName := m.ResolveTable(node)
+	fr, ft, err := m.ResolveField(tableName, nm)
 	if !ft || err != nil {
 		if err != nil {
 			u.Warnf("!= error %v", err)
@@ -873,7 +929,7 @@ func (m *SQLToQuanta) handleBSI(op string, lhval, rhval value.Value, q *shared.Q
 			}
 		}
 	}
-	if mv, err := m.conn.MapValue(m.tbl.Name, nm, rhval.Value(), false); err == nil {
+	if mv, err := m.conn.MapValue(tableName, nm, rhval.Value(), false); err == nil {
 		q.SetBSIPredicate(fr.Parent.Name, fr.FieldName, op, int64(mv))
 		tbuf, found := m.conn.TableBuffers[fr.Parent.Name]
 		if !found {
@@ -896,7 +952,6 @@ func (m *SQLToQuanta) handleBSI(op string, lhval, rhval value.Value, q *shared.Q
 				if m.endDate == "" && (op == "LE" || op == "LT") {
 					end := ts.AddDate(0, 0, 1)
 					m.endDate = end.Format(shared.YMDHTimeFmt)
-u.Warnf("SETTING DATE RANGE IN handleBSI %v - %v", m.startDate, m.endDate)
 				}
 			}
 		}
@@ -950,8 +1005,8 @@ func (m *SQLToQuanta) eval(arg expr.Node) (value.Value, bool, bool) {
 		if aliased {
 			f = r
 		}
-		table := m.conn.TableBuffers[m.tbl.Name].Table
-		if _, err := table.GetAttribute(f); err != nil && f != "@timestamp" {
+
+		if _, _, err := m.ResolveField(m.ResolveTable(arg), f); err != nil && f != "@timestamp" {
 			return nil, false, false
 		}
 		return value.NewStringValue(f), true, true
@@ -970,17 +1025,15 @@ func (m *SQLToQuanta) checkFuncArgs(f *expr.FuncNode) (int, error) {
 	for _, x := range f.Args {
 		ids := expr.FindAllIdentities(x)
 		for _, n := range ids {
-			var tableName, fieldName string
-			l, r, isLr := n.LeftRight()
-			if isLr {
-				tableName = l
+			tableName := m.ResolveTable(n)
+			fieldName := n.Text
+			if l, r, isLr := n.LeftRight(); isLr {
 				fieldName = r
-			} else {
-				fieldName = n.Text
-				tableName = m.tbl.Name
+				if _, ok := m.tableAliases[l]; !ok {
+					return 0, fmt.Errorf("cannot resolve alias '%s.%s' in %v() function arguments", l, fieldName, f.Name)
+				}
 			}
-			table := m.conn.TableBuffers[tableName].Table
-			_, err := table.GetAttribute(fieldName)
+			_, _, err := m.ResolveField(tableName, fieldName)
 			if err != nil {
 				return 0, fmt.Errorf("cannot resolve field %s.%s in %v() function argument", tableName, fieldName, f.Name)
 			}
@@ -996,10 +1049,15 @@ func (m *SQLToQuanta) checkFuncArgs(f *expr.FuncNode) (int, error) {
 //
 func (m *SQLToQuanta) walkSelectList(q *shared.QueryFragment) error {
 
+	orig, ok := m.p.Context().Stmt.(*rel.SqlSelect)
+	if !ok {
+		return fmt.Errorf("cannot get original select from context")
+	}
+
 	// Do a dup check to make sure columns are aliased first.
-	dupMap := make(map[string]*rel.Column, len(m.sel.Columns))
-	for i := 0;  i < len(m.sel.Columns); i++ {
-		c := m.sel.Columns[i]
+	dupMap := make(map[string]*rel.Column)
+	for i := 0;  i < len(orig.Columns); i++ {
+		c := orig.Columns[i]
 		if c.As != "" {
 			if _, found := dupMap[c.As]; found {
 				return fmt.Errorf("Duplicate column %s found at position %d, needs alias", c.As, i)
@@ -1013,8 +1071,8 @@ func (m *SQLToQuanta) walkSelectList(q *shared.QueryFragment) error {
 		dupMap[c.SourceOriginal] = c
 	}
 
-	for i := len(m.sel.Columns) - 1; i >= 0; i-- {
-		col := m.sel.Columns[i]
+	for i := len(orig.Columns) - 1; i >= 0; i-- {
+		col := orig.Columns[i]
 		//u.Debugf("i=%d of %d  %v %#v ", i, len(m.sel.Columns), col.Key(), col)
 		if col.Expr != nil {
 			switch curNode := col.Expr.(type) {
@@ -1065,13 +1123,16 @@ func (m *SQLToQuanta) walkSelectList(q *shared.QueryFragment) error {
 					continue
 				}
 				colName := curNode.String()
-				if _, r, isAliased := curNode.LeftRight(); isAliased {
+				if l, r, isAliased := curNode.LeftRight(); isAliased {
+					if _, aok := m.tableAliases[l]; !aok {
+						return fmt.Errorf("table alias '%s' not found", l)
+					}
 					colName = r
 				}
 				if col.As != colName {
 					m.identAliases[col.As] = curNode
 				}
-				_, _, err := m.ResolveField(colName)
+				_, _, err := m.ResolveField(m.ResolveTable(curNode), colName)
 				if err != nil {
 					return err
 				}
@@ -1161,7 +1222,7 @@ func (m *SQLToQuanta) walkAggFunc(node *expr.FuncNode, q *shared.QueryFragment) 
 			m.isMax = true
 			m.needsPolyFill = false
 		}
-		_, bsi, err := m.ResolveField(m.aggField)
+		_, bsi, err := m.ResolveField(m.ResolveTable(node), m.aggField)
 		if err != nil {
 			return err
 		}
@@ -1237,7 +1298,7 @@ func (m *SQLToQuanta) walkAggFunc(node *expr.FuncNode, q *shared.QueryFragment) 
 		m.p.Proj = rel.NewProjection()
 		m.p.Proj.Columns = []*rel.ResultColumn{c1, c2, c3}
 		m.p.Proj.Final = true
-		_, bsi, err := m.ResolveField(m.aggField)
+		_, bsi, err := m.ResolveField(m.ResolveTable(node.Args[1]), m.aggField)
 		if err != nil {
 			return err
 		}

@@ -324,12 +324,11 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 			return nil, nil, nil, nil, nil, err
 		}
 		tableMap[v.Name] = table
-		alias := v.Alias
-		if alias == "" {
-			alias = v.Name
+		aliasMap[v.Name] = v
+		if v.Alias != "" {
+			aliasMap[v.Alias] = v
+			table2AliasMap[v.Name] = v.Alias
 		}
-		aliasMap[alias] = v
-		table2AliasMap[v.Name] = alias
 		for _, y := range v.JoinNodes() {
 			if v.Name == driverTable {
 				joinCols = append(joinCols, fmt.Sprintf("%s.%s", v.Name, y.String()))
@@ -422,6 +421,7 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 			var table *schema.Table
 			_, isFunc := v.Expr.(*expr.FuncNode)
 			if isAliased && !isFunc {
+u.Errorf("HERE ALIASED %s.%s, AMAP = %#v, TMAP = %#v", l, r, aliasMap, tableMap)
 				table = tableMap[aliasMap[l].Name]
 			} else {
 				table = tableMap[orig.From[0].Name]

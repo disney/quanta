@@ -1088,6 +1088,9 @@ func (m *SQLToQuanta) walkSelectList(q *shared.QueryFragment) error {
    				if curNode.Missing && curNode.Name != "min" && curNode.Name != "max" && curNode.Name != "topn" {
 					return fmt.Errorf("func %q not found while processing select list", curNode.Name)
 				}
+				if col.SourceField != col.As {
+					m.identAliases[col.As] = curNode.Args[0]
+				}
 				count, err := m.checkFuncArgs(curNode)
 				if err != nil {
 					return err

@@ -1298,7 +1298,7 @@ func (m *SQLToQuanta) walkAggFunc(node *expr.FuncNode, q *shared.QueryFragment) 
 		m.p.Proj = rel.NewProjection()
 		m.p.Proj.Columns = []*rel.ResultColumn{c1, c2, c3}
 		m.p.Proj.Final = true
-		_, bsi, err := m.ResolveField(m.ResolveTable(node.Args[1]), m.aggField)
+		_, bsi, err := m.ResolveField(m.ResolveTable(node.Args[0]), m.aggField)
 		if err != nil {
 			return err
 		}

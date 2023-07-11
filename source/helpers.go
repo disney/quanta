@@ -459,8 +459,14 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 				if isFunc {
 					args := expr.FindAllIdentities(v.Expr)
 					for _, arg := range args {
-						_, r, _ := arg.LeftRight()
-						p := fmt.Sprintf("%s.%s", table.Name, r)
+						tName := table.Name
+						l, r, isLR := arg.LeftRight()
+						if isLR {
+							if t, ok := aliasMap[l]; ok {
+								tName = t.Name
+							}
+						}
+						p := fmt.Sprintf("%s.%s", tName, r)
 						if _, ok := projColsMap[p]; !ok {
 							projCols = append(projCols, p)
 							projColsMap[p] = len(projCols) - 1

@@ -172,6 +172,14 @@ func (m *ResultReader) Run() error {
 
 	if m.sql.isSum || m.sql.isAvg || m.sql.isMin || m.sql.isMax {
 		projFields := []string{fmt.Sprintf("%s.%s", m.sql.tbl.Name, m.sql.aggField)}
+		attr, isBSI, errx := m.sql.ResolveField(m.sql.tbl.Name, m.sql.aggField)
+		if errx != nil {
+			return errx
+		}
+		if !isBSI {
+			return fmt.Errorf("field %s.%s must be a BSI", attr.Parent.Name, attr.FieldName)
+		}
+		
 		foundSet := make(map[string]*roaring64.Bitmap)
 		foundSet[m.sql.tbl.Name] = m.response.Results
 		proj, errx := core.NewProjection(m.conn, foundSet, nil, projFields, "", "",
@@ -187,9 +195,20 @@ func (m *ResultReader) Run() error {
 			if errx != nil {
 				return errx
 			}
-			vals[0] = fmt.Sprintf("%d", sum)
-			if m.sql.isAvg && count != 0 {
-				vals[0] = fmt.Sprintf("%d", sum/int64(count))
+			switch shared.TypeFromString(attr.Type) {
+				case shared.Integer:
+					vals[0] = fmt.Sprintf("%d", sum)
+					if m.sql.isAvg && count != 0 {
+						vals[0] = fmt.Sprintf("%d", sum/int64(count))
+					}
+				case shared.Float:
+					fval := float64(sum)
+					f := fmt.Sprintf("%%.%df", attr.Scale)
+					if m.sql.isAvg && count != 0 {
+						fval = fval / float64(count)
+					}
+					vals[0] = fmt.Sprintf(f, float64(fval)/math.Pow10(attr.Scale))
+				default:
 			}
 		}
 		if m.sql.isMin || m.sql.isMax {

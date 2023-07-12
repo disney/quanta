@@ -246,6 +246,12 @@ func (m FloatScaleBSIMapper) MapValue(attr *Attribute, val interface{},
 		return
 	}
 	result = uint64(floatVal * float64(math.Pow10(attr.Scale)))
+	var checkRound float64
+	checkRound = float64(result) / float64(math.Pow10(attr.Scale))
+	if checkRound != floatVal {
+		err = fmt.Errorf("this would result in rounding error for field '%s', value should have %d decimal places", 
+			attr.FieldName, attr.Scale)
+	}
 	if c != nil {
 		err = m.UpdateBitmap(c, attr.Parent.Name, attr.FieldName, result, attr.IsTimeSeries)
 	}

@@ -421,7 +421,6 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 			var table *schema.Table
 			_, isFunc := v.Expr.(*expr.FuncNode)
 			if isAliased && !isFunc {
-u.Errorf("HERE ALIASED %s.%s, AMAP = %#v, TMAP = %#v", l, r, aliasMap, tableMap)
 				table = tableMap[aliasMap[l].Name]
 			} else {
 				table = tableMap[orig.From[0].Name]

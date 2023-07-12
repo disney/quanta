@@ -343,6 +343,10 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 					if err != nil {
 						return fmt.Errorf("lookupColumnID %s,  %v", lookupKey, err)
 					}
+					if !found {
+						return fmt.Errorf("cannot find value '%s' in parent table '%v' for column %s.%s", 
+							lookupKey, v.ForeignKey, v.Parent.Name, v.FieldName)
+					}
 					relColumnID = colID
 					okToMap = found
 					// At the moment, if the FK lookup fails the value is not mapped.

@@ -206,16 +206,34 @@ func LoadTable(path string, kvStore *shared.KVStore, name string, consulClient *
 		i++
 	}
 
-	if table.PrimaryKey != "" {
+	if table.PrimaryKey == "" && table.TimeQuantumField == "" {
+		// If the table is partitioned then either a primary key (with time field in first position) or 
+        // the time quantum field must be specified specified.
+		if table.TimeQuantumType != "" {
+			return nil, fmt.Errorf("The table %s is partitioned but 'timeQuantumField' is not specified", table.Name)
+		}
+	} else {
 		pka, err := table.GetPrimaryKeyInfo()
 		if err != nil {
 			return nil,
 				fmt.Errorf("A primary key field was defined but it does not contain valid field name(s) [%s] - %v",
 					table.PrimaryKey, err)
 		}
-		if table.TimeQuantumType != "" && (pka[0].Type != "Date" && pka[0].Type != "DateTime") {
-			return nil, fmt.Errorf("time partitions enabled for PK %s, Type must be Date or DateTime",
-				pka[0].FieldName)
+		timeQuantumField := strings.TrimSpace(table.TimeQuantumField)
+		var timeQuantumAttr *Attribute
+		if timeQuantumField == "" && table.TimeQuantumType != "" && len(pka) < 2 {
+			return nil, fmt.Errorf("time partitions enabled for but 'timeQuantumField' not specified")
+		}
+		if timeQuantumField == "" && table.TimeQuantumType != "" && len(pka) >= 2 {
+			timeQuantumField = pka[0].FieldName
+		}
+		if timeQuantumField != "" {
+			if at, err := table.GetAttribute(timeQuantumField); err == nil {
+				timeQuantumAttr = at
+			}
+		}
+		if table.TimeQuantumType != "" && (timeQuantumAttr.Type != "Date" && timeQuantumAttr.Type != "DateTime") {
+			return nil, fmt.Errorf("time partitions enabled for %s, Type must be Date or DateTime", timeQuantumField)
 		}
 	}
 
@@ -225,6 +243,10 @@ func LoadTable(path string, kvStore *shared.KVStore, name string, consulClient *
 
 // GetAttribute - Get a table's attribute by name.
 func (t *Table) GetAttribute(name string) (*Attribute, error) {
+
+	if name == "@rownum" {
+		return t.GetRownumAttribute(), nil
+	}
 
 	if t == nil || t.attributeNameMap == nil {
 		return nil, fmt.Errorf("schema cache not re-initialized ")
@@ -236,15 +258,47 @@ func (t *Table) GetAttribute(name string) (*Attribute, error) {
 	return nil, fmt.Errorf("attribute '%s' not found", name)
 }
 
+// GetRownumAttribute - Return a description of @rownum
+func (t *Table) GetRownumAttribute() *Attribute {
+
+	b := &shared.BasicAttribute{}
+	b.FieldName = "@rownum"
+	b.MappingStrategy = "IntBSI"
+	b.Type = "Integer"
+	at :=  &Attribute{BasicAttribute: b, Parent: t}
+	mi, err := ResolveMapper(at)
+	if err == nil {
+		at.mapperInstance = mi
+	}
+	return at
+}
+
 // GetPrimaryKeyInfo - Return attributes for a given PK.
 func (t *Table) GetPrimaryKeyInfo() ([]*Attribute, error) {
 	s := strings.Split(t.PrimaryKey, "+")
 	attrs := make([]*Attribute, len(s))
-	for i, v := range s {
-		if attr, err := t.GetAttribute(strings.TrimSpace(v)); err == nil {
-			attrs[i] = attr
+	var v string
+	i := 0
+	if t.TimeQuantumField != "" {
+		if len(s) > 1 {
+			attrs = make([]*Attribute, len(s) + 1)
+		} else {
+			attrs = make([]*Attribute, 1)
+		}
+		if at, err := t.GetAttribute(strings.TrimSpace(t.TimeQuantumField)); err == nil {
+			attrs[0] = at
+			i++
 		} else {
 			return nil, err
+		}
+	}
+	if t.PrimaryKey != "" {
+		for i, v = range s {
+			if attr, err := t.GetAttribute(strings.TrimSpace(v)); err == nil {
+				attrs[i] = attr
+			} else {
+				return nil, err
+			}
 		}
 	}
 	return attrs, nil

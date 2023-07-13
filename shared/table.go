@@ -19,6 +19,7 @@ type BasicTable struct {
 	SecondaryKeys    string                     `yaml:"secondaryKeys,omitempty"`
 	DefaultPredicate string                     `yaml:"defaultPredicate,omitempty"`
 	TimeQuantumType  string                     `yaml:"timeQuantumType,omitempty"`
+	TimeQuantumField string                     `yaml:"timeQuantumField,omitempty"`
 	DisableDedup     bool                       `yaml:"disableDedup,omitempty"`
 	Attributes       []BasicAttribute           `yaml:"attributes"`
 	attributeNameMap map[string]*BasicAttribute `yaml:"-"`
@@ -231,16 +232,34 @@ func LoadSchema(path string, name string, consulClient *api.Client) (*BasicTable
 		i++
 	}
 
-	if table.PrimaryKey != "" {
+	if table.PrimaryKey == "" && table.TimeQuantumField == "" {
+		// If the table is partitioned then either a primary key (with time field in first position) or 
+        // the time quantum field must be specified specified.
+		if table.TimeQuantumType != "" {
+			return nil, fmt.Errorf("The table %s is partitioned but 'timeQuantumField' is not specified", table.Name)
+		}
+	} else {
 		pka, err := table.GetPrimaryKeyInfo()
 		if err != nil {
 			return nil,
 				fmt.Errorf("A primary key field was defined but it is not valid field name(s) [%s] - %v",
 					table.PrimaryKey, err)
 		}
-		if table.TimeQuantumType != "" && (pka[0].Type != "Date" && pka[0].Type != "DateTime") {
-			return nil, fmt.Errorf("time partitions enabled for PK %s, Type must be Date or DateTime",
-				pka[0].FieldName)
+		timeQuantumField := strings.TrimSpace(table.TimeQuantumField)
+		var timeQuantumAttr *BasicAttribute
+		if timeQuantumField == "" && table.TimeQuantumType != "" && len(pka) < 2 {
+			return nil, fmt.Errorf("time partitions enabled for but 'timeQuantumField' not specified")
+		}
+		if timeQuantumField == "" && table.TimeQuantumType != "" && len(pka) >= 2 {
+			timeQuantumField = pka[0].FieldName
+		}
+		if timeQuantumField != "" {
+			if at, err := table.GetAttribute(timeQuantumField); err == nil {
+				timeQuantumAttr = at
+			}
+		}
+		if table.TimeQuantumType != "" && (timeQuantumAttr.Type != "Date" && timeQuantumAttr.Type != "DateTime") {
+			return nil, fmt.Errorf("time partitions enabled for %s, Type must be Date or DateTime", timeQuantumField)
 		}
 	}
 	return &table, nil
@@ -249,6 +268,12 @@ func LoadSchema(path string, name string, consulClient *api.Client) (*BasicTable
 // GetAttribute - Get a tables attribute by name.
 func (t *BasicTable) GetAttribute(name string) (*BasicAttribute, error) {
 
+	if t == nil {
+		return nil, fmt.Errorf("assertion failure: receiver for table is nil for fieldname", name)
+	}
+	if t.attributeNameMap == nil {
+		return nil, fmt.Errorf("assertion failure: attributeNameMap for table %s is nil for fieldname", t.Name, name)
+	}
 	if attr, ok := t.attributeNameMap[name]; ok {
 		return attr, nil
 	}
@@ -257,13 +282,31 @@ func (t *BasicTable) GetAttribute(name string) (*BasicAttribute, error) {
 
 // GetPrimaryKeyInfo - Return attributes for a given PK.
 func (t *BasicTable) GetPrimaryKeyInfo() ([]*BasicAttribute, error) {
+
 	s := strings.Split(t.PrimaryKey, "+")
 	attrs := make([]*BasicAttribute, len(s))
-	for i, v := range s {
-		if attr, err := t.GetAttribute(strings.TrimSpace(v)); err == nil {
-			attrs[i] = attr
+	var v string
+	i := 0
+	if t.TimeQuantumField != "" {
+		if len(s) > 0 {
+			attrs = make([]*BasicAttribute, len(s) + 1)
+		} else {
+			attrs = make([]*BasicAttribute, 1)
+		}
+		if at, err := t.GetAttribute(strings.TrimSpace(t.TimeQuantumField)); err == nil {
+			attrs[0] = at
+			i++
 		} else {
 			return nil, err
+		}
+	}
+	if t.PrimaryKey != "" {
+		for i, v = range s {
+			if attr, err := t.GetAttribute(strings.TrimSpace(v)); err == nil {
+				attrs[i] = attr
+			} else {
+				return nil, err
+			}
 		}
 	}
 	return attrs, nil

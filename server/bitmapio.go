@@ -340,7 +340,13 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 			}
 			bf.IndexName = s[0]
 			bf.FieldName = s[1]
-			attr, _ := m.getFieldConfig(bf.IndexName, bf.FieldName)
+			attr, err := m.getFieldConfig(bf.IndexName, bf.FieldName)
+			if err != nil {
+				u.Errorf("Attribute %s.%s not found in schema. ignoring", bf.IndexName, bf.FieldName)
+				return nil
+			}
+			
+	
 			var tq string
 			if attr != nil {
 				tq = attr.TimeQuantumType

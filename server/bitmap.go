@@ -278,8 +278,7 @@ func (m *BitmapIndex) newBSIBitmap(index, field string) *BSIBitmap {
 		maxValue = int64(attr.MaxValue)
 	}
 	var seq *SequencerQueue
-	//if attr.Parent.PrimaryKey != "" && attr.Parent.PrimaryKey == attr.FieldName {
-	if attr.Parent.PrimaryKey != "" {
+	if attr.Parent.PrimaryKey != "" || attr.Parent.TimeQuantumField != "" {
 		pkInfo, _ := attr.Parent.GetPrimaryKeyInfo()
 		if attr.FieldName == pkInfo[0].FieldName {
 			// If compound key, sequencer installed on first key attr

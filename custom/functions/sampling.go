@@ -38,7 +38,7 @@ func stratifiedSampleEval(ctx expr.EvalContext, args []value.Value) (value.Value
 
 	q.Field = args[0].Value().(string)
 
-	if fr, ft, err := m.ResolveField(q.Field); ft || err != nil {
+	if fr, ft, err := m.ResolveField(m.ResolveTable(nil), q.Field); ft || err != nil {
 		if ft {
 			u.Errorf("Sampling on BSI field %s not supported.", q.Field)
 			return nil, false

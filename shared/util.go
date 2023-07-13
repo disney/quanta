@@ -264,7 +264,7 @@ func TableExists(consul *api.Client, name string) (bool, error) {
 		return false, fmt.Errorf("table name must not be empty")
 	}
 
-	path := fmt.Sprintf("schema/%s/primaryKey", name)
+	path := fmt.Sprintf("schema/%s/modificationTime", name)
 	kvPair, _, err := consul.KV().Get(path, nil)
 	if err != nil {
 		return false, fmt.Errorf("TableExists: %v", err)
@@ -300,7 +300,9 @@ func CheckParentRelation(consul *api.Client, table *BasicTable) (bool, error) {
 	var err error
 	for _, v := range table.Attributes {
 		if v.ForeignKey != "" {
-			ok, err = TableExists(consul, v.ForeignKey)
+			s := strings.Split(v.ForeignKey, ".")
+			tab := s[0]
+			ok, err = TableExists(consul, tab)
 			if err != nil {
 				err = fmt.Errorf("CheckParentRelation error: %v", err)
 				ok = false
@@ -392,7 +394,8 @@ func Lock(consul *api.Client, lockName, processName string) (*api.Lock, error) {
 	opts := &api.LockOptions{
 		Key:		lockName + "/1",
 		Value:	  []byte("lock set by " + processName),
-		SessionTTL: "10s",
+		//SessionTTL: "10s",
+		LockTryOnce: true,
 		/*
 		   		SessionOpts: &api.SessionEntry{
 			 	Checks:   []string{"check1", "check2"},

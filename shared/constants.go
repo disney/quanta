@@ -5,6 +5,8 @@ import (
 )
 
 var (
+	// OpDeadline - Table operation gRPC calls should complete within 20 seconds.
+	OpDeadline time.Duration = 20 * time.Second
 	// Deadline - gRPC calls should complete within 500 seconds.
 	Deadline time.Duration = 60 * time.Minute
 	// SyncDeadline - synchronize call should complete with 20 minutes

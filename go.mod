@@ -41,7 +41,6 @@ require (
 	github.com/mssola/user_agent v0.5.2 // indirect
 	github.com/pborman/uuid v1.2.1
 	github.com/prometheus/client_golang v1.11.0
-	github.com/prometheus/procfs v0.7.3 // indirect
 	github.com/rlmcpherson/s3gof3r v0.5.0
 	github.com/siddontang/go-mysql v1.1.0
 	github.com/steakknife/bloomfilter v0.0.0-20180922174646-6819c0d2a570

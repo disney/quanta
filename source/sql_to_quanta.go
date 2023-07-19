@@ -1658,14 +1658,23 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 
 	foundKey := false
 	var keyName string
+	fkFields := make(map[string]struct{})
 	for i, f := range m.tbl.Fields {
 		colNames[f.Name] = i
 		if f.Key == "PK" && keyName == "" {
 			keyName = f.Name
 		}
+		if strings.HasPrefix(f.Key, "FK:") {
+			fkFields[f.Name] = struct{}{}
+		}
 	}
 	for i, v := range cols {
 		if strings.HasSuffix(v, "@rownum") || v == keyName {
+			if !foundKey {
+				foundKey = true
+			}
+			continue
+		} else if _, ok := fkFields[v]; ok {
 			if !foundKey {
 				foundKey = true
 			}

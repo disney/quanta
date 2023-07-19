@@ -1,4 +1,4 @@
-package main
+package proxy
 
 //
 // Authenticator for quanta-proxy MySQL sessions.  Uses openID connect (JWT) bearer tokens than can be used
@@ -8,10 +8,11 @@ package main
 //
 
 import (
+	"time"
+
 	"github.com/lestrrat-go/jwx/jwk"
 	"github.com/lestrrat-go/jwx/jwt"
 	"github.com/siddontang/go-mysql/server"
-	"time"
 )
 
 var (
@@ -92,7 +93,7 @@ func (m *AuthProvider) CheckUsername(username string) (bool, error) {
 func (m *AuthProvider) AddUser(a MySQLAccount) {
 
 	// userPool is global singleton
-	userPool.Store(a.User, a)
+	UserPool.Store(a.User, a)
 }
 
 // GetCurrentUserID - Called by ProxyHander to pass userID to active sql.Open session

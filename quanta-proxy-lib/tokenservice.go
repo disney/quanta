@@ -1,4 +1,4 @@
-package main
+package proxy
 
 //
 // TokenExchangeService is responsible for redeeming a JWT token and returning the user name and a
@@ -8,14 +8,15 @@ package main
 
 import (
 	"fmt"
-	u "github.com/araddon/gou"
-	"github.com/lestrrat-go/jwx/jwt"
 	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	u "github.com/araddon/gou"
+	"github.com/lestrrat-go/jwx/jwt"
 )
 
 var (
@@ -58,13 +59,10 @@ func (s *TokenExchangeService) HandleRequest(w http.ResponseWriter, r *http.Requ
 	switch r.Method {
 	case http.MethodPost:
 		s.CreateAccount(w, r)
-		break
 	case http.MethodGet:
 		SuccessResponse(&w, struct{}{})
-		break
 	default:
 		ErrorResponse(&w, 405, "Method not allowed", "Method not allowed", nil)
-		break
 	}
 }
 
@@ -80,7 +78,7 @@ func (s *TokenExchangeService) CreateAccount(w http.ResponseWriter, r *http.Requ
 
 	var token jwt.Token
 	var errx error
-	for _, ks := range publicKeySet {
+	for _, ks := range PublicKeySet {
 		token, errx = s.authProvider.Verify(string(buf), ks)
 		if errx == nil {
 			break
@@ -94,7 +92,7 @@ func (s *TokenExchangeService) CreateAccount(w http.ResponseWriter, r *http.Requ
 	var account MySQLAccount
 	claims := token.PrivateClaims()
 	// userClaimsKey is global and set when proxy starts
-	if user, ok := claims[userClaimsKey]; ok {
+	if user, ok := claims[UserClaimsKey]; ok {
 		account.User = user.(string)
 	} else {
 		ErrorResponse(&w, 400, "Server error", "Server error", fmt.Errorf("cannot obtain username from token"))

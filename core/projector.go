@@ -207,11 +207,11 @@ func getAttributes(s *Session, fieldNames []string) ([]*Attribute, error) {
 		if attributeName == "" {
 			return nil, fmt.Errorf("attribute name missing for [%s]", v)
 		}
-		tbuf, ok := s.TableBuffers[tableName]
-		if !ok {
-			return nil, fmt.Errorf("table %s invalid or not opened", tableName)
+		table, err := LoadTable(s.BasePath, s.KVStore, tableName, s.KVStore.Conn.Consul)
+		if err != nil {
+			return nil, fmt.Errorf("table %s invalid or not opened - %v", tableName, err)
 		}
-		a, err := tbuf.Table.GetAttribute(attributeName)
+		a, err := table.GetAttribute(attributeName)
 		if err != nil {
 			return nil, fmt.Errorf("attribute %s invalid - %s.%s", attributeName, st[0], st[1])
 		}
@@ -484,7 +484,7 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 				return nil, fmt.Errorf("Projector error: could not find relation link for %s", relation)
 			}
 			key := linkAttr.FieldName
-			if relBuf, ok := p.connection.TableBuffers[relation]; ok {
+			if pka := p.getPKAttributes(relation); pka != nil {
 				// use FK IntBSI to transpose to parent columnID set
 				//if _, ok := bsiResults[p.childTable][key]; !ok {
 				if _, ok := bsiResults[p.childTable][key]; !ok {
@@ -496,10 +496,10 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 					if strings.HasSuffix(v.ForeignKey, "@rownum") {
 						continue
 					}
-					if len(relBuf.PKAttributes) > 1 {
+					if len(pka) > 1 {
 						return nil, fmt.Errorf("Projector error - Can only support single PK with link [%s]", key)
 					}
-					pv := relBuf.PKAttributes[0]
+					pv := pka[0]
 					if pv.MappingStrategy != "StringHashBSI" {
 						continue
 					}
@@ -521,6 +521,21 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 	}
 
 	return strMap, nil
+}
+
+func (p *Projector) getPKAttributes(tableName string) []*Attribute {
+
+	var table *Table
+	var err error
+	table, err = LoadTable(p.connection.BasePath, p.connection.KVStore, tableName, p.connection.KVStore.Conn.Consul)
+	if err != nil {
+		return  nil
+	}
+	pka, errx := table.GetPrimaryKeyInfo()
+	if errx != nil {
+		return  nil
+	}
+	return pka
 }
 
 func (p *Projector) transposeFKColumnIDs(fkBSI *roaring64.BSI, columnIDs []uint64) (newColumnIDs []uint64) {
@@ -570,12 +585,12 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 				err = fmt.Errorf("Projector error - getRow() - [%v]", errx)
 				return
 			}
-			if relBuf, ok := p.connection.TableBuffers[relation]; ok {
-				if len(relBuf.PKAttributes) > 1 && !strings.HasSuffix(v.ForeignKey, "@rownum") {
+			if pka := p.getPKAttributes(relation); pka != nil {
+				if len(pka) > 1 && !strings.HasSuffix(v.ForeignKey, "@rownum") {
 					err = fmt.Errorf("Projector error - Can only support single PK with link [%s]", v.FieldName)
 					return
 				}
-				pv := relBuf.PKAttributes[0]
+				pv := pka[0]
 				if pv.MappingStrategy == "StringHashBSI" {
 					cid, err2 := p.checkColumnID(v, colID, child, bsiResults)
 					if err2 != nil {

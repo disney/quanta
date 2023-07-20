@@ -486,7 +486,6 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 			key := linkAttr.FieldName
 			if pka := p.getPKAttributes(relation); pka != nil {
 				// use FK IntBSI to transpose to parent columnID set
-				//if _, ok := bsiResults[p.childTable][key]; !ok {
 				if _, ok := bsiResults[p.childTable][key]; !ok {
 					continue
 					//return nil, fmt.Errorf("no BSI results for %s - %s", p.childTable, key)
@@ -556,6 +555,10 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 	for _, v := range p.projAttributes {
 		i, projectable := p.projFieldMap[fmt.Sprintf("%s.%s", v.Parent.Name, v.FieldName)]
 		if !projectable {
+			continue
+		}
+		if v.Parent.Name == p.leftTable && v.FieldName == "@rownum" {
+			row[i] = fmt.Sprintf("%10d", colID)
 			continue
 		}
 		if v.MappingStrategy == "StringHashBSI" {

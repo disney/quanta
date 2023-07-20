@@ -1,0 +1,27 @@
+tableName: orders_qa
+primaryKey: order_id
+attributes:
+- fieldName: order_id
+  sourceName: order_id
+  mappingStrategy: StringHashBSI
+  type: String
+- fieldName: order_date
+  sourceName: order_date
+  mappingStrategy: SysMicroBSI
+  type: DateTime
+- fieldName: ship_date
+  sourceName: ship_date
+  mappingStrategy: SysMicroBSI
+  type: DateTime
+- fieldName: ship_via
+  sourceName: ship_via
+  mappingStrategy: StringHashBSI
+  type: String
+- fieldName: cust_id
+  mappingStrategy: ParentRelation
+  type: String
+  foreignKey: customers
+- fieldName: createdAtTimestamp
+  mappingStrategy: SysMicroBSI
+  default: now()
+  type: DateTime

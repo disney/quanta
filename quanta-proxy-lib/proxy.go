@@ -19,7 +19,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
-	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/source"
 	"github.com/lestrrat-go/jwx/jwk"
@@ -93,7 +92,7 @@ type Context struct {
 
 func SchemaChangeListener(e shared.SchemaChangeEvent) {
 
-	core.ClearTableCache()
+	// core.ClearTableCache()
 	switch e.Event {
 	case shared.Drop:
 		schema.DefaultRegistry().SchemaDrop("quanta", e.Table, lex.TokenTable)

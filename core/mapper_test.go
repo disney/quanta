@@ -10,12 +10,14 @@ import (
 )
 
 var (
-	schema *Table
-	conn   *Session
+	schema     *Table
+	conn       *Session
+	tableCache *TableCacheStruct
 )
 
 func setup() {
-	schema, _ = LoadTable("./testdata", nil, "cities", nil)
+	tcs := NewTableCacheStruct()
+	schema, _ = LoadTable(tcs, "./testdata", nil, "cities", nil)
 	tbuf := make(map[string]*TableBuffer, 0)
 	tbuf[schema.Name] = &TableBuffer{Table: schema}
 	conn = &Session{TableBuffers: tbuf}
@@ -64,7 +66,7 @@ func TestBuiltinMappers(t *testing.T) {
 
 	values := make(map[string]uint64)
 
-	table, err := LoadTable("./testdata", nil, "cities", nil)
+	table, err := LoadTable(tableCache, "./testdata", nil, "cities", nil)
 	assert.Nil(t, err)
 	if assert.NotNil(t, table) {
 		for k, v := range data {

@@ -163,8 +163,10 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 		}
 		fkBsi, ok2 := p.fkBSI[fka.FieldName]
 		if !ok2 {
-			return nil, fmt.Errorf("NewProjection: FK BSI lookup failed for %s - %s",
-				p.childTable, fka.FieldName)
+			//return nil, fmt.Errorf("NewProjection: FK BSI lookup failed for %s - %s",
+			//	p.childTable, fka.FieldName)
+			fkBsi = roaring64.NewDefaultBSI()
+			p.fkBSI[fka.FieldName] = fkBsi
 		}
 
 		u.Debugf("FKBSI  %v = %d", k, fkBsi.GetCardinality())
@@ -226,6 +228,9 @@ func (p *Projector) retrieveBitmapResults(foundSets map[string]*roaring64.Bitmap
 
 	fieldNames := make(map[string][]string)
 	for _, v := range attr {
+		if v.FieldName == "@rownum" {
+			continue
+		}
 		if _, ok := fieldNames[v.Parent.Name]; !ok {
 			fieldNames[v.Parent.Name] = make([]string, 0)
 		}
@@ -333,12 +338,19 @@ func (p *Projector) nextSets(columnIDs []uint64) (map[string]map[string]*roaring
 		}
 	}
 
+	// make sure the sets to be retrieved include all foundsets
+	for k, v := range p.foundSets {
+		if _, ok := rs[k]; !ok {
+			rs[k] = v
+		}
+	}
+
 	bsir, bitr, err := p.retrieveBitmapResults(rs, attr, false)
 	if err != nil {
 		return nil, nil, err
 	}
-	bsiResults[p.childTable] = bsir[p.childTable]
-	bitmapResults[p.childTable] = bitr[p.childTable]
+	bsiResults = bsir
+	bitmapResults = bitr
 
 	for k, v := range p.foundSets {
 		if k == p.childTable {
@@ -487,11 +499,12 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 			if pka := p.getPKAttributes(relation); pka != nil {
 				// use FK IntBSI to transpose to parent columnID set
 				if _, ok := bsiResults[p.childTable][key]; !ok {
-					continue
-					//return nil, fmt.Errorf("no BSI results for %s - %s", p.childTable, key)
+					goto nochild
+					//continue
 				}
 				trxColumnIDs = p.transposeFKColumnIDs(bsiResults[p.childTable][key], columnIDs)
-				if v.MappingStrategy == "ParentRelation" {
+				//if v.MappingStrategy == "ParentRelation" {
+				nochild: if v.MappingStrategy == "ParentRelation" {
 					if strings.HasSuffix(v.ForeignKey, "@rownum") {
 						continue
 					}
@@ -616,7 +629,7 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 					continue
 				}
 			} else {
-				return nil, fmt.Errorf("foreign key %s points to table that is not open", v.FieldName)
+				return nil, fmt.Errorf("foreign key %s not resolved", v.FieldName)
 			}
 		}
 		if v.IsBSI() {

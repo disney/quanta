@@ -60,16 +60,19 @@ func main() {
 	scriptFile := flag.String("script_file", "", "Path to the sql file to execute.")
 	scriptDelimiter := flag.String("script_delimiter","@","The delimiter to use in the script file.  The default is a colon (:).")
 	validate := flag.Bool("validate", false, "If not set, the Sql statement will be executed but not validated.")	
-	env := flag.String("env", "", "The environment to run the test in (sb, dev, qa, prod).")
+	host := flag.String("hostname", "", "Quanta host to connect to.")
+	user := flag.String("user", "", "The username that will connect to the database.")
+	password := flag.String("password", "", "The password to use to connect.")
+	database := flag.String("db", "quanta", "The database to connect to.")
+	port := flag.String("port", "4000", "Port to connect to.")
 	log_level := flag.String("log_level","","Set the logging level to DEBUG for additional logging.")
 	flag.Parse()
 
-	if *scriptFile == "" || *env == ""{
+	if *scriptFile == "" || *host == "" || *user == "" || *password == "" {
 		log.Println()
-		log.Println("The args script_file and env are required.")
-		log.Println("Environments include : SANDBOX, DEV, QA, PROD, DEBUG, LOCAL, and GUY-SANDBOX")
+		log.Println("The arguments script_file, host, user and password are required.")
 		log.Println()
-		log.Println("Example: ./sqlrunner -script_file test.sql -script_delimiter : -validate -env dev -log_level DEBUG")
+		log.Println("Example: ./sqlrunner -script_file test.sql -validate -host 1.1.1.1 -user username -password whatever -db quanta -port 4000 -log_level DEBUG")
 		os.Exit(0)
 	}
 
@@ -89,10 +92,18 @@ func main() {
 	log.Debugf("script_file : %s", *scriptFile)
 	log.Debugf("delimiter : %s", *scriptDelimiter)
 	log.Debugf("validate : %t", *validate)
-	log.Debugf("environment : %s", *env)
+	log.Debugf("host : %s", *host)
+	log.Debugf("user : %s", *user)
+	log.Debugf("database : %s", *database)
+	log.Debugf("port : %s", *port)
 	log.Debugf("log_level : %s", *log_level)
 
-	proxyConfig := getQuantaConnectInfo(*env)
+	var proxyConnect ProxyConnect
+	proxyConnect.Host = *host
+	proxyConnect.User = *user
+	proxyConnect.Password = *password
+	proxyConnect.Port = *port
+	proxyConnect.Database = *database
 
 	f, err := os.Open(*scriptFile)
     if err != nil {
@@ -113,11 +124,11 @@ func main() {
         }
         if err != nil {
 			log.Print("If you are using the validate option, be sure and add the expected rowcount after the sql statement.")
-			log.Print("Statement example:  select * from table; @ 100")
+			log.Print("Statement example:  select * from table;@100")
             log.Fatal(err)
         }
 
-        analyzeRow(proxyConfig, row, *validate)
+        analyzeRow(proxyConnect, row, *validate)
     }
 	logFinalResult()
 }
@@ -140,7 +151,7 @@ func (ci *ProxyConnect) getQuantaHost() mysql.Config {
 
 	cfg := mysql.Config{
         User:                 ci.User,
-        Passwd:               "",
+        Passwd:               ci.Password,
         Net:                  "tcp",
         Addr:                 fmt.Sprintf("%s:%s", ci.Host, ci.Port),
         DBName:               ci.Database,
@@ -401,85 +412,4 @@ func getPassFailError(statement string, expectedError string, actualError string
 		failedStatements = append(failedStatements, statement)
 		return "FAILED"
 	}
-}
-
-func getQuantaConnectInfo(env string) ProxyConnect {
-
-	var connect_info ProxyConnect
-
-	if strings.ToUpper(env) == "SANDBOX" || strings.ToUpper(env) == "SB"{
-		connect_info.Env = "SB"
-		connect_info.Host = "quanta-mparticle-proxy.us-east-1.dev03.dp.dtcisb.technology"
-		connect_info.Port = "4000"
-		connect_info.Database = "quanta"
-		connect_info.User = "SVCACCT"
-		connect_info.Password = ""
-		connect_info.AssumeRoleArn = ""
-		connect_info.Acl = "bucket-owner-full-control"
-		connect_info.SseKmsKeyId = ""
-	} else if strings.ToUpper(env) == "DEV" {
-		connect_info.Env = "DEV"
-		connect_info.Host = "quanta-mparticle-proxy.us-east-1.egmt.dp.dtcidev.technology"
-		connect_info.Port = "4000"
-		connect_info.Database = "quanta"
-		connect_info.User = "SVCACCT"
-		connect_info.Password = ""
-		connect_info.AssumeRoleArn = "arn:aws:iam::702162754193:role/dp-role-fed-gen-qt-mp-analyst-dev"
-		connect_info.Acl = "bucket-owner-full-control"
-		connect_info.SseKmsKeyId = "arn:aws:kms:us-east-1:123432527613:key/f2108dee-016b-4fb2-abc7-9b416e796aaf";
-	} else if strings.ToUpper(env) == "QA" {
-		connect_info.Env = "QA"
-		connect_info.Host = "quanta-mparticle-proxy.us-east-1.egmt.dp.dtciqa.technology"
-		connect_info.Port = "4000"
-		connect_info.Database = "quanta"
-		connect_info.User = "SVCACCT"
-		connect_info.Password = ""
-		connect_info.AssumeRoleArn = "arn:aws:iam::702162754193:role/dp-role-fed-gen-qt-mp-analyst-qa"
-		connect_info.Acl = "bucket-owner-full-control"
-		connect_info.SseKmsKeyId = "arn:aws:kms:us-east-1:472683241043:key/ec887270-aa4e-4686-b4ab-64e452e7c77a"
-	} else if strings.ToUpper(env) == "PROD" {
-		connect_info.Env = "PROD"
-		connect_info.Host = "quanta-mparticle-proxy.us-east-1.egmt.dp.dtci.technology"
-		connect_info.Port = "4000"
-		connect_info.Database = "quanta"
-		connect_info.User = "SVCACCT"
-		connect_info.Password = ""
-		connect_info.AssumeRoleArn = ""
-		connect_info.Acl = "bucket-owner-full-control"
-		connect_info.SseKmsKeyId = ""
-	} else if strings.ToUpper(env) == "DEBUG" {
-		connect_info.Env = "DEBUG"
-		connect_info.Host = "debug"
-		connect_info.Port = "4000"
-		connect_info.Database = "quanta"
-		connect_info.User = "SVCACCT"
-		connect_info.Password = ""
-		connect_info.AssumeRoleArn = ""
-		connect_info.Acl = "bucket-owner-full-control"
-		connect_info.SseKmsKeyId = ""
-	} else if strings.ToUpper(env) == "LOCAL" {
-		connect_info.Env = "LOCAL"
-		connect_info.Host = "127.0.0.1"
-		connect_info.Port = "4000"
-		connect_info.Database = "quanta"
-		connect_info.User = "SVCACCT"
-		connect_info.Password = ""
-		connect_info.AssumeRoleArn = ""
-		connect_info.Acl = "bucket-owner-full-control"
-		connect_info.SseKmsKeyId = ""
-	} else if strings.ToUpper(env) == "GUY-SANDBOX" {
-		connect_info.Env = "LOCAL"
-		connect_info.Host = "10.180.97.104"
-		connect_info.Port = "4000"
-		connect_info.Database = "quanta"
-		connect_info.User = "DEEMC004"
-		connect_info.Password = ""
-		connect_info.AssumeRoleArn = ""
-		connect_info.Acl = "bucket-owner-full-control"
-		connect_info.SseKmsKeyId = ""
-	} else {
-		panic(fmt.Sprintf("Connection Type Not Supported: %s", env))
-	}
-
-	return connect_info
 }

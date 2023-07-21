@@ -45,7 +45,7 @@ type AttributeInterface interface {
 
 // BasicAttribute - Field structure.
 type BasicAttribute struct {
-	Parent           TableInterface    `yaml:"-" json:"-"`
+	Parent           *BasicTable       `yaml:"-" json:"-"`
 	FieldName        string            `yaml:"fieldName"`
 	SourceName       string            `yaml:"sourceName"`
 	ChildTable       string            `yaml:"childTable,omitempty"`
@@ -299,10 +299,10 @@ func LoadSchema(path string, name string, consulClient *api.Client) (*BasicTable
 func (t *BasicTable) GetAttribute(name string) (*BasicAttribute, error) {
 
 	if t == nil {
-		return nil, fmt.Errorf("assertion failure: receiver for table is nil for fieldname", name)
+		return nil, fmt.Errorf("assertion failure: receiver for table is nil for fieldname %s", name)
 	}
 	if t.attributeNameMap == nil {
-		return nil, fmt.Errorf("assertion failure: attributeNameMap for table %s is nil for fieldname", t.Name, name)
+		return nil, fmt.Errorf("assertion failure: attributeNameMap for table %s is nil for fieldname %s", t.Name, name)
 	}
 	if attr, ok := t.attributeNameMap[name]; ok {
 		return attr, nil

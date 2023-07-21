@@ -129,7 +129,7 @@ func (m *QuantaSource) Open(tableName string) (schema.Conn, error) {
 		u.Errorf("Could not find table for '%s'.'%s'", m.Schema.Name, tableName)
 		return nil, fmt.Errorf("Could not find '%v'.'%v' schema)", m.Schema.Name, tableName)
 	}
-	return NewSQLToQuanta(m, tbl), nil
+	return NewSQLToQuanta(m.sessionPool.TableCache, m, tbl), nil
 }
 
 // Table by name

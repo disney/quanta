@@ -207,7 +207,7 @@ func getAttributes(s *Session, fieldNames []string) ([]*Attribute, error) {
 		if attributeName == "" {
 			return nil, fmt.Errorf("attribute name missing for [%s]", v)
 		}
-		table, err := LoadTable(s.BasePath, s.KVStore, tableName, s.KVStore.Conn.Consul)
+		table, err := LoadTable(s.tableCache, s.BasePath, s.KVStore, tableName, s.KVStore.Conn.Consul)
 		if err != nil {
 			return nil, fmt.Errorf("table %s invalid or not opened - %v", tableName, err)
 		}
@@ -526,7 +526,8 @@ func (p *Projector) getPKAttributes(tableName string) []*Attribute {
 
 	var table *Table
 	var err error
-	table, err = LoadTable(p.connection.BasePath, p.connection.KVStore, tableName, p.connection.KVStore.Conn.Consul)
+	tc := p.connection.tableCache
+	table, err = LoadTable(tc, p.connection.BasePath, p.connection.KVStore, tableName, p.connection.KVStore.Conn.Consul)
 	if err != nil {
 		return nil
 	}

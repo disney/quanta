@@ -27,7 +27,7 @@ type SessionPool struct {
 	poolSize     int
 	maxUsed      int32
 
-	tableCache *TableCacheStruct
+	TableCache *TableCacheStruct
 }
 
 // SessionPool - Pool of Quanta connections
@@ -44,7 +44,7 @@ func NewSessionPool(tableCache *TableCacheStruct, appHost *shared.Conn, schema *
 
 	p := &SessionPool{AppHost: appHost, schema: schema, baseDir: baseDir,
 		sessPoolMap: make(map[string]*sessionPoolEntry), semaphores: make(chan struct{}, poolSize), poolSize: poolSize}
-	p.tableCache = tableCache
+	p.TableCache = tableCache
 	for i := 0; i < poolSize; i++ {
 		p.semaphores <- struct{}{}
 	}
@@ -125,7 +125,7 @@ func (m *SessionPool) Return(tableName string, conn *Session) {
 // NewSession - Construct a new session.
 func (m *SessionPool) NewSession(tableName string) (*Session, error) {
 
-	conn, err := OpenSession(m.tableCache, m.baseDir, tableName, false, m.AppHost)
+	conn, err := OpenSession(m.TableCache, m.baseDir, tableName, false, m.AppHost)
 	if err != nil {
 		u.Errorf("error opening quanta connection - %v", err)
 		return nil, err

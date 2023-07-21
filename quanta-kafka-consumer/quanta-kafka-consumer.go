@@ -117,11 +117,13 @@ func main() {
 		}
 	}()
 
+	tcs := core.NewTableCacheStruct()
+
 	// Spin up workers
 	for n := 0; n < runtime.NumCPU(); n++ {
 		go func(i int) {
 			var err error
-			main.conns[i], err = core.OpenSession(main.SchemaDir, main.Index, true, nil)
+			main.conns[i], err = core.OpenSession(tcs, main.SchemaDir, main.Index, true, nil)
 			if err != nil {
 				log.Fatalf("Error opening connection %v", err)
 			}

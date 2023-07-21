@@ -19,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/source"
 	"github.com/lestrrat-go/jwx/jwk"
@@ -104,7 +105,8 @@ func SchemaChangeListener(e shared.SchemaChangeEvent) {
 		Src.GetSessionPool().Recover(nil)
 		schema.DefaultRegistry().SchemaDrop("quanta", "quanta", lex.TokenSource)
 		var err error
-		Src, err = source.NewQuantaSource("", ConsulAddr, QuantaPort, SessionPoolSize)
+		tableCache := core.NewTableCacheStruct()
+		Src, err = source.NewQuantaSource(tableCache, "", ConsulAddr, QuantaPort, SessionPoolSize)
 		if err != nil {
 			u.Error(err)
 		}

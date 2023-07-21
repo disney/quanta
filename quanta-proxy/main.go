@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/alecthomas/kingpin.v2"
 
+	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/custom/functions"
 	proxy "github.com/disney/quanta/quanta-proxy-lib"
 	"github.com/disney/quanta/shared"
@@ -130,8 +131,10 @@ func main() {
 	sink.LoadAll()      // Register output sinks
 	functions.LoadAll() // Custom functions
 
+	tableCache := core.NewTableCacheStruct() // is this right?
+
 	var err error
-	proxy.Src, err = source.NewQuantaSource("", proxy.ConsulAddr, proxy.QuantaPort, proxy.SessionPoolSize)
+	proxy.Src, err = source.NewQuantaSource(tableCache, "", proxy.ConsulAddr, proxy.QuantaPort, proxy.SessionPoolSize)
 	if err != nil {
 		u.Error(err)
 	}

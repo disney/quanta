@@ -33,8 +33,6 @@ const (
 type BitmapIndex struct {
 	*Conn
 	client []pb.BitmapIndexClient
-
-	// oops - problem atw tableCache *TableCacheStruct
 }
 
 // NewBitmapIndex - Initializer for client side API wrappers.

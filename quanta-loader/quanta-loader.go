@@ -44,30 +44,31 @@ const (
 
 // Main strct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
-	Index        string
-	BufferSize   uint
-	BucketPath   string
-	Bucket       string
-	Prefix       string
-	Pattern      string
-	AWSRegion    string
-	S3svc         *s3.Client
-	S3files      []types.Object
-	AssumeRoleArn string
-	Acl          string
-	SseKmsKeyID  string	
-	totalBytes   int64
-	bytesLock    sync.RWMutex
-	totalRecs    *Counter
-	Port         int
-	IsNested     bool
-	ConsulAddr   string
-	ConsulClient *api.Client
-	DateFilter   *time.Time
-	lock         *api.Lock
-	apiHost      *shared.Conn
-	ignoreSourcePath bool
+	Index              string
+	BufferSize         uint
+	BucketPath         string
+	Bucket             string
+	Prefix             string
+	Pattern            string
+	AWSRegion          string
+	S3svc              *s3.Client
+	S3files            []types.Object
+	AssumeRoleArn      string
+	Acl                string
+	SseKmsKeyID        string
+	totalBytes         int64
+	bytesLock          sync.RWMutex
+	totalRecs          *Counter
+	Port               int
+	IsNested           bool
+	ConsulAddr         string
+	ConsulClient       *api.Client
+	DateFilter         *time.Time
+	lock               *api.Lock
+	apiHost            *shared.Conn
+	ignoreSourcePath   bool
 	nerdCapitalization bool
+	tableCache         *core.TableCacheStruct
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -95,8 +96,8 @@ func main() {
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	isNested := app.Flag("nested", "Input data is a nested schema. The <index> parameter is root.").Bool()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
-	ignoreSourcePath := app.Flag("ignore-source-path","Ignore the source path into the parquet file.").Bool()
-	nerdCapitalization := app.Flag("nerd-capitalization","For parquet, field names are capitalized.").Bool()
+	ignoreSourcePath := app.Flag("ignore-source-path", "Ignore the source path into the parquet file.").Bool()
+	nerdCapitalization := app.Flag("nerd-capitalization", "For parquet, field names are capitalized.").Bool()
 
 	shared.InitLogging("WARN", *environment, "Loader", Version, "Quanta")
 
@@ -151,7 +152,7 @@ func main() {
 	if !*dryRun {
 		for i := 0; i < threads; i++ {
 			eg.Go(func() error {
-				conn, err := core.OpenSession("", main.Index, main.IsNested, main.apiHost)
+				conn, err := core.OpenSession(main.tableCache, "", main.Index, main.IsNested, main.apiHost)
 				if err != nil {
 					return err
 				}
@@ -219,10 +220,8 @@ func exitErrorf(msg string, args ...interface{}) {
 	os.Exit(1)
 }
 
-//
 // LoadBucketContents - List S3 objects from AWS bucket based on command line argument of the bucket name
 // S3 does not actually support nested buckets, instead they use a file prefix.
-//
 func (m *Main) LoadBucketContents() {
 
 	m.Bucket = path.Dir(m.BucketPath)
@@ -247,7 +246,7 @@ func (m *Main) LoadBucketContents() {
 	paginator := s3.NewListObjectsV2Paginator(m.S3svc, params, func(o *s3.ListObjectsV2PaginatorOptions) {
 		o.Limit = 10
 	})
-	
+
 	var err error
 	var output *s3.ListObjectsV2Output
 	ret := make([]types.Object, 0)
@@ -265,14 +264,14 @@ func (m *Main) LoadBucketContents() {
 	}
 
 	if err != nil {
-			var bne *types.NoSuchBucket
-			if errors.As(err, &bne) {
-				log.Fatal(fmt.Errorf("%v %v", *bne, err.Error()))
-			} else {
-				log.Fatal(err.Error())
-			}
+		var bne *types.NoSuchBucket
+		if errors.As(err, &bne) {
+			log.Fatal(fmt.Errorf("%v %v", *bne, err.Error()))
+		} else {
+			log.Fatal(err.Error())
 		}
-	
+	}
+
 	sort.Slice(ret, func(i, j int) bool {
 		return ret[i].Size > ret[j].Size
 	})
@@ -332,19 +331,19 @@ func (m *Main) Init() error {
 		return fmt.Errorf("Creating S3 session: %v", err)
 	}
 
-	if m.AssumeRoleArn != "" {		
+	if m.AssumeRoleArn != "" {
 		client := sts.NewFromConfig(cfg)
 		provider := stscreds.NewAssumeRoleProvider(client, m.AssumeRoleArn)
 
 		if err != nil {
-			return fmt.Errorf("Failed to retrieve credentials: %v",err)
+			return fmt.Errorf("Failed to retrieve credentials: %v", err)
 		}
 
 		cfg.Credentials = awsv2.NewCredentialsCache(provider)
-		_,err = cfg.Credentials.Retrieve(context.TODO())
+		_, err = cfg.Credentials.Retrieve(context.TODO())
 		if err != nil {
 			return fmt.Errorf("Failed to retrieve credentials from cache: %v", err)
-		}	
+		}
 
 		m.S3svc = s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.Region = m.AWSRegion
@@ -352,7 +351,7 @@ func (m *Main) Init() error {
 			o.RetryMaxAttempts = 10
 		})
 	} else {
-		m.S3svc = s3.NewFromConfig(cfg, 	func(o *s3.Options) {
+		m.S3svc = s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.Region = m.AWSRegion
 			o.RetryMaxAttempts = 10
 		})
@@ -416,5 +415,3 @@ func (c *Counter) Get() (ret int64) {
 	c.lock.Unlock()
 	return
 }
-
-

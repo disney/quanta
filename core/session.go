@@ -48,6 +48,8 @@ type Session struct {
 	BytesRead    int        // Bytes read for a row (record)
 	CreatedAt    time.Time
 	stateLock    sync.Mutex
+
+	tableCache *TableCacheStruct
 }
 
 // TableBuffer - State info for table.
@@ -166,6 +168,7 @@ func OpenSession(tableCache *TableCacheStruct, path, name string, nested bool, c
 	s.BitIndex = shared.NewBitmapIndex(conn)
 	s.BatchBuffer = shared.NewBatchBuffer(s.BitIndex, s.KVStore, 3000000)
 	s.CreatedAt = time.Now().UTC()
+	s.tableCache = tableCache
 
 	return s, nil
 }

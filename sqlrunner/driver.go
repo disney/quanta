@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	runtime "github.com/banzaicloud/logrus-runtime-formatter"
@@ -60,7 +61,7 @@ func main() {
 	scriptFile := flag.String("script_file", "", "Path to the sql file to execute.")
 	scriptDelimiter := flag.String("script_delimiter","@","The delimiter to use in the script file.  The default is a colon (:).")
 	validate := flag.Bool("validate", false, "If not set, the Sql statement will be executed but not validated.")	
-	host := flag.String("hostname", "", "Quanta host to connect to.")
+	host := flag.String("host", "", "Quanta host to connect to.")
 	user := flag.String("user", "", "The username that will connect to the database.")
 	password := flag.String("password", "", "The password to use to connect.")
 	database := flag.String("db", "quanta", "The database to connect to.")
@@ -68,7 +69,7 @@ func main() {
 	log_level := flag.String("log_level","","Set the logging level to DEBUG for additional logging.")
 	flag.Parse()
 
-	if *scriptFile == "" || *host == "" || *user == "" || *password == "" {
+	if *scriptFile == "" || *host == "" || *user == "" {
 		log.Println()
 		log.Println("The arguments script_file, host, user and password are required.")
 		log.Println()
@@ -198,9 +199,10 @@ func analyzeRow(proxyConfig ProxyConnect, row []string, validate bool) {
 	err = nil
 
 	if statementType == Admin {
-		sqlInfo.executeAdmin()
-		return
-	}
+        sqlInfo.executeAdmin()
+        time.Sleep(1 * time.Second)
+        return
+    }
 
 	db, err := proxyConfig.proxyConnect()
 	if err != nil {

@@ -5,10 +5,14 @@ The sql runner is a tool that will execute Sql statements from a file. The tool 
 - _Working command line example_:  ./sqlrunner -script_file test.sql -validate -env dev
 
 **Parameters**
-- **script_file** - (required) this is a file the sql runner reads and executes.  This file contains a set of Sql statements to execute.
-- **script_delimiter** - (optional) the delimiter to use in the file.  The default is a '@'.  This delimiter separates the Sql statement from the expected row count.
+- **script_file** - (required) This is a file the sql runner reads and executes.  This file contains a set of Sql statements to execute.
+- **script_delimiter** - (optional) The delimiter to use in the file.  The default is a '@'.  This delimiter separates the Sql statement from the expected row count.
+- **host** - (required) The Quanta host to connect to.
+- **user** - (required) The Quanta user to use to connect.
+- **password** - (required) The Quanta password to use to connect.
+- **database** - (optional) The Quanta database to connect to.  The default is 'quanta'.
+- **port** - (optional) The port to connect to.  The default is 4000.
 - **validate** - (optional) boolean that specifies where to perform data validation or not.  If you just want to insert data, this could be removed from the command line.
-- **env** - the environment to execute the runner again.  Valid options are SANDBOX, DEV, QA, PROD, DEBUG, LOCAL, and GUY-SANDBOX
 - **log_level** - set this to DEBUG if you want to enable additional logging.
 
 **Script File**
@@ -19,6 +23,7 @@ _Rules_
 - If you have the validate option enabled, separate the Sql statement from the expected row count with a '@' (or whatever delimiter you specify).
 - Only Select, Insert, and Update statements are currently supported.  Insert and Update statements do not require an expected rowcount with the validate option.
 - quanta-admin statements - any valid quanta-admin statement can be added to the sql script file.
+- To test error conditions, add the error number after the delimiter ('@' by default).
 
 _Statement Line Examples_
 - -- This is a commented line.  It could also begin with a pound (#).
@@ -28,3 +33,5 @@ _Statement Line Examples_
 - select * from customers where name = 'Abe';@1 
 - -- The following quanta-admin statement drops a table
 - quanta-admin drop customers_qa
+- -- The following statement tests an error condition
+- select * from badtable;@1105

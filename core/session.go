@@ -127,6 +127,9 @@ func OpenSession(tableCache *TableCacheStruct, path, name string, nested bool, c
 	if name == "" {
 		return nil, fmt.Errorf("table name is nil")
 	}
+	if tableCache == nil {
+		return nil, fmt.Errorf("table cache is nil")
+	}
 
 	consul := conn.Consul
 	kvStore := shared.NewKVStore(conn)
@@ -944,7 +947,7 @@ func (s *Session) MapValue(tableName, fieldName string, value interface{}, updat
 
 	var table *Table
 	var attr *Attribute
-	table, err = LoadTable(s.BasePath, s.KVStore, tableName, s.KVStore.Conn.Consul)
+	table, err = LoadTable(s.tableCache, s.BasePath, s.KVStore, tableName, s.KVStore.Conn.Consul)
 	if err != nil {
 		return 
 	}

@@ -84,6 +84,7 @@ func LoadTable(tableCache *TableCacheStruct, path string, kvStore *shared.KVStor
 	}
 
 	table := &Table{BasicTable: sch, kvStore: kvStore, Attributes: make([]Attribute, len(sch.Attributes))}
+	table.tableCache = tableCache
 	for j := range sch.Attributes { // wrap BasicAttributes
 		v := &Attribute{BasicAttribute: &sch.Attributes[j]}
 		table.Attributes[j] = *v // copylocks is ok here

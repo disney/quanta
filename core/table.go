@@ -52,7 +52,7 @@ func LoadTable(path string, kvStore *shared.KVStore, name string, consulClient *
 	defer tableCacheLock.Unlock()
 	if t, ok := tableCache[name]; ok {
 		t.kvStore = kvStore
-		u.Debugf("Found table %s in cache.", name)
+		//u.Debugf("Found table %s in cache.", name)
 		return t, nil
 	}
 

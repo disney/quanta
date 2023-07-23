@@ -5,15 +5,16 @@ package core
 import (
 	"database/sql/driver"
 	"fmt"
-	u "github.com/araddon/gou"
-	"github.com/RoaringBitmap/roaring/roaring64"
-	"github.com/disney/quanta/shared"
 	"math"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 	"unsafe"
+
+	"github.com/RoaringBitmap/roaring/roaring64"
+	u "github.com/araddon/gou"
+	"github.com/disney/quanta/shared"
 )
 
 const (
@@ -135,16 +136,15 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 		return nil, fmt.Errorf("join criteria missing")
 	}
 
-
 	driverSet := p.foundSets[p.childTable].Clone()
 	// For inner joins filter out any rows in the child table not in fkBSI link
 	if p.innerJoin {
 		if !negate {
-/*
-			for _, v := range p.fkBSI {
-				driverSet.And(v.GetExistenceBitmap())
-			}
-*/
+			/*
+				for _, v := range p.fkBSI {
+					driverSet.And(v.GetExistenceBitmap())
+				}
+			*/
 		}
 	} else {
 		if p.leftTable != p.childTable {
@@ -181,7 +181,7 @@ func NewProjection(s *Session, foundSets map[string]*roaring64.Bitmap, joinNames
 				unsigned := filterSet.ToArray()
 				signed := *(*[]int64)(unsafe.Pointer(&unsigned))
 				driverSet = fkBsi.BatchEqual(0, signed).Clone()
-		
+
 			}
 		}
 		p.foundSets[k] = filterSet
@@ -207,7 +207,7 @@ func getAttributes(s *Session, fieldNames []string) ([]*Attribute, error) {
 		if attributeName == "" {
 			return nil, fmt.Errorf("attribute name missing for [%s]", v)
 		}
-		table, err := LoadTable(s.BasePath, s.KVStore, tableName, s.KVStore.Conn.Consul)
+		table, err := LoadTable(s.tableCache, s.BasePath, s.KVStore, tableName, s.KVStore.Conn.Consul)
 		if err != nil {
 			return nil, fmt.Errorf("table %s invalid or not opened - %v", tableName, err)
 		}
@@ -276,40 +276,39 @@ func (p *Projector) findRelationLink(tableName string) (*Attribute, bool) {
 // the column IDs are for the parent.   Return the transposed related column IDs for the child.
 func (p *Projector) filterChild(parentSet *roaring64.Bitmap) (*roaring64.Bitmap, error) {
 
-		result := roaring64.NewBitmap()
-		fka, ok := p.findRelationLink(p.leftTable)
-		if !ok {
-			return nil, fmt.Errorf("filterChild: Cannot resolve FK relationship for %s", p.leftTable)
-		}
-		fkBsi, ok2 := p.fkBSI[fka.FieldName]
-		if !ok2 {
-			return result, fmt.Errorf("filterChild: FK BSI lookup failed for %s.%s", p.leftTable, fka.FieldName)
-		}
-		columnIds := parentSet.ToArray()
-		signed := *(*[]int64)(unsafe.Pointer(&columnIds))
-		driverSet := fkBsi.BatchEqual(0, signed).Clone()
-		return driverSet, nil
+	result := roaring64.NewBitmap()
+	fka, ok := p.findRelationLink(p.leftTable)
+	if !ok {
+		return nil, fmt.Errorf("filterChild: Cannot resolve FK relationship for %s", p.leftTable)
+	}
+	fkBsi, ok2 := p.fkBSI[fka.FieldName]
+	if !ok2 {
+		return result, fmt.Errorf("filterChild: FK BSI lookup failed for %s.%s", p.leftTable, fka.FieldName)
+	}
+	columnIds := parentSet.ToArray()
+	signed := *(*[]int64)(unsafe.Pointer(&columnIds))
+	driverSet := fkBsi.BatchEqual(0, signed).Clone()
+	return driverSet, nil
 }
 
 // For a given parent columnID, return the children
 func (p *Projector) getChildren(parent uint64) ([]uint64, error) {
 
-		fka, ok := p.findRelationLink(p.leftTable)
-		if !ok {
-			return nil, fmt.Errorf("getChildren: Cannot resolve FK relationship for %s", p.leftTable)
-		}
-		fkBsi, ok2 := p.fkBSI[fka.FieldName]
-		if !ok2 {
-			return nil, fmt.Errorf("getChildren: FK BSI lookup failed for %s.%s", p.leftTable, fka.FieldName)
-		}
+	fka, ok := p.findRelationLink(p.leftTable)
+	if !ok {
+		return nil, fmt.Errorf("getChildren: Cannot resolve FK relationship for %s", p.leftTable)
+	}
+	fkBsi, ok2 := p.fkBSI[fka.FieldName]
+	if !ok2 {
+		return nil, fmt.Errorf("getChildren: FK BSI lookup failed for %s.%s", p.leftTable, fka.FieldName)
+	}
 
-		result := fkBsi.CompareValue(0, roaring64.EQ, int64(parent), 0, nil)
-		return result.ToArray(), nil
+	result := fkBsi.CompareValue(0, roaring64.EQ, int64(parent), 0, nil)
+	return result.ToArray(), nil
 }
 
-
 func (p *Projector) nextSets(columnIDs []uint64) (map[string]map[string]*roaring64.BSI,
-		map[string]map[string]*BitmapFieldResults, error) {
+	map[string]map[string]*BitmapFieldResults, error) {
 
 	bsiResults := make(map[string]map[string]*roaring64.BSI)
 	bitmapResults := make(map[string]map[string]*BitmapFieldResults)
@@ -430,7 +429,7 @@ func (p *Projector) Next(count int) (resultIDs []uint64, rows [][]driver.Value, 
 	for _, v := range columnIDs {
 		children := make([]uint64, 0)
 		if !p.innerJoin {
-			children, err  = p.getChildren(v)
+			children, err = p.getChildren(v)
 		}
 		if len(children) > 0 {
 			for _, w := range children {
@@ -527,13 +526,14 @@ func (p *Projector) getPKAttributes(tableName string) []*Attribute {
 
 	var table *Table
 	var err error
-	table, err = LoadTable(p.connection.BasePath, p.connection.KVStore, tableName, p.connection.KVStore.Conn.Consul)
+	tc := p.connection.tableCache
+	table, err = LoadTable(tc, p.connection.BasePath, p.connection.KVStore, tableName, p.connection.KVStore.Conn.Consul)
 	if err != nil {
-		return  nil
+		return nil
 	}
 	pka, errx := table.GetPrimaryKeyInfo()
 	if errx != nil {
-		return  nil
+		return nil
 	}
 	return pka
 }
@@ -545,7 +545,6 @@ func (p *Projector) transposeFKColumnIDs(fkBSI *roaring64.BSI, columnIDs []uint6
 	newColumnIDs = newSet.ToArray()
 	return
 }
-
 
 // Emit a row
 func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]interface{},
@@ -979,7 +978,7 @@ func stringsPath(table *Table, field, path string, ts time.Time) string {
 	if table.TimeQuantumType == "YMDH" {
 		key := fmt.Sprintf("%s/%s/%s", table.Name, field, ts.Format(timeFmt))
 		fpath := fmt.Sprintf("/%s/%s/%s/%s/%s", table.Name, field, path,
-				fmt.Sprintf("%d%02d%02d", ts.Year(), ts.Month(), ts.Day()), ts.Format(timeFmt))
+			fmt.Sprintf("%d%02d%02d", ts.Year(), ts.Month(), ts.Day()), ts.Format(timeFmt))
 		lookupPath = key + "," + fpath
 	}
 	return lookupPath

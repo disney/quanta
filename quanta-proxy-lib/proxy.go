@@ -93,7 +93,7 @@ type Context struct {
 
 func SchemaChangeListener(e shared.SchemaChangeEvent) {
 
-	core.ClearTableCache()
+	// core.ClearTableCache()
 	switch e.Event {
 	case shared.Drop:
 		schema.DefaultRegistry().SchemaDrop("quanta", e.Table, lex.TokenTable)
@@ -105,7 +105,8 @@ func SchemaChangeListener(e shared.SchemaChangeEvent) {
 		Src.GetSessionPool().Recover(nil)
 		schema.DefaultRegistry().SchemaDrop("quanta", "quanta", lex.TokenSource)
 		var err error
-		Src, err = source.NewQuantaSource("", ConsulAddr, QuantaPort, SessionPoolSize)
+		tableCache := core.NewTableCacheStruct()
+		Src, err = source.NewQuantaSource(tableCache, "", ConsulAddr, QuantaPort, SessionPoolSize)
 		if err != nil {
 			u.Error(err)
 		}

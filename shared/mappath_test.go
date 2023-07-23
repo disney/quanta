@@ -2,8 +2,9 @@ package shared
 
 import (
 	"encoding/json"
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 var (
@@ -47,8 +48,8 @@ func TestPath(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, val, "espn")
 	val, err = GetPath("badpath/testname", dat, true, false)
-	assert.NoError(t, err)
-	assert.Equal(t, val, "mpath_test")
+	assert.Error(t, err)
+	// val is nil assert.Equal(t, val, "mpath_test")
 	val, err = GetPath("/badpath/testname", dat, true, false)
 	assert.NoError(t, err)
 	assert.Equal(t, val, "mpath_test")

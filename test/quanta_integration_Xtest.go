@@ -24,6 +24,7 @@ import (
 )
 
 type QuantaTestSuite struct {
+	// FIXME: make this test work or delete it (atw)
 	suite.Suite
 	node  *server.Node
 	store *shared.KVStore
@@ -34,7 +35,7 @@ func (suite *QuantaTestSuite) SetupSuite() {
 	suite.node, err = Setup() // harness setup
 	assert.NoError(suite.T(), err)
 
-	core.ClearTableCache()
+	// core.ClearTableCache()
 	RemoveContents("./testdata/index")
 	RemoveContents("./testdata/bitmap")
 
@@ -46,13 +47,12 @@ func (suite *QuantaTestSuite) SetupSuite() {
 
 	u.SetupLogging("debug")
 
-
 	// load all of our built-in functions
 	builtins.LoadAllBuiltins()
 	functions.LoadAll() // Custom functions
 
 	// Simulate the mySQL proxy endpoint for golang dbdriver connection clients.
-	src, err2 := source.NewQuantaSource("./testdata/config", "", 0, 1)
+	src, err2 := source.NewQuantaSource(suite.node.TableCache, "./testdata/config", "", 0, 1)
 	assert.NoError(suite.T(), err2)
 	schema.RegisterSourceAsSchema("quanta", src)
 
@@ -87,7 +87,8 @@ func (suite *QuantaTestSuite) loadData(table, filePath string, conn *shared.Conn
 		return err
 	}
 	num := int(pr.GetNumRows())
-	c, err := core.OpenSession("./testdata/config", table, false, conn)
+	tableCache := suite.node.TableCache
+	c, err := core.OpenSession(tableCache, "./testdata/config", table, false, conn)
 	assert.Nil(suite.T(), err)
 	assert.NotNil(suite.T(), c)
 
@@ -112,9 +113,9 @@ func (suite *QuantaTestSuite) insertData(table, filePath string) error {
 	_, err = db.Exec(setter)
 	assert.NoError(suite.T(), err)
 
-    insertStmt, err := db.Prepare("insert into cityzip (id, zip, city, state) values (?, ?, ?, ?)")
+	insertStmt, err := db.Prepare("insert into cityzip (id, zip, city, state) values (?, ?, ?, ?)")
 	assert.NoError(suite.T(), err)
-    defer insertStmt.Close()
+	defer insertStmt.Close()
 
 	fr, err := local.NewLocalFileReader(filePath)
 	assert.Nil(suite.T(), err)
@@ -122,7 +123,7 @@ func (suite *QuantaTestSuite) insertData(table, filePath string) error {
 		log.Println("Can't open file", err)
 		return err
 	}
-	pr, err := reader.NewParquetReader(fr, nil,  4)
+	pr, err := reader.NewParquetReader(fr, nil, 4)
 	assert.Nil(suite.T(), err)
 	if err != nil {
 		log.Println("Can't create column reader", err)
@@ -136,7 +137,12 @@ func (suite *QuantaTestSuite) insertData(table, filePath string) error {
 	}
 
 	for _, v := range res {
-		x := v.(struct{Id string; Zip string; Name string; State string})
+		x := v.(struct {
+			Id    string
+			Zip   string
+			Name  string
+			State string
+		})
 		_, err := insertStmt.Exec(x.Id, x.Zip, x.Name, x.State)
 		assert.NoError(suite.T(), err)
 	}

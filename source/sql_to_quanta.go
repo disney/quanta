@@ -926,17 +926,22 @@ func (m *SQLToQuanta) handleBSI(op string, lhval, rhval value.Value, q *shared.Q
 			}
 		}
 	}
+	if fr.Type == "DateTime" {
+		if rhval.Type() == value.TimeType {
+			rhval = value.NewStringValue(rhval.(value.TimeValue).Val().UTC().Format(time.RFC3339))
+			if rhval.Err() {
+				err := fmt.Errorf("expecting something sane for %s", nm)
+				u.Errorf(err.Error())
+				return err
+			}
+		}
+	}
 	if mv, err := m.conn.MapValue(tableName, nm, rhval.Value(), false); err == nil {
 		q.SetBSIPredicate(fr.Parent.Name, fr.FieldName, op, int64(mv))
-		tbuf, found := m.conn.TableBuffers[fr.Parent.Name]
-		if !found {
-			err := fmt.Errorf("table %s not open", fr.Parent.Name)
-			u.Errorf(err.Error())
-			return err
-		}
-		if tbuf.PKAttributes[0].FieldName == fr.FieldName {
+		pka, _ := fr.Parent.GetPrimaryKeyInfo()
+		if pka[0].FieldName == fr.FieldName {
 			loc, _ := time.LoadLocation("Local")
-			if tbuf.Table.TimeQuantumType != "" && (m.startDate == "" || m.endDate == "") {
+			if fr.Parent.TimeQuantumType != "" && (m.startDate == "" || m.endDate == "") {
 				ts, err := dateparse.ParseIn(rhval.ToString(), loc)
 				if err != nil {
 					err := fmt.Errorf("cannot parse value '%v' - %v", rhval, err)
@@ -953,6 +958,7 @@ func (m *SQLToQuanta) handleBSI(op string, lhval, rhval value.Value, q *shared.Q
 			}
 		}
 	} else {
+		u.Errorf("%v", err)
 		err := fmt.Errorf("operation %s,  cannot map value %v in field '%s'", op, rhval.Value(), nm)
 		u.Errorf(err.Error())
 		return err

@@ -4,13 +4,26 @@ package shared
 
 import (
 	"fmt"
-	"github.com/araddon/qlbridge/value"
-	"github.com/hashicorp/consul/api"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"os"
 	"strings"
+
+	"github.com/araddon/qlbridge/value"
+	"github.com/hashicorp/consul/api"
+	"gopkg.in/yaml.v2"
 )
+
+// type TableCacheStruct struct { // used in core Table
+// 	TableCache     map[string]TableInterface
+// 	TableCacheLock sync.RWMutex
+// }
+
+type TableInterface interface {
+	// GetAttribute(name string) (AttributeInterface, error)
+	// GetPrimaryKeyInfo() ([]AttributeInterface, error)
+	Compare(other *BasicTable) (equal bool, warnings []string, err error)
+	GetName() string
+}
 
 // BasicTable - Table structure.
 type BasicTable struct {
@@ -24,6 +37,10 @@ type BasicTable struct {
 	Attributes       []BasicAttribute           `yaml:"attributes"`
 	attributeNameMap map[string]*BasicAttribute `yaml:"-"`
 	ConsulClient     *api.Client                `yaml:"-"`
+}
+
+type AttributeInterface interface {
+	GetParent() TableInterface
 }
 
 // BasicAttribute - Field structure.
@@ -55,6 +72,19 @@ type BasicAttribute struct {
 	Exclusive        bool              `yaml:"exclusive,omitempty"`
 	DelegationTarget string            `yaml:"delegationTarget,omitempty"`
 }
+
+func (a *BasicAttribute) GetParent() TableInterface {
+	return a.Parent
+}
+func (a *BasicTable) GetName() string {
+	return a.Name
+}
+
+// func NewTableCacheStruct() *TableCacheStruct {
+// 	tcs := &TableCacheStruct{}
+// 	tcs.TableCache = make(map[string]TableInterface)
+// 	return tcs
+// }
 
 // Value - Metadata value items for StringEnum mapper type.
 type Value struct {
@@ -233,8 +263,8 @@ func LoadSchema(path string, name string, consulClient *api.Client) (*BasicTable
 	}
 
 	if table.PrimaryKey == "" && table.TimeQuantumField == "" {
-		// If the table is partitioned then either a primary key (with time field in first position) or 
-        // the time quantum field must be specified specified.
+		// If the table is partitioned then either a primary key (with time field in first position) or
+		// the time quantum field must be specified specified.
 		if table.TimeQuantumType != "" {
 			return nil, fmt.Errorf("The table %s is partitioned but 'timeQuantumField' is not specified", table.Name)
 		}
@@ -269,10 +299,10 @@ func LoadSchema(path string, name string, consulClient *api.Client) (*BasicTable
 func (t *BasicTable) GetAttribute(name string) (*BasicAttribute, error) {
 
 	if t == nil {
-		return nil, fmt.Errorf("assertion failure: receiver for table is nil for fieldname", name)
+		return nil, fmt.Errorf("assertion failure: receiver for table is nil for fieldname %s", name)
 	}
 	if t.attributeNameMap == nil {
-		return nil, fmt.Errorf("assertion failure: attributeNameMap for table %s is nil for fieldname", t.Name, name)
+		return nil, fmt.Errorf("assertion failure: attributeNameMap for table %s is nil for fieldname %s", t.Name, name)
 	}
 	if attr, ok := t.attributeNameMap[name]; ok {
 		return attr, nil
@@ -289,7 +319,7 @@ func (t *BasicTable) GetPrimaryKeyInfo() ([]*BasicAttribute, error) {
 	i := 0
 	if t.TimeQuantumField != "" {
 		if len(s) > 0 {
-			attrs = make([]*BasicAttribute, len(s) + 1)
+			attrs = make([]*BasicAttribute, len(s)+1)
 		} else {
 			attrs = make([]*BasicAttribute, 1)
 		}

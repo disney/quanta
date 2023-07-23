@@ -21,18 +21,28 @@ import (
 type Table struct {
 	*shared.BasicTable
 	Attributes       []Attribute
-	attributeNameMap map[string]*Attribute
+	AttributeNameMap map[string]*Attribute
 	kvStore          *shared.KVStore
+	tableCache       *TableCacheStruct // copied from bitmap from session
+}
+
+type TableCacheStruct struct { // used in core Table
+	TableCache     map[string]*Table
+	TableCacheLock sync.RWMutex
 }
 
 // Attribute - Field structure.
 type Attribute struct {
 	*shared.BasicAttribute
-	Parent           *Table
-	valueMap         map[interface{}]uint64
-	reverseMap       map[uint64]interface{}
-	mapperInstance   Mapper
-	localLock        sync.RWMutex
+	Parent         *Table
+	valueMap       map[interface{}]uint64
+	reverseMap     map[uint64]interface{}
+	mapperInstance Mapper
+	localLock      sync.RWMutex
+}
+
+func (a *Attribute) GetParent() shared.TableInterface {
+	return a.Parent // not BasicAttribute parent
 }
 
 const (
@@ -40,20 +50,31 @@ const (
 	SEP = string(os.PathSeparator)
 )
 
-var (
-	tableCache     map[string]*Table = make(map[string]*Table, 0)
-	tableCacheLock sync.RWMutex
-)
+// var ( atw deleteme - no globals please
+// 	tableCache     map[string]*Table = make(map[string]*Table, 0)
+// 	tableCacheLock sync.RWMutex
+// )
+
+func NewTableCacheStruct() *TableCacheStruct {
+	tcs := &TableCacheStruct{}
+	tcs.TableCache = make(map[string]*Table)
+	return tcs
+}
 
 // LoadTable - Load and initialize table object.
-func LoadTable(path string, kvStore *shared.KVStore, name string, consulClient *api.Client) (*Table, error) {
+func LoadTable(tableCache *TableCacheStruct, path string, kvStore *shared.KVStore, name string, consulClient *api.Client) (*Table, error) {
 
-	tableCacheLock.Lock()
-	defer tableCacheLock.Unlock()
-	if t, ok := tableCache[name]; ok {
-		t.kvStore = kvStore
-		//u.Debugf("Found table %s in cache.", name)
-		return t, nil
+	tableCache.TableCacheLock.Lock()
+	defer tableCache.TableCacheLock.Unlock()
+
+	if t, ok := tableCache.TableCache[name]; ok {
+		coreTable := t //, ok := t.(*Table)
+		// if !ok {
+		// 	return nil, fmt.Errorf("table %s is not a core table", name)
+		// }
+		coreTable.kvStore = kvStore
+		u.Debugf("Found table %s in cache.", name)
+		return coreTable, nil
 	}
 
 	u.Debugf("Loading table %s.", name)
@@ -65,13 +86,13 @@ func LoadTable(path string, kvStore *shared.KVStore, name string, consulClient *
 	table := &Table{BasicTable: sch, kvStore: kvStore, Attributes: make([]Attribute, len(sch.Attributes))}
 	for j := range sch.Attributes { // wrap BasicAttributes
 		v := &Attribute{BasicAttribute: &sch.Attributes[j]}
-		table.Attributes[j] = *v
+		table.Attributes[j] = *v // copylocks is ok here
 		table.Attributes[j].Parent = table
 	}
 
-	table.attributeNameMap = make(map[string]*Attribute)
+	table.AttributeNameMap = make(map[string]*Attribute)
 
-	// Refactor this
+	// Refactor this atw fixme
 	/*
 		lock, err := shared.Lock(consulClient, name, "LoadSchema")
 		if err != nil {
@@ -165,7 +186,7 @@ func LoadTable(path string, kvStore *shared.KVStore, name string, consulClient *
 				}
 			}
 
-			table.attributeNameMap[v.FieldName] = &table.Attributes[j]
+			table.AttributeNameMap[v.FieldName] = &table.Attributes[j]
 		}
 
 		if v.FieldName == "" {
@@ -182,12 +203,12 @@ func LoadTable(path string, kvStore *shared.KVStore, name string, consulClient *
 				continue
 			}
 			v.FieldName = v.SourceName
-			table.attributeNameMap[v.SourceName] = &table.Attributes[j]
+			table.AttributeNameMap[v.SourceName] = &table.Attributes[j]
 		}
 
 		// Enable lookup by alias (field name)
 		if v.SourceName == "" || v.SourceName != v.FieldName {
-			table.attributeNameMap[v.FieldName] = &table.Attributes[j]
+			table.AttributeNameMap[v.FieldName] = &table.Attributes[j]
 		}
 		table.Attributes[j].valueMap = make(map[interface{}]uint64)
 		table.Attributes[j].reverseMap = make(map[uint64]interface{})
@@ -207,8 +228,8 @@ func LoadTable(path string, kvStore *shared.KVStore, name string, consulClient *
 	}
 
 	if table.PrimaryKey == "" && table.TimeQuantumField == "" {
-		// If the table is partitioned then either a primary key (with time field in first position) or 
-        // the time quantum field must be specified specified.
+		// If the table is partitioned then either a primary key (with time field in first position) or
+		// the time quantum field must be specified specified.
 		if table.TimeQuantumType != "" {
 			return nil, fmt.Errorf("The table %s is partitioned but 'timeQuantumField' is not specified", table.Name)
 		}
@@ -237,7 +258,7 @@ func LoadTable(path string, kvStore *shared.KVStore, name string, consulClient *
 		}
 	}
 
-	tableCache[name] = table
+	tableCache.TableCache[name] = table
 	return table, nil
 }
 
@@ -248,11 +269,11 @@ func (t *Table) GetAttribute(name string) (*Attribute, error) {
 		return t.GetRownumAttribute(), nil
 	}
 
-	if t == nil || t.attributeNameMap == nil {
+	if t == nil || t.AttributeNameMap == nil {
 		return nil, fmt.Errorf("schema cache not re-initialized ")
 	}
 
-	if attr, ok := t.attributeNameMap[name]; ok {
+	if attr, ok := t.AttributeNameMap[name]; ok {
 		return attr, nil
 	}
 	return nil, fmt.Errorf("attribute '%s' not found", name)
@@ -265,7 +286,7 @@ func (t *Table) GetRownumAttribute() *Attribute {
 	b.FieldName = "@rownum"
 	b.MappingStrategy = "IntBSI"
 	b.Type = "Integer"
-	at :=  &Attribute{BasicAttribute: b, Parent: t}
+	at := &Attribute{BasicAttribute: b, Parent: t}
 	mi, err := ResolveMapper(at)
 	if err == nil {
 		at.mapperInstance = mi
@@ -281,7 +302,7 @@ func (t *Table) GetPrimaryKeyInfo() ([]*Attribute, error) {
 	i := 0
 	if t.TimeQuantumField != "" {
 		if len(s) > 1 {
-			attrs = make([]*Attribute, len(s) + 1)
+			attrs = make([]*Attribute, len(s)+1)
 		} else {
 			attrs = make([]*Attribute, 1)
 		}
@@ -343,10 +364,14 @@ func (a *Attribute) GetFKSpec() (string, string, error) {
 // GetValue - Return row ID for a given input value (StringEnum).
 func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 
-	tableCacheLock.RLock()
-	defer tableCacheLock.RUnlock()
+	parentTable := a.Parent //.(*Table)
 
-	la, lerr := tableCache[a.Parent.Name].GetAttribute(a.FieldName)
+	parentTable.tableCache.TableCacheLock.RLock()
+	defer parentTable.tableCache.TableCacheLock.RUnlock()
+
+	//la, lerr := tableCache[a.Parent.Name].GetAttribute(a.FieldName)
+	// why are we doing this? We have the parent, why look in the cache?
+	la, lerr := parentTable.tableCache.TableCache[parentTable.Name].GetAttribute(a.FieldName)
 	if lerr != nil {
 		return 0, fmt.Errorf("Cannot lookup attribute %s from table cache.", a.FieldName)
 	}
@@ -399,15 +424,17 @@ func (a *Attribute) GetValue(invalue interface{}) (uint64, error) {
 // GetValueForID - Reverse map a value for a given row ID.  (StringEnum)
 func (a *Attribute) GetValueForID(id uint64) (interface{}, error) {
 
-	if a.Parent.attributeNameMap == nil {
-		tableCacheLock.Lock()
-		defer tableCacheLock.Unlock()
+	parentTable := a.Parent
+
+	if parentTable.AttributeNameMap == nil {
+		parentTable.tableCache.TableCacheLock.Lock()
+		defer parentTable.tableCache.TableCacheLock.Unlock()
 	} else {
-		tableCacheLock.RLock()
-		defer tableCacheLock.RUnlock()
+		parentTable.tableCache.TableCacheLock.RLock()
+		defer parentTable.tableCache.TableCacheLock.RUnlock()
 	}
 
-	la, lerr := tableCache[a.Parent.Name].GetAttribute(a.FieldName)
+	la, lerr := parentTable.tableCache.TableCache[a.Parent.Name].GetAttribute(a.FieldName)
 	if lerr != nil {
 		return 0, fmt.Errorf("Cannot lookup attribute %s from table cache.", a.FieldName)
 	}
@@ -549,11 +576,13 @@ func (t *Table) LoadFieldValues() (fieldMap map[string]*Field, err error) {
 }
 
 // ClearTableCache - Clear the table cache.
-func ClearTableCache() {
+// This no longer makes sense.
+// needs arg. There's no tableCache except in bitmap from session
+func not_ClearTableCache() {
 
-	tableCacheLock.Lock()
-	defer tableCacheLock.Unlock()
-	tableCache = make(map[string]*Table, 0)
+	// tableCacheLock.Lock() atw fixme atw fixme atw fixme atw fixme atw fixme
+	// defer tableCacheLock.Unlock()
+	// tableCache = make(map[string]*Table, 0)
 }
 
 // ReadLockChanges
@@ -565,4 +594,3 @@ func ClearTableCache() {
 //func ReadUnlockChanges() {
 //	tableCacheLock.RUnlock()
 //}
-

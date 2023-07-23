@@ -44,46 +44,46 @@ import (
 
 // Variables to identify the build
 var (
-	Version             string
-	Build	            string
-	ShardChannelSize    = 10000
-	EPOCH, _ = time.ParseInLocation(time.RFC3339, "2000-01-01T00:00:00+00:00", time.UTC)
+	Version          string
+	Build            string
+	ShardChannelSize = 10000
+	EPOCH, _         = time.ParseInLocation(time.RFC3339, "2000-01-01T00:00:00+00:00", time.UTC)
 )
 
 // Exit Codes
 const (
 	Success = 0
-	appName			  = "Kinesis-Consumer"
+	appName = "Kinesis-Consumer"
 )
 
 // Main struct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
-	Stream				string
-	Region				string
-	Index				string
-	BufferSize			uint
-	totalBytes			*Counter
-	totalBytesL			*Counter
-	totalRecs			*Counter
-	totalRecsL			*Counter
-	errorCount			*Counter
-	poolPercent			*Counter
-	Port				int
-	ConsulAddr			string
-	ShardCount			int
-	lock				*api.Lock
-	consumer			*consumer.Consumer
-	Table				*shared.BasicTable
-	Schema				avro.Schema
-	InitialPos			string
-	IsAvro				bool
-	CheckpointDB		bool
-	CheckpointTable		string
-	AssumeRoleArn		string
+	Stream              string
+	Region              string
+	Index               string
+	BufferSize          uint
+	totalBytes          *Counter
+	totalBytesL         *Counter
+	totalRecs           *Counter
+	totalRecsL          *Counter
+	errorCount          *Counter
+	poolPercent         *Counter
+	Port                int
+	ConsulAddr          string
+	ShardCount          int
+	lock                *api.Lock
+	consumer            *consumer.Consumer
+	Table               *shared.BasicTable
+	Schema              avro.Schema
+	InitialPos          string
+	IsAvro              bool
+	CheckpointDB        bool
+	CheckpointTable     string
+	AssumeRoleArn       string
 	AssumeRoleArnRegion string
-	Deaggregate			bool
-	Collate				bool
-	Preselector			expr.Node
+	Deaggregate         bool
+	Collate             bool
+	Preselector         expr.Node
 	selectorIdentities  []string
 	ShardKey            string
 	HashTable           *rendezvous.Table
@@ -91,23 +91,25 @@ type Main struct {
 	eg                  errgroup.Group
 	cancelFunc          context.CancelFunc
 	CommitIntervalMs    int
-	processedRecs		*Counter
-	processedRecL		*Counter
-	scanInterval		int
-	metrics				*cloudwatch.CloudWatch
+	processedRecs       *Counter
+	processedRecL       *Counter
+	scanInterval        int
+	metrics             *cloudwatch.CloudWatch
+	tableCache          *core.TableCacheStruct
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
 func NewMain() *Main {
 	m := &Main{
-		totalRecs:	 &Counter{},
-		totalRecsL:	&Counter{},
-		totalBytes:	&Counter{},
+		totalRecs:     &Counter{},
+		totalRecsL:    &Counter{},
+		totalBytes:    &Counter{},
 		totalBytesL:   &Counter{},
 		processedRecs: &Counter{},
 		processedRecL: &Counter{},
-		errorCount:	&Counter{},
+		errorCount:    &Counter{},
 	}
+	m.tableCache = core.NewTableCacheStruct()
 	return m
 }
 
@@ -186,7 +188,7 @@ func main() {
 		}
 		log.Printf("DynamoDB checkpoint table name [%s]", main.CheckpointTable)
 	}
-	if shardKey != nil  {
+	if shardKey != nil {
 		v := *shardKey
 		var path string
 		if v[0] == '/' {
@@ -268,7 +270,7 @@ func main() {
 
 	// Main processing loop will continue forever until a SIGKILL is received.
 	var ctx context.Context
-	for  {
+	for {
 		ctx, main.cancelFunc = context.WithCancel(context.Background())
 		scanErr := main.consumer.Scan(ctx, main.scanAndProcess)
 		main.destroy()
@@ -300,7 +302,7 @@ func (m *Main) destroy() {
 	for _, v := range m.shardChannels {
 		close(v)
 	}
-	time.Sleep(time.Second * 5)  // Allow time for completion
+	time.Sleep(time.Second * 5) // Allow time for completion
 }
 
 func (m *Main) scanAndProcess(v *consumer.Record) error {
@@ -419,7 +421,6 @@ func (m *Main) recoverInflight(recoverFunc func(unflushedCh chan *shared.BatchBu
 }
 */
 
-
 func (m *Main) schemaChangeListener(e shared.SchemaChangeEvent) {
 
 	if m.cancelFunc != nil {
@@ -516,7 +517,7 @@ func (m *Main) Init() (int, error) {
 			consumer.WithShardIteratorType(m.InitialPos),
 			consumer.WithStore(db),
 			consumer.WithAggregation(m.Deaggregate),
-			consumer.WithScanInterval(time.Duration(m.scanInterval) * time.Millisecond),
+			consumer.WithScanInterval(time.Duration(m.scanInterval)*time.Millisecond),
 			//consumer.WithCounter(counter),
 		)
 	} else {
@@ -525,7 +526,7 @@ func (m *Main) Init() (int, error) {
 			consumer.WithClient(kc),
 			consumer.WithShardIteratorType(m.InitialPos),
 			consumer.WithAggregation(m.Deaggregate),
-			consumer.WithScanInterval(time.Duration(m.scanInterval) * time.Millisecond),
+			consumer.WithScanInterval(time.Duration(m.scanInterval)*time.Millisecond),
 			//consumer.WithCounter(counter),
 		)
 	}
@@ -538,14 +539,14 @@ func (m *Main) Init() (int, error) {
 	u.Warnf("Shard count = %d", shardCount)
 	m.shardChannels = make(map[string]chan map[string]interface{})
 	shardIds := make([]string, shardCount)
-	core.ClearTableCache()
+	// atw delete me core.ClearTableCache()
 	for i := 0; i < shardCount; i++ {
 		k := fmt.Sprintf("shard%v", i)
 		shardIds[i] = k
 		m.shardChannels[k] = make(chan map[string]interface{}, ShardChannelSize)
 		shardId := k
 		m.eg.Go(func() error {
-			conn, err := core.OpenSession("", m.Index, false, clientConn)
+			conn, err := core.OpenSession(m.tableCache, "", m.Index, false, clientConn)
 			if err != nil {
 				return err
 			}
@@ -648,8 +649,8 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 		MetricData: []*cloudwatch.MetricDatum{
 			{
 				MetricName: aws.String("Arrived"),
-				Unit:	   aws.String("Count"),
-				Value:	  aws.Float64(float64(m.totalRecs.Get())),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(m.totalRecs.Get())),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Stream"),
@@ -659,8 +660,8 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("RecordsPerSec"),
-				Unit:	   aws.String("Count/Second"),
-				Value:	  aws.Float64(float64(m.totalRecs.Get()-m.totalRecsL.Get()) / interval),
+				Unit:       aws.String("Count/Second"),
+				Value:      aws.Float64(float64(m.totalRecs.Get()-m.totalRecsL.Get()) / interval),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Stream"),
@@ -670,8 +671,8 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("Processed"),
-				Unit:	   aws.String("Count"),
-				Value:	  aws.Float64(float64(m.processedRecs.Get())),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(m.processedRecs.Get())),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
@@ -681,8 +682,8 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("ProcessedPerSecond"),
-				Unit:	   aws.String("Count/Second"),
-				Value:	  aws.Float64(float64(m.processedRecs.Get()-m.processedRecL.Get()) / interval),
+				Unit:       aws.String("Count/Second"),
+				Value:      aws.Float64(float64(m.processedRecs.Get()-m.processedRecL.Get()) / interval),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
@@ -692,8 +693,8 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("Errors"),
-				Unit:	   aws.String("Count"),
-				Value:	  aws.Float64(float64(m.errorCount.Get())),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(m.errorCount.Get())),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
@@ -703,8 +704,8 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("ProcessedBytes"),
-				Unit:	   aws.String("Bytes"),
-				Value:	  aws.Float64(float64(m.totalBytes.Get())),
+				Unit:       aws.String("Bytes"),
+				Value:      aws.Float64(float64(m.totalBytes.Get())),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
@@ -714,8 +715,8 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("BytesPerSec"),
-				Unit:	   aws.String("Bytes/Second"),
-				Value:	  aws.Float64(float64(m.totalBytes.Get()-m.totalBytesL.Get()) / interval),
+				Unit:       aws.String("Bytes/Second"),
+				Value:      aws.Float64(float64(m.totalBytes.Get()-m.totalBytesL.Get()) / interval),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
@@ -725,8 +726,8 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("UpTimeHours"),
-				Unit:	   aws.String("Count"),
-				Value:	  aws.Float64(float64(upTime) / float64(1000000000*3600)),
+				Unit:       aws.String("Count"),
+				Value:      aws.Float64(float64(upTime) / float64(1000000000*3600)),
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
@@ -797,5 +798,3 @@ func (r *QuantaRetryer) ShouldRetry(err error) bool {
 	}
 	return false
 }
-
-

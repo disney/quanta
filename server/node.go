@@ -9,7 +9,14 @@ package server
 import (
 	"context"
 	"fmt"
+	"net"
+	"os"
+	"reflect"
+	"strings"
+	"time"
+
 	u "github.com/araddon/gou"
+	"github.com/disney/quanta/core"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
@@ -20,11 +27,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/testdata"
-	"net"
-	"os"
-	"reflect"
-	"strings"
-	"time"
 )
 
 const (
@@ -109,6 +111,8 @@ type Node struct {
 
 	State         StateType
 	localServices map[string]NodeService
+
+	TableCache *core.TableCacheStruct
 }
 
 // NewNode - Construct a new node instance.
@@ -119,6 +123,7 @@ func NewNode(version string, port int, bindAddr, dataDir, hashKey string, consul
 	m.localServices = make(map[string]NodeService, 0)
 	m.ServicePort = port
 	m.Quorum = 0
+	m.TableCache = core.NewTableCacheStruct()
 	if hashKey == "" {
 		return nil, fmt.Errorf("hash key is empty")
 	}
@@ -282,13 +287,13 @@ func (n *Node) Status(ctx context.Context, e *empty.Empty) (*pb.StatusMessage, e
 		return nil, err
 	}
 	return &pb.StatusMessage{
-		NodeState:   n.State.String(),
-		LocalIP:     ip.String(),
-		LocalPort:   uint32(n.ServicePort),
-		Version:     n.version,
-		Replicas:    uint32(n.Replicas),
-		ShardCount:  uint32(n.shardCount),
-		MemoryUsed:  uint32(n.memoryUsed),
+		NodeState:  n.State.String(),
+		LocalIP:    ip.String(),
+		LocalPort:  uint32(n.ServicePort),
+		Version:    n.version,
+		Replicas:   uint32(n.Replicas),
+		ShardCount: uint32(n.shardCount),
+		MemoryUsed: uint32(n.memoryUsed),
 	}, nil
 }
 

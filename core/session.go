@@ -945,11 +945,13 @@ func (s *Session) CloseSession() error {
 // MapValue - Convenience function for Mapper interface.
 func (s *Session) MapValue(tableName, fieldName string, value interface{}, update bool) (val uint64, err error) {
 
-	tbuf, ok := s.TableBuffers[tableName]
-	if !ok {
-		return 0, fmt.Errorf("Table %s invalid or not opened. (MapValue)", tableName)
+	var table *Table
+	var attr *Attribute
+	table, err = LoadTable(s.BasePath, s.KVStore, tableName, s.KVStore.Conn.Consul)
+	if err != nil {
+		return 
 	}
-	attr, err := tbuf.Table.GetAttribute(fieldName)
+	attr, err = table.GetAttribute(fieldName)
 	if err != nil {
 		return 0, fmt.Errorf("attribute '%s' not found", fieldName)
 	}

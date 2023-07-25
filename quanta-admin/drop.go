@@ -2,15 +2,16 @@ package main
 
 import (
 	"fmt"
-	"github.com/disney/quanta/shared"
-	"github.com/hashicorp/consul/api"
 	"log"
 	"time"
+
+	"github.com/disney/quanta/shared"
+	"github.com/hashicorp/consul/api"
 )
 
 // DropCmd - Drop command
 type DropCmd struct {
-	Table string `arg name:"table" help:"Table name."`
+	Table string `arg:"" name:"table" help:"Table name."`
 }
 
 // Run - Drop command implementation

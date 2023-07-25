@@ -35,3 +35,40 @@ _Statement Line Examples_
 - quanta-admin drop customers_qa
 - -- The following statement tests an error condition
 - select * from badtable;@1105
+
+#### Running with local quanta-in-a-box
+
+Make sure that consul is running locally on port 8500.
+In a terminal:
+
+```consul agent -dev```
+
+Check the README in ./start-local Run it. 
+
+?? Be sure that quanta-admin is on the path. Add ```~/go/bin``` to your ```PATH``` and ```go install ./quanta-admin```
+
+Here is an example command line (cd to sqlrunner).
+
+```
+go run ./driver.go -script_file ./sqlscripts/joins_sql.sql -validate -host 127.0.0.1 -user MOLIG004 -db quanta -port 4000 -log_level DEBUG
+```
+
+or, in vs code launch.json
+
+```
+ {
+    "name": "Sql test join",
+    "type": "go",
+    "request": "launch",
+    "mode": "auto",
+    "program": "./sqlrunner/driver.go",
+    "args": ["-script_file", "./sqlscripts/joins_sql.sql",
+    "-validate",
+    "-host","127.0.0.1",
+    "-user", "MOLIG004",
+    "-db","quanta", 
+    "-port","4000", 
+    "-log_level", "DEBUG"
+    ]
+}
+```

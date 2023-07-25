@@ -3,17 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
+	"reflect"
+
 	"github.com/RoaringBitmap/roaring/roaring64"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
-	"reflect"
 	//"time"
 )
 
 // VerifyIndexCmd - VerifyIndex command
 type VerifyIndexCmd struct {
-	Table     string `arg name:"table" help:"Table name."`
+	Table     string `arg:"" name:"table" help:"Table name."`
 	Timestamp string `help:"Time quantum value. (Omit for no quantum)"`
 }
 
@@ -25,7 +26,7 @@ func (f *VerifyIndexCmd) Run(ctx *Context) error {
 	if err != nil {
 		return fmt.Errorf("Error loading table %s - %v", f.Table, err)
 	}
-	
+
 	info, err2 := table.GetPrimaryKeyInfo()
 	if err2 != nil {
 		return fmt.Errorf("Error getting primary key info - %v", err2)
@@ -63,7 +64,7 @@ func (f *VerifyIndexCmd) Run(ctx *Context) error {
 		ModTime:  int64(-1),
 		Index:    f.Table,
 		Field:    field.FieldName,
-		Time: ts.UnixNano(),
+		Time:     ts.UnixNano(),
 	}
 
 	fmt.Printf("SelectNodes returned %d node Active state for reading.\n", len(indices))
@@ -95,7 +96,7 @@ func (f *VerifyIndexCmd) Run(ctx *Context) error {
 				return fmt.Errorf("deserialize sync reponse - BSI UnmarshalBinary error - %v", err)
 			}
 		}
-		
+
 		index := key + "/" + table.PrimaryKey + ".PK"
 		fmt.Printf("INDEX = %s\n", index)
 		kvStore := shared.NewKVStore(conn)
@@ -121,10 +122,9 @@ func (f *VerifyIndexCmd) Run(ctx *Context) error {
 		fmt.Printf("BSI CARDINALITY: %d\n", resBsi.GetCardinality())
 		fmt.Printf("INDEX LEN: %d, FOUND COUNT: %d\n", len(lookup), foundCount)
 		if resBsi.GetCardinality() != uint64(foundCount) {
-			fmt.Printf("INDEX HAS %d FEWER ENTRIES.\n", resBsi.GetCardinality() - uint64(foundCount))
+			fmt.Printf("INDEX HAS %d FEWER ENTRIES.\n", resBsi.GetCardinality()-uint64(foundCount))
 		}
 	}
 	fmt.Println("")
 	return nil
 }
-

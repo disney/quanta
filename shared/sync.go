@@ -8,12 +8,13 @@ package shared
 import (
 	"context"
 	"fmt"
+	"os"
+	"time"
+
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"golang.org/x/sync/errgroup"
-	"os"
-	"time"
 )
 
 // Synchronize flow.  Remote nodes call this when starting.  Peer nodes respond my pushing data.
@@ -73,7 +74,7 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 		if unknownCount > 0 {
 			u.Infof("%d nodes in unknown state.", unknownCount)
 		}
-		u.Infof("Join status nodemap len = %d, starting = %d, ready = %d, unknown = %d\n",
+		u.Infof("%s Join status nodemap len = %d, starting = %d, ready = %d, unknown = %d\n", nodeKey,
 			len(nodeMap), startingCount, readyCount, unknownCount)
 	}
 

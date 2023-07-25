@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+
 	"github.com/RoaringBitmap/roaring/roaring64"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
@@ -12,8 +13,8 @@ import (
 
 // VerifyCmd - Verify command
 type VerifyCmd struct {
-	Table     string `arg name:"table" help:"Table name."`
-	Field     string `arg name:"field" help:"Field name."`
+	Table     string `arg:"" name:"table" help:"Table name."`
+	Field     string `arg:"" name:"field" help:"Field name."`
 	RowID     uint64 `help:"Row id. (Omit for BSI)"`
 	Timestamp string `help:"Time quantum value. (Omit for no quantum)"`
 }

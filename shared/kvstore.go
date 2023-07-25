@@ -8,13 +8,14 @@ package shared
 import (
 	"context"
 	"fmt"
+	"io"
+	"reflect"
+	"strings"
+
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"golang.org/x/sync/errgroup"
-	"io"
-	"reflect"
-	"strings"
 )
 
 var (
@@ -75,7 +76,7 @@ func (c *KVStore) Put(indexPath string, k interface{}, v interface{}, pathIsKey 
 	}
 	indices, err := c.SelectNodes(key, WriteIntent)
 	if err != nil {
-		fmt.Errorf("Put: %v", err)
+		return fmt.Errorf("Put: %v", err)
 	}
 	if len(indices) == 0 {
 		return fmt.Errorf("%v.Put(_) = _, %v: ", c.client, " no available nodes!")

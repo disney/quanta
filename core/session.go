@@ -949,7 +949,7 @@ func (s *Session) MapValue(tableName, fieldName string, value interface{}, updat
 	var attr *Attribute
 	table, err = LoadTable(s.tableCache, s.BasePath, s.KVStore, tableName, s.KVStore.Conn.Consul)
 	if err != nil {
-		return 
+		return
 	}
 	attr, err = table.GetAttribute(fieldName)
 	if err != nil {

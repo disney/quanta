@@ -1,8 +1,10 @@
-package main
+package admin
 
 import (
 	"context"
 	"fmt"
+	"reflect"
+
 	"github.com/RoaringBitmap/roaring/roaring64"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
@@ -10,29 +12,26 @@ import (
 	//"time"
 )
 
-// VerifyCmd - Verify command
-type VerifyCmd struct {
-	Table     string `arg name:"table" help:"Table name."`
-	Field     string `arg name:"field" help:"Field name."`
-	RowID     uint64 `help:"Row id. (Omit for BSI)"`
+// VerifyIndexCmd - VerifyIndex command
+type VerifyIndexCmd struct {
+	Table     string `arg:"" name:"table" help:"Table name."`
 	Timestamp string `help:"Time quantum value. (Omit for no quantum)"`
 }
 
-// Run - Verify implementation
-func (f *VerifyCmd) Run(ctx *Context) error {
+// Run - VerifyIndex implementation
+func (f *VerifyIndexCmd) Run(ctx *Context) error {
 
 	conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
 	table, err := shared.LoadSchema("", f.Table, conn.Consul)
 	if err != nil {
 		return fmt.Errorf("Error loading table %s - %v", f.Table, err)
 	}
-	field, err2 := table.GetAttribute(f.Field)
+
+	info, err2 := table.GetPrimaryKeyInfo()
 	if err2 != nil {
-		return fmt.Errorf("Error getting field  %s - %v", f.Field, err2)
+		return fmt.Errorf("Error getting primary key info - %v", err2)
 	}
-	if f.RowID > 0 && field.IsBSI() {
-		return fmt.Errorf("Field is a BSI and Rowid was specified, ignoring Rowid")
-	}
+	field := info[0]
 	if f.Timestamp != "" && table.TimeQuantumType == "" {
 		return fmt.Errorf("Table does not have time quantum, ignoring timestamp")
 	}
@@ -43,14 +42,11 @@ func (f *VerifyCmd) Run(ctx *Context) error {
 	if err3 != nil {
 		return fmt.Errorf("Error ToTQTimestamp %v - TQType = %s, Timestamp = %s", err3, table.TimeQuantumType, f.Timestamp)
 	}
-	if f.RowID == 0 {
-		f.RowID = 1
-	}
 	var key string
 	if field.IsBSI() {
-		key = fmt.Sprintf("%s/%s/%s", f.Table, f.Field, tf)
+		key = fmt.Sprintf("%s/%s/%s", f.Table, field.FieldName, tf)
 	} else {
-		key = fmt.Sprintf("%s/%s/%d/%s", f.Table, f.Field, f.RowID, tf)
+		return fmt.Errorf("Field must be BSI type")
 	}
 
 	fmt.Println("")
@@ -67,9 +63,8 @@ func (f *VerifyCmd) Run(ctx *Context) error {
 		SendData: true,
 		ModTime:  int64(-1),
 		Index:    f.Table,
-		Field:    f.Field,
-		//RowId: f.RowID,
-		Time: ts.UnixNano(),
+		Field:    field.FieldName,
+		Time:     ts.UnixNano(),
 	}
 
 	fmt.Printf("SelectNodes returned %d node Active state for reading.\n", len(indices))
@@ -94,44 +89,42 @@ func (f *VerifyCmd) Run(ctx *Context) error {
 		resBsi := roaring64.NewBSI(int64(field.MaxValue), int64(field.MinValue))
 		if len(res.Data) == 0 && res.Cardinality > 0 {
 			return fmt.Errorf("deserialize sync response - BSI index out of range %d, Index = %s, Field = %s",
-				len(res.Data), f.Table, f.Field)
+				len(res.Data), f.Table, field.FieldName)
 		}
 		if res.Cardinality > 0 {
 			if err := resBsi.UnmarshalBinary(res.Data); err != nil {
 				return fmt.Errorf("deserialize sync reponse - BSI UnmarshalBinary error - %v", err)
 			}
 		}
-		lookup, err3 := getStringBackingStore(conn, key, resBsi.GetExistenceBitmap())
+
+		index := key + "/" + table.PrimaryKey + ".PK"
+		fmt.Printf("INDEX = %s\n", index)
+		kvStore := shared.NewKVStore(conn)
+		lookup, err3 := kvStore.NodeItems(kvStore.Client(indices[0]), index, reflect.String, reflect.Uint64)
 		if err3 != nil {
 			return err3
 		}
-		responseCount := 0
-		for _, v := range lookup {
-			if v != nil {
-				responseCount++
+
+		revMap := make(map[interface{}]interface{}, len(lookup))
+		for k, v := range lookup {
+			revMap[v] = k
+		}
+
+		foundCount := 0
+		colIDs := resBsi.GetExistenceBitmap().ToArray()
+		for _, v := range colIDs {
+			if _, found := revMap[v]; found {
+				foundCount++
 			}
 		}
+
 		fmt.Printf("NODE: %s   STATE: %s\n", ip, nodeState)
 		fmt.Printf("BSI CARDINALITY: %d\n", resBsi.GetCardinality())
-		fmt.Printf("LOOKUP RESPONSE LEN: %d, NON-NIL COUNT: %d\n", len(lookup), responseCount)
+		fmt.Printf("INDEX LEN: %d, FOUND COUNT: %d\n", len(lookup), foundCount)
+		if resBsi.GetCardinality() != uint64(foundCount) {
+			fmt.Printf("INDEX HAS %d FEWER ENTRIES.\n", resBsi.GetCardinality()-uint64(foundCount))
+		}
 	}
 	fmt.Println("")
 	return nil
-}
-
-func getStringBackingStore(conn *shared.Conn, key string, bm *roaring64.Bitmap) (map[interface{}]interface{}, error) {
-
-	kvStore := shared.NewKVStore(conn)
-
-	getBatch := make(map[interface{}]interface{}, bm.GetCardinality())
-	for _, v := range bm.ToArray() {
-		getBatch[v] = ""
-	}
-	var err error
-	getBatch, err = kvStore.BatchLookup(key, getBatch, true)
-	if err != nil {
-		return nil, fmt.Errorf("kvStore.BatchLookup failed for %s - %v", key, err)
-	}
-
-	return getBatch, nil
 }

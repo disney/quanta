@@ -14,59 +14,62 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/alecthomas/kong"
 	runtime "github.com/banzaicloud/logrus-runtime-formatter"
+	admin "github.com/disney/quanta/quanta-admin-lib"
 	mysql "github.com/go-sql-driver/mysql"
 	logger "github.com/sirupsen/logrus"
 )
 
 type ProxyConnect struct {
-	Env				string
-	Host 			string
-	Port 			string
-	Database 		string
-	User 			string
-	Password		string
-	AssumeRoleArn 	string
-	Acl 			string
-	SseKmsKeyId 	string
+	Env           string
+	Host          string
+	Port          string
+	Database      string
+	User          string
+	Password      string
+	AssumeRoleArn string
+	Acl           string
+	SseKmsKeyId   string
 }
 
 type SqlInfo struct {
-	Statement			string
-	ExpectedRowcount	int64
-	ActualRowCount		int64
-	ExpectError			bool
-	ErrorText			string
-	Validate			bool
-	Err					error
+	Statement        string
+	ExpectedRowcount int64
+	ActualRowCount   int64
+	ExpectError      bool
+	ErrorText        string
+	Validate         bool
+	Err              error
 }
 
-var passCount			int64
-var failCount			int64
-var failedStatements 	[]string
-type StatementType 		int64
+var passCount int64
+var failCount int64
+var failedStatements []string
+
+type StatementType int64
 
 const (
-	Insert 	StatementType = 0
-	Update 	StatementType = 1
-	Select 	StatementType = 2
-	Count	StatementType = 3
-	Admin 	StatementType = 4
+	Insert StatementType = 0
+	Update StatementType = 1
+	Select StatementType = 2
+	Count  StatementType = 3
+	Admin  StatementType = 4
 )
 
-var buf    bytes.Buffer
+// var buf bytes.Buffer
 var log = logger.New()
 
 func main() {
 	scriptFile := flag.String("script_file", "", "Path to the sql file to execute.")
-	scriptDelimiter := flag.String("script_delimiter","@","The delimiter to use in the script file.  The default is a colon (:).")
-	validate := flag.Bool("validate", false, "If not set, the Sql statement will be executed but not validated.")	
+	scriptDelimiter := flag.String("script_delimiter", "@", "The delimiter to use in the script file.  The default is a colon (:).")
+	validate := flag.Bool("validate", false, "If not set, the Sql statement will be executed but not validated.")
 	host := flag.String("host", "", "Quanta host to connect to.")
 	user := flag.String("user", "", "The username that will connect to the database.")
 	password := flag.String("password", "", "The password to use to connect.")
 	database := flag.String("db", "quanta", "The database to connect to.")
 	port := flag.String("port", "4000", "Port to connect to.")
-	log_level := flag.String("log_level","","Set the logging level to DEBUG for additional logging.")
+	log_level := flag.String("log_level", "", "Set the logging level to DEBUG for additional logging.")
 	flag.Parse()
 
 	if *scriptFile == "" || *host == "" || *user == "" {
@@ -107,34 +110,34 @@ func main() {
 	proxyConnect.Database = *database
 
 	f, err := os.Open(*scriptFile)
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer f.Close()
-	
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
 	csvReader := csv.NewReader(f)
 	csvReader.FieldsPerRecord = -1
 
 	log.Debugf("Setting the delimiter : %s", *scriptDelimiter)
 	csvReader.Comma, _ = utf8.DecodeRuneInString(*scriptDelimiter)
 
-    for {
-        row, err := csvReader.Read()
-        if err == io.EOF {
-            break
-        }
-        if err != nil {
+	for {
+		row, err := csvReader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
 			log.Print("If you are using the validate option, be sure and add the expected rowcount after the sql statement.")
 			log.Print("Statement example:  select * from table;@100")
-            log.Fatal(err)
-        }
+			log.Fatal(err)
+		}
 
-        analyzeRow(proxyConnect, row, *validate)
-    }
+		analyzeRow(proxyConnect, row, *validate)
+	}
 	logFinalResult()
 }
 
-func (ci * ProxyConnect) proxyConnect() (*sql.DB, error){
+func (ci *ProxyConnect) proxyConnect() (*sql.DB, error) {
 
 	var db *sql.DB
 	var err error
@@ -151,13 +154,13 @@ func (ci * ProxyConnect) proxyConnect() (*sql.DB, error){
 func (ci *ProxyConnect) getQuantaHost() mysql.Config {
 
 	cfg := mysql.Config{
-        User:                 ci.User,
-        Passwd:               ci.Password,
-        Net:                  "tcp",
-        Addr:                 fmt.Sprintf("%s:%s", ci.Host, ci.Port),
-        DBName:               ci.Database,
-        AllowNativePasswords: true,
-    }
+		User:                 ci.User,
+		Passwd:               ci.Password,
+		Net:                  "tcp",
+		Addr:                 fmt.Sprintf("%s:%s", ci.Host, ci.Port),
+		DBName:               ci.Database,
+		AllowNativePasswords: true,
+	}
 
 	return cfg
 }
@@ -167,8 +170,8 @@ func analyzeRow(proxyConfig ProxyConnect, row []string, validate bool) {
 	var err error
 	var sqlInfo SqlInfo
 
-	sqlInfo.Statement = strings.TrimLeft(strings.TrimRight(row[0]," "), " ")
-	
+	sqlInfo.Statement = strings.TrimLeft(strings.TrimRight(row[0], " "), " ")
+
 	sqlInfo.ExpectedRowcount = 0
 	sqlInfo.ActualRowCount = 0
 	sqlInfo.Validate = validate
@@ -199,10 +202,10 @@ func analyzeRow(proxyConfig ProxyConnect, row []string, validate bool) {
 	err = nil
 
 	if statementType == Admin {
-        sqlInfo.executeAdmin()
-        time.Sleep(1 * time.Second)
-        return
-    }
+		sqlInfo.executeAdmin()
+		time.Sleep(1 * time.Second)
+		return
+	}
 
 	db, err := proxyConfig.proxyConnect()
 	if err != nil {
@@ -215,7 +218,7 @@ func analyzeRow(proxyConfig ProxyConnect, row []string, validate bool) {
 			sqlInfo.ErrorText = strings.Split(row[1], ":")[1]
 			sqlInfo.ExpectError = true
 		} else {
-			if sqlInfo.Validate && ((statementType != Admin) && (statementType != Insert)){
+			if sqlInfo.Validate && ((statementType != Admin) && (statementType != Insert)) {
 				log.Debug("Row validation turned on.")
 				sqlInfo.ExpectedRowcount, err = strconv.ParseInt(row[1], 10, 64)
 				if err != nil {
@@ -233,9 +236,9 @@ func analyzeRow(proxyConfig ProxyConnect, row []string, validate bool) {
 	} else if statementType == Select {
 		sqlInfo.executeQuery(db)
 	} else if statementType == Count {
-			sqlInfo.executeScalar(db)		
+		sqlInfo.executeScalar(db)
 	} else {
-		log.Fatal("Unsupported Statement : %v", sqlInfo.Statement)
+		log.Fatalf("Unsupported Statement : %v", sqlInfo.Statement)
 	}
 }
 
@@ -253,14 +256,14 @@ func (s *SqlInfo) executeInsert(db *sql.DB) {
 func (s *SqlInfo) executeUpdate(db *sql.DB) {
 
 	var res sql.Result
-	res, s.Err = db.Exec(s.Statement)  
+	res, s.Err = db.Exec(s.Statement)
 	if res != nil {
 		s.ActualRowCount, _ = res.RowsAffected()
 	}
 	s.logResult()
 }
 
-func (s * SqlInfo) executeQuery(db *sql.DB) {
+func (s *SqlInfo) executeQuery(db *sql.DB) {
 
 	var rows *sql.Rows
 	rows, s.Err = db.Query(s.Statement)
@@ -270,7 +273,7 @@ func (s * SqlInfo) executeQuery(db *sql.DB) {
 	s.logResult()
 }
 
-func (s * SqlInfo) executeScalar(db *sql.DB) {
+func (s *SqlInfo) executeScalar(db *sql.DB) {
 
 	var rows *sql.Rows
 	rows, s.Err = db.Query(s.Statement)
@@ -280,41 +283,65 @@ func (s * SqlInfo) executeScalar(db *sql.DB) {
 	s.logResult()
 }
 
-func (s * SqlInfo) executeAdmin() {
+var useAdminDirectly = true
 
-	var err error	
+func (s *SqlInfo) executeAdmin() {
+
+	var err error
 	var cmd string
 
-	statement := strings.Split(strings.TrimRight(strings.TrimLeft(s.Statement," ")," "), " ")
+	statement := strings.Split(strings.TrimRight(strings.TrimLeft(s.Statement, " "), " "), " ")
 	log.Debugf("Statement : %s", s.Statement)
 
-	cmd = statement[0]
-	args :=  make([]string, len(statement)-1)
+	if useAdminDirectly {
 
-	for idx := 0; idx < (len(statement)-1); idx++ {
-		args[idx] = statement[idx+1]
-		log.Debugf("Arg : %s", args[idx])
+		command := statement[1:]
+		parser, err := kong.New(&admin.Cli)
+		if err != nil {
+			fmt.Println("executeAdmin kong new ", err)
+			return
+		}
+		ctx, err := parser.Parse(command) // os.Args[1:])
+		parser.FatalIfErrorf(err)
+
+		err = ctx.Run(&admin.Context{ConsulAddr: admin.Cli.ConsulAddr,
+			Port:  admin.Cli.Port,
+			Debug: admin.Cli.Debug})
+		if err != nil {
+			fmt.Println("executeAdmin ctx.Run ", err)
+			return
+		}
+
+	} else {
+
+		cmd = statement[0]
+		args := make([]string, len(statement)-1)
+
+		for idx := 0; idx < (len(statement) - 1); idx++ {
+			args[idx] = statement[idx+1]
+			log.Debugf("Arg : %s", args[idx])
+		}
+		execCmd := exec.Command(cmd, args...)
+		log.Debugf("Command : %v", execCmd)
+
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		execCmd.Stdout = &out
+		execCmd.Stderr = &stderr
+		err = execCmd.Run()
+		if err != nil {
+			fmt.Println(fmt.Sprint(err) + ": " + stderr.String())
+			return
+		}
+		fmt.Println("Result: " + out.String())
+
+		// output, err := execCmd.Output()
+		// if err != nil {
+		// 	log.Fatal(err)
+		// }
+		// fmt.Printf("Output : %v", output)
+		// logAdminOutput(s.Statement, output)
 	}
-	execCmd := exec.Command(cmd, args...)
-	log.Debugf("Command : %v", execCmd)
-
-	var out bytes.Buffer
-	var stderr bytes.Buffer
-	execCmd.Stdout = &out
-	execCmd.Stderr = &stderr
-	err = execCmd.Run()
-	if err != nil {
-		fmt.Println(fmt.Sprint(err) + ": " + stderr.String())
-		return
-	}
-	fmt.Println("Result: " + out.String())
-
-	// output, err := execCmd.Output()
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-    // fmt.Printf("Output : %v", output)
-	// logAdminOutput(s.Statement, output)
 }
 
 func getRowCount(rows *sql.Rows) int64 {
@@ -322,7 +349,7 @@ func getRowCount(rows *sql.Rows) int64 {
 	var count = 0
 	for rows.Next() {
 		count += 1
-    }
+	}
 
 	return int64(count)
 }
@@ -330,8 +357,9 @@ func getRowCount(rows *sql.Rows) int64 {
 func getScalarCount(rows *sql.Rows) (int64, error) {
 
 	var count int64
-	for rows.Next(){
-		err := rows.Scan(&count); if err != nil {
+	for rows.Next() {
+		err := rows.Scan(&count)
+		if err != nil {
 			return count, err
 		}
 	}
@@ -339,7 +367,7 @@ func getScalarCount(rows *sql.Rows) (int64, error) {
 	return count, nil
 }
 
-func (s *SqlInfo) logResult () {
+func (s *SqlInfo) logResult() {
 	// colorYellow := "\033[33m"
 	colorReset := "\033[0m"
 	colorGreen := "\033[32m"
@@ -350,17 +378,17 @@ func (s *SqlInfo) logResult () {
 	if (s.Validate) && (!s.ExpectError) {
 		result := getPassFail(s.Statement, s.ExpectedRowcount == s.ActualRowCount, s.Err)
 		if result == "PASSED" {
-			log.Printf(colorGreen + "%s" + colorReset, result)
+			log.Printf(colorGreen+"%s"+colorReset, result)
 		} else {
-			log.Printf(colorRed + "%s" + colorReset, result)
+			log.Printf(colorRed+"%s"+colorReset, result)
 		}
 		log.Printf("Expected Rowcount: %d  Actual Rowcount: %d", s.ExpectedRowcount, s.ActualRowCount)
 	} else if (s.Validate) && (s.ExpectError) {
 		result := getPassFailError(s.Statement, s.ErrorText, s.Err.Error())
 		if result == "PASSED" {
-			log.Printf(colorGreen + "%s" + colorReset, result)
+			log.Printf(colorGreen+"%s"+colorReset, result)
 		} else {
-			log.Printf(colorRed + "%s" + colorReset, result)
+			log.Printf(colorRed+"%s"+colorReset, result)
 		}
 		log.Printf("Expected Error Number: %s  Actual Error Text: %s", s.ErrorText, s.Err.Error())
 	}
@@ -376,7 +404,9 @@ func logAdminOutput(command string, output []byte) {
 	log.Printf("%v", string(output[:]))
 }
 
-func logFinalResult(){
+var _ = logAdminOutput // fixme: (atw) unused
+
+func logFinalResult() {
 	colorYellow := "\033[33m"
 	// colorRed := "\033[31m"
 	colorReset := "\033[0m"
@@ -387,7 +417,7 @@ func logFinalResult(){
 	if failCount > 0 {
 		log.Print("\n-------- Failed Statements --------")
 		for _, statement := range failedStatements {
-			log.Printf(colorYellow + "%s" + colorReset, statement)
+			log.Printf(colorYellow+"%s"+colorReset, statement)
 		}
 	}
 }

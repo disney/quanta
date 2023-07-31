@@ -15,6 +15,12 @@ package shared
 import (
 	"context"
 	"fmt"
+	"log"
+	"reflect"
+	"strings"
+	"sync"
+	"time"
+
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/golang/protobuf/ptypes/empty"
@@ -23,14 +29,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/testdata"
-	"log"
-	"reflect"
-	"strings"
-	"sync"
-	"time"
 )
 
-//
 // Conn - Client side cluster state and connection abstraction.
 //
 // ServiceName - Name of service i.e. "quanta" for registration with Consul.
@@ -49,7 +49,6 @@ import (
 // pollWait - Wait interval for node membership polling events.
 // nodes - List of nodes as currently registered with Consul.
 // NodeMap - Map cluster node keys to connection/client arrays.
-//
 type Conn struct {
 	ServiceName        string
 	Quorum             int
@@ -78,6 +77,7 @@ type Conn struct {
 	clusterSizeTarget  int
 	nodeStatusMap      map[string]*pb.StatusMessage
 	activeCount        int
+	IsLocalCluster     bool
 }
 
 // NewDefaultConnection - Configure a connection with default values.
@@ -271,8 +271,9 @@ func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.Client
 
 	for i, id := range m.ids {
 		entry := m.idMap[id]
-		nodeConns[i], err = grpc.Dial(fmt.Sprintf("%s:%d", entry.Node.Address,
-			m.ServicePort), m.grpcOpts...)
+		nodeConnPort := entry.Service.Port //  m.ServicePort
+		target := fmt.Sprintf("%s:%d", entry.Node.Address, nodeConnPort)
+		nodeConns[i], err = grpc.Dial(target, m.grpcOpts...)
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
 		}
@@ -445,7 +446,10 @@ func (m *Conn) update() (err error) {
 			continue
 		}
 		if entry.Checks[0].Status == "passing" && entry.Checks[1].Status == "passing" {
-			node := strings.Split(entry.Node.Node, ".")[0]
+			// node := strings.Split(entry.Node.Node, ".")[0]
+			// let's not use the Node.Node, which is always like 'mbp-atw-2.lan' locally atw danger danger
+			// node = entry.Node.ID and the ID's all the same too
+			node := entry.Service.ID // this is like "quanta-node-1" which is better
 			idMap[node] = entry
 			ids = append(ids, node)
 		}
@@ -459,8 +463,9 @@ func (m *Conn) update() (err error) {
 				// insert new connection and admin stub
 				m.clientConn = append(m.clientConn, nil)
 				copy(m.clientConn[index+1:], m.clientConn[index:])
-				m.clientConn[index], err = grpc.Dial(fmt.Sprintf("%s:%d", entry.Node.Address,
-					m.ServicePort), m.grpcOpts...)
+				servicePort := entry.Service.Port // m.ServicePort
+				target := fmt.Sprintf("%s:%d", entry.Node.Address, servicePort)
+				m.clientConn[index], err = grpc.Dial(target, m.grpcOpts...)
 				if err != nil {
 					return err
 				}
@@ -585,7 +590,7 @@ func (m *Conn) CheckNodeForKey(key, nodeID string) (bool, int) {
 
 // SendMemberLeft - Notify listening service of MemberLeft event.
 func (m *Conn) SendMemberLeft(nodeID string, index int) {
-	
+
 	m.registerLock.RLock()
 	defer m.registerLock.RUnlock()
 
@@ -638,7 +643,12 @@ func (m *Conn) getNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error)
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
 
-	result, err := m.Admin[clientIndex].Status(ctx, &empty.Empty{})
+	if clientIndex >= len(m.Admin) {
+		return nil, fmt.Errorf("clientIndex >= len(m.Admin) %d >= %d", clientIndex, len(m.Admin))
+	}
+
+	admin := m.Admin[clientIndex]
+	result, err := admin.Status(ctx, &empty.Empty{})
 	if err != nil {
 		return nil, fmt.Errorf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", m.Admin[clientIndex], err,
 			m.clientConn[clientIndex].Target()))
@@ -659,8 +669,8 @@ func (m *Conn) GetCachedNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, 
 
 	m.nodeMapLock.RLock()
 	defer m.nodeMapLock.RUnlock()
-	if m.ServicePort == 0 {   // test harness
-		return  &pb.StatusMessage{NodeState: "Active"}, nil
+	if m.ServicePort == 0 { // test harness
+		return &pb.StatusMessage{NodeState: "Active"}, nil
 	}
 	if clientIndex < 0 || clientIndex >= len(m.ids) {
 		return nil, fmt.Errorf("clientIndex %d is invalid", clientIndex)

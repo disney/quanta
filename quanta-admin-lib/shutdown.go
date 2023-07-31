@@ -1,16 +1,17 @@
-package main
+package admin
 
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
-	"strings"
 )
 
 // ShutdownCmd - Shutdown command
 type ShutdownCmd struct {
-	NodeIP string `arg name:"node-ip" help:"IP address of node to shutdown or ALL."`
+	NodeIP string `arg:"" name:"node-ip" help:"IP address of node to shutdown or ALL."`
 }
 
 // Run - Shutdown command implementation

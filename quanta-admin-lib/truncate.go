@@ -1,17 +1,18 @@
-package main
+package admin
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
-	"time"
 )
 
 // TruncateCmd - Truncate command
 type TruncateCmd struct {
-	Table       string `arg name:"table" help:"Table name."`
-	DropEnums   bool   `help:"Drop enumeration data for StringEnum types."`
-	Force       bool   `help:"Force override of constraints."`
+	Table     string `arg:"" name:"table" help:"Table name."`
+	DropEnums bool   `help:"Drop enumeration data for StringEnum types."`
+	Force     bool   `help:"Force override of constraints."`
 }
 
 // Run - Truncate command implementation

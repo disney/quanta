@@ -1,18 +1,20 @@
-package main
+package admin
 
 import (
 	"context"
 	"fmt"
+
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
+
 	//"time"
 	"reflect"
 )
 
 // VerifyEnumCmd - Verify command
 type VerifyEnumCmd struct {
-	Table     string `arg name:"table" help:"Table name."`
-	Field     string `arg name:"field" help:"Field name."`
+	Table     string `arg:"" name:"table" help:"Table name."`
+	Field     string `arg:"" name:"field" help:"Field name."`
 	RowID     uint64 `help:"Row id. (Omit for BSI)"`
 	Timestamp string `help:"Time quantum value. (Omit for no quantum)"`
 }

@@ -1,15 +1,16 @@
-package main
+package admin
 
 import (
 	"fmt"
+	"log"
+
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
-	"log"
 )
 
 // CreateCmd - Create command
 type CreateCmd struct {
-	Table     string `arg name:"table" help:"Table name."`
+	Table     string `arg:"" name:"table" help:"Table name."`
 	SchemaDir string `help:"Base directory containing schema files." default:"./config"`
 	Confirm   bool   `help:"Confirm deployment."`
 }

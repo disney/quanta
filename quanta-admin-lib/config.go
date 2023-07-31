@@ -1,10 +1,11 @@
-package main
+package admin
 
 import (
 	"fmt"
+	"strconv"
+
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
-	"strconv"
 )
 
 // ConfigCmd - Configuration  command

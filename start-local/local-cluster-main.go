@@ -8,9 +8,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/disney/quanta/rbac"
 	"github.com/disney/quanta/test"
 
 	"github.com/disney/quanta/server"
+	"github.com/disney/quanta/shared"
 )
 
 // Make sure consul is running in localhost
@@ -28,6 +30,9 @@ func main() {
 		m1.Stop <- true
 		m2.Stop <- true
 	}()
+
+	shared.SetClusterSizeTarget(m0.Consul, 3) // why?
+
 	// FIXME: this is too slow. Maybe don't poll for Node state in node? Use the node.Status api?
 	// fmt.Println("Waiting for nodes to start...", m2.State)
 	for m0.State != server.Active || m1.State != server.Active || m2.State != server.Active {
@@ -36,7 +41,25 @@ func main() {
 
 	fmt.Println("All nodes Active")
 
-	test.StartProxy(1, "../test/testdata/config") // "./testdata/config")
+	conn := shared.NewDefaultConnection()
+	err := conn.Connect(nil)
+	check(err)
+	defer conn.Disconnect()
+
+	sharedKV := shared.NewKVStore(conn)
+
+	ctx, err := rbac.NewAuthContext(sharedKV, "USER001", true)
+	check(err)
+	err = ctx.GrantRole(rbac.DomainUser, "USER001", "quanta", true)
+	check(err)
+
+	ctx, err = rbac.NewAuthContext(sharedKV, "MOLIG004", true)
+	check(err)
+	err = ctx.GrantRole(rbac.DomainUser, "MOLIG004", "quanta", true)
+	check(err)
+
+	localProxyControl := test.StartProxy(1, "../test/testdata/config") // "./testdata/config")
+	_ = localProxyControl
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -50,4 +73,11 @@ func main() {
 		time.Sleep(10 * time.Second)
 	}
 
+}
+
+func check(err error) {
+	if err != nil {
+		fmt.Println("check err", err)
+		panic(err.Error())
+	}
 }

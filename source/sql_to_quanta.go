@@ -446,7 +446,7 @@ func (m *SQLToQuanta) walkNode(cur expr.Node, q *shared.QueryFragment) (value.Va
 		u.Errorf("unrecognized T:%T  %v", cur, cur)
 		panic("Unrecognized node type")
 	}
-	return nil, nil
+	// return nil, nil
 }
 
 // Tri Nodes expressions:
@@ -989,7 +989,7 @@ func (m *SQLToQuanta) walkFilterUnary(node *expr.UnaryNode, q *shared.QueryFragm
 		u.Warnf("Unknown token %v", node.Operator.T)
 		return nil, fmt.Errorf("not implemented unary function: %v", node.String())
 	}
-	return nil, nil
+	// return nil, nil
 }
 
 // eval() returns

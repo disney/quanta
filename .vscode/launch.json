@@ -10,6 +10,28 @@
             "request": "launch",
             "mode": "auto",
             "program": "${fileDirname}"
+        },
+        {
+            "name": "Start cluster local",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "./start-local/local-cluster-main.go",
+        },
+        {
+            "name": "Sql test join",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "./sqlrunner/driver.go",
+            "args": ["-script_file", "./sqlscripts/basic_queries_TMP.sql",
+            "-validate",
+            "-host","127.0.0.1",
+            "-user", "MOLIG004",
+            "-db","quanta", 
+            "-port","4000", 
+            "-log_level", "DEBUG"
+        ]
         }
     ]
 }

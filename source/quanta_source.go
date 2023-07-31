@@ -152,7 +152,9 @@ func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 	}
 	tbl := schema.NewTable(table)
 	cols := make([]string, 0)
-	for _, v := range ts.Attributes {
+	// for _, v := range ts.Attributes { copies lock. That's a no no
+	for i := 0; i < len(ts.Attributes); i++ {
+		v := &ts.Attributes[i]
 		if v.FieldName == "" {
 			if v.MappingStrategy == "ChildRelation" {
 				continue // Ignore these

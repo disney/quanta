@@ -29,6 +29,12 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 	if clusterSizeTarget > quorumSize {
 		quorumSize = clusterSizeTarget
 	}
+	fmt.Println("BitmapIndex Synchronize quorumSize", quorumSize, "node", nodeKey)
+
+	ourPollInterval := DefaultPollInterval
+	if c.IsLocalCluster {
+		ourPollInterval /= 5 // faster please. I can see my life passing before my eyes.
+	}
 
 	// Are we even ready to launch this process yet?
 	// Do we have a quorum?
@@ -42,9 +48,10 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 				err := fmt.Errorf("Shutdown initiated while waiting to start synchronization")
 				return -1, err
 			}
-		case <-time.After(DefaultPollInterval):
+		case <-time.After(ourPollInterval):
 			for id := range nodeMap {
 				status, err := c.Conn.getNodeStatusForID(id)
+				fmt.Println("Synchronize getNodeStatusForID", id, status, err)
 				if err != nil {
 					u.Warnf("error %v\n", err)
 					unknownCount++
@@ -78,7 +85,7 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 			len(nodeMap), startingCount, readyCount, unknownCount)
 	}
 
-	time.Sleep(DefaultPollInterval)
+	time.Sleep(ourPollInterval)
 	u.Warnf("All %d cluster members are ready to push data to me, I am now in Syncing State.", memberCount)
 
 	resultChan := make(chan int64, memberCount-1)

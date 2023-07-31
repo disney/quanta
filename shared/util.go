@@ -6,8 +6,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/araddon/dateparse"
-	"github.com/araddon/qlbridge/exec"
 	u "github.com/araddon/gou"
+	"github.com/araddon/qlbridge/exec"
 	"github.com/hashicorp/consul/api"
 	"golang.org/x/sync/errgroup"
 	"net"
@@ -155,7 +155,7 @@ func putRecursive(typ reflect.Type, value reflect.Value, consul *api.Client, roo
 func UnmarshalConsul(consul *api.Client, name string) (BasicTable, error) {
 
 	table := BasicTable{Name: name}
-	keys, _, _ := consul.KV().Keys("schema/" + name, "", nil)
+	keys, _, _ := consul.KV().Keys("schema/"+name, "", nil)
 	if len(keys) == 0 {
 		return table, fmt.Errorf("Table %s not found.", name)
 	}
@@ -392,15 +392,15 @@ func Lock(consul *api.Client, lockName, processName string) (*api.Lock, error) {
 
 	// create lock key
 	opts := &api.LockOptions{
-		Key:		lockName + "/1",
-		Value:	  []byte("lock set by " + processName),
+		Key:   lockName + "/1",
+		Value: []byte("lock set by " + processName),
 		//SessionTTL: "10s",
 		LockTryOnce: true,
 		/*
-		   		SessionOpts: &api.SessionEntry{
-			 	Checks:   []string{"check1", "check2"},
-			 	Behavior: "release",
-		   		},
+			   		SessionOpts: &api.SessionEntry{
+				 	Checks:   []string{"check1", "check2"},
+				 	Behavior: "release",
+			   		},
 		*/
 	}
 
@@ -607,7 +607,7 @@ func WaitTimeout(wg *errgroup.Group, timeout time.Duration, sigChan exec.SigChan
 	c := make(chan error, 1)
 	go func() {
 		defer close(c)
-		c <-wg.Wait()
+		c <- wg.Wait()
 	}()
 	select {
 	case err := <-c:

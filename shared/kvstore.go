@@ -202,7 +202,9 @@ func (c *KVStore) Lookup(indexPath string, k interface{}, valueType reflect.Kind
 	}
 
 	// Use the highest weight client
-	lookup, err := c.client[indices[0]].Lookup(ctx, &pb.IndexKVPair{IndexPath: indexPath, Key: ToBytes(k), Value: nil})
+	index := indices[0]
+	client := c.client[index]
+	lookup, err := client.Lookup(ctx, &pb.IndexKVPair{IndexPath: indexPath, Key: ToBytes(k), Value: nil})
 	if err != nil {
 		return uint64(0), fmt.Errorf("%v.Lookup(_) = _, %v: [%s]", c.client, err,
 			c.Conn.ClientConnections()[indices[0]].Target())

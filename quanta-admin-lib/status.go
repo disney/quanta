@@ -1,7 +1,8 @@
-package main
+package admin
 
 import (
 	"fmt"
+
 	"github.com/disney/quanta/core"
 )
 
@@ -37,8 +38,8 @@ func (s *StatusCmd) Run(ctx *Context) error {
 				}
 			}
 		}
-		fmt.Printf("%-16s   %-8s  %-34s   %10d   %-7s  %s\n", node.Node.Address, status, node.Node.Datacenter, shards, 
-				core.Bytes(memory), version)
+		fmt.Printf("%-16s   %-8s  %-34s   %10d   %-7s  %s\n", node.Node.Address, status, node.Node.Datacenter, shards,
+			core.Bytes(memory), version)
 	}
 	fmt.Println()
 	status, active, size := conn.GetClusterState()

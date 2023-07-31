@@ -1,7 +1,8 @@
-package main
+package admin
 
 import (
 	"fmt"
+
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 )

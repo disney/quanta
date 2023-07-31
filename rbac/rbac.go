@@ -35,7 +35,7 @@ func NewAuthContext(store *shared.KVStore, userID string, createUser bool) (*Aut
 		return nil, fmt.Errorf("Error in NewAuthContext(Lookup UserRoles) [%v]", err)
 	}
 
-	if kvResult == nil && !createUser {
+	if (err != nil || kvResult == nil) && !createUser {
 		return nil, fmt.Errorf("Unknown user %s", userID)
 	}
 

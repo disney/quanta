@@ -4,6 +4,11 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"os"
+	"reflect"
+	"strings"
+	"time"
+
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/akrylysov/pogreb"
 	u "github.com/araddon/gou"
@@ -11,10 +16,6 @@ import (
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
-	"os"
-	"reflect"
-	"strings"
-	"time"
 )
 
 // SyncStatus - Sync handshake.
@@ -135,19 +136,23 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 	cx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
 	defer cancel()
 
-	// Invoke status IP on new node.
+	// Invoke status IP on new node. Can we not? (atw)
 	status, err := m.Admin[ci].Status(cx, &empty.Empty{})
 	if err != nil {
 		return &wrappers.Int64Value{Value: int64(-1)},
 			fmt.Errorf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", m.Admin[ci], err, targetIP))
 	}
+	_ = status
 
+	// atw turned off
 	// Verify that client stub IP (targetIP) is the same as the new nodes IP returned by status.
-	if !strings.HasPrefix(targetIP, status.LocalIP) {
-		return &wrappers.Int64Value{Value: int64(-1)},
-			fmt.Errorf("Stub IP %v does not match new node (remote) = %v", targetIP, status.LocalIP)
-	}
-
+	// eg targetIP eg 127.0.0.1:4000 in local mode
+	// eg status.LocalIP eg fe80::1 in local mode so, atw don't do this check in local mode.
+	// if !strings.HasPrefix(targetIP, status.LocalIP) {
+	// fmt.Println("Stub IP", targetIP, "does not match new node (remote) = ", status.LocalIP)
+	// return &wrappers.Int64Value{Value: int64(-1)},
+	// 	fmt.Errorf("Stub IP %v does not match new node (remote) = %v", targetIP, status.LocalIP)
+	// }
 	u.Infof("New joining node %s is requesting a sync push.", newNodeID)
 
 	peerClient := m.Conn.GetService("BitmapIndex").(*shared.BitmapIndex)
@@ -230,7 +235,7 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 				// New joining nodes key modification time should be earlier than me. if so push diffs
 				remoteModTime := time.Unix(0, res.ModTime).UTC()
 				if remoteModTime.Before(bsi.ModTime) {
-					pullDiff = roaring64.NewBitmap() 
+					pullDiff = roaring64.NewBitmap()
 				} else {
 					if pullDiff.GetCardinality() > 0 && !foundLocal {
 						u.Infof("Ignoring remote diff for key %s, local = %d, remote (new) = %d, delta = %d.\n", key,
@@ -273,7 +278,7 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 				// Process backing strings for StringHashBSI
 				if attr.MappingStrategy == "StringHashBSI" {
 					if err := m.syncStringBackingStore(peerKVClient, newKVClient, indexName, fieldName, t,
-							pushDiff, pullDiff); err != nil {
+						pushDiff, pullDiff); err != nil {
 						u.Errorf("String backing store sync failed for '%s' - %v", key, err)
 					}
 				}
@@ -362,7 +367,7 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 					// New joining nodes key modification time should be earlier than me. if so push diffs
 					remoteModTime := time.Unix(0, res.ModTime).UTC()
 					if remoteModTime.Before(bitmap.ModTime) {
-						pullDiff = roaring64.NewBitmap() 
+						pullDiff = roaring64.NewBitmap()
 					} else {
 						if pullDiff.GetCardinality() > 0 && !foundLocal {
 							u.Infof("Ignoring remote diff for key %s, local = %d, remote (new) = %d, delta = %d.\n", key,

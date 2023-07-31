@@ -205,6 +205,8 @@ func (n *Node) register() (err error) {
 			GRPC:     fmt.Sprintf("%v:%v/%v", n.BindAddr, n.ServicePort, n.checkURL),
 			Interval: checkInterval.String(),
 		},
+		Tags: []string{"hashkey: " + n.hashKey},
+		Port: n.ServicePort,
 	})
 	return err
 }

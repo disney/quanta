@@ -71,7 +71,7 @@ func StartNodes(nodeStart int) (*server.Node, error) {
 		if err != nil {
 			u.Errorf("[node: Cannot initialize node config: error: %s", err)
 		}
-		m.ServiceName = "quanta" // not hashKey this doesn't work (atw)
+		m.ServiceName = "quanta" // not hashKey. Do we need this? (atw)
 		m.IsLocalCluster = true
 
 		kvStore := server.NewKVStore(m)
@@ -211,16 +211,17 @@ func StartProxy(count int, testConfigPath string) *LocalProxyControl {
 
 	// configDir := "../test/testdata" // gets: ../test/testdata/config/schema.yaml
 	// FIXME: empty configDir panics
-	configDir := testConfigPath                                                                                    // this fails when run from test?
-	src, err := source.NewQuantaSource(tableCache, configDir, proxy.ConsulAddr, proxy.QuantaPort, sessionPoolSize) // do we really want this here?
+	configDir := testConfigPath
+	var err error                                                                                                       // this fails when run from test?
+	proxy.Src, err = source.NewQuantaSource(tableCache, configDir, proxy.ConsulAddr, proxy.QuantaPort, sessionPoolSize) // do we really want this here?
 	if err != nil {
 		u.Error(err)
 	}
 	fmt.Println("Proxy after NewQuantaSource")
 
-	schema.RegisterSourceAsSchema("quanta", src) // what does this do?  can we do it later? atw
+	schema.RegisterSourceAsSchema("quanta", proxy.Src)
 
-	fmt.Println("Proxy after RegisterSourceAsSchema")
+	fmt.Println("Proxy starting to listen. ")
 
 	// Start server endpoint
 	portStr := strconv.FormatInt(int64(proxyHostPort), 10)

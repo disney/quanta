@@ -231,8 +231,10 @@ func analyzeRow(proxyConfig ProxyConnect, row []string, validate bool) {
 	} else if statementType == Update {
 		sqlInfo.executeUpdate(db)
 	} else if statementType == Select {
+        time.Sleep(50 * time.Millisecond)
 		sqlInfo.executeQuery(db)
 	} else if statementType == Count {
+        time.Sleep(50 * time.Millisecond)
 			sqlInfo.executeScalar(db)		
 	} else {
 		log.Fatal("Unsupported Statement : %v", sqlInfo.Statement)

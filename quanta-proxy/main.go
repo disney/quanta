@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -140,6 +141,8 @@ func main() {
 	}
 	schema.RegisterSourceAsSchema("quanta", proxy.Src)
 
+	// TODO:  we should ask consul if the nodes are up and then wait for a short while.
+
 	// Start metrics publisher
 	var ticker *time.Ticker
 	ticker = proxy.MetricsTicker(proxy.Src)
@@ -154,6 +157,21 @@ func main() {
 		}
 	}()
 
+	// //conn := getClientConnection(consulConfig, ctx.Port)
+	// 	consulClient, err := api.NewClient(&api.Config{Address: consulAddr})
+
+	// sharedKV := shared.NewKVStore(conn)
+
+	// ctx, err := rbac.NewAuthContext(sharedKV, "USER001", true)
+	// check(err)
+	// err = ctx.GrantRole(rbac.DomainUser, "USER001", "quanta", true)
+	// check(err)
+
+	// ctx, err = rbac.NewAuthContext(sharedKV, "MOLIG004", true)
+	// check(err)
+	// err = ctx.GrantRole(rbac.DomainUser, "MOLIG004", "quanta", true)
+	// check(err)
+
 	// Start server endpoint
 	l, err := net.Listen("tcp", *proxyHostPort)
 	if err != nil {
@@ -167,5 +185,12 @@ func main() {
 			return
 		}
 		go proxy.OnConn(conn)
+	}
+}
+
+func check(err error) {
+	if err != nil {
+		fmt.Println("check err", err)
+		panic(err.Error())
 	}
 }

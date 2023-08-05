@@ -10,7 +10,6 @@ require (
 	github.com/araddon/dateparse v0.0.0-20210207001429-0eec95c9db7e
 	github.com/araddon/gou v0.0.0-20190110011759-c797efecbb61
 	github.com/araddon/qlbridge v0.0.2
-	github.com/armon/go-metrics v0.3.4 // indirect
 	github.com/aviddiviner/go-murmur v0.0.0-20150519214947-b9740d71e571
 	github.com/aws/aws-sdk-go v1.41.7
 	github.com/aws/aws-sdk-go-v2 v1.16.4
@@ -29,7 +28,6 @@ require (
 	github.com/harlow/kinesis-consumer v0.3.5
 	github.com/hashicorp/consul/api v1.10.1
 	github.com/hashicorp/consul/sdk v0.8.0
-	github.com/hashicorp/go-hclog v0.14.1 // indirect
 	github.com/hashicorp/go-memdb v1.3.1 // indirect
 	github.com/jmoiron/sqlx v1.3.1 // indirect
 	github.com/json-iterator/go v1.1.12
@@ -39,7 +37,6 @@ require (
 	github.com/lytics/datemath v0.0.0-20180727225141-3ada1c10b5de // indirect
 	github.com/mattn/go-colorable v0.1.7 // indirect
 	github.com/mb0/glob v0.0.0-20160210091149-1eb79d2de6c4 // indirect
-	github.com/mitchellh/mapstructure v1.3.3 // indirect
 	github.com/mssola/user_agent v0.5.2 // indirect
 	github.com/pborman/uuid v1.2.1
 	github.com/prometheus/client_golang v1.11.0

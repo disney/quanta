@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"strconv"
@@ -17,7 +18,10 @@ import (
 	"github.com/alecthomas/kong"
 	runtime "github.com/banzaicloud/logrus-runtime-formatter"
 	admin "github.com/disney/quanta/quanta-admin-lib"
+	"github.com/disney/quanta/rbac"
+	"github.com/disney/quanta/shared"
 	mysql "github.com/go-sql-driver/mysql"
+	"github.com/hashicorp/consul/api"
 	logger "github.com/sirupsen/logrus"
 )
 
@@ -109,6 +113,23 @@ func main() {
 	proxyConnect.Port = *port
 	proxyConnect.Database = *database
 
+	path, err := os.Getwd()
+	if err != nil {
+		log.Println(err)
+	}
+	fmt.Println("current path", path)
+
+	directory := "./"                       // The current directory
+	files, err := ioutil.ReadDir(directory) //read the files from the directory
+	fmt.Println("current files", len(files))
+	if err != nil {
+		fmt.Println("error reading directory:", err) //print error if directory is not read properly
+		return
+	}
+	for _, file := range files {
+		fmt.Println(file.Name()) //print the files from the directory
+	}
+
 	f, err := os.Open(*scriptFile)
 	if err != nil {
 		log.Fatal(err)
@@ -120,6 +141,31 @@ func main() {
 
 	log.Debugf("Setting the delimiter : %s", *scriptDelimiter)
 	csvReader.Comma, _ = utf8.DecodeRuneInString(*scriptDelimiter)
+
+	//conn := getClientConnection(consulConfig, ctx.Port)
+	consulClient, err := api.NewClient(&api.Config{Address: "172.20.0.2:8500"}) // atw fixme, pass in consul address
+	check(err)
+
+	conn := shared.NewDefaultConnection()
+	// conn.ServicePort = main.Port
+	conn.Quorum = 3
+	if err := conn.Connect(consulClient); err != nil {
+		log.Fatal(err)
+	}
+
+	sharedKV := shared.NewKVStore(conn)
+
+	time.Sleep(5 * time.Second)
+
+	ctx, err := rbac.NewAuthContext(sharedKV, "USER001", true)
+	check(err)
+	err = ctx.GrantRole(rbac.DomainUser, "USER001", "quanta", true)
+	check(err)
+
+	ctx, err = rbac.NewAuthContext(sharedKV, "MOLIG004", true)
+	check(err)
+	err = ctx.GrantRole(rbac.DomainUser, "MOLIG004", "quanta", true)
+	check(err)
 
 	for {
 		row, err := csvReader.Read()
@@ -234,8 +280,10 @@ func analyzeRow(proxyConfig ProxyConnect, row []string, validate bool) {
 	} else if statementType == Update {
 		sqlInfo.executeUpdate(db)
 	} else if statementType == Select {
+		time.Sleep(500 * time.Millisecond)
 		sqlInfo.executeQuery(db)
 	} else if statementType == Count {
+		time.Sleep(500 * time.Millisecond)
 		sqlInfo.executeScalar(db)
 	} else {
 		log.Fatalf("Unsupported Statement : %v", sqlInfo.Statement)
@@ -304,7 +352,7 @@ func (s *SqlInfo) executeAdmin() {
 		ctx, err := parser.Parse(command) // os.Args[1:])
 		parser.FatalIfErrorf(err)
 
-		err = ctx.Run(&admin.Context{ConsulAddr: admin.Cli.ConsulAddr,
+		err = ctx.Run(&admin.Context{ConsulAddr: "172.20.0.2:8500", // admin.Cli.ConsulAddr, // atw fixme
 			Port:  admin.Cli.Port,
 			Debug: admin.Cli.Debug})
 		if err != nil {
@@ -443,5 +491,12 @@ func getPassFailError(statement string, expectedError string, actualError string
 		failCount += 1
 		failedStatements = append(failedStatements, statement)
 		return "FAILED"
+	}
+}
+
+func check(err error) {
+	if err != nil {
+		fmt.Println("check err", err)
+		panic(err.Error())
 	}
 }

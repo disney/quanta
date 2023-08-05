@@ -198,11 +198,17 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 				len(m.idMap), m.Quorum, m.ServiceName)
 		}
 		m.clientConn, err = m.CreateNodeConnections(true)
+		for i := 0; i < len(m.clientConn); i++ {
+			fmt.Println("clientConn found", i, m.clientConn[i].Target())
+		}
 		m.Admin = make([]pb.ClusterAdminClient, len(m.clientConn))
 		for i := 0; i < len(m.clientConn); i++ {
-			m.Admin[i] = pb.NewClusterAdminClient(m.clientConn[i])
 			id := m.ids[i]
 			entry := m.idMap[id]
+
+			adminClient := pb.NewClusterAdminClient(m.clientConn[i])
+			m.Admin[i] = adminClient
+
 			status, err := m.getNodeStatusForIndex(i)
 			if err == nil {
 				m.nodeStatusMap[id] = status
@@ -212,10 +218,12 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 			} else {
 				u.Errorf("getNodeStatusForIndex: %v", err)
 			}
-			m.SendMemberJoined(id, entry.Node.Address, i)
+			//m.SendMemberJoined(id, entry.Node.Address, i)
+			m.SendMemberJoined(id, entry.Service.Address, i)
 		}
 		go m.poll()
 	} else {
+		// ServicePort is 0
 		m.HashTable = rendezvous.New([]string{"test"})
 		m.nodeMap = make(map[string]int, 1)
 		m.nodeMap["test"] = 0
@@ -237,6 +245,7 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 }
 
 // CreateNodeConnections - Open a set of GRPC connections to all data nodes
+// requires m.ids is be non empty
 func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.ClientConn, err error) {
 
 	nodeCount := len(m.nodeMap)
@@ -269,16 +278,20 @@ func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.Client
 		m.grpcOpts = append(m.grpcOpts, grpc.WithInsecure())
 	}
 
+	fmt.Println("CreateNodeConnections  m.ids", m.ids)
+
 	for i, id := range m.ids {
 		entry := m.idMap[id]
 		nodeConnPort := entry.Service.Port //  m.ServicePort
-		target := fmt.Sprintf("%s:%d", entry.Node.Address, nodeConnPort)
+		// target := fmt.Sprintf("%s:%d", entry.Node.Address, nodeConnPort)
+		target := fmt.Sprintf("%s:%d", entry.Service.Address, nodeConnPort)
+		fmt.Println("CreateNodeConnections target", target)
 		nodeConns[i], err = grpc.Dial(target, m.grpcOpts...)
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
 		}
 	}
-	return
+	return nodeConns, nil
 }
 
 // SelectNodes - Return a list of nodes for a given shard key.  The returned node list is sorted in descending order
@@ -441,8 +454,14 @@ func (m *Conn) update() (err error) {
 
 	ids := make([]string, 0)
 	idMap := make(map[string]*api.ServiceEntry)
-	for _, entry := range serviceEntries {
+	for i, entry := range serviceEntries {
+
+		// bytes, _ := json.Marshal(entry)
+		// fmt.Println("update entry json", string(bytes))
+
+		fmt.Printf("update entry i=%v Service.ID=%v Node.ID=%v Node.Address=%v status=%v \n", i, entry.Service.ID, entry.Node.ID, entry.Service.Address, entry.Checks[0].Status)
 		if entry.Service.ID == "shutdown" {
+			fmt.Println("have shutdown entry.Service.ID ", entry)
 			continue
 		}
 		if entry.Checks[0].Status == "passing" && entry.Checks[1].Status == "passing" {
@@ -464,7 +483,7 @@ func (m *Conn) update() (err error) {
 				m.clientConn = append(m.clientConn, nil)
 				copy(m.clientConn[index+1:], m.clientConn[index:])
 				servicePort := entry.Service.Port // m.ServicePort
-				target := fmt.Sprintf("%s:%d", entry.Node.Address, servicePort)
+				target := fmt.Sprintf("%s:%d", entry.Service.Address, servicePort)
 				m.clientConn[index], err = grpc.Dial(target, m.grpcOpts...)
 				if err != nil {
 					return err
@@ -473,7 +492,7 @@ func (m *Conn) update() (err error) {
 				copy(m.Admin[index+1:], m.Admin[index:])
 				m.Admin[index] = pb.NewClusterAdminClient(m.clientConn[index])
 				u.Infof("NODE %s joined at index %d\n", id, index)
-				m.SendMemberJoined(id, entry.Node.Address, index)
+				m.SendMemberJoined(id, entry.Service.Address, index)
 			}
 		}
 	}
@@ -532,7 +551,7 @@ func (m *Conn) update() (err error) {
 				m.activeCount++
 			}
 		} else {
-			u.Errorf("getNodeStatusForIndex: k = %s, i = %d - %v", k, v, err)
+			u.Errorf("update getNodeStatusForIndex in update: k = %s, i = %d - %v", k, v, err)
 		}
 	}
 	return nil
@@ -648,10 +667,11 @@ func (m *Conn) getNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error)
 	}
 
 	admin := m.Admin[clientIndex]
+	fmt.Println("admin target", m.clientConn[clientIndex].Target())
 	result, err := admin.Status(ctx, &empty.Empty{})
 	if err != nil {
-		return nil, fmt.Errorf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", m.Admin[clientIndex], err,
-			m.clientConn[clientIndex].Target()))
+		e := fmt.Sprintf("getNodeStatusForIndex Status, err = %v, target = %s\n", err, m.clientConn[clientIndex].Target())
+		return nil, fmt.Errorf(e)
 	}
 	return result, nil
 }

@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -185,6 +186,8 @@ func (n *Node) Join(name string) error {
 		return fmt.Errorf("node: can't register %s service: %s", n.serviceName, err)
 	}
 
+	time.Sleep(5 * time.Second) // wait for everyone to register (atw)
+
 	err = n.Connect(n.consul)
 	if err != nil {
 		return fmt.Errorf("node: Connect failed: %v", err)
@@ -198,6 +201,8 @@ func (n *Node) Join(name string) error {
 
 func (n *Node) register() (err error) {
 
+	fmt.Printf("register node serviceName=%v hashKey=%v bindAddr=%v port=%v\n", n.serviceName, n.hashKey, n.BindAddr, n.ServicePort)
+
 	err = n.consul.Agent().ServiceRegister(&api.AgentServiceRegistration{
 		Name: n.serviceName,
 		ID:   n.hashKey,
@@ -205,8 +210,9 @@ func (n *Node) register() (err error) {
 			GRPC:     fmt.Sprintf("%v:%v/%v", n.BindAddr, n.ServicePort, n.checkURL),
 			Interval: checkInterval.String(),
 		},
-		Tags: []string{"hashkey: " + n.hashKey},
-		Port: n.ServicePort,
+		Tags:    []string{"hashkey: " + n.hashKey, "address: " + n.BindAddr, "port: " + strconv.Itoa(n.ServicePort)},
+		Port:    n.ServicePort,
+		Address: n.BindAddr, // comes out as Service.Address and not Node.Address
 	})
 	return err
 }

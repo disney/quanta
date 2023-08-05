@@ -50,6 +50,7 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 			}
 		case <-time.After(ourPollInterval):
 			for id := range nodeMap {
+				fmt.Println("Synchronize 1", id, c.Conn.ServicePort, c.Conn.ServiceName)
 				status, err := c.Conn.getNodeStatusForID(id)
 				fmt.Println("Synchronize getNodeStatusForID", id, status, err)
 				if err != nil {

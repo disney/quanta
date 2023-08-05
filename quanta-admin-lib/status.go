@@ -38,6 +38,7 @@ func (s *StatusCmd) Run(ctx *Context) error {
 				}
 			}
 		}
+		// FIXME: it seems node.Service.Address is what we need and not node.Node.Address (atw)
 		fmt.Printf("%-16s   %-8s  %-34s   %10d   %-7s  %s\n", node.Node.Address, status, node.Node.Datacenter, shards,
 			core.Bytes(memory), version)
 	}

@@ -133,6 +133,8 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 	}
 	targetIP := m.ClientConnections()[ci].Target()
 
+	fmt.Println("bmi sync target", targetIP)
+
 	cx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
 	defer cancel()
 

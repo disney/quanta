@@ -36,7 +36,6 @@ func StartNodes(nodeStart int) (*server.Node, error) {
 	shared.InitLogging(logLevel, environment, "Data-Node", Version, "Quanta")
 
 	index := nodeStart
-	// for index = nodeStart; index < nodeStart+nodeCount; index++
 	{
 		hashKey := "quanta-node-" + strconv.Itoa(index)
 		dataDir := "../test/localClusterData/" + hashKey + "/data"
@@ -125,9 +124,6 @@ func StartNodes(nodeStart int) (*server.Node, error) {
 		}()
 		return m, nil
 	}
-	// for {
-	// 	time.Sleep(1 * time.Second)
-	// }
 }
 
 type LocalProxyControl struct {

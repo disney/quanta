@@ -23,5 +23,3 @@ EXPOSE 4000
 
 RUN mkdir ./data-dir
 RUN mkdir ./data-dir/bitmap
-
-# there's no commaind CMD ["quanta-node"]

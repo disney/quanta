@@ -11,14 +11,16 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+
 	"github.com/RoaringBitmap/roaring/roaring64"
 	u "github.com/araddon/gou"
+
 	// "github.com/golang/protobuf/ptypes/wrappers"
+	"time"
+
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
-	"time"
 )
 
 // Query API endpoint for client wrapper functions.
@@ -28,12 +30,12 @@ func (m *BitmapIndex) Query(ctx context.Context, query *pb.BitmapQuery) (*pb.Que
 		return nil, fmt.Errorf("query must not be nil")
 	}
 
-	d, errx := json.Marshal(&query)
-	if errx != nil {
-		u.Errorf("error: %v", errx)
-		return nil, errx
-	}
-	u.Debugf("vvv query dump:\n%s\n\n", string(d))
+	// d, errx := json.Marshal(&query)
+	// if errx != nil {
+	// 	u.Errorf("error: %v", errx)
+	// 	return nil, errx
+	// }
+	// u.Debugf("Query dump:\n%s\n\n", string(d))
 
 	if query.Query == nil {
 		return nil, fmt.Errorf("query fragment array must not be nil")
@@ -198,7 +200,7 @@ func truncateTime(tr time.Time, tq string) time.Time {
 
 // Walk the time range and assemble a union of all bitmap fields.
 func (m *BitmapIndex) timeRange(index, field string, rowID uint64, fromTime,
-		toTime time.Time, foundSet *roaring64.Bitmap, negate bool) (*roaring64.Bitmap, error) {
+	toTime time.Time, foundSet *roaring64.Bitmap, negate bool) (*roaring64.Bitmap, error) {
 
 	m.bitmapCacheLock.RLock()
 	defer m.bitmapCacheLock.RUnlock()
@@ -333,7 +335,7 @@ func (m *BitmapIndex) timeRangeBSI(index, field string, fromTime, toTime time.Ti
 					continue
 				}
 				if foundSet != nil {
-					var x *roaring64.BSI;
+					var x *roaring64.BSI
 					if negate {
 						x = bsi.BSI.NewBSIRetainSet(roaring64.AndNot(bsi.BSI.GetExistenceBitmap(), foundSet))
 					} else {
@@ -406,7 +408,6 @@ func (m *BitmapIndex) timeRangeExistence(index, field string, fromTime, toTime t
 	return roaring64.ParOr(0, results...), nil
 }
 
-//
 // Join - Once the client has mapreduced the initial query fragment results, A followup call is made to
 // the Join API.   This API is responsible for mapping the column ID spaces for the child index
 // to the column ID space of the parent (driver) index.  It does this by using the values contained
@@ -414,7 +415,6 @@ func (m *BitmapIndex) timeRangeExistence(index, field string, fromTime, toTime t
 //
 // Once these values are transposed they are returned as a roaring bitmap and intersected with
 // the parent index results to formulate the final results.
-//
 func (m *BitmapIndex) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinResponse, error) {
 
 	fromTime := time.Unix(0, req.FromTime)
@@ -449,7 +449,7 @@ func (m *BitmapIndex) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRe
 		//bsi, err := m.timeRangeBSI(req.DriverIndex, v, fromTime, toTime, foundSet, req.Negate)
 		bsi, err := m.timeRangeBSI(req.DriverIndex, v, fromTime, toTime, foundSet, false)
 		if err != nil {
-			err2 := fmt.Errorf("Cannot find FK BSI for %s %s - %v", req.DriverIndex, v, err)
+			err2 := fmt.Errorf("cannot find FK BSI for %s %s - %v", req.DriverIndex, v, err)
 			return nil, err2
 		}
 		c := bsi.GetCardinality()
@@ -476,9 +476,7 @@ func (m *BitmapIndex) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRe
 	return &pb.JoinResponse{Results: data}, nil
 }
 
-//
 // Projection - Retrieve bitmaps to be included in a result set projection.
-//
 func (m *BitmapIndex) Projection(ctx context.Context, req *pb.ProjectionRequest) (*pb.ProjectionResponse, error) {
 
 	u.Debugf("Projection retrieval started for %v - %v", req.Index, req.Fields)
@@ -487,10 +485,10 @@ func (m *BitmapIndex) Projection(ctx context.Context, req *pb.ProjectionRequest)
 	toTime := time.Unix(0, req.ToTime)
 
 	if req.Index == "" {
-		return nil, fmt.Errorf("Index not specified for projection criteria")
+		return nil, fmt.Errorf("index not specified for projection criteria")
 	}
 	if req.Fields == nil || len(req.Fields) == 0 {
-		return nil, fmt.Errorf("One or more fields not specified for projection criteria")
+		return nil, fmt.Errorf("one or more fields not specified for projection criteria")
 	}
 
 	foundSet := roaring64.NewBitmap()

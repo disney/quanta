@@ -31,9 +31,6 @@ func main() {
 		m2.Stop <- true
 	}()
 
-	shared.SetClusterSizeTarget(m0.Consul, 3) // why?
-
-	// FIXME: this is too slow. Maybe don't poll for Node state in node? Use the node.Status api?
 	// fmt.Println("Waiting for nodes to start...", m2.State)
 	for m0.State != server.Active || m1.State != server.Active || m2.State != server.Active {
 		time.Sleep(100 * time.Millisecond)

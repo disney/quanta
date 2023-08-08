@@ -1,17 +1,7 @@
 
 # docker pull consul:1.10
 
-# docker build -t node .
-
-# sudo route add -host 172.20.0.0/16 -interface en0
-
-# sudo route -n add -net 172.20.0.0/16 192.168.86.1 what is the switch ip ?  192.168.86.1 ??
-
-# sudo route -n add 192.168.2.0/24 172.31.30.5 ??? 
-
-# sudo route -n add -net 172.20.0.0/16  192.168.86.254
-
-# sudo route delete 172.20.0.0/16
+# docker build -t node -f test/docker-nodes/Dockerfile .
 
 docker network rm my-net2
 
@@ -28,9 +18,6 @@ docker run \
     --network my-net2 \
     --name=badger \
     consul:1.10 agent -dev -ui -client=0.0.0.0
-
-# consulip=192.168.86.118 # my mac 
-# consulip=host.docker.internal
  
 consulip=172.20.0.2
  
@@ -56,8 +43,8 @@ sleep 5
 docker run -d -w /quanta/sqlrunner --network my-net2 -t node sqlrunner -script_file ./sqlscripts/insert_tests.sql \
         -validate \
         -host 172.20.0.6 \
+        -consul 172.20.0.2:8500 \
         -user MOLIG004 \
         -db quanta \
         -port 4000 \
         -log_level DEBUG
-

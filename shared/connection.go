@@ -198,9 +198,6 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 				len(m.idMap), m.Quorum, m.ServiceName)
 		}
 		m.clientConn, err = m.CreateNodeConnections(true)
-		for i := 0; i < len(m.clientConn); i++ {
-			fmt.Println("clientConn found", i, m.clientConn[i].Target())
-		}
 		m.Admin = make([]pb.ClusterAdminClient, len(m.clientConn))
 		for i := 0; i < len(m.clientConn); i++ {
 			id := m.ids[i]
@@ -278,14 +275,10 @@ func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.Client
 		m.grpcOpts = append(m.grpcOpts, grpc.WithInsecure())
 	}
 
-	fmt.Println("CreateNodeConnections  m.ids", m.ids)
-
 	for i, id := range m.ids {
 		entry := m.idMap[id]
 		nodeConnPort := entry.Service.Port //  m.ServicePort
-		// target := fmt.Sprintf("%s:%d", entry.Node.Address, nodeConnPort)
 		target := fmt.Sprintf("%s:%d", entry.Service.Address, nodeConnPort)
-		fmt.Println("CreateNodeConnections target", target)
 		nodeConns[i], err = grpc.Dial(target, m.grpcOpts...)
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
@@ -454,12 +447,12 @@ func (m *Conn) update() (err error) {
 
 	ids := make([]string, 0)
 	idMap := make(map[string]*api.ServiceEntry)
-	for i, entry := range serviceEntries {
+	for _, entry := range serviceEntries {
 
 		// bytes, _ := json.Marshal(entry)
 		// fmt.Println("update entry json", string(bytes))
+		// fmt.Printf("update entry i=%v Service.ID=%v Node.ID=%v Node.Address=%v status=%v \n", i, entry.Service.ID, entry.Node.ID, entry.Service.Address, entry.Checks[0].Status)
 
-		fmt.Printf("update entry i=%v Service.ID=%v Node.ID=%v Node.Address=%v status=%v \n", i, entry.Service.ID, entry.Node.ID, entry.Service.Address, entry.Checks[0].Status)
 		if entry.Service.ID == "shutdown" {
 			fmt.Println("have shutdown entry.Service.ID ", entry)
 			continue
@@ -667,7 +660,6 @@ func (m *Conn) getNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error)
 	}
 
 	admin := m.Admin[clientIndex]
-	fmt.Println("admin target", m.clientConn[clientIndex].Target())
 	result, err := admin.Status(ctx, &empty.Empty{})
 	if err != nil {
 		e := fmt.Sprintf("getNodeStatusForIndex Status, err = %v, target = %s\n", err, m.clientConn[clientIndex].Target())

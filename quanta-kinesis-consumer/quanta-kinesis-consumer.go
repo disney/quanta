@@ -539,7 +539,10 @@ func (m *Main) Init() (int, error) {
 	u.Warnf("Shard count = %d", shardCount)
 	m.shardChannels = make(map[string]chan map[string]interface{})
 	shardIds := make([]string, shardCount)
-	// atw delete me core.ClearTableCache()
+	// ClearTableCache
+	for k := range m.tableCache.TableCache {
+		delete(m.tableCache.TableCache, k)
+	}
 	for i := 0; i < shardCount; i++ {
 		k := fmt.Sprintf("shard%v", i)
 		shardIds[i] = k

@@ -53,6 +53,8 @@ var failedStatements []string
 
 type StatementType int64
 
+var consulAddress = "127.0.0.1:8500"
+
 const (
 	Insert StatementType = 0
 	Update StatementType = 1
@@ -73,6 +75,7 @@ func main() {
 	password := flag.String("password", "", "The password to use to connect.")
 	database := flag.String("db", "quanta", "The database to connect to.")
 	port := flag.String("port", "4000", "Port to connect to.")
+	consul := flag.String("consul", "127.0.0.1:8500", "Address of consul.")
 	log_level := flag.String("log_level", "", "Set the logging level to DEBUG for additional logging.")
 	flag.Parse()
 
@@ -113,6 +116,8 @@ func main() {
 	proxyConnect.Port = *port
 	proxyConnect.Database = *database
 
+	consulAddress = *consul
+
 	path, err := os.Getwd()
 	if err != nil {
 		log.Println(err)
@@ -142,8 +147,8 @@ func main() {
 	log.Debugf("Setting the delimiter : %s", *scriptDelimiter)
 	csvReader.Comma, _ = utf8.DecodeRuneInString(*scriptDelimiter)
 
-	//conn := getClientConnection(consulConfig, ctx.Port)
-	consulClient, err := api.NewClient(&api.Config{Address: "172.20.0.2:8500"}) // atw fixme, pass in consul address
+	consulAddress := *consul
+	consulClient, err := api.NewClient(&api.Config{Address: consulAddress})
 	check(err)
 
 	conn := shared.NewDefaultConnection()
@@ -352,7 +357,7 @@ func (s *SqlInfo) executeAdmin() {
 		ctx, err := parser.Parse(command) // os.Args[1:])
 		parser.FatalIfErrorf(err)
 
-		err = ctx.Run(&admin.Context{ConsulAddr: "172.20.0.2:8500", // admin.Cli.ConsulAddr, // atw fixme
+		err = ctx.Run(&admin.Context{ConsulAddr: consulAddress,
 			Port:  admin.Cli.Port,
 			Debug: admin.Cli.Debug})
 		if err != nil {
@@ -361,7 +366,7 @@ func (s *SqlInfo) executeAdmin() {
 		}
 
 	} else {
-
+		// deprecated - delete this
 		cmd = statement[0]
 		args := make([]string, len(statement)-1)
 

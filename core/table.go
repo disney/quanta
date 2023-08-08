@@ -50,11 +50,6 @@ const (
 	SEP = string(os.PathSeparator)
 )
 
-// var ( atw deleteme - no globals please
-// 	tableCache     map[string]*Table = make(map[string]*Table, 0)
-// 	tableCacheLock sync.RWMutex
-// )
-
 func NewTableCacheStruct() *TableCacheStruct {
 	tcs := &TableCacheStruct{}
 	tcs.TableCache = make(map[string]*Table)
@@ -580,18 +575,4 @@ func (t *Table) LoadFieldValues() (fieldMap map[string]*Field, err error) {
 // This no longer makes sense.
 // needs arg. There's no tableCache except in bitmap from session
 func not_ClearTableCache() {
-
-	// tableCacheLock.Lock() atw fixme atw fixme atw fixme atw fixme atw fixme
-	// defer tableCacheLock.Unlock()
-	// tableCache = make(map[string]*Table, 0)
 }
-
-// ReadLockChanges
-//func ReadLockChanges() {
-//	tableCacheLock.RLock()
-//}
-
-// ReadUnlockChanges
-//func ReadUnlockChanges() {
-//	tableCacheLock.RUnlock()
-//}

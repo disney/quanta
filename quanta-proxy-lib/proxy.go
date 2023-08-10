@@ -272,7 +272,8 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 			}
 			return &mysql.Result{Status: 0, InsertId: 0, AffectedRows: 0, Resultset: r}, nil
 		}
-		if strings.Contains(strings.ToLower(query), "select cast") {
+		if strings.Contains(strings.ToLower(query), "select cast") ||
+					strings.Contains(strings.ToLower(query), "select schema") {
 			r, err = mysql.BuildSimpleResultset([]string{""}, [][]interface{}{
 				{""},
 			}, binary)

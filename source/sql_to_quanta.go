@@ -13,7 +13,6 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/araddon/dateparse"
-	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/qlbridge/datasource"
 	"github.com/disney/quanta/qlbridge/exec"
 	"github.com/disney/quanta/qlbridge/expr"
@@ -23,6 +22,7 @@ import (
 	"github.com/disney/quanta/qlbridge/schema"
 	"github.com/disney/quanta/qlbridge/value"
 	"github.com/disney/quanta/qlbridge/vm"
+	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/rbac"
 	"github.com/disney/quanta/shared"
 )
@@ -359,18 +359,15 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 		// Make sure identities in WHERE are in the result set
 		ids := expr.FindAllIdentities(req.Where.Expr)
 		for _, n := range ids {
-			var tableName, fieldName string
-			l, r, isLr := n.LeftRight()
+			var fieldName string
+			_, r, isLr := n.LeftRight()
 			if isLr {
-				tableName = l
 				fieldName = r
 			} else {
 				fieldName = n.Text
-				tableName = m.tbl.Name
 			}
-			table := m.conn.TableBuffers[tableName].Table
-			if attr, err := table.GetAttribute(fieldName); err == nil {
-				f := fmt.Sprintf("%s.%s", tableName, fieldName)
+			if attr, _, err := m.ResolveField(m.ResolveTable(n), fieldName); err == nil {
+				f := fmt.Sprintf("%s.%s", attr.Parent.Name, fieldName)
 				m.whereProj[f] = attr
 			}
 		}
@@ -446,7 +443,7 @@ func (m *SQLToQuanta) walkNode(cur expr.Node, q *shared.QueryFragment) (value.Va
 		u.Errorf("unrecognized T:%T  %v", cur, cur)
 		panic("Unrecognized node type")
 	}
-	// return nil, nil
+	return nil, nil
 }
 
 // Tri Nodes expressions:
@@ -502,29 +499,24 @@ func (m *SQLToQuanta) walkFilterTri(node *expr.TriNode, q *shared.QueryFragment)
 		       return nil, err
 		   }
 		*/
-		tbuf, found := m.conn.TableBuffers[fr.Parent.Name]
-		if !found {
-			err := fmt.Errorf("table %s not open", fr.Parent.Name)
-			u.Errorf(err.Error())
-			return nil, err
-		}
-		if tbuf.PKAttributes[0].FieldName == fr.FieldName {
+		pka, _ := fr.Parent.GetPrimaryKeyInfo()
+		if pka[0].FieldName == fr.FieldName {
 			// If this field is the PK and the time partitions are not set then use these values and set them.
 			loc, _ := time.LoadLocation("Local")
-			if m.startDate == "" && tbuf.Table.TimeQuantumType != "" {
+			if m.startDate == "" && fr.Parent.TimeQuantumType != "" {
 				start, err := dateparse.ParseIn(arg2val.ToString(), loc)
 				if err != nil {
 					err := fmt.Errorf("cannot parse start value '%v' - %v", arg2val, err)
 					u.Errorf(err.Error())
 					return nil, err
 				}
-				if tbuf.Table.TimeQuantumType == "YMDH" {
+				if fr.Parent.TimeQuantumType == "YMDH" {
 					m.startDate = start.Format(shared.YMDHTimeFmt)
 				} else {
 					m.startDate = start.Format(shared.YMDTimeFmt)
 				}
 			}
-			if m.endDate == "" && tbuf.Table.TimeQuantumType != "" {
+			if m.endDate == "" && fr.Parent.TimeQuantumType != "" {
 				end, err := dateparse.ParseIn(arg3val.ToString(), loc)
 				if err != nil {
 					err := fmt.Errorf("cannot parse end value '%v' - %v", arg3val, err)
@@ -532,7 +524,7 @@ func (m *SQLToQuanta) walkFilterTri(node *expr.TriNode, q *shared.QueryFragment)
 					return nil, err
 				}
 				end = end.AddDate(0, 0, 1)
-				if tbuf.Table.TimeQuantumType == "YMDH" {
+				if fr.Parent.TimeQuantumType == "YMDH" {
 					m.endDate = end.Format(shared.YMDHTimeFmt)
 				} else {
 					m.endDate = end.Format(shared.YMDTimeFmt)
@@ -559,8 +551,8 @@ func (m *SQLToQuanta) walkFilterTri(node *expr.TriNode, q *shared.QueryFragment)
 			}
 		}
 
-		leftval, err1 := m.conn.MapValue(m.tbl.Name, nm, arg2val.Value(), false)
-		rightval, err2 := m.conn.MapValue(m.tbl.Name, nm, arg3val.Value(), false)
+		leftval, err1 := m.conn.MapValue(fr.Parent.Name, nm, arg2val.Value(), false)
+		rightval, err2 := m.conn.MapValue(fr.Parent.Name, nm, arg3val.Value(), false)
 		if err1 == nil && err2 == nil {
 			q.SetBSIRangePredicate(fr.Parent.Name, fr.FieldName, int64(leftval), int64(rightval))
 		} else if err1 != nil {
@@ -745,27 +737,23 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 		// The $eq expression is equivalent to { field: <value> }.
 		if lhval != nil && (rhval != nil || rhisnull) {
 			// Add a Bitmap or BSI EQ query to tree lhval is frame, rhval is rowID (mapped)
-			if f, isBSI, err := m.ResolveField(m.ResolveTable(node), lhval.ToString()); err == nil {
+			//if f, isBSI, err := m.ResolveField(m.ResolveTable(node), lhval.ToString()); err == nil {
+			if f, isBSI, err := m.ResolveField(m.ResolveTable(node.Args[0]), lhval.ToString()); err == nil {
 				if rhisnull {
 					q.Operation = "DIFFERENCE" // Avoid conversion to UNION, corrected server side.
 					q.SetNullPredicate(f.Parent.Name, f.FieldName)
 				} else {
-					rowID, err := m.conn.MapValue(m.tbl.Name, lhval.ToString(), rhval.Value(), false)
+					rowID, err := m.conn.MapValue(f.Parent.Name, lhval.ToString(), rhval.Value(), false)
 					if err != nil {
 						u.Warnf("not ok: %v  l:%v  r:%v", node, lhval, rhval)
 						return nil, err
 					}
 					if isBSI {
 						q.SetBSIPredicate(f.Parent.Name, f.FieldName, "EQ", int64(rowID))
-						tbuf, found := m.conn.TableBuffers[f.Parent.Name]
-						if !found {
-							err := fmt.Errorf("table %s not open", f.Parent.Name)
-							u.Errorf(err.Error())
-							return nil, err
-						}
-						if tbuf.PKAttributes[0].FieldName == f.FieldName {
+						pka, _ := f.Parent.GetPrimaryKeyInfo()
+						if pka[0].FieldName == f.FieldName {
 							loc, _ := time.LoadLocation("Local")
-							if tbuf.Table.TimeQuantumType != "" && (m.startDate == "" || m.endDate == "") {
+							if f.Parent.TimeQuantumType != "" && (m.startDate == "" || m.endDate == "") {
 								ts, err := dateparse.ParseIn(rhval.ToString(), loc)
 								if err != nil {
 									err := fmt.Errorf("cannot parse value '%v' - %v", rhval, err)
@@ -989,7 +977,7 @@ func (m *SQLToQuanta) walkFilterUnary(node *expr.UnaryNode, q *shared.QueryFragm
 		u.Warnf("Unknown token %v", node.Operator.T)
 		return nil, fmt.Errorf("not implemented unary function: %v", node.String())
 	}
-	// return nil, nil
+	return nil, nil
 }
 
 // eval() returns

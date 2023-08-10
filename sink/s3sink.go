@@ -11,16 +11,16 @@ import (
 	"strings"
 
 	u "github.com/araddon/gou"
-	"github.com/araddon/qlbridge/exec"
-	"github.com/araddon/qlbridge/plan"
-	"github.com/araddon/qlbridge/value"
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/disney/quanta/qlbridge/exec"
+	"github.com/disney/quanta/qlbridge/plan"
+	"github.com/disney/quanta/qlbridge/value"
 	"github.com/rlmcpherson/s3gof3r"
 	pgs3 "github.com/xitongsys/parquet-go-source/s3v2"
 	"github.com/xitongsys/parquet-go/parquet"
@@ -48,15 +48,15 @@ type (
 type (
 	// S3ParquetSink - State for AWS S3 implemention of Sink interface for Parquet output.
 	S3ParquetSink struct {
-		csvWriter      *writer.CSVWriter
-		outFile        source.ParquetFile
-		md        	   []string
-		assumeRoleArn  string
-		acl            string
-		sseKmsKeyID    string		
-		config         *aws.Config
-		path           string
-		s3svc          *s3.Client
+		csvWriter     *writer.CSVWriter
+		outFile       source.ParquetFile
+		md            []string
+		assumeRoleArn string
+		acl           string
+		sseKmsKeyID   string
+		config        *aws.Config
+		path          string
+		s3svc         *s3.Client
 	}
 )
 
@@ -98,7 +98,7 @@ func (s *S3CSVSink) Open(ctx *plan.Context, bucketpath string, params map[string
 		s.assumeRoleArn = assumeRoleArn.(string)
 		u.Debugf("assumeRoleArn : '%s'\n", s.assumeRoleArn)
 	}
-	
+
 	if acl, ok := params["acl"]; ok {
 		s.acl = acl.(string)
 		u.Debugf("ACL : '%s'\n", s.acl)
@@ -182,12 +182,10 @@ func (s *S3CSVSink) Close() error {
 	return nil
 }
 
-
 // Cleanup S3 CSV  session.
 func (s *S3CSVSink) Cleanup() error {
 	return s.outBucket.Delete(s.path)
 }
-
 
 // Open Parquet session to S3
 func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[string]interface{}) error {
@@ -224,18 +222,18 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
-		u.Errorf("Parquet Sink: Could not load the default config: %v",err)
+		u.Errorf("Parquet Sink: Could not load the default config: %v", err)
 	}
 
 	//var s3svc *s3.Client
 
-	if s.assumeRoleArn != "" {		
+	if s.assumeRoleArn != "" {
 		client := sts.NewFromConfig(cfg)
-		provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn)			
-		value,err := provider.Retrieve(context.TODO())
+		provider := stscreds.NewAssumeRoleProvider(client, s.assumeRoleArn)
+		value, err := provider.Retrieve(context.TODO())
 
 		if err != nil {
-			return fmt.Errorf("Failed to retrieve credentials: %v",err)
+			return fmt.Errorf("Failed to retrieve credentials: %v", err)
 		}
 
 		u.Debugf("Credential values: %v", value)
@@ -244,10 +242,10 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		u.Debugf("Session Token: %s", value.SessionToken)
 
 		cfg.Credentials = awsv2.NewCredentialsCache(provider)
-		_,err = cfg.Credentials.Retrieve(context.TODO())
+		_, err = cfg.Credentials.Retrieve(context.TODO())
 		if err != nil {
 			return fmt.Errorf("Failed to retrieve credentials from cache: %v", err)
-		}	
+		}
 
 		s.s3svc = s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.Region = region
@@ -255,7 +253,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 			o.RetryMaxAttempts = 10
 		})
 	} else {
-		s.s3svc = s3.NewFromConfig(cfg, 	func(o *s3.Options) {
+		s.s3svc = s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.Region = region
 			o.RetryMaxAttempts = 10
 		})
@@ -267,7 +265,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 
 	// Create S3 service client
 	u.Infof("Parquet Sink: Opening Output S3 path s3://%s/%s", bucket, file)
-	s.outFile, err = pgs3.NewS3FileWriterWithClient(context.Background(), s.s3svc, bucket, file, nil, func(p *s3.PutObjectInput){
+	s.outFile, err = pgs3.NewS3FileWriterWithClient(context.Background(), s.s3svc, bucket, file, nil, func(p *s3.PutObjectInput) {
 		p.SSEKMSKeyId = aws.String(s.sseKmsKeyID)
 		p.ServerSideEncryption = "aws:kms"
 		p.ACL = types.ObjectCannedACL(s.acl)
@@ -352,17 +350,17 @@ func (s *S3ParquetSink) Cleanup() error {
 		return err
 	}
 
-	bucket, obj, err2 := parseBucketName(s.path) 
+	bucket, obj, err2 := parseBucketName(s.path)
 	if err2 != nil {
 		return err2
 	}
-	
+
 	_, err = s.s3svc.DeleteObject(context.TODO(), &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(obj)})
 	if err != nil {
 		u.Warnf("Unable to delete object %q from bucket %q, %v", obj, bucket, err)
 		return err
 	}
-	
+
 	u.Warnf("removed partially written file %q from bucket %q", obj, bucket)
 	return err
 }
@@ -370,7 +368,7 @@ func (s *S3ParquetSink) Cleanup() error {
 func parseBucketName(bucketPath string) (bucket string, file string, err error) {
 
 	noScheme := strings.Replace(strings.ToLower(bucketPath), "s3://", "", 1)
-	splitPath := strings.SplitN(noScheme, "/",2)
+	splitPath := strings.SplitN(noScheme, "/", 2)
 	bucket = splitPath[0]
 	file = splitPath[1]
 

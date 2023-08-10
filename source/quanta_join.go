@@ -10,13 +10,13 @@ import (
 	u "github.com/araddon/gou"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
-	"github.com/araddon/qlbridge/datasource"
-	"github.com/araddon/qlbridge/exec"
-	"github.com/araddon/qlbridge/expr"
-	"github.com/araddon/qlbridge/lex"
-	"github.com/araddon/qlbridge/plan"
-	"github.com/araddon/qlbridge/rel"
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/qlbridge/datasource"
+	"github.com/disney/quanta/qlbridge/exec"
+	"github.com/disney/quanta/qlbridge/expr"
+	"github.com/disney/quanta/qlbridge/lex"
+	"github.com/disney/quanta/qlbridge/plan"
+	"github.com/disney/quanta/qlbridge/rel"
 )
 
 var (
@@ -322,8 +322,8 @@ func (m *JoinMerge) Run() error {
 			// This test is necessary only if the foreign key can contain NULL values (which is the point of OUTER joins)
 			// A corner case can exist if there are no predicates in which case there are cancelling AndNot operations
 			//if isOuter && (!lisdefaultedpredicate || !risdefaultedpredicate) {
-_ = lisdefaultedpredicate
-_ = risdefaultedpredicate
+			_ = lisdefaultedpredicate
+			_ = risdefaultedpredicate
 			if isOuter {
 				bm := roaring64.NewBitmap()
 				for k, v := range foundSets {
@@ -332,7 +332,7 @@ _ = risdefaultedpredicate
 					}
 					bm = v.Clone()
 					bm.AndNot(rs.GetExistenceBitmap())
-					
+
 				}
 				ct += int64(bm.GetCardinality())
 			}
@@ -361,8 +361,8 @@ _ = risdefaultedpredicate
 		u.Debugf("FP = %#v, CN = %#v, RN = %#v, PROJF = %#v, JF = %#v", fp, cn, rn, projFields, joinFields)
 		if m.isSubQuery {
 			u.Debugf("LEN ALLTABLES = %d", len(m.allTables))
-			_, cn, rn, projFields, joinFields, err = createFinalProjectionFromMaps(orig, m.aliases, m.allTables, 
-					m.Ctx.Schema, m.driverTable)
+			_, cn, rn, projFields, joinFields, err = createFinalProjectionFromMaps(orig, m.aliases, m.allTables,
+				m.Ctx.Schema, m.driverTable)
 			if err != nil {
 				return err
 			}
@@ -376,10 +376,10 @@ _ = risdefaultedpredicate
 		if !ok {
 			return fmt.Errorf("cannot cast session pool from stashed value")
 		}
-		
+
 		con, err := sessionPool.Borrow(m.driverTable)
 		if err != nil {
-			return fmt.Errorf("connot borrow a connection from the pool.");
+			return fmt.Errorf("connot borrow a connection from the pool.")
 		}
 		defer sessionPool.Return(m.driverTable, con)
 		// driver table found set may have been reduced by join results
@@ -390,7 +390,6 @@ _ = risdefaultedpredicate
 		}
 		isExport := false
 		u.Debugf("DRIVERTABLE = %v, NEGATE PROJECTION = %v", m.driverTable, negate)
-
 
 		// Parallelize projection for SELECT ... INTO
 		if orig.Into != nil {
@@ -405,7 +404,6 @@ _ = risdefaultedpredicate
 	return nil
 }
 
-
 func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitmap,
 	fromTime, toTime int64, negate bool) (*roaring64.BSI, bool, error) {
 
@@ -419,7 +417,7 @@ func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitma
 	}
 	con, err := sessionPool.Borrow(table)
 	if err != nil {
-		return nil, false, fmt.Errorf("connot borrow a connection from the pool.");
+		return nil, false, fmt.Errorf("connot borrow a connection from the pool.")
 	}
 	defer sessionPool.Return(table, con)
 
@@ -439,7 +437,7 @@ func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitma
 		}
 	}
 
-	u.Debugf("TABLE %s, JOINCOLS = %#v, FS = %d, FILTER = %#v, NEGATE = %v", table, joinCols, 
+	u.Debugf("TABLE %s, JOINCOLS = %#v, FS = %d, FILTER = %#v, NEGATE = %v", table, joinCols,
 		foundSet.GetCardinality(), filterSetArray, negate)
 
 	rs, err := con.BitIndex.Join(table, joinCols, fromTime, toTime, foundSet, filterSetArray, false)
@@ -458,9 +456,8 @@ func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitma
 			rsa.SetValue(i, int64(1))
 		}
 		rs = rsa
-		u.Debugf("PARENT = %d, CHILD = %d,  FDIFF %d",  parent.GetCardinality(), childTransposed.GetCardinality(), 
+		u.Debugf("PARENT = %d, CHILD = %d,  FDIFF %d", parent.GetCardinality(), childTransposed.GetCardinality(),
 			driver.GetCardinality())
 	}
 	return rs, isOuter, nil
 }
-

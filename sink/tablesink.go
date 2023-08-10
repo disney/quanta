@@ -5,8 +5,9 @@ package sink
 import (
 	//u "github.com/araddon/gou"
 	"database/sql/driver"
-	"github.com/araddon/qlbridge/exec"
-	"github.com/araddon/qlbridge/plan"
+
+	"github.com/disney/quanta/qlbridge/exec"
+	"github.com/disney/quanta/qlbridge/plan"
 )
 
 type (

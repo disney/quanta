@@ -9,7 +9,7 @@ import (
 	"time"
 
 	u "github.com/araddon/gou"
-	sch "github.com/araddon/qlbridge/schema"
+	sch "github.com/disney/quanta/qlbridge/schema"
 	"github.com/disney/quanta/shared"
 )
 

@@ -13,10 +13,10 @@ import (
 
 	"github.com/araddon/dateparse"
 	u "github.com/araddon/gou"
-	"github.com/araddon/qlbridge/datasource"
-	"github.com/araddon/qlbridge/expr"
-	"github.com/araddon/qlbridge/value"
-	"github.com/araddon/qlbridge/vm"
+	"github.com/disney/quanta/qlbridge/datasource"
+	"github.com/disney/quanta/qlbridge/expr"
+	"github.com/disney/quanta/qlbridge/value"
+	"github.com/disney/quanta/qlbridge/vm"
 	"github.com/disney/quanta/shared"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/xitongsys/parquet-go/reader"
@@ -949,7 +949,7 @@ func (s *Session) MapValue(tableName, fieldName string, value interface{}, updat
 	var attr *Attribute
 	table, err = LoadTable(s.tableCache, s.BasePath, s.KVStore, tableName, s.KVStore.Conn.Consul)
 	if err != nil {
-		return 
+		return
 	}
 	attr, err = table.GetAttribute(fieldName)
 	if err != nil {

@@ -5,11 +5,6 @@ package shared
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/araddon/dateparse"
-	u "github.com/araddon/gou"
-	"github.com/araddon/qlbridge/exec"
-	"github.com/hashicorp/consul/api"
-	"golang.org/x/sync/errgroup"
 	"net"
 	"os"
 	"os/signal"
@@ -18,6 +13,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/araddon/dateparse"
+	u "github.com/araddon/gou"
+	"github.com/disney/quanta/qlbridge/exec"
+	"github.com/hashicorp/consul/api"
+	"golang.org/x/sync/errgroup"
 )
 
 // ToString - Interface type to string

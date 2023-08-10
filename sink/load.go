@@ -1,8 +1,9 @@
 package sink
 
 import (
-	"github.com/araddon/qlbridge/exec"
 	"sync"
+
+	"github.com/disney/quanta/qlbridge/exec"
 )
 
 var loadOnce sync.Once

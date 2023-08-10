@@ -2,18 +2,17 @@ package functions
 
 import (
 	"fmt"
+
 	u "github.com/araddon/gou"
-	"github.com/araddon/qlbridge/expr"
-	"github.com/araddon/qlbridge/value"
+	"github.com/disney/quanta/qlbridge/expr"
+	"github.com/disney/quanta/qlbridge/value"
 	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/source"
 )
 
-//
 // StratifiedSample - Perform stratified sampling.  Use in query predicate attribute filter.
 //
 // stratifed_sample("fieldName", 1.5)
-//
 type StratifiedSample struct{}
 
 // Type - return type.

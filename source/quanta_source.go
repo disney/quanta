@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	u "github.com/araddon/gou"
-	"github.com/araddon/qlbridge/schema"
-	"github.com/araddon/qlbridge/value"
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/qlbridge/schema"
+	"github.com/disney/quanta/qlbridge/value"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 )

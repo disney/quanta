@@ -578,7 +578,6 @@ func (s *Session) getDefaultValueForColumn(a *Attribute, row interface{}, ignore
 				var err error
 				var val interface{}
 				if val, err = shared.GetPath(source, row, ignoreSourcePath, useNerd); err == nil {
-					val = r.(map[string]interface{})[source]
 					rm[v.FieldName] = val
 					if v.FieldName == a.FieldName {
 						return fmt.Sprintf("%v", val)

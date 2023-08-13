@@ -674,18 +674,18 @@ func (m *BitmapIndex) Truncate(index string) {
 	for _, rm := range fm {
 		for _, tm := range rm {
 			for ts := range tm {
-				m.bitmapCacheLock.Lock()
+				//m.bitmapCacheLock.Lock()
 				delete(tm, ts)
-				m.bitmapCacheLock.Unlock()
+				//m.bitmapCacheLock.Unlock()
 			}
 		}
 	}
 	bm := m.bsiCache[index]
 	for _, tm := range bm {
 		for ts := range tm {
-			m.bsiCacheLock.Lock()
+			//m.bsiCacheLock.Lock()
 			delete(tm, ts)
-			m.bsiCacheLock.Unlock()
+			//m.bsiCacheLock.Unlock()
 		}
 	}
 }

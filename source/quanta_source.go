@@ -42,6 +42,7 @@ type QuantaSource struct {
 	lastResultPos int
 	baseDir       string
 	sessionPool   *core.SessionPool
+	clientConn    *shared.Conn
 }
 
 // NewQuantaSource - Construct a QuantaSource.
@@ -67,6 +68,7 @@ func NewQuantaSource(tableCache *core.TableCacheStruct, baseDir, consulAddr stri
 
 	// Register for member leave/join notifications.
 	clientConn.RegisterService(m)
+	m.clientConn = clientConn
 
 	m.sessionPool = core.NewSessionPool(tableCache, clientConn, m.Schema, baseDir, sessionPoolSize)
 
@@ -98,6 +100,11 @@ func (m *QuantaSource) MemberJoined(nodeID, ipAddress string, index int) {
 // GetSessionPool - Return the underlying session pool instance.
 func (m *QuantaSource) GetSessionPool() *core.SessionPool {
 	return m.sessionPool
+}
+
+// GetConnection - Return the underlying client connection
+func (m *QuantaSource) GetConnection() *shared.Conn {
+	return m.clientConn
 }
 
 // Init initilize this db

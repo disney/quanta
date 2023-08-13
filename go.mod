@@ -23,7 +23,7 @@ require (
 	github.com/confluentinc/confluent-kafka-go v1.4.2 // indirect
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/gogo/protobuf v1.3.1
-	github.com/golang/protobuf v1.5.2
+	github.com/golang/protobuf v1.5.3
 	github.com/google/btree v1.0.0
 	github.com/google/uuid v1.3.0
 	github.com/hamba/avro v1.6.0
@@ -65,4 +65,3 @@ require (
 	gopkg.in/confluentinc/confluent-kafka-go.v1 v1.4.2
 	gopkg.in/yaml.v2 v2.4.0
 )
-

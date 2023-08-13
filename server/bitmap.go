@@ -1015,6 +1015,14 @@ func (m *BitmapIndex) Update(ctx context.Context, req *pb.UpdateRequest) (*empty
 	return &empty.Empty{}, nil
 }
 
+// Commit - Block until the persistence queue is empty.
+func (m *BitmapIndex) Commit(ctx context.Context, e *empty.Empty) (*empty.Empty, error) {
+
+	u.Debug("Received Commit call via API.")
+	return e, nil
+}
+
+
 // CheckoutSequence returns another batch of column IDs to the client.
 func (m *BitmapIndex) CheckoutSequence(ctx context.Context,
 	req *pb.CheckoutSequenceRequest) (*pb.CheckoutSequenceResponse, error) {

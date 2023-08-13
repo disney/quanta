@@ -222,7 +222,12 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 
 	operation := strings.ToLower(ss[0])
 	switch operation {
-	case "begin", "commit", "rollback":
+	case "commit":
+		api := shared.NewBitmapIndex(Src.GetConnection())
+		err :=  api.Commit()
+		return nil, err
+
+	case "begin", "rollback":
 		return nil, nil // Just returns an "OK" packet
 
 	case "select", "describe", "show":

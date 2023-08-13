@@ -630,7 +630,6 @@ func (c *BitmapIndex) Commit() error {
 			if err := c.commitClient(client, clientIndex); err != nil {
 				return err
 			}
-u.Errorf("SENDING TO %v", c.ClientConnections()[clientIndex].Target())
 			return nil
 		})
 	}

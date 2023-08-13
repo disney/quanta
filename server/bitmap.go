@@ -1018,7 +1018,19 @@ func (m *BitmapIndex) Update(ctx context.Context, req *pb.UpdateRequest) (*empty
 // Commit - Block until the persistence queue is empty.
 func (m *BitmapIndex) Commit(ctx context.Context, e *empty.Empty) (*empty.Empty, error) {
 
-	u.Debug("Received Commit call via API.")
+	//u.Debug("Received Commit call via API.")
+	for {
+		if len(m.fragQueue) == 0 {
+			time.Sleep(time.Millisecond * 10)
+			return e, nil
+		}
+		select {
+		case <-time.After(time.Second * 5):
+			return e, fmt.Errorf("commit timed out")
+		default:
+			time.Sleep(time.Millisecond * 10)
+		}
+	}
 	return e, nil
 }
 

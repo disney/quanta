@@ -287,7 +287,7 @@ func analyzeRow(proxyConfig ProxyConnect, row []string, validate bool) {
 	} else if statementType == Update {
 		sqlInfo.executeUpdate(db)
 	} else if statementType == Select {
-		time.Sleep(1000 * time.Millisecond)
+		//time.Sleep(500 * time.Millisecond)
 		sqlInfo.executeQuery(db)
 	} else if statementType == Count {
 		//time.Sleep(500 * time.Millisecond)

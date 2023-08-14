@@ -67,6 +67,8 @@ const (
 var log = logger.New()
 
 func main() {
+	shared.SetUTCdefault()
+
 	scriptFile := flag.String("script_file", "", "Path to the sql file to execute.")
 	scriptDelimiter := flag.String("script_delimiter", "@", "The delimiter to use in the script file.  The default is a colon (:).")
 	validate := flag.Bool("validate", false, "If not set, the Sql statement will be executed but not validated.")

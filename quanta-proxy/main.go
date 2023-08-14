@@ -31,12 +31,6 @@ import (
 	"github.com/disney/quanta/source"
 )
 
-// Variables to identify the build
-var (
-	Version string
-	Build   string
-)
-
 // Exit Codes
 const (
 	Success         = 0
@@ -52,7 +46,7 @@ var (
 func main() {
 
 	app := kingpin.New("quanta-proxy", "MySQL Proxy adapter to Quanta").DefaultEnvars()
-	app.Version("Version: " + Version + "\nBuild: " + Build)
+	app.Version("Version: " + proxy.Version + "\nBuild: " + proxy.Build)
 
 	logging = app.Flag("log-level", "Logging level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
 	environment = app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
@@ -81,7 +75,7 @@ func main() {
 		}
 		u.SetupLogging("debug")
 	} else {
-		shared.InitLogging(*logging, *environment, "Proxy", Version, "Quanta")
+		shared.InitLogging(*logging, *environment, "Proxy", proxy.Version, "Quanta")
 	}
 
 	go func() {

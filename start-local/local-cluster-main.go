@@ -21,6 +21,7 @@ import (
 // Run this and a cluster should come up and be available on port 4000
 
 func main() {
+	shared.SetUTCdefault()
 
 	m0, _ := test.StartNodes(0)
 	m1, _ := test.StartNodes(1)

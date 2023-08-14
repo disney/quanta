@@ -5,6 +5,7 @@ package shared
 import (
 	"encoding/binary"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -618,4 +619,18 @@ func WaitTimeout(wg *errgroup.Group, timeout time.Duration, sigChan exec.SigChan
 		close(sigChan)
 		return nil, true // timed out
 	}
+}
+
+// SetUTCdefault sets the default time zone to UTC.
+// there are two possibilities depending upon if package 'time' has been initialized.
+// If it's been initialized then setting TZ to UTC won't work because it's already been read.
+// If it's not been initialized then time.Local will be overwritten by the init.
+func SetUTCdefault() {
+	os.Setenv("TZ", "UTC")
+	loc, err := time.LoadLocation("UTC")
+	if err != nil {
+		log.Fatal(err)
+	}
+	time.Local = loc // -> this is setting the global timezone
+
 }

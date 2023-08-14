@@ -40,7 +40,25 @@ sleep 5
 # insert_tests
 # joins_sql
 
-docker run -d -w /quanta/sqlrunner --network my-net2 -t node sqlrunner -script_file ./sqlscripts/insert_tests.sql \
+docker run -w /quanta/sqlrunner --network my-net2 -t node sqlrunner -script_file ./sqlscripts/basic_queries.sql \
+        -validate \
+        -host 172.20.0.6 \
+        -consul 172.20.0.2:8500 \
+        -user MOLIG004 \
+        -db quanta \
+        -port 4000 \
+        -log_level DEBUG
+
+docker run -w /quanta/sqlrunner --network my-net2 -t node sqlrunner -script_file ./sqlscripts/insert_tests.sql \
+        -validate \
+        -host 172.20.0.6 \
+        -consul 172.20.0.2:8500 \
+        -user MOLIG004 \
+        -db quanta \
+        -port 4000 \
+        -log_level DEBUG
+
+docker run -w /quanta/sqlrunner --network my-net2 -t node sqlrunner -script_file ./sqlscripts/joins_sql.sql \
         -validate \
         -host 172.20.0.6 \
         -consul 172.20.0.2:8500 \

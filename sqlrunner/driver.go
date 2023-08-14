@@ -67,6 +67,8 @@ const (
 var log = logger.New()
 
 func main() {
+	shared.SetUTCdefault()
+
 	scriptFile := flag.String("script_file", "", "Path to the sql file to execute.")
 	scriptDelimiter := flag.String("script_delimiter", "@", "The delimiter to use in the script file.  The default is a colon (:).")
 	validate := flag.Bool("validate", false, "If not set, the Sql statement will be executed but not validated.")
@@ -285,7 +287,7 @@ func analyzeRow(proxyConfig ProxyConnect, row []string, validate bool) {
 	} else if statementType == Update {
 		sqlInfo.executeUpdate(db)
 	} else if statementType == Select {
-		//time.Sleep(500 * time.Millisecond)
+		time.Sleep(1000 * time.Millisecond)
 		sqlInfo.executeQuery(db)
 	} else if statementType == Count {
 		//time.Sleep(500 * time.Millisecond)

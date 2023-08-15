@@ -68,7 +68,7 @@ func LoadTable(tableCache *TableCacheStruct, path string, kvStore *shared.KVStor
 		// 	return nil, fmt.Errorf("table %s is not a core table", name)
 		// }
 		coreTable.kvStore = kvStore
-		u.Debugf("Found table %s in cache.", name)
+		//u.Debugf("Found table %s in cache.", name)
 		return coreTable, nil
 	}
 

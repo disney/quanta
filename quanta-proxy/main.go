@@ -54,7 +54,7 @@ func main() {
 	quantaPortP := app.Flag("quanta-port", "Port number for Quanta service").Default("4000").Int() // port of a node, not of us. This is weird.
 	publicKeyURL := app.Arg("public-key-url", "URL for JWT public key.").String()
 	region := app.Arg("region", "AWS region for cloudwatch metrics").Default("us-east-1").String()
-	// tokenservicePort := app.Arg("tokenservice-port", "Token exchance service port").Default("4001").Int()
+	tokenservicePort := app.Arg("tokenservice-port", "Token exchance service port").Default("4001").Int()
 	userKey := app.Flag("user-key", "Key used to get user id from JWT claims").Default("username").String()
 	// unused username = app.Flag("username", "User account name for MySQL DB").Default("root").String()
 	// unused password = app.Flag("password", "Password for account for MySQL DB (just press enter for now when logging in on mysql console)").Default("").String()
@@ -108,9 +108,9 @@ func main() {
 	}
 	proxy.UserClaimsKey = *userKey
 	// Start the token exchange service TODO: repair or delete
-	// log.Printf("Starting the token exchange service on port %d", *tokenservicePort)
-	// authProvider = NewAuthProvider() // this instance is global used by tokenservice
-	// StartTokenService(*tokenservicePort, authProvider)
+	log.Printf("Starting the token exchange service on port %d", *tokenservicePort)
+	authProvider := proxy.NewAuthProvider() // this instance is global used by tokenservice
+	proxy.StartTokenService(*tokenservicePort, authProvider)
 
 	// If the pool size is not configured then set it to the number of available CPUs
 	proxy.SessionPoolSize = *poolSize

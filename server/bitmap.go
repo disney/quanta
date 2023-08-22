@@ -1019,7 +1019,6 @@ func (m *BitmapIndex) Update(ctx context.Context, req *pb.UpdateRequest) (*empty
 func (m *BitmapIndex) Commit(ctx context.Context, e *empty.Empty) (*empty.Empty, error) {
 
 	for {
-		// This is a way to make sure that the fraq queue has priority over persistence.
 		select {
 		case frag := <-m.fragQueue:
 			if frag.IsBSI {

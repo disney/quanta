@@ -186,7 +186,7 @@ func (n *Node) Join(name string) error {
 		return fmt.Errorf("node: can't register %s service: %s", n.serviceName, err)
 	}
 
-	time.Sleep(5 * time.Second) // wait for everyone to register (atw)
+	time.Sleep(1 * time.Second) // wait for everyone to register (atw)
 
 	err = n.Connect(n.consul)
 	if err != nil {
@@ -215,6 +215,12 @@ func (n *Node) register() (err error) {
 		Address: n.BindAddr, // comes out as Service.Address and not Node.Address
 	})
 	return err
+}
+
+func (n *Node) Quit() {
+	n.Conn.Quit()
+	n.Conn.Disconnect()
+	n.server.Stop()
 }
 
 // Start the node endpoint.  Does not block.

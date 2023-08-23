@@ -45,8 +45,6 @@ In a terminal:
 
 Check the README in ./start-local Run it. 
 
-?? Be sure that quanta-admin is on the path. Add ```~/go/bin``` to your ```PATH``` and ```go install ./quanta-admin```
-
 Here is an example command line (cd to sqlrunner).
 
 ```

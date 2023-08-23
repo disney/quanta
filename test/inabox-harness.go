@@ -1,9 +1,12 @@
 package test
 
 import (
+	"database/sql"
 	"fmt"
+	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"regexp"
 	"runtime"
@@ -18,6 +21,7 @@ import (
 	"github.com/disney/quanta/qlbridge/expr/builtins"
 	"github.com/disney/quanta/qlbridge/schema"
 	proxy "github.com/disney/quanta/quanta-proxy-lib"
+	"github.com/disney/quanta/rbac"
 	"github.com/disney/quanta/server"
 	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/sink"
@@ -25,7 +29,7 @@ import (
 	"github.com/hashicorp/consul/api"
 )
 
-func StartNodes(nodeStart int) (*server.Node, error) {
+func StartNode(nodeStart int) (*server.Node, error) {
 
 	Version := "v0.0.1"
 	Build := "2006-01-01"
@@ -134,6 +138,8 @@ func StartProxy(count int, testConfigPath string) *LocalProxyControl {
 
 	localProxy := &LocalProxyControl{}
 
+	localProxy.Stop = make(chan bool)
+
 	fmt.Println("Starting proxy")
 
 	// for index := 0; index < count; index++ { // TODO: more than one proxy
@@ -160,12 +166,6 @@ func StartProxy(count int, testConfigPath string) *LocalProxyControl {
 	} else {
 		shared.InitLogging(logging, environment, "Proxy", Version, "Quanta")
 	}
-
-	// go func() { // FIXME: do this later
-	// 	// Initialize Prometheus metrics endpoint.
-	// 	http.Handle("/metrics", promhttp.Handler())
-	// 	http.ListenAndServe(":2112", nil)
-	// }()
 
 	log.Printf("Connecting to Consul at: [%s] ...\n", proxy.ConsulAddr)
 	consulConfig := &api.Config{Address: proxy.ConsulAddr}
@@ -239,11 +239,144 @@ func StartProxy(count int, testConfigPath string) *LocalProxyControl {
 
 	go func(localProxy *LocalProxyControl) {
 
-		<-localProxy.Stop
-		fmt.Println("Stopping proxy")
-		// and ??
+		for range localProxy.Stop {
+			fmt.Println("Stopping proxy")
+			proxy.Src.Close()
+		}
 
 	}(localProxy)
 
 	return localProxy
+}
+
+func IsLocalRunning() bool {
+
+	result := "[]"
+	res, err := http.Get("http://localhost:8500/v1/health/service/quanta") // was quanta-node
+	if err == nil {
+		resBody, err := io.ReadAll(res.Body)
+		if err == nil {
+			result = string(resBody)
+		}
+	} else {
+		fmt.Println("is consul not running?", err)
+	}
+	// fmt.Println("result:", result)
+
+	// the three cases are 1) what cluster? 2) used to have one but now its critical 3) Here's the health.
+	isNotRunning := strings.HasPrefix(result, "[]") || strings.Contains(result, "critical")
+
+	return !isNotRunning
+}
+
+type ClusterLocalState struct {
+	m0                  *server.Node
+	m1                  *server.Node
+	m2                  *server.Node
+	proxyControl        *LocalProxyControl
+	weStartedTheCluster bool
+	proxyConnect        *ProxyConnect // for sql runner
+	db                  *sql.DB
+}
+
+func StartNodes(state *ClusterLocalState) {
+
+	state.m0, _ = StartNode(0)
+	state.m1, _ = StartNode(1)
+	state.m2, _ = StartNode(2)
+}
+
+func (state *ClusterLocalState) StopNodes() {
+
+	state.m0.Conn.IsLocalStopped = true
+	state.m1.Conn.IsLocalStopped = true
+	state.m2.Conn.IsLocalStopped = true
+
+	state.m0.Leave()
+	state.m0.Quit()
+	state.m1.Leave()
+	state.m1.Quit()
+	state.m2.Leave()
+	state.m2.Quit()
+
+	// FIXME: these don't do anything.
+	// state.m0.Stop <- true
+	// state.m1.Stop <- true
+	// state.m2.Stop <- true
+}
+
+func (state *ClusterLocalState) Release() {
+	if state.weStartedTheCluster {
+		state.proxyControl.Stop <- true
+		time.Sleep(100 * time.Millisecond)
+		state.StopNodes()
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func WaitForLocalActive(state *ClusterLocalState) {
+	for state.m0.State != server.Active || state.m1.State != server.Active || state.m2.State != server.Active {
+		time.Sleep(100 * time.Millisecond)
+		//fmt.Println("Waiting for nodes...", m2.State)
+	}
+}
+
+// Ensure_cluster checks to see if there already is a cluster and
+// starts a local one as needed.
+// This depends on having consul on port 8500
+func Ensure_cluster() *ClusterLocalState {
+	var state = &ClusterLocalState{}
+
+	var proxyConnect ProxyConnect
+	proxyConnect.Host = "127.0.0.1"
+	proxyConnect.User = "MOLIG004"
+	proxyConnect.Password = ""
+	proxyConnect.Port = "4000"
+	proxyConnect.Database = "quanta"
+
+	state.proxyConnect = &proxyConnect
+
+	isNotRunning := !IsLocalRunning()
+	if isNotRunning {
+		// start the cluster
+		StartNodes(state)
+		WaitForLocalActive(state)
+
+		// atw FIXME get rid of this config
+		state.proxyControl = StartProxy(1, "../test/testdata/config")
+
+		state.weStartedTheCluster = true
+	} else {
+		state.weStartedTheCluster = false
+	}
+
+	// need to sort this out and just have one
+
+	conn := shared.NewDefaultConnection()
+	err := conn.Connect(nil)
+	check(err)
+	defer conn.Disconnect()
+
+	sharedKV := shared.NewKVStore(conn)
+
+	ctx, err := rbac.NewAuthContext(sharedKV, "USER001", true)
+	check(err)
+	err = ctx.GrantRole(rbac.DomainUser, "USER001", "quanta", true)
+	check(err)
+
+	ctx, err = rbac.NewAuthContext(sharedKV, "MOLIG004", true)
+	check(err)
+	err = ctx.GrantRole(rbac.SystemAdmin, "MOLIG004", "quanta", true)
+	check(err)
+
+	state.db, err = state.proxyConnect.ProxyConnectConnect()
+	check(err)
+	return state
+}
+
+func check(err error) {
+	if err != nil {
+		fmt.Println("check err", err)
+		panic(err.Error())
+	}
 }

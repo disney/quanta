@@ -78,6 +78,7 @@ type Conn struct {
 	nodeStatusMap      map[string]*pb.StatusMessage
 	activeCount        int
 	IsLocalCluster     bool
+	IsLocalStopped     bool
 }
 
 // NewDefaultConnection - Configure a connection with default values.
@@ -376,9 +377,15 @@ func (m *Conn) GetNodeForID(nodeID string) (*api.ServiceEntry, bool) {
 	return nil, false
 }
 
+func (m *Conn) Quit() {
+	m.IsLocalStopped = true
+	m.registeredServices = make(map[string]Service)
+	m.nodeStatusMap = make(map[string]*pb.StatusMessage, 0)
+}
+
 // Disconnect - Terminate connections to all cluster nodes.
 func (m *Conn) Disconnect() error {
-
+	fmt.Println("connection Disconnect", m.ServiceName)
 	for i := 0; i < len(m.clientConn); i++ {
 		if m.clientConn[i] != nil {
 			m.clientConn[i].Close()
@@ -413,9 +420,11 @@ func (m *Conn) poll() {
 			}
 			return
 		case <-time.After(m.pollWait):
-			err = m.update()
-			if err != nil {
-				u.Errorf("[client %s] error: %s", m.ServiceName, err)
+			if !m.IsLocalStopped {
+				err = m.update()
+				if err != nil {
+					u.Errorf("[client %s] error: %s", m.ServiceName, err)
+				}
 			}
 		}
 	}
@@ -425,10 +434,16 @@ func (m *Conn) poll() {
 // timeout is reached (10 minutes by default).
 func (m *Conn) update() (err error) {
 
+	if m.IsLocalStopped { // don't update if stopped
+		return nil
+	}
 	opts := &api.QueryOptions{WaitIndex: m.waitIndex}
 	serviceEntries, meta, err := m.Consul.Health().Service(m.ServiceName, "", false, opts)
 	if err != nil {
 		return err
+	}
+	if m.IsLocalStopped {
+		return nil
 	}
 	if serviceEntries == nil {
 		return nil
@@ -436,6 +451,9 @@ func (m *Conn) update() (err error) {
 	m.clusterSizeTarget, err = GetClusterSizeTarget(m.Consul)
 	if err != nil {
 		return err
+	}
+	if m.IsLocalStopped {
+		return nil
 	}
 	if m.clusterSizeTarget == 0 {
 		m.clusterSizeTarget = m.Replicas + 1
@@ -493,6 +511,9 @@ func (m *Conn) update() (err error) {
 	for id, index := range m.nodeMap {
 		if _, ok := idMap[id]; !ok {
 			// delete connection and admin stub
+			if index >= len(m.clientConn) {
+				continue
+			}
 			m.clientConn[index].Close()
 			if len(m.clientConn) > 1 {
 				m.clientConn = append(m.clientConn[:index], m.clientConn[index+1:]...)
@@ -662,7 +683,11 @@ func (m *Conn) getNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error)
 	admin := m.Admin[clientIndex]
 	result, err := admin.Status(ctx, &empty.Empty{})
 	if err != nil {
-		e := fmt.Sprintf("getNodeStatusForIndex Status, err = %v, target = %s\n", err, m.clientConn[clientIndex].Target())
+		target := ""
+		if clientIndex < len(m.clientConn) {
+			target = m.clientConn[clientIndex].Target()
+		}
+		e := fmt.Sprintf("getNodeStatusForIndex Status, err = %v, target = %s\n", err, target)
 		return nil, fmt.Errorf(e)
 	}
 	return result, nil

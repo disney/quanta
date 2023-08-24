@@ -13,6 +13,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/araddon/dateparse"
+	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/qlbridge/datasource"
 	"github.com/disney/quanta/qlbridge/exec"
 	"github.com/disney/quanta/qlbridge/expr"
@@ -22,7 +23,6 @@ import (
 	"github.com/disney/quanta/qlbridge/schema"
 	"github.com/disney/quanta/qlbridge/value"
 	"github.com/disney/quanta/qlbridge/vm"
-	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/rbac"
 	"github.com/disney/quanta/shared"
 )
@@ -154,9 +154,12 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	}
 
 	var err error
-	m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
-	if err != nil {
-		return nil, fmt.Errorf("Error opening Quanta session %v", err)
+	name := m.tbl.Name
+	m.conn, err = m.s.sessionPool.Borrow(name)
+	if err != nil || m.conn == nil {
+		// FIXME: err == nil and m.conn == nil is a mistake
+		m.s.sessionPool.Borrow(name)
+		return nil, fmt.Errorf("opening Quanta session 1 %v", err)
 	}
 	defer m.s.sessionPool.Return(m.tbl.Name, m.conn)
 
@@ -1400,7 +1403,7 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 	//m.conn, err = m.s.sessionPool.Borrow(m.q.GetRootIndex())
 	m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
 	if err != nil {
-		return nil, fmt.Errorf("Error opening Quanta session %v", err)
+		return nil, fmt.Errorf("Error opening Quanta session 2 %v", err)
 	}
 	//defer m.s.sessionPool.Return(m.q.GetRootIndex(), m.conn)
 	defer m.s.sessionPool.Return(m.tbl.Name, m.conn)
@@ -1549,7 +1552,7 @@ func (m *SQLToQuanta) PatchWhere(ctx context.Context, where expr.Node, patch int
 	var err error
 	m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
 	if err != nil {
-		return 0, fmt.Errorf("Error opening Quanta session %v", err)
+		return 0, fmt.Errorf("Error opening Quanta session 3 %v", err)
 	}
 	defer m.s.sessionPool.Return(m.tbl.Name, m.conn)
 
@@ -1625,7 +1628,7 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 
 	conn, err := m.s.sessionPool.Borrow(m.tbl.Name)
 	if err != nil {
-		return nil, fmt.Errorf("Error opening Quanta session %v", err)
+		return nil, fmt.Errorf("Error opening Quanta session 4 %v", err)
 	}
 	defer m.s.sessionPool.Return(m.tbl.Name, conn)
 	m.conn = conn
@@ -1853,7 +1856,7 @@ func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, err
 	var err error
 	m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
 	if err != nil {
-		return 0, fmt.Errorf("Error opening Quanta session %v", err)
+		return 0, fmt.Errorf("Error opening Quanta session 5 %v", err)
 	}
 	defer m.s.sessionPool.Return(m.tbl.Name, m.conn)
 

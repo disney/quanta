@@ -114,6 +114,8 @@ type Node struct {
 	localServices map[string]NodeService
 
 	TableCache *core.TableCacheStruct
+
+	listener net.Listener
 }
 
 // NewNode - Construct a new node instance.
@@ -186,7 +188,7 @@ func (n *Node) Join(name string) error {
 		return fmt.Errorf("node: can't register %s service: %s", n.serviceName, err)
 	}
 
-	time.Sleep(5 * time.Second) // wait for everyone to register (atw)
+	time.Sleep(1 * time.Second) // wait for everyone to register (atw)
 
 	err = n.Connect(n.consul)
 	if err != nil {
@@ -217,12 +219,19 @@ func (n *Node) register() (err error) {
 	return err
 }
 
+func (n *Node) Quit() {
+	n.Conn.Quit()
+	n.Conn.Disconnect()
+	n.server.Stop()
+}
+
 // Start the node endpoint.  Does not block.
 func (n *Node) Start() {
 
 	go func() {
 		if n.ServicePort > 0 {
-			lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", n.BindAddr, n.ServicePort))
+			var err error
+			n.listener, err = net.Listen("tcp", fmt.Sprintf("%s:%d", n.BindAddr, n.ServicePort))
 			if err != nil {
 				u.Errorf("error starting node listening endpoint: %v", err)
 				n.Err <- err
@@ -238,7 +247,7 @@ func (n *Node) Start() {
 					}
 				}
 			}()
-			n.server.Serve(lis)
+			n.server.Serve(n.listener)
 		} else {
 			n.server.Serve(shared.TestListener)
 		}
@@ -310,6 +319,7 @@ func (n *Node) Shutdown(ctx context.Context, e *empty.Empty) (*empty.Empty, erro
 
 	u.Warn("Received Shutdown call via API.")
 	err := n.Leave()
+	n.listener.Close()
 	return e, err
 }
 

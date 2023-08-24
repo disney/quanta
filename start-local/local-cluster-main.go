@@ -23,9 +23,9 @@ import (
 func main() {
 	shared.SetUTCdefault()
 
-	m0, _ := test.StartNodes(0)
-	m1, _ := test.StartNodes(1)
-	m2, _ := test.StartNodes(2)
+	m0, _ := test.StartNode(0)
+	m1, _ := test.StartNode(1)
+	m2, _ := test.StartNode(2)
 	defer func() {
 		m0.Stop <- true
 		m1.Stop <- true

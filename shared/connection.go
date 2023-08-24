@@ -376,9 +376,14 @@ func (m *Conn) GetNodeForID(nodeID string) (*api.ServiceEntry, bool) {
 	return nil, false
 }
 
+func (m *Conn) Quit() {
+	m.registeredServices = make(map[string]Service)
+	m.nodeStatusMap = make(map[string]*pb.StatusMessage, 0)
+}
+
 // Disconnect - Terminate connections to all cluster nodes.
 func (m *Conn) Disconnect() error {
-
+	fmt.Println("connection Disconnect", m.ServiceName)
 	for i := 0; i < len(m.clientConn); i++ {
 		if m.clientConn[i] != nil {
 			m.clientConn[i].Close()
@@ -493,6 +498,9 @@ func (m *Conn) update() (err error) {
 	for id, index := range m.nodeMap {
 		if _, ok := idMap[id]; !ok {
 			// delete connection and admin stub
+			if index >= len(m.clientConn) {
+				continue
+			}
 			m.clientConn[index].Close()
 			if len(m.clientConn) > 1 {
 				m.clientConn = append(m.clientConn[:index], m.clientConn[index+1:]...)
@@ -662,7 +670,11 @@ func (m *Conn) getNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error)
 	admin := m.Admin[clientIndex]
 	result, err := admin.Status(ctx, &empty.Empty{})
 	if err != nil {
-		e := fmt.Sprintf("getNodeStatusForIndex Status, err = %v, target = %s\n", err, m.clientConn[clientIndex].Target())
+		target := ""
+		if clientIndex < len(m.clientConn) {
+			target = m.clientConn[clientIndex].Target()
+		}
+		e := fmt.Sprintf("getNodeStatusForIndex Status, err = %v, target = %s\n", err, target)
 		return nil, fmt.Errorf(e)
 	}
 	return result, nil

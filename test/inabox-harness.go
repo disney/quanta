@@ -20,6 +20,7 @@ import (
 	"github.com/disney/quanta/qlbridge/expr"
 	"github.com/disney/quanta/qlbridge/expr/builtins"
 	"github.com/disney/quanta/qlbridge/schema"
+	admin "github.com/disney/quanta/quanta-admin-lib"
 	proxy "github.com/disney/quanta/quanta-proxy-lib"
 	"github.com/disney/quanta/rbac"
 	"github.com/disney/quanta/server"
@@ -142,9 +143,6 @@ func StartProxy(count int, testConfigPath string) *LocalProxyControl {
 
 	fmt.Println("Starting proxy")
 
-	// for index := 0; index < count; index++ { // TODO: more than one proxy
-	index := 0
-
 	proxy.SetupCounters()
 	proxy.Init()
 
@@ -154,7 +152,7 @@ func StartProxy(count int, testConfigPath string) *LocalProxyControl {
 	proxy.ConsulAddr = "127.0.0.1:8500"
 	// cognito url for token service publicKeyURL := "" // unused
 	proxy.QuantaPort = 4010
-	proxyHostPort := 4000 + index
+	proxyHostPort := 4000
 
 	// region := "us-east-1"
 
@@ -221,14 +219,14 @@ func StartProxy(count int, testConfigPath string) *LocalProxyControl {
 
 	// Start server endpoint
 	portStr := strconv.FormatInt(int64(proxyHostPort), 10)
-	l, err := net.Listen("tcp", "0.0.0.0:"+portStr)
+	listener, err := net.Listen("tcp", "0.0.0.0:"+portStr)
 	if err != nil {
 		panic(err.Error())
 	}
 
 	go func() {
 		for {
-			conn, err := l.Accept()
+			conn, err := listener.Accept()
 			if err != nil {
 				u.Errorf(err.Error())
 				return
@@ -242,6 +240,7 @@ func StartProxy(count int, testConfigPath string) *LocalProxyControl {
 		for range localProxy.Stop {
 			fmt.Println("Stopping proxy")
 			proxy.Src.Close()
+			listener.Close()
 		}
 
 	}(localProxy)
@@ -288,21 +287,21 @@ func StartNodes(state *ClusterLocalState) {
 
 func (state *ClusterLocalState) StopNodes() {
 
-	state.m0.Conn.IsLocalStopped = true
-	state.m1.Conn.IsLocalStopped = true
-	state.m2.Conn.IsLocalStopped = true
+	cmd := admin.ShutdownCmd{}
+	cmd.NodeIP = "all" // this would probably work
 
-	state.m0.Leave()
-	state.m0.Quit()
-	state.m1.Leave()
-	state.m1.Quit()
-	state.m2.Leave()
-	state.m2.Quit()
+	ctx := admin.Context{ConsulAddr: consulAddress,
+		Port:  4000,
+		Debug: true}
 
-	// FIXME: these don't do anything.
-	// state.m0.Stop <- true
-	// state.m1.Stop <- true
-	// state.m2.Stop <- true
+	cmd.NodeIP = "127.0.0.1:4010"
+	cmd.Run(&ctx)
+
+	cmd.NodeIP = "127.0.0.1:4011"
+	cmd.Run(&ctx)
+
+	cmd.NodeIP = "127.0.0.1:4012"
+	cmd.Run(&ctx)
 }
 
 func (state *ClusterLocalState) Release() {
@@ -340,6 +339,7 @@ func Ensure_cluster() *ClusterLocalState {
 	if isNotRunning {
 		// start the cluster
 		StartNodes(state)
+
 		WaitForLocalActive(state)
 
 		// atw FIXME get rid of this config

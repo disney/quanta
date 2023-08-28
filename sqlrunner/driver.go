@@ -92,7 +92,7 @@ func main() {
   if err != nil {
 		log.Fatal("Proxy Connection Failed : ", err)
 	}
-	defer db.Close()
+	defer f.Close()
 
 	csvReader := csv.NewReader(f)
 	csvReader.FieldsPerRecord = -1

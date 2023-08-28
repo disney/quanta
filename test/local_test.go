@@ -1,7 +1,9 @@
 package test
 
 import (
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/disney/quanta/shared"
@@ -43,4 +45,106 @@ func TestLocalQuery(t *testing.T) {
 
 	// release as necessary
 	state.Release()
+}
+
+// This should work from scratch with nothing running except consul.
+// It should also work with a cluster already running and basic_queries.sql loaded which is MUCH faster.
+// eg. go run ./driver.go -script_file ./sqlscripts/basic_queries.sql -validate -host 127.0.0.1 -user MOLIG004 -db quanta -port 4000 -log_level DEBUG
+func XTestIsNull(t *testing.T) {
+
+	var err error
+
+	shared.SetUTCdefault()
+
+	isLocalRunning := IsLocalRunning()
+	// erase the storage
+	if !isLocalRunning { // if no cluster is up
+		err = os.RemoveAll("../test/localClusterData/") // start fresh
+		check(err)
+	}
+	// ensure we have a cluster on localhost, start one if necessary
+	state := Ensure_cluster()
+
+	if !isLocalRunning { // if no cluster was up, load some data
+		executeSqlFile(state, "../sqlrunner/sqlscripts/basic_load.sql")
+	} // else assume it's already loaded
+
+	// query
+
+	statement := "select cust_id,first_name,last_name from customers_qa where last_name is null;"
+	rows, err := state.db.Query(statement)
+	check(err)
+
+	count := 0
+	for rows.Next() {
+		columns, err := rows.Columns()
+		check(err)
+		_ = columns
+		//fmt.Println(columns)
+		id, firstName, lastName := "", "", ""
+		err = rows.Scan(&id, &firstName, &lastName)
+		check(err)
+		fmt.Println(id, firstName, lastName)
+		count += 1
+	}
+	fmt.Println("count", count)
+	assert.EqualValues(t, 16, count)
+
+	// release as necessary
+	state.Release()
+}
+
+func XTestIsNotNull(t *testing.T) {
+
+	var err error
+
+	shared.SetUTCdefault()
+
+	isLocalRunning := IsLocalRunning()
+	// erase the storage
+	if !isLocalRunning { // if no cluster is up
+		err = os.RemoveAll("../test/localClusterData/") // start fresh
+		check(err)
+	}
+	// ensure we have a cluster on localhost, start one if necessary
+	state := Ensure_cluster()
+
+	if !isLocalRunning { // if no cluster was up, load some data
+		executeSqlFile(state, "../sqlrunner/sqlscripts/basic_load.sql")
+	} // else assume it's already loaded
+
+	// query
+
+	//statement := "select cust_id,first_name,last_name from customers_qa where last_name != null;"
+	statement := "select cust_id,first_name,last_name from customers_qa where last_name is not null;"
+	rows, err := state.db.Query(statement)
+	check(err)
+
+	count := 0
+	for rows.Next() {
+		columns, err := rows.Columns()
+		check(err)
+		_ = columns
+		//fmt.Println(columns)
+		id, firstName, lastName := "", "", ""
+		err = rows.Scan(&id, &firstName, &lastName)
+		check(err)
+		fmt.Println(id, firstName, lastName)
+		count += 1
+	}
+	fmt.Println("count", count)
+	assert.EqualValues(t, 14, count)
+
+	// release as necessary
+	state.Release()
+}
+
+func executeSqlFile(state *ClusterLocalState, filename string) {
+	bytes, err := os.ReadFile(filename)
+	check(err)
+	sql := string(bytes)
+	lines := strings.Split(sql, "\n")
+	for _, line := range lines {
+		AnalyzeRow(*state.proxyConnect, []string{line}, true)
+	}
 }

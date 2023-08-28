@@ -383,7 +383,6 @@ func (m *Conn) Quit() {
 
 // Disconnect - Terminate connections to all cluster nodes.
 func (m *Conn) Disconnect() error {
-	fmt.Println("connection Disconnect", m.ServiceName)
 	for i := 0; i < len(m.clientConn); i++ {
 		if m.clientConn[i] != nil {
 			m.clientConn[i].Close()

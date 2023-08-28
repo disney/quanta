@@ -41,6 +41,7 @@ var (
 	logging       *string
 	environment   *string
 	proxyHostPort *string
+	authProvider  *proxy.AuthProvider
 )
 
 func main() {

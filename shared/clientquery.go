@@ -7,16 +7,15 @@ package shared
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/RoaringBitmap/roaring/roaring64"
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"golang.org/x/sync/errgroup"
-	"time"
 )
 
-//
 // Main processing flow for bitmap queries.  Returns a bitmap.  Processing is parallelized.
-//
 func (c *BitmapIndex) query(query *pb.BitmapQuery) (*roaring64.Bitmap, error) {
 
 	//c.Conn.nodeMapLock.RLock()
@@ -198,10 +197,8 @@ func (c *BitmapIndex) query(query *pb.BitmapQuery) (*roaring64.Bitmap, error) {
 	return result, nil
 }
 
-//
 // Perform query processing for a group of query predicates (fragments) for a given index.
 // Processing is parallelized across nodes.
-//
 func (c *BitmapIndex) queryGroup(index string, query *pb.BitmapQuery) (*IntermediateResult, error) {
 
 	resultChan := make(chan *pb.QueryResult, 100)
@@ -322,11 +319,9 @@ func (c *BitmapIndex) queryGroup(index string, query *pb.BitmapQuery) (*Intermed
 	return gr, nil
 }
 
-//
 // Break up a query and group all of the predicate fragments by index.  Queries that span multiple
 // indices must include the relevant join criteria.  This function returns a map of the predicates
 // keyed by index name.
-//
 func (c *BitmapIndex) groupQueryFragmentsByIndex(query *pb.BitmapQuery) map[string]*pb.BitmapQuery {
 
 	results := make(map[string]*pb.BitmapQuery)
@@ -362,8 +357,9 @@ func (c *BitmapIndex) queryClient(client pb.BitmapIndexClient, q *pb.BitmapQuery
 
 	result, err := client.Query(ctx, q)
 	if err != nil {
-		return nil, fmt.Errorf("%v.Query(_) = _, %v, node = %s", client, err,
-			c.ClientConnections()[clientIndex].Target())
+		t := ""
+		return nil, fmt.Errorf("%v.Query(_) = _, %v, node = %s", client, err, t)
+		// c.ClientConnections()[clientIndex].Target())
 	}
 	return result, nil
 }
@@ -401,10 +397,8 @@ func (c *BitmapIndex) ResultsQuery(query *pb.BitmapQuery, limit uint64) ([]uint6
 	return result.ToArray(), nil
 }
 
-//
 // Join - Send summarized results for a given index to cluster for join processing.
 // Resulting bitmap is then intersected with final query results.
-//
 func (c *BitmapIndex) Join(driverIndex string, fklist []string, fromTime, toTime int64,
 	foundSet *roaring64.Bitmap, filterSets []*roaring64.Bitmap, negate bool) (*roaring64.BSI, error) {
 

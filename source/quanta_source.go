@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	u "github.com/araddon/gou"
-	"github.com/araddon/qlbridge/schema"
-	"github.com/araddon/qlbridge/value"
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/qlbridge/schema"
+	"github.com/disney/quanta/qlbridge/value"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 )
@@ -42,6 +42,7 @@ type QuantaSource struct {
 	lastResultPos int
 	baseDir       string
 	sessionPool   *core.SessionPool
+	clientConn    *shared.Conn
 }
 
 // NewQuantaSource - Construct a QuantaSource.
@@ -67,6 +68,7 @@ func NewQuantaSource(tableCache *core.TableCacheStruct, baseDir, consulAddr stri
 
 	// Register for member leave/join notifications.
 	clientConn.RegisterService(m)
+	m.clientConn = clientConn
 
 	m.sessionPool = core.NewSessionPool(tableCache, clientConn, m.Schema, baseDir, sessionPoolSize)
 
@@ -98,6 +100,11 @@ func (m *QuantaSource) MemberJoined(nodeID, ipAddress string, index int) {
 // GetSessionPool - Return the underlying session pool instance.
 func (m *QuantaSource) GetSessionPool() *core.SessionPool {
 	return m.sessionPool
+}
+
+// GetConnection - Return the underlying client connection
+func (m *QuantaSource) GetConnection() *shared.Conn {
+	return m.clientConn
 }
 
 // Init initilize this db
@@ -152,7 +159,9 @@ func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 	}
 	tbl := schema.NewTable(table)
 	cols := make([]string, 0)
-	for _, v := range ts.Attributes {
+	// for _, v := range ts.Attributes { copies lock. That's a no no
+	for i := 0; i < len(ts.Attributes); i++ {
+		v := &ts.Attributes[i]
 		if v.FieldName == "" {
 			if v.MappingStrategy == "ChildRelation" {
 				continue // Ignore these

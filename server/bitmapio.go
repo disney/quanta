@@ -6,32 +6,33 @@ package server
 
 import (
 	"fmt"
-	u "github.com/araddon/gou"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	u "github.com/araddon/gou"
 )
 
 // Partition - Description of partition
 type Partition struct {
-	Index			string
-	Field			string
-	RowIDOrBits		int64
-	Time			time.Time
-	TQType			string
-	HasStrings		bool
-	IsPK			bool
-	Shard			interface{}
+	Index       string
+	Field       string
+	RowIDOrBits int64
+	Time        time.Time
+	TQType      string
+	HasStrings  bool
+	IsPK        bool
+	Shard       interface{}
 }
 
 // PartitionOperation - Partition operation
 type PartitionOperation struct {
 	*Partition
-	RemoveOnly		bool
-	newPath			string
+	RemoveOnly bool
+	newPath    string
 }
 
 // NewPartitionOperation - Archival/Removal operations on an entire partition/shard.
@@ -50,7 +51,7 @@ func (m *BitmapIndex) NewPartitionOperation(p *Partition, removeOnly bool) *Part
 		return nil
 	}
 	p.IsPK = p.Field == pka[0].FieldName
-	attr, err  := table.GetAttribute(p.Field)
+	attr, err := table.GetAttribute(p.Field)
 	if err != nil {
 		u.Errorf("assertion fail: %v", err)
 	} else {
@@ -61,7 +62,7 @@ func (m *BitmapIndex) NewPartitionOperation(p *Partition, removeOnly bool) *Part
 
 // Persist a standard bitmap field to disk
 func (m *BitmapIndex) saveCompleteBitmap(bm *StandardBitmap, indexName, fieldName string, rowID int64,
-		ts time.Time) error {
+	ts time.Time) error {
 
 	data, err := bm.Bits.MarshalBinary()
 	if err != nil {
@@ -83,7 +84,7 @@ func (m *BitmapIndex) saveCompleteBitmap(bm *StandardBitmap, indexName, fieldNam
 
 // Persist a BSI field to disk
 func (m *BitmapIndex) saveCompleteBSI(bsi *BSIBitmap, indexName, fieldName string, bits int,
-		ts time.Time) error {
+	ts time.Time) error {
 
 	if fds, err := m.openCompleteFile(indexName, fieldName, int64(bits*-1), ts,
 		bsi.TQType); err == nil {
@@ -165,7 +166,7 @@ func (po *PartitionOperation) perform(path string, info os.FileInfo, err error) 
 	if po.RemoveOnly {
 		return os.Remove(path)
 	}
-	dest := po.newPath+sep+info.Name()
+	dest := po.newPath + sep + info.Name()
 	err2 := os.Rename(path, dest)
 	if err2 == nil {
 		return nil
@@ -206,7 +207,6 @@ func (p *Partition) generatePath(isArchivePath bool, base, leaf string) (string,
 	return ret, strings.ReplaceAll(ret, baseWithDest, "")
 }
 
-
 // Figure out the appropriate file path given type BSI/Standard and applicable time quantum
 func (m *BitmapIndex) generateBitmapFilePath(aop *Partition, isArchivePath bool) string {
 
@@ -233,7 +233,7 @@ func (m *BitmapIndex) generateBitmapFilePath(aop *Partition, isArchivePath bool)
 	}
 	os.MkdirAll(baseDir, 0755)
 	//return baseDir + sep + fname
-	return baseDir 
+	return baseDir
 }
 
 // Figure out the appropriate file path for backing strings file
@@ -260,14 +260,14 @@ func (m *BitmapIndex) generateIndexFilePath(aop *PartitionOperation, isArchivePa
 			u.Errorf("generateIndexFilePath: indexNo is invalid")
 			return "", ""
 		}
-		name = s[indexNo - 1] + ".SK"
+		name = s[indexNo-1] + ".SK"
 	}
 	return aop.generatePath(isArchivePath, m.dataDir, name)
 }
 
 // Return open file descriptor(s) for writing
 func (m *BitmapIndex) openCompleteFile(index, field string, rowIDOrBits int64, ts time.Time,
-		tqType string) ([]*os.File, error) {
+	tqType string) ([]*os.File, error) {
 
 	// if the bitmap file is a BSI (rowidOrBits < 0) then return an array of open file handles in low
 	// to high bit significance order.  For BSI, RowIDOrBits is the number of bits as a negative value.
@@ -345,8 +345,7 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 				u.Errorf("Attribute %s.%s not found in schema. ignoring", bf.IndexName, bf.FieldName)
 				return nil
 			}
-			
-	
+
 			var tq string
 			if attr != nil {
 				tq = attr.TimeQuantumType
@@ -475,13 +474,12 @@ func (m *BitmapIndex) purgePartition(aop *Partition) {
 		defer m.bitmapCacheLock.Unlock()
 		if _, ok := m.bitmapCache[aop.Index][aop.Field][rowID][t]; ok {
 			delete(m.bitmapCache[aop.Index][aop.Field][rowID], t)
-		} 
+		}
 	} else {
 		m.bsiCacheLock.Lock()
 		defer m.bsiCacheLock.Unlock()
 		if _, ok := m.bsiCache[aop.Index][aop.Field][t]; ok {
 			delete(m.bsiCache[aop.Index][aop.Field], t)
-		} 
+		}
 	}
 }
-

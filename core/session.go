@@ -13,10 +13,10 @@ import (
 
 	"github.com/araddon/dateparse"
 	u "github.com/araddon/gou"
-	"github.com/araddon/qlbridge/datasource"
-	"github.com/araddon/qlbridge/expr"
-	"github.com/araddon/qlbridge/value"
-	"github.com/araddon/qlbridge/vm"
+	"github.com/disney/quanta/qlbridge/datasource"
+	"github.com/disney/quanta/qlbridge/expr"
+	"github.com/disney/quanta/qlbridge/value"
+	"github.com/disney/quanta/qlbridge/vm"
 	"github.com/disney/quanta/shared"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/xitongsys/parquet-go/reader"
@@ -578,7 +578,6 @@ func (s *Session) getDefaultValueForColumn(a *Attribute, row interface{}, ignore
 				var err error
 				var val interface{}
 				if val, err = shared.GetPath(source, row, ignoreSourcePath, useNerd); err == nil {
-					val = r.(map[string]interface{})[source]
 					rm[v.FieldName] = val
 					if v.FieldName == a.FieldName {
 						return fmt.Sprintf("%v", val)

@@ -13,6 +13,7 @@ import (
 	"github.com/RoaringBitmap/roaring/roaring64"
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
+	"github.com/golang/protobuf/ptypes/empty"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -606,6 +607,47 @@ func (c *BitmapIndex) tableOperationClient(client pb.BitmapIndexClient, req *pb.
 
 	if _, err := client.TableOperation(ctx, req); err != nil {
 		return fmt.Errorf("%v.TableOperation(_) = _, %v, node = %s", client, err,
+			c.ClientConnections()[clientIndex].Target())
+	}
+	return nil
+}
+
+// Commit - Block until persistence queues are synced (empty).
+func (c *BitmapIndex) Commit() error {
+
+	sop := AllActive
+	var eg errgroup.Group
+
+	// Send the same commit request to each node.  They must be all Active
+	indices, err := c.SelectNodes(nil, sop)
+	if err != nil {
+		return fmt.Errorf("commit: %v", err)
+	}
+	for _, n := range indices {
+		client := c.client[n]
+		clientIndex := n
+		eg.Go(func() error {
+			if err := c.commitClient(client, clientIndex); err != nil {
+				return err
+			}
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+	return nil
+}
+
+
+// Send a Commit request to all nodes.
+func (c *BitmapIndex) commitClient(client pb.BitmapIndexClient, clientIndex int) error {
+
+	ctx, cancel := context.WithTimeout(context.Background(), OpDeadline)
+	defer cancel()
+	if _, err := client.Commit(ctx, &empty.Empty{}); err != nil {
+		return fmt.Errorf("%v.Commit(_) = _, %v, node = %s", client, err,
 			c.ClientConnections()[clientIndex].Target())
 	}
 	return nil

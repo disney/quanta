@@ -731,15 +731,10 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 	}
 	//u.Debugf("walkBinary: %v  l:%v  r:%v  %T  %T", node, lhval, rhval, lhval, rhval)
 	switch node.Operator.T {
-	case lex.TokenEqual, lex.TokenEqualEqual, lex.TokenNE, lex.TokenIs:
+	case lex.TokenEqual, lex.TokenEqualEqual, lex.TokenNE:
 		if node.Operator.T == lex.TokenNE {
 			q.Operation = "DIFFERENCE"
 			q.Negate = true
-		}
-		if node.Operator.T == lex.TokenIs && rhval.ToString() == "not" {
-			q.Operation = "DIFFERENCE"
-			q.Negate = true
-			//rhval = pass the not
 		}
 		// The $eq expression is equivalent to { field: <value> }.
 		if lhval != nil && (rhval != nil || rhisnull) {
@@ -988,7 +983,7 @@ func (m *SQLToQuanta) walkFilterUnary(node *expr.UnaryNode, q *shared.QueryFragm
 		fmt.Printf("hasNot: %v\n", hasNot)
 		fmt.Printf("curNode: %v\n", node)
 
-		//I  think what we want to do is return an = null Node or a != null node
+		// I  think what we want to do is return an = null Node or a != null node
 
 		u.Warnf("not implemented: %#v", node)
 		u.Warnf("Unknown token %v", node.Operator.T)

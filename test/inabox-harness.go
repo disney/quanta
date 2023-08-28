@@ -89,15 +89,15 @@ func StartNode(nodeStart int) (*server.Node, error) {
 
 		// load the table schema from the file system manually here
 
-		table := "cities"
-		shared.LoadSchema("../test/testdata/config", table, consulClient)
-		// ? m.TableCache.TableCache[table] = t
+		// table := "cities"
+		// shared.LoadSchema("../test/testdata/config", table, consulClient)
+		// // ? m.TableCache.TableCache[table] = t
 
-		table = "cityzip"
-		shared.LoadSchema("../test/testdata/config", table, consulClient)
+		// table = "cityzip"
+		// shared.LoadSchema("../test/testdata/config", table, consulClient)
 
-		table = "dmltest"
-		shared.LoadSchema("../test/testdata/config", table, consulClient)
+		// table = "dmltest"
+		// shared.LoadSchema("../test/testdata/config", table, consulClient)
 
 		// Start listening endpoint
 		m.Start()
@@ -343,7 +343,9 @@ func Ensure_cluster() *ClusterLocalState {
 		WaitForLocalActive(state)
 
 		// atw FIXME get rid of this config
-		state.proxyControl = StartProxy(1, "../test/testdata/config")
+		// configDir := "../test/testdata/config"
+		configDir := ""
+		state.proxyControl = StartProxy(1, configDir)
 
 		state.weStartedTheCluster = true
 	} else {

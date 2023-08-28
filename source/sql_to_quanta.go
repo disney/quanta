@@ -446,7 +446,6 @@ func (m *SQLToQuanta) walkNode(cur expr.Node, q *shared.QueryFragment) (value.Va
 		u.Errorf("unrecognized T:%T  %v", cur, cur)
 		panic("Unrecognized node type")
 	}
-	return nil, nil
 }
 
 // Tri Nodes expressions:
@@ -601,7 +600,7 @@ func (m *SQLToQuanta) walkArrayNode(node *expr.ArrayNode, q *shared.QueryFragmen
 	return nil, fmt.Errorf("Uknown Error")
 }
 
-// Binary Node:   operations for >, >=, <, <=, =, !=, AND, OR, Like, IN
+// Binary Node:   operations for >, >=, <, <=, =, !=, AND, OR, Like, IN and IS
 //
 //	x = y             =>   db.users.find({field: {"$eq": value}})
 //	x != y            =>   db.inventory.find( { qty: { $ne: 20 } } )
@@ -732,10 +731,15 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 	}
 	//u.Debugf("walkBinary: %v  l:%v  r:%v  %T  %T", node, lhval, rhval, lhval, rhval)
 	switch node.Operator.T {
-	case lex.TokenEqual, lex.TokenEqualEqual, lex.TokenNE:
+	case lex.TokenEqual, lex.TokenEqualEqual, lex.TokenNE, lex.TokenIs:
 		if node.Operator.T == lex.TokenNE {
 			q.Operation = "DIFFERENCE"
 			q.Negate = true
+		}
+		if node.Operator.T == lex.TokenIs && rhval.ToString() == "not" {
+			q.Operation = "DIFFERENCE"
+			q.Negate = true
+			//rhval = pass the not
 		}
 		// The $eq expression is equivalent to { field: <value> }.
 		if lhval != nil && (rhval != nil || rhisnull) {
@@ -961,6 +965,35 @@ func (m *SQLToQuanta) handleBSI(op string, lhval, rhval value.Value, q *shared.Q
 func (m *SQLToQuanta) walkFilterUnary(node *expr.UnaryNode, q *shared.QueryFragment) (value.Value, error) {
 
 	switch node.Operator.T {
+
+	case lex.TokenIs: // IS keyword
+
+		// node.Arg.data is expr.NullNode{}
+		// node.Operator is lex.TokenIs
+
+		isNull := false
+		hasNot := false
+		if node.String() == "(NULL)" {
+			isNull = true
+		}
+		if node.String() == "not" {
+			isNull = true
+			hasNot = true
+		}
+
+		//	switch curNode := node.Arg.(type) {
+
+		fmt.Printf("QueryFragment: %v\n", q)
+		fmt.Printf("isNull: %v\n", isNull)
+		fmt.Printf("hasNot: %v\n", hasNot)
+		fmt.Printf("curNode: %v\n", node)
+
+		//I  think what we want to do is return an = null Node or a != null node
+
+		u.Warnf("not implemented: %#v", node)
+		u.Warnf("Unknown token %v", node.Operator.T)
+		return nil, fmt.Errorf("not implemented unary function: %v", node.String())
+	//}
 	case lex.TokenNegate: // NOT keyword
 		q.Negate = true
 		switch curNode := node.Arg.(type) {
@@ -969,7 +1002,7 @@ func (m *SQLToQuanta) walkFilterUnary(node *expr.UnaryNode, q *shared.QueryFragm
 		case *expr.TriNode:
 			return m.walkFilterTri(curNode, q)
 		case *expr.NullNode:
-			return nil, fmt.Errorf("Use != NULL instead of NOT NULL")
+			return nil, fmt.Errorf("use != NULL instead of NOT NULL") // atw fixme, never happens
 		default:
 			u.Warnf("not implemented: %#v", node)
 			u.Warnf("Unknown token %v", node.Operator.T)
@@ -980,7 +1013,6 @@ func (m *SQLToQuanta) walkFilterUnary(node *expr.UnaryNode, q *shared.QueryFragm
 		u.Warnf("Unknown token %v", node.Operator.T)
 		return nil, fmt.Errorf("not implemented unary function: %v", node.String())
 	}
-	return nil, nil
 }
 
 // eval() returns

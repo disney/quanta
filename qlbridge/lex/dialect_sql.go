@@ -217,9 +217,10 @@ func NewSqlLexer(input string) *Lexer {
 }
 
 // find any keyword that starts a source
-//    FROM <name>
-//    FROM (select ...)
-//         [(INNER | LEFT)] JOIN
+//
+//	FROM <name>
+//	FROM (select ...)
+//	     [(INNER | LEFT)] JOIN
 func sourceMatch(c *Clause, peekWord string, l *Lexer) bool {
 	//u.Debugf("%p sourceMatch?   peekWord: %s", c, peekWord)
 	switch peekWord {
@@ -246,8 +247,7 @@ func LexEndOfSubStatement(l *Lexer) StateFn {
 
 // LexShowClause Handle show statement
 //
-//    SHOW [FULL] <multi_word_identifier> <identity> <like_or_where>
-//
+//	SHOW [FULL] <multi_word_identifier> <identity> <like_or_where>
 func LexShowClause(l *Lexer) StateFn {
 
 	/*
@@ -357,14 +357,13 @@ func LexInto(l *Lexer) StateFn {
 		// Must have been a quoted string value
 		return LexValue
 	}
-	return nil
 }
 
 // LexLimit clause
 //
-//    LIMIT 1000 OFFSET 100
-//    LIMIT 0, 1000
-//    LIMIT 1000
+//	LIMIT 1000 OFFSET 100
+//	LIMIT 0, 1000
+//	LIMIT 1000
 func LexLimit(l *Lexer) StateFn {
 
 	l.SkipWhiteSpaces()
@@ -391,10 +390,9 @@ func LexLimit(l *Lexer) StateFn {
 
 // LexCreate allows us to lex the words after CREATE
 //
-//    CREATE {SCHEMA|DATABASE|SOURCE} [IF NOT EXISTS] <identity>  <WITH>
-//    CREATE {TABLE} <identity> [IF NOT EXISTS] <table_spec> [WITH]
-//    CREATE [OR REPLACE] {VIEW|CONTINUOUSVIEW} <identity> AS <select_statement> [WITH]
-//
+//	CREATE {SCHEMA|DATABASE|SOURCE} [IF NOT EXISTS] <identity>  <WITH>
+//	CREATE {TABLE} <identity> [IF NOT EXISTS] <table_spec> [WITH]
+//	CREATE [OR REPLACE] {VIEW|CONTINUOUSVIEW} <identity> AS <select_statement> [WITH]
 func LexCreate(l *Lexer) StateFn {
 
 	/*
@@ -447,7 +445,6 @@ func LexCreate(l *Lexer) StateFn {
 	default:
 		return nil
 	}
-	return nil
 }
 func lexAs(l *Lexer) StateFn {
 	l.SkipWhiteSpaces()
@@ -499,12 +496,12 @@ func lexOrReplace(l *Lexer) StateFn {
 
 // LexDrop allows us to lex the words after DROP
 //
-//    DROP {DATABASE | SCHEMA} [IF EXISTS] db_name
+//	DROP {DATABASE | SCHEMA} [IF EXISTS] db_name
 //
-//    DROP [TEMPORARY] TABLE [IF EXISTS] tbl_name [, tbl_name] [RESTRICT | CASCADE]
+//	DROP [TEMPORARY] TABLE [IF EXISTS] tbl_name [, tbl_name] [RESTRICT | CASCADE]
 //
-//    DROP INDEX index_name ON tbl_name
-//        [algorithm_option | lock_option] ...
+//	DROP INDEX index_name ON tbl_name
+//	    [algorithm_option | lock_option] ...
 func LexDrop(l *Lexer) StateFn {
 
 	/*
@@ -637,8 +634,7 @@ func LexDdlTable(l *Lexer) StateFn {
 
 // LexDdlTableStorage data definition language column (repeated)
 //
-//     ENGINE=InnoDB AUTO_INCREMENT=4080 DEFAULT CHARSET=utf8
-//
+//	ENGINE=InnoDB AUTO_INCREMENT=4080 DEFAULT CHARSET=utf8
 func LexDdlTableStorage(l *Lexer) StateFn {
 
 	l.SkipWhiteSpaces()
@@ -655,11 +651,10 @@ func LexDdlTableStorage(l *Lexer) StateFn {
 
 // LexDdlAlterColumn data definition language column alter
 //
-//   CHANGE col1_old col1_new varchar(10),
-//   CHANGE col2_old col2_new TEXT
-//   ADD col3 BIGINT AFTER col1_new
-//   ADD col2 TEXT FIRST,
-//
+//	CHANGE col1_old col1_new varchar(10),
+//	CHANGE col2_old col2_new TEXT
+//	ADD col3 BIGINT AFTER col1_new
+//	ADD col2 TEXT FIRST,
 func LexDdlAlterColumn(l *Lexer) StateFn {
 
 	l.SkipWhiteSpaces()
@@ -757,9 +752,8 @@ func LexDdlAlterColumn(l *Lexer) StateFn {
 
 // LexDdlTableColumn data definition language column (repeated)
 //
-//   col1_new varchar(10),
-//   col2_new TEXT
-//
+//	col1_new varchar(10),
+//	col2_new TEXT
 func LexDdlTableColumn(l *Lexer) StateFn {
 
 	/*
@@ -932,10 +926,9 @@ func LexDdlTableColumn(l *Lexer) StateFn {
 
 // LexEngineKeyValue key value pairs
 //
-//    Start with identity for key/value pairs
-//    supports keyword DEFAULT
-//    supports non-quoted values
-//
+//	Start with identity for key/value pairs
+//	supports keyword DEFAULT
+//	supports non-quoted values
 func LexEngineKeyValue(l *Lexer) StateFn {
 
 	l.SkipWhiteSpaces()

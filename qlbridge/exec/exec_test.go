@@ -23,8 +23,7 @@ func init() {
 	td.LoadTestDataOnce()
 }
 
-// atw FIXME:
-func xxTestStatements(t *testing.T) {
+func TestStatements(t *testing.T) {
 	testutil.RunTestSuite(t)
 }
 func TestDDLStatements(t *testing.T) {

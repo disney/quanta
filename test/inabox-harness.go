@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	u "github.com/araddon/gou"
@@ -29,6 +30,13 @@ import (
 	"github.com/disney/quanta/source"
 	"github.com/hashicorp/consul/api"
 )
+
+// some tests start a cluster and must listen on port 4000
+// this is a mutex to ensure that only one test at a time can listen on port 4000
+var acquirePort4000 sync.Mutex
+
+// tests will time out so run like this:
+// go test -timeout 10m
 
 func StartNode(nodeStart int) (*server.Node, error) {
 

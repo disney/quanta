@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	_ "net/http/pprof"
-	"net/url"
 	"os"
 	"os/signal"
 	"sync"
@@ -60,8 +59,7 @@ const (
 type Main struct {
 	Stream              string
 	Region              string
-	Index               string
-	BufferSize          uint
+	Schema              string
 	totalBytes          *Counter
 	totalBytesL         *Counter
 	totalRecs           *Counter
@@ -73,8 +71,6 @@ type Main struct {
 	ShardCount          int
 	lock                *api.Lock
 	consumer            *consumer.Consumer
-	Table               *shared.BasicTable
-	Schema              avro.Schema
 	InitialPos          string
 	IsAvro              bool
 	CheckpointDB        bool
@@ -87,7 +83,8 @@ type Main struct {
 	selectorIdentities  []string
 	ShardKey            string
 	HashTable           *rendezvous.Table
-	shardChannels       map[string]chan map[string]interface{}
+	shardChannels       map[string]chan DataRecord
+	shardSessions       map[string]*core.Session
 	eg                  errgroup.Group
 	cancelFunc          context.CancelFunc
 	CommitIntervalMs    int
@@ -113,17 +110,22 @@ func NewMain() *Main {
 	return m
 }
 
+type DataRecord struct {
+	TableName          string
+	Data               map[string]interface{}
+}
+
 func main() {
 
 	app := kingpin.New(os.Args[0], "Quanta Kinesis data consumer").DefaultEnvars()
 	app.Version("Version: " + Version + "\nBuild: " + Build)
 
 	stream := app.Arg("stream", "Kinesis stream name.").Required().String()
-	index := app.Arg("index", "Table name (root name if nested schema)").Required().String()
+	schema := app.Arg("schema", "Schema name.").Required().String()
 	shardKey := app.Arg("shard-key", "Shard Key").Required().String()
 	region := app.Arg("region", "AWS region").Default("us-east-1").String()
 	port := app.Flag("port", "Port number for service").Default("4000").Int32()
-	bufSize := app.Flag("buf-size", "Buffer size").Default("1000000").Int32()
+	//bufSize := app.Flag("buf-size", "Buffer size").Default("1000000").Int32()
 	withAssumeRoleArn := app.Flag("assume-role-arn", "Assume role ARN.").String()
 	withAssumeRoleArnRegion := app.Flag("assume-role-arn-region", "Assume role ARN region.").String()
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
@@ -133,7 +135,7 @@ func main() {
 	checkpointTable := app.Flag("checkpoint-table", "DynamoDB checkpoint table name.").String()
 	avroPayload := app.Flag("avro-payload", "Payload is Avro.").Bool()
 	deaggregate := app.Flag("deaggregate", "Incoming payload records are aggregated.").Bool()
-	preselector := app.Flag("preselector", "Filter expression (url encoded).").String()
+	//preselector := app.Flag("preselector", "Filter expression (url encoded).").String()
 	scanInterval := app.Flag("scan-interval", "Scan interval (milliseconds)").Default("1000").Int()
 	commitInterval := app.Flag("commit-interval", "Commit interval (milliseconds)").Int()
 	logLevel := app.Flag("log-level", "Log Level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
@@ -148,8 +150,7 @@ func main() {
 	main := NewMain()
 	main.Stream = *stream
 	main.Region = *region
-	main.Index = *index
-	main.BufferSize = uint(*bufSize)
+	main.Schema = *schema
 	main.scanInterval = *scanInterval
 	main.Port = int(*port)
 	main.ConsulAddr = *consul
@@ -157,8 +158,7 @@ func main() {
 	log.Printf("Set Logging level to %v.", *logLevel)
 	log.Printf("Kinesis stream %v.", main.Stream)
 	log.Printf("Kinesis region %v.", main.Region)
-	log.Printf("Index name %v.", main.Index)
-	log.Printf("Buffer size %d.", main.BufferSize)
+	log.Printf("Schema name %v.", main.Schema)
 	log.Printf("Scan interval (milliseconds) %d.", main.scanInterval)
 	if *commitInterval == 0 {
 		log.Printf("Commits will occur after each row.")
@@ -184,7 +184,8 @@ func main() {
 		if *checkpointTable != "" {
 			main.CheckpointTable = *checkpointTable
 		} else {
-			main.CheckpointTable = main.Index
+			u.Errorf("DynamoDB checkpoint enabled but 'checkpoint-table' not specified")
+			os.Exit(1)
 		}
 		log.Printf("DynamoDB checkpoint table name [%s]", main.CheckpointTable)
 	}
@@ -225,21 +226,6 @@ func main() {
 	}
 
 	var err error
-
-	if *preselector != "" {
-		decodedValue, err := url.QueryUnescape(*preselector)
-		if err != nil {
-			u.Error(err)
-			os.Exit(1)
-		}
-		main.Preselector, err = expr.ParseExpression(decodedValue)
-		if err != nil {
-			u.Error(err)
-			os.Exit(1)
-		}
-		main.selectorIdentities = expr.FindAllIdentityField(main.Preselector)
-		log.Printf("Preseletor enabled -> %v <-", main.Preselector)
-	}
 
 	if main.ShardCount, err = main.Init(); err != nil {
 		u.Error(err)
@@ -309,25 +295,32 @@ func (m *Main) scanAndProcess(v *consumer.Record) error {
 
 	out := make(map[string]interface{})
 
-	var err error
-	if m.IsAvro {
-		err = avro.Unmarshal(m.Schema, v.Data, &out)
-	} else {
-		err = json.Unmarshal(v.Data, &out)
+	var table *core.Table
+	for _, x := range m.tableCache.TableCache {
+		if m.IsAvro {
+			errx := avro.Unmarshal(x.AvroSchema, v.Data, &out)
+			if errx != nil {
+				// Could fail for a number of reasons but most often the 'shape' of the data is different
+				// Ideally we would grok the schema from the partition key somehow
+				continue
+			}
+			
+		} else { // Default is JSON
+			err := json.Unmarshal(v.Data, &out)
+			m.errorCount.Add(1)
+			u.Errorf("Unmarshal ERROR %v", err)
+			return nil
+		}
+		if m.preselect(x.SelectorNode, x.SelectorIdentities, out) {
+			table = x
+			break
+		}
 	}
-	if err != nil {
-		u.Errorf("Unmarshal ERROR %v", err)
-		m.errorCount.Add(1)
+	if table == nil { // no match, continue
 		return nil
 	}
 
 	// Got record at this point
-	if m.Preselector != nil {
-		if !m.preselect(out) {
-			return nil // continue processing
-		}
-	}
-
 	// push into the appropriate shard channel
 	if key, err := shared.GetPath(m.ShardKey, out, false, false); err != nil {
 		return err
@@ -337,7 +330,8 @@ func (m *Main) scanAndProcess(v *consumer.Record) error {
 		if !ok {
 			return fmt.Errorf("Cannot locate channel for shard key %v", key)
 		}
-		ch <- out
+		rec := DataRecord{TableName: table.Name, Data: out}
+		ch <- rec
 		m.totalRecs.Add(1)
 		m.totalBytes.Add(len(v.Data))
 	}
@@ -345,26 +339,26 @@ func (m *Main) scanAndProcess(v *consumer.Record) error {
 }
 
 // filter row per expression
-func (m *Main) preselect(row map[string]interface{}) bool {
+func (m *Main) preselect(selector expr.Node, identities []string, row map[string]interface{}) bool {
 
-	ctx := m.buildEvalContext(row)
-	val, ok := vm.Eval(ctx, m.Preselector)
+	ctx := m.buildEvalContext(identities, row)
+	val, ok := vm.Eval(ctx, selector)
 	if !ok {
-		u.Errorf("Preselect expression %s failed to evaluate ", m.Preselector.String())
+		u.Errorf("Preselect expression %s failed to evaluate ", selector.String())
 		os.Exit(1)
 	}
 	if val.Type() != value.BoolType {
-		u.Errorf("Preselect expression %s does not evaluate to a boolean value", m.Preselector.String())
+		u.Errorf("select expression %s does not evaluate to a boolean value", selector.String())
 		os.Exit(1)
 	}
 
 	return val.Value().(bool)
 }
 
-func (m *Main) buildEvalContext(row map[string]interface{}) *datasource.ContextSimple {
+func (m *Main) buildEvalContext(identities []string, row map[string]interface{}) *datasource.ContextSimple {
 
 	data := make(map[string]interface{})
-	for _, v := range m.selectorIdentities {
+	for _, v := range identities {
 		var path string
 		if v[0] == '/' {
 			path = v[1:]
@@ -430,15 +424,17 @@ func (m *Main) schemaChangeListener(e shared.SchemaChangeEvent) {
 	case shared.Drop:
 		//m.sessionPool.Recover(nil)
 		u.Warnf("Dropped table %s", e.Table)
-		if e.Table == m.Index {
-			u.Errorf("The table [%s], for this consumer was dropped, exiting", e.Table)
-			os.Exit(1)
-		}
+		delete(m.tableCache.TableCache, e.Table)
 	case shared.Modify:
 		u.Warnf("Truncated table %s", e.Table)
 	case shared.Create:
 		//m.sessionPool.Recover(nil)
+		delete(m.tableCache.TableCache, e.Table)
 		u.Warnf("Created table %s", e.Table)
+	}
+	for k, v := range m.shardSessions {
+		v.CloseSession()
+		delete(m.shardSessions, k)
 	}
 }
 
@@ -468,15 +464,6 @@ func (m *Main) Init() (int, error) {
 
 	// Register member leave/join
 	//clientConn.RegisterService(m)
-
-	m.Table, err = shared.LoadSchema("", m.Index, consulClient)
-	if err != nil {
-		return 0, err
-	}
-	if m.IsAvro {
-		m.Schema = shared.ToAvroSchema(m.Table)
-	}
-
 	sess, errx := session.NewSession(&aws.Config{
 		Region: aws.String(m.Region),
 	})
@@ -537,22 +524,28 @@ func (m *Main) Init() (int, error) {
 
 	// Initialize shard channels
 	u.Warnf("Shard count = %d", shardCount)
-	m.shardChannels = make(map[string]chan map[string]interface{})
+	m.shardChannels = make(map[string]chan DataRecord)
+	m.shardSessions = make(map[string]*core.Session)
 	shardIds := make([]string, shardCount)
 	// atw delete me core.ClearTableCache()
 	for i := 0; i < shardCount; i++ {
 		k := fmt.Sprintf("shard%v", i)
 		shardIds[i] = k
-		m.shardChannels[k] = make(chan map[string]interface{}, ShardChannelSize)
+		m.shardChannels[k] = make(chan DataRecord, ShardChannelSize)
 		shardId := k
 		m.eg.Go(func() error {
-			conn, err := core.OpenSession(m.tableCache, "", m.Index, false, clientConn)
-			if err != nil {
-				return err
-			}
 			nextCommit := time.Now().Add(time.Millisecond * time.Duration(m.CommitIntervalMs))
-			for data := range m.shardChannels[shardId] {
-				err = conn.PutRow(m.Index, data, 0, false, false)
+			for rec := range m.shardChannels[shardId] {
+				shardTableKey := fmt.Sprintf("%v+%v", shardId, rec.TableName)
+				conn, ok := m.shardSessions[shardTableKey]
+				if !ok {
+					conn, err = core.OpenSession(m.tableCache, "", rec.TableName, false, clientConn)
+					if err != nil {
+						return err
+					}
+				}
+			
+				err = conn.PutRow(rec.TableName, rec.Data, 0, false, false)
 				if err != nil {
 					u.Errorf("ERROR in PutRow, shard %s - %v", shardId, err)
 					m.errorCount.Add(1)
@@ -564,7 +557,11 @@ func (m *Main) Init() (int, error) {
 					nextCommit = time.Now().Add(time.Millisecond * time.Duration(m.CommitIntervalMs))
 				}
 			}
-			conn.CloseSession()
+			// sharedChannels was closed, clean up.
+			for k, v := range m.shardSessions {
+				v.CloseSession()
+				delete(m.shardSessions, k)
+			}
 			return nil
 		})
 	}
@@ -673,67 +670,79 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 				MetricName: aws.String("Processed"),
 				Unit:       aws.String("Count"),
 				Value:      aws.Float64(float64(m.processedRecs.Get())),
+/*
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
 						Value: aws.String(m.Index),
 					},
 				},
+*/
 			},
 			{
 				MetricName: aws.String("ProcessedPerSecond"),
 				Unit:       aws.String("Count/Second"),
 				Value:      aws.Float64(float64(m.processedRecs.Get()-m.processedRecL.Get()) / interval),
+/*
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
 						Value: aws.String(m.Index),
 					},
 				},
+*/
 			},
 			{
 				MetricName: aws.String("Errors"),
 				Unit:       aws.String("Count"),
 				Value:      aws.Float64(float64(m.errorCount.Get())),
+/*
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
 						Value: aws.String(m.Index),
 					},
 				},
+*/
 			},
 			{
 				MetricName: aws.String("ProcessedBytes"),
 				Unit:       aws.String("Bytes"),
 				Value:      aws.Float64(float64(m.totalBytes.Get())),
+/*
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
 						Value: aws.String(m.Index),
 					},
 				},
+*/
 			},
 			{
 				MetricName: aws.String("BytesPerSec"),
 				Unit:       aws.String("Bytes/Second"),
 				Value:      aws.Float64(float64(m.totalBytes.Get()-m.totalBytesL.Get()) / interval),
+/*
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
 						Value: aws.String(m.Index),
 					},
 				},
+*/
 			},
 			{
 				MetricName: aws.String("UpTimeHours"),
 				Unit:       aws.String("Count"),
 				Value:      aws.Float64(float64(upTime) / float64(1000000000*3600)),
+/*
 				Dimensions: []*cloudwatch.Dimension{
 					{
 						Name:  aws.String("Table"),
 						Value: aws.String(m.Index),
 					},
 				},
+*/
 			},
 		},
 	})

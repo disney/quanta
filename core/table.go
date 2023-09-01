@@ -13,17 +13,22 @@ import (
 	"sync"
 
 	u "github.com/araddon/gou"
+	"github.com/disney/quanta/qlbridge/expr"
 	"github.com/disney/quanta/shared"
+	"github.com/hamba/avro"
 	"github.com/hashicorp/consul/api"
 )
 
 // Table - Table structure.
 type Table struct {
 	*shared.BasicTable
-	Attributes       []Attribute
-	AttributeNameMap map[string]*Attribute
-	kvStore          *shared.KVStore
-	tableCache       *TableCacheStruct // copied from bitmap from session
+	Attributes         []Attribute
+	AttributeNameMap   map[string]*Attribute
+	SelectorNode       expr.Node
+	SelectorIdentities []string
+	AvroSchema         avro.Schema
+	kvStore            *shared.KVStore
+	tableCache         *TableCacheStruct // copied from bitmap from session
 }
 
 type TableCacheStruct struct { // used in core Table
@@ -259,6 +264,16 @@ func LoadTable(tableCache *TableCacheStruct, path string, kvStore *shared.KVStor
 		}
 	}
 
+    // Parse and verify selector expression if it exists.
+	if table.Selector != "" {
+		table.SelectorNode, err = expr.ParseExpression(table.Selector)
+		if err != nil {
+			return nil, fmt.Errorf("parsing of selector %v failed: %v", table.Selector, err)
+		}
+		table.SelectorIdentities = expr.FindAllIdentityField(table.SelectorNode)
+		u.Infof("table seletor enabled -> %v <-",table.Selector)
+	}
+	table.AvroSchema = shared.ToAvroSchema(table.BasicTable)
 	tableCache.TableCache[name] = table
 	return table, nil
 }

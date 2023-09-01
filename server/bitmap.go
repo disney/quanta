@@ -8,12 +8,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"github.com/Jeffail/tunny"
-	"github.com/RoaringBitmap/roaring/roaring64"
-	u "github.com/araddon/gou"
-	pb "github.com/disney/quanta/grpc"
-	"github.com/disney/quanta/shared"
-	"github.com/golang/protobuf/ptypes/empty"
 	"io"
 	"log"
 	"math"
@@ -23,6 +17,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Jeffail/tunny"
+	"github.com/RoaringBitmap/roaring/roaring64"
+	u "github.com/araddon/gou"
+	pb "github.com/disney/quanta/grpc"
+	"github.com/disney/quanta/shared"
+	"github.com/golang/protobuf/ptypes/empty"
 )
 
 const (
@@ -34,7 +35,6 @@ var (
 	_ NodeService = (*BitmapIndex)(nil)
 )
 
-//
 // BitmapIndex - Main state structure for bitmap indices.
 //
 // bitmapCache - In memory storage for "standard" bitmaps.
@@ -44,24 +44,23 @@ var (
 // setBitThreads - Used to identify when incoming API SetBatch calls have fallen to zero triggering writes.
 // writeSignal - Channel used by setBitThreads to initiate write operations to persist cache items.
 // tableCache - Schema metadata cache (essentially same YAML file used by loader).
-//
 type BitmapIndex struct {
 	*Node
-	memoryLimitMb		int
-	bitmapCache			map[string]map[string]map[uint64]map[int64]*StandardBitmap
-	bitmapCacheLock		sync.RWMutex
-	bsiCache			map[string]map[string]map[int64]*BSIBitmap
-	bsiCacheLock		sync.RWMutex
-	fragQueue			chan *BitmapFragment
-	workers				int
-	fragFileLock		sync.Mutex
-	setBitThreads		*CountTrigger
-	writeSignal			chan bool
-	tableCache			map[string]*shared.BasicTable
-	tableCacheLock		sync.RWMutex
-	partitionQueue		chan *PartitionOperation
-	bitmapCount			int
-	bsiCount			int
+	memoryLimitMb   int
+	bitmapCache     map[string]map[string]map[uint64]map[int64]*StandardBitmap
+	bitmapCacheLock sync.RWMutex
+	bsiCache        map[string]map[string]map[int64]*BSIBitmap
+	bsiCacheLock    sync.RWMutex
+	fragQueue       chan *BitmapFragment
+	workers         int
+	fragFileLock    sync.Mutex
+	setBitThreads   *CountTrigger
+	writeSignal     chan bool
+	tableCache      map[string]*shared.BasicTable
+	tableCacheLock  sync.RWMutex
+	partitionQueue  chan *PartitionOperation
+	bitmapCount     int
+	bsiCount        int
 }
 
 // NewBitmapIndex - Construct and initialize bitmap server state.
@@ -71,7 +70,7 @@ func NewBitmapIndex(node *Node, memoryLimitMb int) *BitmapIndex {
 	e.memoryLimitMb = memoryLimitMb
 	e.tableCache = make(map[string]*shared.BasicTable)
 	configPath := e.dataDir + sep + "config"
-	schemaPath := ""		// this is normally an empty string forcing schema to come from Consul
+	schemaPath := ""        // this is normally an empty string forcing schema to come from Consul
 	if e.ServicePort == 0 { // In-memory test harness
 		schemaPath = configPath // read schema from local config yaml
 		_ = filepath.Walk(configPath,
@@ -233,13 +232,13 @@ func (m *BitmapIndex) BatchMutate(stream pb.BitmapIndex_BatchMutateServer) error
 
 // StandardBitmap is just a wrapper around the roaring libraries for simple bitmap fields.
 type StandardBitmap struct {
-	Bits			*roaring64.Bitmap
-	ModTime	 		time.Time
-	PersistTime 	time.Time
-	AccessTime	 	time.Time
-	Lock			sync.RWMutex
-	TQType	  		string
-	Exclusive   	bool
+	Bits        *roaring64.Bitmap
+	ModTime     time.Time
+	PersistTime time.Time
+	AccessTime  time.Time
+	Lock        sync.RWMutex
+	TQType      string
+	Exclusive   bool
 }
 
 func (m *BitmapIndex) newStandardBitmap(index, field string) *StandardBitmap {
@@ -259,11 +258,11 @@ func (m *BitmapIndex) newStandardBitmap(index, field string) *StandardBitmap {
 // BSIBitmap represents integer values
 type BSIBitmap struct {
 	*roaring64.BSI
-	ModTime			time.Time
-	PersistTime		time.Time
-	AccessTime		time.Time
-	Lock		   	sync.RWMutex
-	TQType		 	string
+	ModTime        time.Time
+	PersistTime    time.Time
+	AccessTime     time.Time
+	Lock           sync.RWMutex
+	TQType         string
 	sequencerQueue *SequencerQueue
 }
 
@@ -297,14 +296,14 @@ func (m *BitmapIndex) newBSIBitmap(index, field string) *BSIBitmap {
 type BitmapFragment struct {
 	IndexName   string
 	FieldName   string
-	RowIDOrBits int64	 // Row ID or BSI bit count number (negative values = BSI bitcount)
-	Time		time.Time // Time for time quantum
-	BitData	 	[][]byte
-	ModTime	 	time.Time // Modification time stamp
-	IsBSI	   	bool
-	IsClear	 	bool // Is this a clear operation?  Othewise set bits.
-	IsUpdate	bool
-	IsInit	  	bool // Is this fragment part of init disk read?
+	RowIDOrBits int64     // Row ID or BSI bit count number (negative values = BSI bitcount)
+	Time        time.Time // Time for time quantum
+	BitData     [][]byte
+	ModTime     time.Time // Modification time stamp
+	IsBSI       bool
+	IsClear     bool // Is this a clear operation?  Othewise set bits.
+	IsUpdate    bool
+	IsInit      bool // Is this fragment part of init disk read?
 }
 
 func newBitmapFragment(index, field string, rowIDOrBits int64, ts time.Time, f [][]byte,
@@ -343,7 +342,6 @@ func (m *BitmapIndex) isBSI(index, field string) bool {
 	return attr.IsBSI()
 }
 
-//
 // Worker thread.
 //
 // Read entries from fragment queue that were uploaded by the client SetBit/SetValue
@@ -353,7 +351,6 @@ func (m *BitmapIndex) isBSI(index, field string) bool {
 //
 // The weird repetition in the select statement below is a go hack for prioritizing work.  Select
 // case processing order is non-deterministic.
-//
 func (m *BitmapIndex) batchProcessLoop(threadID int) {
 
 	for {
@@ -398,7 +395,7 @@ func (m *BitmapIndex) expireProcessLoop(memoryLimitMb int) {
 
 	for {
 		select {
-		case _, open := <- m.Stop:
+		case _, open := <-m.Stop:
 			if !open {
 				return
 			}
@@ -417,7 +414,6 @@ func (m *BitmapIndex) expireProcessLoop(memoryLimitMb int) {
 	}
 }
 
-
 /*
  * Partition cleanup/archive/expiration worker thread.
  *
@@ -427,7 +423,7 @@ func (m *BitmapIndex) partitionProcessLoop() {
 
 	for {
 		select {
-		case _, open := <- m.Stop:
+		case _, open := <-m.Stop:
 			if !open {
 				return
 			}
@@ -435,7 +431,7 @@ func (m *BitmapIndex) partitionProcessLoop() {
 		}
 
 		select {
-		case p := <- m.partitionQueue:
+		case p := <-m.partitionQueue:
 			m.executeOperation(p)
 			m.purgePartition(p.Partition)
 			runtime.GC()
@@ -696,25 +692,25 @@ func (m *BitmapIndex) Truncate(index string) {
 
 func (m *BitmapIndex) cleanupStrandedShards() {
 
-	m.iterateBSICache(func (p *Partition) error {
+	m.iterateBSICache(func(p *Partition) error {
 		return m.cleanupOp(p)
 	})
-	m.iterateBitmapCache(func (p *Partition) error {
+	m.iterateBitmapCache(func(p *Partition) error {
 		return m.cleanupOp(p)
 	})
 }
 
 func (m *BitmapIndex) expire(memoryLimitMb int) {
 
-	if m.memoryUsed <= memoryLimitMb * 1024 * 1024 {
+	if m.memoryUsed <= memoryLimitMb*1024*1024 {
 		return
 	}
 	toExpire := m.findOldestPartition()
 	u.Warnf("Memory limit of %d Mb exceeded, expiring oldest partition %v", memoryLimitMb, toExpire.Format(timeFmt))
-	m.iterateBSICache(func (p *Partition) error {
+	m.iterateBSICache(func(p *Partition) error {
 		return m.expireOp(p, toExpire)
 	})
-	m.iterateBitmapCache(func (p *Partition) error {
+	m.iterateBitmapCache(func(p *Partition) error {
 		return m.expireOp(p, toExpire)
 	})
 
@@ -725,7 +721,7 @@ func (m *BitmapIndex) findOldestPartition() time.Time {
 
 	// oldest time to maximum future time
 	oldestTime := time.Unix(1<<63-62135596801, 999999999)
-	m.iterateBSICache(func (p *Partition) error {
+	m.iterateBSICache(func(p *Partition) error {
 		if p.Time.Before(oldestTime) {
 			oldestTime = p.Time
 		}
@@ -761,7 +757,7 @@ func (m *BitmapIndex) cleanupOp(p *Partition) error {
 	return nil
 }
 
-func (m *BitmapIndex) iterateBitmapCache(op func (p *Partition) error) {
+func (m *BitmapIndex) iterateBitmapCache(op func(p *Partition) error) {
 
 	m.bitmapCacheLock.RLock()
 	defer m.bitmapCacheLock.RUnlock()
@@ -770,8 +766,8 @@ func (m *BitmapIndex) iterateBitmapCache(op func (p *Partition) error) {
 			for rowID, tm := range rm {
 				for ts, bitmap := range tm {
 					bitmap.Lock.Lock()
-					partition := &Partition{Index: indexName, Field: fieldName, Time: time.Unix(0, ts), 
-							TQType: bitmap.TQType, RowIDOrBits: int64(rowID), Shard: bitmap}
+					partition := &Partition{Index: indexName, Field: fieldName, Time: time.Unix(0, ts),
+						TQType: bitmap.TQType, RowIDOrBits: int64(rowID), Shard: bitmap}
 					if err := op(partition); err != nil {
 						u.Error(err)
 					}
@@ -782,7 +778,7 @@ func (m *BitmapIndex) iterateBitmapCache(op func (p *Partition) error) {
 	}
 }
 
-func (m *BitmapIndex) iterateBSICache(op func (p *Partition) error) {
+func (m *BitmapIndex) iterateBSICache(op func(p *Partition) error) {
 
 	m.bsiCacheLock.RLock()
 	defer m.bsiCacheLock.RUnlock()
@@ -790,8 +786,8 @@ func (m *BitmapIndex) iterateBSICache(op func (p *Partition) error) {
 		for fieldName, tm := range fm {
 			for ts, bsi := range tm {
 				bsi.Lock.Lock()
-				partition := &Partition{Index: indexName, Field: fieldName, Time: time.Unix(0, ts), 
-						TQType: bsi.TQType, RowIDOrBits: -1, Shard: bsi}
+				partition := &Partition{Index: indexName, Field: fieldName, Time: time.Unix(0, ts),
+					TQType: bsi.TQType, RowIDOrBits: -1, Shard: bsi}
 				if err := op(partition); err != nil {
 					u.Error(err)
 				}
@@ -821,13 +817,13 @@ func (m *BitmapIndex) calcMemOp(p *Partition) error {
 }
 
 // calculateMemoryUsage - Calculate memory usage
-func (m *BitmapIndex) calculateMemoryUsage()  {
+func (m *BitmapIndex) calculateMemoryUsage() {
 
 	m.memoryUsed = 0
-	m.iterateBSICache(func (p *Partition) error {
+	m.iterateBSICache(func(p *Partition) error {
 		return m.calcMemOp(p)
 	})
-	m.iterateBitmapCache(func (p *Partition) error {
+	m.iterateBitmapCache(func(p *Partition) error {
 		return m.calcMemOp(p)
 	})
 }
@@ -1019,6 +1015,24 @@ func (m *BitmapIndex) Update(ctx context.Context, req *pb.UpdateRequest) (*empty
 	return &empty.Empty{}, nil
 }
 
+// Commit - Block until the persistence queue is empty.
+func (m *BitmapIndex) Commit(ctx context.Context, e *empty.Empty) (*empty.Empty, error) {
+
+	for {
+		select {
+		case frag := <-m.fragQueue:
+			if frag.IsBSI {
+				m.updateBSICache(frag)
+			} else {
+				m.updateBitmapCache(frag)
+			}
+		default: // Don't block queue is empty
+			return e, nil
+		}
+	}
+}
+
+
 // CheckoutSequence returns another batch of column IDs to the client.
 func (m *BitmapIndex) CheckoutSequence(ctx context.Context,
 	req *pb.CheckoutSequenceRequest) (*pb.CheckoutSequenceResponse, error) {
@@ -1051,9 +1065,9 @@ func (m *BitmapIndex) CheckoutSequence(ctx context.Context,
 	m.bsiCacheLock.Unlock()
 
 	/*
-	   if !ok {
-		   return nil, fmt.Errorf("cannot find BSI for %s [%s] (TS %d)", req.Index, req.PkField, req.Time)
-	   }
+		   if !ok {
+			   return nil, fmt.Errorf("cannot find BSI for %s [%s] (TS %d)", req.Index, req.PkField, req.Time)
+		   }
 	*/
 
 	// Get the maximum column id from EBM
@@ -1091,8 +1105,8 @@ func (m *BitmapIndex) CheckoutSequence(ctx context.Context,
 
 // CountTrigger sends a message when counter reaches zero
 type CountTrigger struct {
-	num	 int
-	lock	sync.Mutex
+	num     int
+	lock    sync.Mutex
 	trigger chan bool
 }
 
@@ -1101,10 +1115,8 @@ func NewCountTrigger(t chan bool) *CountTrigger {
 	return &CountTrigger{trigger: t}
 }
 
-//
 // Add function provides thread safe addition of counter value based on input parameter.
 // If counter falls to zero then a value will be sent to trigger channel.
-//
 func (c *CountTrigger) Add(n int) {
 	c.lock.Lock()
 	defer c.lock.Unlock()

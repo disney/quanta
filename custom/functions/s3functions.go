@@ -2,14 +2,15 @@ package functions
 
 import (
 	"fmt"
+	"strings"
+
 	u "github.com/araddon/gou"
-	"github.com/araddon/qlbridge/expr"
-	"github.com/araddon/qlbridge/value"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"strings"
+	"github.com/disney/quanta/qlbridge/expr"
+	"github.com/disney/quanta/qlbridge/value"
 )
 
 const (
@@ -18,8 +19,7 @@ const (
 
 // IsBucketPublic - Check S3 bucket location and returns true if it allows public access (or error string)
 //
-//     is_bucket_public("error", "myPublicBucket") => true
-//
+//	is_bucket_public("error", "myPublicBucket") => true
 type IsBucketPublic struct{}
 
 // Type is string
@@ -79,8 +79,7 @@ func isBucketPublicEval(ctx expr.EvalContext, args []value.Value) (value.Value, 
 
 // IsBucketEncrypted - Check S3 bucket location and returns true if encryption is enabled.
 //
-//     is_bucket_encrypted("region", "myPublicBucket") => true or error string
-//
+//	is_bucket_encrypted("region", "myPublicBucket") => true or error string
 type IsBucketEncrypted struct{}
 
 // Type is String
@@ -135,8 +134,7 @@ func isBucketEncryptedEval(ctx expr.EvalContext, args []value.Value) (value.Valu
 
 // IsBucketReadable - Check S3 bucket location and returns true if bucket can be read
 //
-//     is_bucket_readable("region", "myPublicBucket") => true or error string
-//
+//	is_bucket_readable("region", "myPublicBucket") => true or error string
 type IsBucketReadable struct{}
 
 // Type is String
@@ -191,8 +189,7 @@ func isBucketReadableEval(ctx expr.EvalContext, args []value.Value) (value.Value
 
 // IsBucketWritable - Check S3 bucket location and returns true if bucket can be written
 //
-//     is_bucket_writeable("region", "myPublicBucket") => true or error string
-//
+//	is_bucket_writeable("region", "myPublicBucket") => true or error string
 type IsBucketWritable struct{}
 
 // Type is String

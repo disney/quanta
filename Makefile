@@ -41,7 +41,7 @@ UNAME=$(shell uname)
 GOLIST=$(shell go list ./...)
 
 # Binary Build
-LDFLAGS=-ldflags "-X main.Version=${VERSION} -X main.Build=${BUILD}"
+LDFLAGS=-ldflags "-X main.Version=${VERSION} -X main.Build=${BUILD} -X ${PKG_PROXY}-lib.Version=${VERSION} -X ${PKG_PROXY}-lib.Build=${BUILD} -X ${PKG_ADMIN}-lib.Version=${VERSION} -X ${PKG_ADMIN}-lib.Build=${BUILD}"
 
 # Test Build
 LDFLAGS_TEST=-ldflags "-X ${PKG}.Version=${VERSION} -X ${PKG}.Build=${BUILD} -X ${PKG}.Version=${VERSION} -X ${PKG}.Build=${BUILD}"

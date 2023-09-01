@@ -14,11 +14,6 @@ import (
 	"time"
 
 	u "github.com/araddon/gou"
-	"github.com/araddon/qlbridge/datasource"
-	"github.com/araddon/qlbridge/expr"
-	"github.com/araddon/qlbridge/expr/builtins"
-	"github.com/araddon/qlbridge/value"
-	"github.com/araddon/qlbridge/vm"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis/types"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
@@ -28,6 +23,11 @@ import (
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/custom/functions"
+	"github.com/disney/quanta/qlbridge/datasource"
+	"github.com/disney/quanta/qlbridge/expr"
+	"github.com/disney/quanta/qlbridge/expr/builtins"
+	"github.com/disney/quanta/qlbridge/value"
+	"github.com/disney/quanta/qlbridge/vm"
 	"github.com/disney/quanta/shared"
 	"github.com/hamba/avro"
 	consumer "github.com/harlow/kinesis-consumer"
@@ -527,7 +527,10 @@ func (m *Main) Init() (int, error) {
 	m.shardChannels = make(map[string]chan DataRecord)
 	m.shardSessions = make(map[string]*core.Session)
 	shardIds := make([]string, shardCount)
-	// atw delete me core.ClearTableCache()
+	// ClearTableCache
+	for k := range m.tableCache.TableCache {
+		delete(m.tableCache.TableCache, k)
+	}
 	for i := 0; i < shardCount; i++ {
 		k := fmt.Sprintf("shard%v", i)
 		shardIds[i] = k

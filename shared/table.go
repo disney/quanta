@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/araddon/qlbridge/value"
+	"github.com/disney/quanta/qlbridge/value"
 	"github.com/hashicorp/consul/api"
 	"gopkg.in/yaml.v2"
 )

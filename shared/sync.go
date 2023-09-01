@@ -8,12 +8,13 @@ package shared
 import (
 	"context"
 	"fmt"
+	"os"
+	"time"
+
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"golang.org/x/sync/errgroup"
-	"os"
-	"time"
 )
 
 // Synchronize flow.  Remote nodes call this when starting.  Peer nodes respond my pushing data.
@@ -28,6 +29,12 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 	if clusterSizeTarget > quorumSize {
 		quorumSize = clusterSizeTarget
 	}
+	fmt.Println("BitmapIndex Synchronize quorumSize", quorumSize, "node", nodeKey)
+
+	ourPollInterval := DefaultPollInterval
+	if c.IsLocalCluster {
+		ourPollInterval /= 5 // faster please. I can see my life passing before my eyes.
+	}
 
 	// Are we even ready to launch this process yet?
 	// Do we have a quorum?
@@ -41,9 +48,11 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 				err := fmt.Errorf("Shutdown initiated while waiting to start synchronization")
 				return -1, err
 			}
-		case <-time.After(DefaultPollInterval):
+		case <-time.After(ourPollInterval):
 			for id := range nodeMap {
+				// fmt.Println("Synchronize 1", id, c.Conn.ServicePort, c.Conn.ServiceName)
 				status, err := c.Conn.getNodeStatusForID(id)
+				// fmt.Println("Synchronize getNodeStatusForID", id, status, err)
 				if err != nil {
 					u.Warnf("error %v\n", err)
 					unknownCount++
@@ -73,11 +82,11 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 		if unknownCount > 0 {
 			u.Infof("%d nodes in unknown state.", unknownCount)
 		}
-		u.Infof("Join status nodemap len = %d, starting = %d, ready = %d, unknown = %d\n",
+		u.Infof("%s Join status nodemap len = %d, starting = %d, ready = %d, unknown = %d\n", nodeKey,
 			len(nodeMap), startingCount, readyCount, unknownCount)
 	}
 
-	time.Sleep(DefaultPollInterval)
+	time.Sleep(ourPollInterval)
 	u.Warnf("All %d cluster members are ready to push data to me, I am now in Syncing State.", memberCount)
 
 	resultChan := make(chan int64, memberCount-1)

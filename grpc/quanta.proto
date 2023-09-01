@@ -41,6 +41,7 @@ service BitmapIndex {
   rpc TableOperation(TableOperationRequest) returns (google.protobuf.Empty) {}
   rpc Synchronize(google.protobuf.StringValue) returns (google.protobuf.Int64Value) {}
   rpc SyncStatus(SyncStatusRequest) returns (SyncStatusResponse) {}
+  rpc Commit(google.protobuf.Empty) returns (google.protobuf.Empty) {}
 }
 
 message StatusMessage {

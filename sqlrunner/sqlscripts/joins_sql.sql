@@ -17,6 +17,7 @@ commit
 insert into orders_qa (cust_id, order_id, order_date, ship_via) values('1','1001','2023-06-01T01:00:00','UPS');
 insert into orders_qa (cust_id, order_id, order_date, ship_via) values('1','1002','2023-06-01T02:00:00','UPS');
 insert into orders_qa (cust_id, order_id, order_date, ship_via) values('10','1003','2023-06-01T03:00:00','FEDEX');
+commit
 -- Inner JOIN statements
 select o.cust_id, o.order_id, o.ship_via, c.first_name from customers_qa as c inner join orders_qa as o on c.cust_id = o.cust_id where o.cust_id = '1';@2
 select o.* from customers_qa as c inner join orders_qa as o on o.cust_id == c.cust_id;@3
@@ -49,6 +50,7 @@ select * from customers_qa as c where c.cust_id in (select cust_id from orders_q
 insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('11','Carlo','888 Western','Boise','ID','87305','208-313-2211','business');
 commit
 insert into orders_qa (cust_id, order_id, order_date, ship_via) values('11','1004','2023-07-01T03:00:00','USPS');
+commit
 select count(*) from orders_qa where cust_id != null;@4
 select o.* from customers_qa as c inner join orders_qa as o on o.cust_id == c.cust_id;@4
 select o.* from customers_qa as c outer join orders_qa as o on o.cust_id == c.cust_id;@12

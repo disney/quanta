@@ -11,7 +11,7 @@ import (
 // CreateCmd - Create command
 type CreateCmd struct {
 	Table     string `arg:"" name:"table" help:"Table name."`
-	SchemaDir string `help:"Base directory containing schema files." default:"../sqlrunner/config"`
+	SchemaDir string `help:"Base directory containing schema files." default:"./config"`
 	Confirm   bool   `help:"Confirm deployment."`
 }
 

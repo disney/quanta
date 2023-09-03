@@ -15,7 +15,7 @@ import (
 	u "github.com/araddon/gou"
 	"github.com/disney/quanta/qlbridge/expr"
 	"github.com/disney/quanta/shared"
-	"github.com/hamba/avro"
+	"github.com/hamba/avro/v2"
 	"github.com/hashicorp/consul/api"
 )
 

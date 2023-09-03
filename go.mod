@@ -26,7 +26,7 @@ require (
 	github.com/golang/protobuf v1.5.3
 	github.com/google/btree v1.0.0
 	github.com/google/uuid v1.3.0
-	github.com/hamba/avro v1.6.0
+	github.com/hamba/avro/v2 v2.15.0
 	github.com/harlow/kinesis-consumer v0.3.5
 	github.com/hashicorp/consul/api v1.10.1
 	github.com/hashicorp/consul/sdk v0.8.0

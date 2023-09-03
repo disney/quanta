@@ -29,7 +29,7 @@ import (
 	"github.com/disney/quanta/qlbridge/value"
 	"github.com/disney/quanta/qlbridge/vm"
 	"github.com/disney/quanta/shared"
-	"github.com/hamba/avro"
+	"github.com/hamba/avro/v2"
 	consumer "github.com/harlow/kinesis-consumer"
 	store "github.com/harlow/kinesis-consumer/store/ddb"
 	"github.com/hashicorp/consul/api"
@@ -79,8 +79,6 @@ type Main struct {
 	AssumeRoleArnRegion string
 	Deaggregate         bool
 	Collate             bool
-	Preselector         expr.Node
-	selectorIdentities  []string
 	ShardKey            string
 	HashTable           *rendezvous.Table
 	shardChannels       map[string]chan DataRecord
@@ -125,7 +123,6 @@ func main() {
 	shardKey := app.Arg("shard-key", "Shard Key").Required().String()
 	region := app.Arg("region", "AWS region").Default("us-east-1").String()
 	port := app.Flag("port", "Port number for service").Default("4000").Int32()
-	//bufSize := app.Flag("buf-size", "Buffer size").Default("1000000").Int32()
 	withAssumeRoleArn := app.Flag("assume-role-arn", "Assume role ARN.").String()
 	withAssumeRoleArnRegion := app.Flag("assume-role-arn-region", "Assume role ARN region.").String()
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
@@ -135,7 +132,6 @@ func main() {
 	checkpointTable := app.Flag("checkpoint-table", "DynamoDB checkpoint table name.").String()
 	avroPayload := app.Flag("avro-payload", "Payload is Avro.").Bool()
 	deaggregate := app.Flag("deaggregate", "Incoming payload records are aggregated.").Bool()
-	//preselector := app.Flag("preselector", "Filter expression (url encoded).").String()
 	scanInterval := app.Flag("scan-interval", "Scan interval (milliseconds)").Default("1000").Int()
 	commitInterval := app.Flag("commit-interval", "Commit interval (milliseconds)").Int()
 	logLevel := app.Flag("log-level", "Log Level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
@@ -294,9 +290,12 @@ func (m *Main) destroy() {
 func (m *Main) scanAndProcess(v *consumer.Record) error {
 
 	out := make(map[string]interface{})
-
 	var table *core.Table
+
 	for _, x := range m.tableCache.TableCache {
+		if x.SelectorNode == nil {
+			continue
+		}
 		if m.IsAvro {
 			errx := avro.Unmarshal(x.AvroSchema, v.Data, &out)
 			if errx != nil {
@@ -307,9 +306,11 @@ func (m *Main) scanAndProcess(v *consumer.Record) error {
 			
 		} else { // Default is JSON
 			err := json.Unmarshal(v.Data, &out)
-			m.errorCount.Add(1)
-			u.Errorf("Unmarshal ERROR %v", err)
-			return nil
+			if err != nil {
+				m.errorCount.Add(1)
+				u.Errorf("Unmarshal ERROR %v", err)
+				return nil
+			}
 		}
 		if m.preselect(x.SelectorNode, x.SelectorIdentities, out) {
 			table = x
@@ -342,6 +343,9 @@ func (m *Main) scanAndProcess(v *consumer.Record) error {
 func (m *Main) preselect(selector expr.Node, identities []string, row map[string]interface{}) bool {
 
 	ctx := m.buildEvalContext(identities, row)
+	if ctx == nil {
+		return false
+	}
 	val, ok := vm.Eval(ctx, selector)
 	if !ok {
 		u.Errorf("Preselect expression %s failed to evaluate ", selector.String())
@@ -351,7 +355,6 @@ func (m *Main) preselect(selector expr.Node, identities []string, row map[string
 		u.Errorf("select expression %s does not evaluate to a boolean value", selector.String())
 		os.Exit(1)
 	}
-
 	return val.Value().(bool)
 }
 
@@ -367,6 +370,8 @@ func (m *Main) buildEvalContext(identities []string, row map[string]interface{})
 		}
 		if l, err := shared.GetPath(path, row, false, false); err == nil {
 			data[v] = l
+		} else {
+			return nil
 		}
 	}
 	return datasource.NewContextSimpleNative(data)
@@ -531,6 +536,19 @@ func (m *Main) Init() (int, error) {
 	for k := range m.tableCache.TableCache {
 		delete(m.tableCache.TableCache, k)
 	}
+
+	// open all tables to populate the TableCache
+	tables, err := shared.GetTables(consulClient)
+	if err != nil {
+		return 0, err
+	}
+	for _, tableName := range tables {
+		conn, _ := core.OpenSession(m.tableCache, "", tableName, false, clientConn)
+		if conn != nil {
+			conn.CloseSession()
+		}
+	}
+
 	for i := 0; i < shardCount; i++ {
 		k := fmt.Sprintf("shard%v", i)
 		shardIds[i] = k

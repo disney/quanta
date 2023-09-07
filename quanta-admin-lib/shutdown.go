@@ -17,7 +17,7 @@ type ShutdownCmd struct {
 // Run - Shutdown command implementation
 func (s *ShutdownCmd) Run(ctx *Context) error {
 
-	conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
+	conn := GetClientConnection(ctx.ConsulAddr, ctx.Port)
 	cx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
 	defer cancel()
 	indices, err := conn.SelectNodes("", shared.Admin)

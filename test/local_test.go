@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	admin "github.com/disney/quanta/quanta-admin-lib"
 	"github.com/disney/quanta/shared"
 
 	"github.com/stretchr/testify/assert"
@@ -136,6 +137,77 @@ func TestIsNotNull(t *testing.T) {
 	}
 	fmt.Println("count", count)
 	assert.EqualValues(t, 14, count)
+
+	// release as necessary
+	state.Release()
+}
+
+func TestSpellTypeWrong(t *testing.T) {
+
+	acquirePort4000.Lock()
+	defer acquirePort4000.Unlock()
+	var err error
+	shared.SetUTCdefault()
+
+	isLocalRunning := IsLocalRunning()
+	// erase the storage
+	if !isLocalRunning { // if no cluster is up
+		err = os.RemoveAll("../test/localClusterData/") // start fresh
+		check(err)
+	}
+	// ensure we have a cluster on localhost, start one if necessary
+	state := Ensure_cluster()
+
+	if !isLocalRunning { // if no cluster was up, load some data
+		executeSqlFile(state, "../sqlrunner/sqlscripts/basic_load.sql")
+	} // else assume it's already loaded
+
+	ctx := admin.Context{ConsulAddr: "localhost:8500", Port: 4000}
+
+	cmd := admin.TablesCmd{}
+	cmd.Run(&ctx)
+
+	verify := admin.VerifyCmd{Table: "customers_qa", Field: "first_name"}
+	verify.Run(&ctx)
+
+	enum := admin.VerifyEnumCmd{Table: "customers_qa", Field: "first_name"}
+	enum.Run(&ctx)
+
+	vi := admin.VerifyIndexCmd{Table: "customers_qa"}
+	vi.Run(&ctx)
+
+	drop := admin.DropCmd{Table: "dummytable"}
+	drop.Run(&ctx)
+
+	create := admin.CreateCmd{Table: "dummytable"}
+	create.SchemaDir = "../test/testdata/config/"
+	err = create.Run(&ctx)
+	assert.NotEqual(t, nil, err) // <-  this is the test. It returns an error because "string" is not a valid type.
+
+	cmd = admin.TablesCmd{}
+	cmd.Run(&ctx)
+
+	// conn := admin.GetClientConnection(ctx.ConsulAddr, ctx.Port)
+	// table, err := shared.LoadSchema("", "dummytable", conn.Consul)
+	// check(err)
+
+	// for i := 0; i < len(table.Attributes); i++ {
+	// 	fmt.Println(table.Attributes[i].FieldName, table.Attributes[i].Type)
+	// }
+
+	// assert.EqualValues(t, "String", table.Attributes[0].Type)
+
+	// find := admin.FindKeyCmd{Table: "dummytable", Field: "f1"}
+	// find.Run(&ctx)
+
+	// verify = admin.VerifyCmd{Table: "dummytable", Field: "f1"}
+	// verify.Run(&ctx)
+
+	// enum = admin.VerifyEnumCmd{Table: "dummytable", Field: "f1"}
+	// enum.Run(&ctx)
+
+	// vi = admin.VerifyIndexCmd{Table: "dummytable"}
+	// vi.Run(&ctx)
 
 	// release as necessary
 	state.Release()

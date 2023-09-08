@@ -5,9 +5,9 @@ package source
 import (
 	u "github.com/araddon/gou"
 
-	"github.com/araddon/qlbridge/exec"
-	"github.com/araddon/qlbridge/plan"
-	"github.com/araddon/qlbridge/rel"
+	"github.com/disney/quanta/qlbridge/exec"
+	"github.com/disney/quanta/qlbridge/plan"
+	"github.com/disney/quanta/qlbridge/rel"
 )
 
 var (

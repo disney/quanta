@@ -8,13 +8,14 @@ package shared
 import (
 	"context"
 	"fmt"
+	"io"
+	"sync"
+	"time"
+
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"golang.org/x/sync/errgroup"
-	"io"
-	"sync"
-	"time"
 )
 
 var (
@@ -103,15 +104,13 @@ func (c *StringSearch) splitStringBatch(batch map[string]struct{}, replicas int)
 	return batches
 }
 
-//
 // Index a string for full text search.
 // Indexing algorithm:
-// 1) Break a string into words and cast list to lower case.
-// 2) Discard the stem words.
-// 3) Create a bloom filter with the remaining key words.
-// 4) Store the bloom filter in a distributed hash (pogreb is the backing store).
-//    The key is a murmur32 hash of the original string.
-//
+//  1. Break a string into words and cast list to lower case.
+//  2. Discard the stem words.
+//  3. Create a bloom filter with the remaining key words.
+//  4. Store the bloom filter in a distributed hash (pogreb is the backing store).
+//     The key is a murmur32 hash of the original string.
 func (c *StringSearch) Index(str string) error {
 
 	c.batchMutex.Lock()
@@ -182,14 +181,12 @@ func (c *StringSearch) batchIndex(client pb.StringSearchClient, batch map[string
 	return nil
 }
 
-//
 // Search - Process a string containing search terms:
 // 1) Construct a bloom filter for the search terms similar to the Index API (above).
 // 2) Execute the remaining steps across all cluster nodes.
 // 3) On each node, iterate over the local keys looking for bloom filter matches.
 // 4) On each node, return the hash codes for the matching items.
 // 5) Merge and return the results as a set of unique hash codes.
-//
 func (c *StringSearch) Search(searchTerms string) (map[uint64]struct{}, error) {
 
 	results := make(map[uint64]struct{}, 0)

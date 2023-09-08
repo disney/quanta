@@ -3,22 +3,23 @@ package source
 import (
 	"database/sql/driver"
 	"fmt"
-	"golang.org/x/sync/errgroup"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
-	u "github.com/araddon/gou"
+
 	"github.com/RoaringBitmap/roaring/roaring64"
-	"github.com/araddon/qlbridge/datasource"
-	"github.com/araddon/qlbridge/exec"
-	"github.com/araddon/qlbridge/expr"
-	"github.com/araddon/qlbridge/rel"
-	"github.com/araddon/qlbridge/schema"
-	"github.com/araddon/qlbridge/value"
-	"github.com/araddon/qlbridge/vm"
+	u "github.com/araddon/gou"
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/qlbridge/datasource"
+	"github.com/disney/quanta/qlbridge/exec"
+	"github.com/disney/quanta/qlbridge/expr"
+	"github.com/disney/quanta/qlbridge/rel"
+	"github.com/disney/quanta/qlbridge/schema"
+	"github.com/disney/quanta/qlbridge/value"
+	"github.com/disney/quanta/qlbridge/vm"
 	"github.com/disney/quanta/shared"
+	"golang.org/x/sync/errgroup"
 )
 
 func outputRownumMessages(outCh exec.MessageChan, rs *roaring64.Bitmap, limit, offset int) {
@@ -75,7 +76,7 @@ func decorateRow(row []driver.Value, proj *rel.Projection, rowCols map[string]in
 			if ri < len(row) {
 				newRow[i] = fmt.Sprintf("%s", row[ri])
 			} else {
-				u.Errorf("could not find index %v in incoming row at col %d - %#v, len(row) = %d, ROW = %#v", 
+				u.Errorf("could not find index %v in incoming row at col %d - %#v, len(row) = %d, ROW = %#v",
 					ri, i, v, len(row), row)
 				newRow[i] = "NULL"
 			}
@@ -96,8 +97,8 @@ func decorateRow(row []driver.Value, proj *rel.Projection, rowCols map[string]in
 }
 
 func outputProjection(outCh exec.MessageChan, sigChan exec.SigChan, proj *core.Projector,
-		colNames, rowCols map[string]int, limit, offset int, isExport, isDistinct bool, pro *rel.Projection,
-		params map[string]interface{}) error {
+	colNames, rowCols map[string]int, limit, offset int, isExport, isDistinct bool, pro *rel.Projection,
+	params map[string]interface{}) error {
 
 	batchSize := limit
 	nThreads := 1
@@ -182,7 +183,7 @@ func outputProjection(outCh exec.MessageChan, sigChan exec.SigChan, proj *core.P
 			}
 		})
 	}
-	err, timedOut := shared.WaitTimeout(&eg, time.Duration(timeout) * time.Second, sigChan)
+	err, timedOut := shared.WaitTimeout(&eg, time.Duration(timeout)*time.Second, sigChan)
 	if err != nil {
 		return err
 	}
@@ -192,9 +193,9 @@ func outputProjection(outCh exec.MessageChan, sigChan exec.SigChan, proj *core.P
 	return nil
 }
 
-func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel.SqlSource, allTables []string, 
-		sch *schema.Schema, driverTable string) (*rel.Projection, map[string]int, map[string]int, []string, 
-		[]string, error) {
+func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel.SqlSource, allTables []string,
+	sch *schema.Schema, driverTable string) (*rel.Projection, map[string]int, map[string]int, []string,
+	[]string, error) {
 
 	tableMap := make(map[string]*schema.Table)
 	projCols := make([]string, 0)
@@ -291,14 +292,14 @@ func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel
 	} else {
 		for i, v := range orig.Columns {
 			colName := v.As
-/*
-			l, r, isAliased := v.LeftRight()
-			_, isFunc := v.Expr.(*expr.FuncNode)
-			if isAliased && !isFunc {
-				colName = fmt.Sprintf("%s.%s", l, r)
-				colNames[v.SourceField] = i
-			}
-*/
+			/*
+				l, r, isAliased := v.LeftRight()
+				_, isFunc := v.Expr.(*expr.FuncNode)
+				if isAliased && !isFunc {
+					colName = fmt.Sprintf("%s.%s", l, r)
+					colNames[v.SourceField] = i
+				}
+			*/
 			colNames[colName] = i
 		}
 	}
@@ -308,9 +309,9 @@ func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel
 	return ret, colNames, rowNames, projCols, joinCols, nil
 }
 
-func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable string, 
-		whereProj map[string]*core.Attribute) (*rel.Projection, map[string]int, map[string]int, 
-		[]string, []string, error) {
+func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable string,
+	whereProj map[string]*core.Attribute) (*rel.Projection, map[string]int, map[string]int,
+	[]string, []string, error) {
 
 	tableMap := make(map[string]*schema.Table)
 	aliasMap := make(map[string]*rel.SqlSource)
@@ -482,9 +483,8 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 	return ret, colNames, rowCols, projCols, joinCols, nil
 }
 
-
 func createRowCols(ret *rel.Projection, tableMap map[string]*schema.Table, aliasMap map[string]*rel.SqlSource,
-		projCols []string, projColsMap, rowCols map[string]int, origFrom string) (*rel.Projection, map[string]int) {
+	projCols []string, projColsMap, rowCols map[string]int, origFrom string) (*rel.Projection, map[string]int) {
 
 	// remove the x.* items
 	ret2 := make([]*rel.ResultColumn, len(ret.Columns))
@@ -533,4 +533,3 @@ func createRowCols(ret *rel.Projection, tableMap map[string]*schema.Table, alias
 
 	return ret, rowCols
 }
-

@@ -13,13 +13,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/araddon/qlbridge/lex"
-	"github.com/araddon/qlbridge/rel"
-	"github.com/araddon/qlbridge/schema"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/qlbridge/exec"
+	"github.com/disney/quanta/qlbridge/lex"
+	"github.com/disney/quanta/qlbridge/rel"
+	"github.com/disney/quanta/qlbridge/schema"
 	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/source"
 	"github.com/lestrrat-go/jwx/jwk"
@@ -156,6 +157,12 @@ type ProxyHandler struct {
 // NewProxyHandler - Create a new proxy handler
 func NewProxyHandler(authProvider *AuthProvider) *ProxyHandler {
 
+	exec.RegisterSqlDriver()
+
+	// var driver driver.Driver
+	// driver = exec.Register()
+	// sql.Register("qlbridge", driver)
+
 	h := &ProxyHandler{authProvider: authProvider, stmts: make(map[interface{}]*sql.Stmt, 0)}
 	var err error
 	h.db, err = sql.Open("qlbridge", "quanta")
@@ -173,7 +180,7 @@ func (h *ProxyHandler) checkSessionUserID(enforce bool) error {
 			return err
 		}
 	} else if enforce {
-		return fmt.Errorf("User ID must be set,  run exec  'set @userid = <userID>'")
+		return fmt.Errorf("user ID must be set,  run exec  'set @userid = <userID>'")
 	}
 	return nil
 }
@@ -201,7 +208,7 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 		if err != nil {
 			return nil, err
 		}
-		return &mysql.Result{0, 0, 0, r}, nil
+		return &mysql.Result{Status: 0, InsertId: 0, AffectedRows: 0, Resultset: r}, nil
 	}
 
 	u.Debugf("handleQuery called with [%v], arg count = %d", query, len(args))
@@ -215,7 +222,12 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 
 	operation := strings.ToLower(ss[0])
 	switch operation {
-	case "begin", "commit", "rollback":
+	case "commit":
+		api := shared.NewBitmapIndex(Src.GetConnection())
+		err :=  api.Commit()
+		return nil, err
+
+	case "begin", "rollback":
 		return nil, nil // Just returns an "OK" packet
 
 	case "select", "describe", "show":
@@ -233,7 +245,7 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 			if err != nil {
 				return nil, err
 			}
-			return &mysql.Result{0, 0, 0, r}, nil
+			return &mysql.Result{Status: 0, InsertId: 0, AffectedRows: 0, Resultset: r}, nil
 		}
 		//for handling go mysql driver select @@version_comment
 		if strings.Contains(strings.ToLower(query), "version_comment") {
@@ -243,7 +255,7 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 			if err != nil {
 				return nil, err
 			}
-			return &mysql.Result{0, 0, 0, r}, nil
+			return &mysql.Result{Status: 0, InsertId: 0, AffectedRows: 0, Resultset: r}, nil
 		}
 		//for handling go mysql driver select @@isolation_level
 		if strings.Contains(strings.ToLower(query), "transaction_isolation") {
@@ -253,7 +265,7 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 			if err != nil {
 				return nil, err
 			}
-			return &mysql.Result{0, 0, 0, r}, nil
+			return &mysql.Result{Status: 0, InsertId: 0, AffectedRows: 0, Resultset: r}, nil
 		}
 		//for handling go mysql driver select @@isolation_level
 		if strings.Contains(strings.ToLower(query), "show collation") {
@@ -263,16 +275,17 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 			if err != nil {
 				return nil, err
 			}
-			return &mysql.Result{0, 0, 0, r}, nil
+			return &mysql.Result{Status: 0, InsertId: 0, AffectedRows: 0, Resultset: r}, nil
 		}
-		if strings.Contains(strings.ToLower(query), "select cast") {
+		if strings.Contains(strings.ToLower(query), "select cast") ||
+					strings.Contains(strings.ToLower(query), "select schema") {
 			r, err = mysql.BuildSimpleResultset([]string{""}, [][]interface{}{
 				{""},
 			}, binary)
 			if err != nil {
 				return nil, err
 			}
-			return &mysql.Result{0, 0, 0, r}, nil
+			return &mysql.Result{Status: 0, InsertId: 0, AffectedRows: 0, Resultset: r}, nil
 		}
 		//u.Errorf("running query [%v]", query)
 		start := time.Now()
@@ -319,7 +332,7 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 		if err != nil {
 			return nil, fmt.Errorf("%v", err)
 		}
-		return &mysql.Result{0, 0, 0, r}, nil
+		return &mysql.Result{Status: 0, InsertId: 0, AffectedRows: 0, Resultset: r}, nil
 	case "insert", "delete", "update", "replace", "selectinto":
 		h.checkSessionUserID(true)
 		start := time.Now()
@@ -361,7 +374,7 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 			deleteTime.Add(int(elapsed.Milliseconds()))
 			deleteCount.Add(1)
 		}
-		return &mysql.Result{0, uint64(insertID), uint64(rowCount), nil}, nil
+		return &mysql.Result{Status: 0, InsertId: uint64(insertID), AffectedRows: uint64(rowCount), Resultset: nil}, nil
 	case "set":
 		h.checkSessionUserID(false)
 		_, err := h.db.Exec(query, args...)
@@ -369,7 +382,7 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 			u.Errorf("could not execute set: %v", err)
 			return nil, err
 		}
-		return &mysql.Result{0, uint64(0), uint64(0), nil}, nil
+		return &mysql.Result{Status: 0, InsertId: 0, AffectedRows: 0, Resultset: nil}, nil
 	default:
 		return nil, fmt.Errorf("invalid query %s", query)
 	}
@@ -540,7 +553,6 @@ func (c *Counter) Set(n int64) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	c.num = n
-	return
 }
 
 func MetricsTicker(src *source.QuantaSource) *time.Ticker {

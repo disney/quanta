@@ -15,6 +15,12 @@ package shared
 import (
 	"context"
 	"fmt"
+	"log"
+	"reflect"
+	"strings"
+	"sync"
+	"time"
+
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/golang/protobuf/ptypes/empty"
@@ -23,14 +29,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/testdata"
-	"log"
-	"reflect"
-	"strings"
-	"sync"
-	"time"
 )
 
-//
 // Conn - Client side cluster state and connection abstraction.
 //
 // ServiceName - Name of service i.e. "quanta" for registration with Consul.
@@ -49,7 +49,6 @@ import (
 // pollWait - Wait interval for node membership polling events.
 // nodes - List of nodes as currently registered with Consul.
 // NodeMap - Map cluster node keys to connection/client arrays.
-//
 type Conn struct {
 	ServiceName        string
 	Quorum             int
@@ -78,6 +77,7 @@ type Conn struct {
 	clusterSizeTarget  int
 	nodeStatusMap      map[string]*pb.StatusMessage
 	activeCount        int
+	IsLocalCluster     bool
 }
 
 // NewDefaultConnection - Configure a connection with default values.
@@ -200,9 +200,12 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 		m.clientConn, err = m.CreateNodeConnections(true)
 		m.Admin = make([]pb.ClusterAdminClient, len(m.clientConn))
 		for i := 0; i < len(m.clientConn); i++ {
-			m.Admin[i] = pb.NewClusterAdminClient(m.clientConn[i])
 			id := m.ids[i]
 			entry := m.idMap[id]
+
+			adminClient := pb.NewClusterAdminClient(m.clientConn[i])
+			m.Admin[i] = adminClient
+
 			status, err := m.getNodeStatusForIndex(i)
 			if err == nil {
 				m.nodeStatusMap[id] = status
@@ -212,10 +215,12 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 			} else {
 				u.Errorf("getNodeStatusForIndex: %v", err)
 			}
-			m.SendMemberJoined(id, entry.Node.Address, i)
+			//m.SendMemberJoined(id, entry.Node.Address, i)
+			m.SendMemberJoined(id, entry.Service.Address, i)
 		}
 		go m.poll()
 	} else {
+		// ServicePort is 0
 		m.HashTable = rendezvous.New([]string{"test"})
 		m.nodeMap = make(map[string]int, 1)
 		m.nodeMap["test"] = 0
@@ -237,6 +242,7 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 }
 
 // CreateNodeConnections - Open a set of GRPC connections to all data nodes
+// requires m.ids is be non empty
 func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.ClientConn, err error) {
 
 	nodeCount := len(m.nodeMap)
@@ -271,13 +277,14 @@ func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.Client
 
 	for i, id := range m.ids {
 		entry := m.idMap[id]
-		nodeConns[i], err = grpc.Dial(fmt.Sprintf("%s:%d", entry.Node.Address,
-			m.ServicePort), m.grpcOpts...)
+		nodeConnPort := entry.Service.Port //  m.ServicePort
+		target := fmt.Sprintf("%s:%d", entry.Service.Address, nodeConnPort)
+		nodeConns[i], err = grpc.Dial(target, m.grpcOpts...)
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
 		}
 	}
-	return
+	return nodeConns, nil
 }
 
 // SelectNodes - Return a list of nodes for a given shard key.  The returned node list is sorted in descending order
@@ -369,9 +376,13 @@ func (m *Conn) GetNodeForID(nodeID string) (*api.ServiceEntry, bool) {
 	return nil, false
 }
 
+func (m *Conn) Quit() {
+	m.registeredServices = make(map[string]Service)
+	m.nodeStatusMap = make(map[string]*pb.StatusMessage, 0)
+}
+
 // Disconnect - Terminate connections to all cluster nodes.
 func (m *Conn) Disconnect() error {
-
 	for i := 0; i < len(m.clientConn); i++ {
 		if m.clientConn[i] != nil {
 			m.clientConn[i].Close()
@@ -441,11 +452,20 @@ func (m *Conn) update() (err error) {
 	ids := make([]string, 0)
 	idMap := make(map[string]*api.ServiceEntry)
 	for _, entry := range serviceEntries {
+
+		// bytes, _ := json.Marshal(entry)
+		// fmt.Println("update entry json", string(bytes))
+		// fmt.Printf("update entry i=%v Service.ID=%v Node.ID=%v Node.Address=%v status=%v \n", i, entry.Service.ID, entry.Node.ID, entry.Service.Address, entry.Checks[0].Status)
+
 		if entry.Service.ID == "shutdown" {
+			fmt.Println("have shutdown entry.Service.ID ", entry)
 			continue
 		}
 		if entry.Checks[0].Status == "passing" && entry.Checks[1].Status == "passing" {
-			node := strings.Split(entry.Node.Node, ".")[0]
+			// node := strings.Split(entry.Node.Node, ".")[0]
+			// let's not use the Node.Node, which is always like 'mbp-atw-2.lan' locally atw danger danger
+			// node = entry.Node.ID and the ID's all the same too
+			node := entry.Service.ID // this is like "quanta-node-1" which is better
 			idMap[node] = entry
 			ids = append(ids, node)
 		}
@@ -459,8 +479,9 @@ func (m *Conn) update() (err error) {
 				// insert new connection and admin stub
 				m.clientConn = append(m.clientConn, nil)
 				copy(m.clientConn[index+1:], m.clientConn[index:])
-				m.clientConn[index], err = grpc.Dial(fmt.Sprintf("%s:%d", entry.Node.Address,
-					m.ServicePort), m.grpcOpts...)
+				servicePort := entry.Service.Port // m.ServicePort
+				target := fmt.Sprintf("%s:%d", entry.Service.Address, servicePort)
+				m.clientConn[index], err = grpc.Dial(target, m.grpcOpts...)
 				if err != nil {
 					return err
 				}
@@ -468,7 +489,7 @@ func (m *Conn) update() (err error) {
 				copy(m.Admin[index+1:], m.Admin[index:])
 				m.Admin[index] = pb.NewClusterAdminClient(m.clientConn[index])
 				u.Infof("NODE %s joined at index %d\n", id, index)
-				m.SendMemberJoined(id, entry.Node.Address, index)
+				m.SendMemberJoined(id, entry.Service.Address, index)
 			}
 		}
 	}
@@ -476,6 +497,9 @@ func (m *Conn) update() (err error) {
 	for id, index := range m.nodeMap {
 		if _, ok := idMap[id]; !ok {
 			// delete connection and admin stub
+			if index >= len(m.clientConn) {
+				continue
+			}
 			m.clientConn[index].Close()
 			if len(m.clientConn) > 1 {
 				m.clientConn = append(m.clientConn[:index], m.clientConn[index+1:]...)
@@ -527,7 +551,7 @@ func (m *Conn) update() (err error) {
 				m.activeCount++
 			}
 		} else {
-			u.Errorf("getNodeStatusForIndex: k = %s, i = %d - %v", k, v, err)
+			u.Errorf("update getNodeStatusForIndex in update: k = %s, i = %d - %v", k, v, err)
 		}
 	}
 	return nil
@@ -585,7 +609,7 @@ func (m *Conn) CheckNodeForKey(key, nodeID string) (bool, int) {
 
 // SendMemberLeft - Notify listening service of MemberLeft event.
 func (m *Conn) SendMemberLeft(nodeID string, index int) {
-	
+
 	m.registerLock.RLock()
 	defer m.registerLock.RUnlock()
 
@@ -638,10 +662,19 @@ func (m *Conn) getNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error)
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
 	defer cancel()
 
-	result, err := m.Admin[clientIndex].Status(ctx, &empty.Empty{})
+	if clientIndex >= len(m.Admin) {
+		return nil, fmt.Errorf("clientIndex >= len(m.Admin) %d >= %d", clientIndex, len(m.Admin))
+	}
+
+	admin := m.Admin[clientIndex]
+	result, err := admin.Status(ctx, &empty.Empty{})
 	if err != nil {
-		return nil, fmt.Errorf(fmt.Sprintf("%v.Status(_) = _, %v, node = %s\n", m.Admin[clientIndex], err,
-			m.clientConn[clientIndex].Target()))
+		target := ""
+		if clientIndex < len(m.clientConn) {
+			target = m.clientConn[clientIndex].Target()
+		}
+		e := fmt.Sprintf("getNodeStatusForIndex Status, err = %v, target = %s\n", err, target)
+		return nil, fmt.Errorf(e)
 	}
 	return result, nil
 }
@@ -659,8 +692,8 @@ func (m *Conn) GetCachedNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, 
 
 	m.nodeMapLock.RLock()
 	defer m.nodeMapLock.RUnlock()
-	if m.ServicePort == 0 {   // test harness
-		return  &pb.StatusMessage{NodeState: "Active"}, nil
+	if m.ServicePort == 0 { // test harness
+		return &pb.StatusMessage{NodeState: "Active"}, nil
 	}
 	if clientIndex < 0 || clientIndex >= len(m.ids) {
 		return nil, fmt.Errorf("clientIndex %d is invalid", clientIndex)

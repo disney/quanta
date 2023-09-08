@@ -722,7 +722,7 @@ func (p *Projector) checkColumnID(v *Attribute, cID, child uint64,
 			val, found := b.GetValue(child)
 			if found {
 				colID = uint64(val)
-				u.Debugf("PARENT RELATION FOUND %s.%s - COLID = %d, CHILD = %d", v.Parent.Name, v.FieldName, colID, child)
+				//u.Debugf("PARENT RELATION FOUND %s.%s - COLID = %d, CHILD = %d", v.Parent.Name, v.FieldName, colID, child)
 				return
 			}
 		}

@@ -7,6 +7,9 @@
 # Test binary, build with `go test -c`
 *.test
 
+# Test artifacts
+test/localClusterData
+
 # Ignore dependences downloaded
 vendor/
 

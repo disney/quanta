@@ -13,16 +13,16 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/araddon/dateparse"
-	"github.com/araddon/qlbridge/datasource"
-	"github.com/araddon/qlbridge/exec"
-	"github.com/araddon/qlbridge/expr"
-	"github.com/araddon/qlbridge/lex"
-	"github.com/araddon/qlbridge/plan"
-	"github.com/araddon/qlbridge/rel"
-	"github.com/araddon/qlbridge/schema"
-	"github.com/araddon/qlbridge/value"
-	"github.com/araddon/qlbridge/vm"
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/qlbridge/datasource"
+	"github.com/disney/quanta/qlbridge/exec"
+	"github.com/disney/quanta/qlbridge/expr"
+	"github.com/disney/quanta/qlbridge/lex"
+	"github.com/disney/quanta/qlbridge/plan"
+	"github.com/disney/quanta/qlbridge/rel"
+	"github.com/disney/quanta/qlbridge/schema"
+	"github.com/disney/quanta/qlbridge/value"
+	"github.com/disney/quanta/qlbridge/vm"
 	"github.com/disney/quanta/rbac"
 	"github.com/disney/quanta/shared"
 )
@@ -154,9 +154,12 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	}
 
 	var err error
-	m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
-	if err != nil {
-		return nil, fmt.Errorf("Error opening Quanta session %v", err)
+	name := m.tbl.Name
+	m.conn, err = m.s.sessionPool.Borrow(name)
+	if err != nil || m.conn == nil {
+		// FIXME: err == nil and m.conn == nil is a mistake
+		m.s.sessionPool.Borrow(name)
+		return nil, fmt.Errorf("opening Quanta session 1 %v", err)
 	}
 	defer m.s.sessionPool.Return(m.tbl.Name, m.conn)
 
@@ -443,7 +446,6 @@ func (m *SQLToQuanta) walkNode(cur expr.Node, q *shared.QueryFragment) (value.Va
 		u.Errorf("unrecognized T:%T  %v", cur, cur)
 		panic("Unrecognized node type")
 	}
-	return nil, nil
 }
 
 // Tri Nodes expressions:
@@ -595,10 +597,10 @@ func (m *SQLToQuanta) walkArrayNode(node *expr.ArrayNode, q *shared.QueryFragmen
 		//u.Debug(string(u.JsonHelper(*q).PrettyJson()))
 		return nil, nil
 	}
-	return nil, fmt.Errorf("Uknown Error")
+	return nil, fmt.Errorf("unknown Error")
 }
 
-// Binary Node:   operations for >, >=, <, <=, =, !=, AND, OR, Like, IN
+// Binary Node:   operations for >, >=, <, <=, =, !=, AND, OR, Like, IN and IS
 //
 //	x = y             =>   db.users.find({field: {"$eq": value}})
 //	x != y            =>   db.inventory.find( { qty: { $ne: 20 } } )
@@ -654,7 +656,8 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 	}
 
 	lhval, lhok, isLident := m.eval(node.Args[0])
-	if n, isId := node.Args[0].(*expr.IdentityNode); lhok && isId {
+	n, isId := node.Args[0].(*expr.IdentityNode)
+	if lhok && isId {
 		if l, r, hasLeft := n.LeftRight(); hasLeft && l != m.tbl.Name {
 			if _, tok := m.tableAliases[l]; !tok {
 				return nil, fmt.Errorf("cannot find a table alias for '%v' on field '%v'", l, r)
@@ -966,7 +969,7 @@ func (m *SQLToQuanta) walkFilterUnary(node *expr.UnaryNode, q *shared.QueryFragm
 		case *expr.TriNode:
 			return m.walkFilterTri(curNode, q)
 		case *expr.NullNode:
-			return nil, fmt.Errorf("Use != NULL instead of NOT NULL")
+			return nil, fmt.Errorf("use != NULL instead of NOT NULL") // atw fixme, never happens
 		default:
 			u.Warnf("not implemented: %#v", node)
 			u.Warnf("Unknown token %v", node.Operator.T)
@@ -977,7 +980,6 @@ func (m *SQLToQuanta) walkFilterUnary(node *expr.UnaryNode, q *shared.QueryFragm
 		u.Warnf("Unknown token %v", node.Operator.T)
 		return nil, fmt.Errorf("not implemented unary function: %v", node.String())
 	}
-	return nil, nil
 }
 
 // eval() returns
@@ -1400,7 +1402,7 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 	//m.conn, err = m.s.sessionPool.Borrow(m.q.GetRootIndex())
 	m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
 	if err != nil {
-		return nil, fmt.Errorf("Error opening Quanta session %v", err)
+		return nil, fmt.Errorf("Error opening Quanta session 2 %v", err)
 	}
 	//defer m.s.sessionPool.Return(m.q.GetRootIndex(), m.conn)
 	defer m.s.sessionPool.Return(m.tbl.Name, m.conn)
@@ -1549,7 +1551,7 @@ func (m *SQLToQuanta) PatchWhere(ctx context.Context, where expr.Node, patch int
 	var err error
 	m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
 	if err != nil {
-		return 0, fmt.Errorf("Error opening Quanta session %v", err)
+		return 0, fmt.Errorf("Error opening Quanta session 3 %v", err)
 	}
 	defer m.s.sessionPool.Return(m.tbl.Name, m.conn)
 
@@ -1625,7 +1627,7 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 
 	conn, err := m.s.sessionPool.Borrow(m.tbl.Name)
 	if err != nil {
-		return nil, fmt.Errorf("Error opening Quanta session %v", err)
+		return nil, fmt.Errorf("Error opening Quanta session 4 %v", err)
 	}
 	defer m.s.sessionPool.Return(m.tbl.Name, conn)
 	m.conn = conn
@@ -1853,7 +1855,7 @@ func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, err
 	var err error
 	m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
 	if err != nil {
-		return 0, fmt.Errorf("Error opening Quanta session %v", err)
+		return 0, fmt.Errorf("Error opening Quanta session 5 %v", err)
 	}
 	defer m.s.sessionPool.Return(m.tbl.Name, m.conn)
 

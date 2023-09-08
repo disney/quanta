@@ -9,7 +9,7 @@ import (
 	"time"
 
 	u "github.com/araddon/gou"
-	sch "github.com/araddon/qlbridge/schema"
+	sch "github.com/disney/quanta/qlbridge/schema"
 	"github.com/disney/quanta/shared"
 )
 
@@ -28,6 +28,8 @@ type SessionPool struct {
 	maxUsed      int32
 
 	TableCache *TableCacheStruct
+
+	closed bool // when semaphores is closed, race warning
 }
 
 // SessionPool - Pool of Quanta connections
@@ -82,9 +84,11 @@ func (m *SessionPool) Borrow(tableName string) (*Session, error) {
 		select {
 		case r := <-cp.pool:
 			var err error
-			if m.schema != nil && m.schema.Since(time.Until(r.CreatedAt)) {
+			if r == nil || (m.schema != nil && m.schema.Since(time.Until(r.CreatedAt))) {
 				u.Warnf("pooled connection is stale after schema change, refreshing.")
-				r.CloseSession()
+				if r != nil {
+					r.CloseSession()
+				}
 				r, err = m.NewSession(tableName)
 				if err != nil {
 					return nil, err
@@ -119,7 +123,6 @@ func (m *SessionPool) Return(tableName string, conn *Session) {
 		}
 	default: //Don't block
 	}
-	return
 }
 
 // NewSession - Construct a new session.
@@ -142,11 +145,16 @@ func (m *SessionPool) Shutdown() {
 			x.CloseSession()
 		}
 	}
+	m.closed = true
 	close(m.semaphores)
 }
 
 // Recover from network event.  Purge session and optionally recover unflushed buffers.
 func (m *SessionPool) Recover(unflushedCh chan *shared.BatchBuffer) {
+
+	if m.closed {
+		return
+	}
 
 	m.sessPoolLock.Lock()
 	defer m.sessPoolLock.Unlock()

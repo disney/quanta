@@ -2,8 +2,9 @@ package functions
 
 import (
 	"fmt"
-	"github.com/araddon/qlbridge/expr"
-	"github.com/araddon/qlbridge/value"
+
+	"github.com/disney/quanta/qlbridge/expr"
+	"github.com/disney/quanta/qlbridge/value"
 )
 
 // VersionFunc return version number.
@@ -22,8 +23,8 @@ func (m *VersionFunc) Validate(n *expr.FuncNode) (expr.EvaluatorFunc, error) {
 
 func versionEval(ctx expr.EvalContext, args []value.Value) (value.Value, bool) {
 
- //return value.NewStringsValue([]string{"8.0.12", "Quanta version " + Version + " - Build: " + Build}), true
- return value.NewStringValue("8.0.12"), true
+	//return value.NewStringsValue([]string{"8.0.12", "Quanta version " + Version + " - Build: " + Build}), true
+	return value.NewStringValue("8.0.12"), true
 }
 
 // DatabaseFunc - return database name
@@ -42,6 +43,5 @@ func (m *DatabaseFunc) Validate(n *expr.FuncNode) (expr.EvaluatorFunc, error) {
 
 func databaseEval(ctx expr.EvalContext, args []value.Value) (value.Value, bool) {
 
- return value.NewStringValue("quanta"), true
+	return value.NewStringValue("quanta"), true
 }
-

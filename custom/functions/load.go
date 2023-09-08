@@ -1,8 +1,9 @@
 package functions
 
 import (
-	"github.com/araddon/qlbridge/expr"
 	"sync"
+
+	"github.com/disney/quanta/qlbridge/expr"
 )
 
 // Variables to identify the build
@@ -23,7 +24,7 @@ func LoadAll() {
 		expr.FuncAdd("sample_stratified", &StratifiedSample{})
 		expr.FuncAdd("version", &VersionFunc{})
 		expr.FuncAdd("database", &DatabaseFunc{})
-        expr.FuncAdd("add", &Sum{})
-        expr.FuncAdd("timediff", &TimeDiff{})
+		expr.FuncAdd("add", &Sum{})
+		expr.FuncAdd("timediff", &TimeDiff{})
 	})
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -13,10 +14,10 @@ import (
 	"time"
 
 	u "github.com/araddon/gou"
-	"github.com/araddon/qlbridge/expr"
-	"github.com/araddon/qlbridge/expr/builtins"
-	_ "github.com/araddon/qlbridge/qlbdriver"
-	"github.com/araddon/qlbridge/schema"
+	"github.com/disney/quanta/qlbridge/expr"
+	"github.com/disney/quanta/qlbridge/expr/builtins"
+	_ "github.com/disney/quanta/qlbridge/qlbdriver"
+	"github.com/disney/quanta/qlbridge/schema"
 	"github.com/hashicorp/consul/api"
 	"github.com/lestrrat-go/jwx/jwk"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -28,12 +29,6 @@ import (
 	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/sink"
 	"github.com/disney/quanta/source"
-)
-
-// Variables to identify the build
-var (
-	Version string
-	Build   string
 )
 
 // Exit Codes
@@ -52,7 +47,7 @@ var (
 func main() {
 
 	app := kingpin.New("quanta-proxy", "MySQL Proxy adapter to Quanta").DefaultEnvars()
-	app.Version("Version: " + Version + "\nBuild: " + Build)
+	app.Version("Version: " + proxy.Version + "\nBuild: " + proxy.Build)
 
 	logging = app.Flag("log-level", "Logging level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
 	environment = app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
@@ -81,7 +76,7 @@ func main() {
 		}
 		u.SetupLogging("debug")
 	} else {
-		shared.InitLogging(*logging, *environment, "Proxy", Version, "Quanta")
+		shared.InitLogging(*logging, *environment, "Proxy", proxy.Version, "Quanta")
 	}
 
 	go func() {
@@ -115,7 +110,7 @@ func main() {
 	proxy.UserClaimsKey = *userKey
 	// Start the token exchange service TODO: repair or delete
 	log.Printf("Starting the token exchange service on port %d", *tokenservicePort)
-	authProvider = proxy.NewAuthProvider() // this instance is global used by tokenservice
+	authProvider := proxy.NewAuthProvider() // this instance is global used by tokenservice
 	proxy.StartTokenService(*tokenservicePort, authProvider)
 
 	// If the pool size is not configured then set it to the number of available CPUs
@@ -141,6 +136,8 @@ func main() {
 	}
 	schema.RegisterSourceAsSchema("quanta", proxy.Src)
 
+	// TODO:  we should ask consul if the nodes are up and then wait for a short while.
+
 	// Start metrics publisher
 	var ticker *time.Ticker
 	ticker = proxy.MetricsTicker(proxy.Src)
@@ -155,6 +152,21 @@ func main() {
 		}
 	}()
 
+	// //conn := getClientConnection(consulConfig, ctx.Port)
+	// 	consulClient, err := api.NewClient(&api.Config{Address: consulAddr})
+
+	// sharedKV := shared.NewKVStore(conn)
+
+	// ctx, err := rbac.NewAuthContext(sharedKV, "USER001", true)
+	// check(err)
+	// err = ctx.GrantRole(rbac.DomainUser, "USER001", "quanta", true)
+	// check(err)
+
+	// ctx, err = rbac.NewAuthContext(sharedKV, "MOLIG004", true)
+	// check(err)
+	// err = ctx.GrantRole(rbac.DomainUser, "MOLIG004", "quanta", true)
+	// check(err)
+
 	// Start server endpoint
 	l, err := net.Listen("tcp", *proxyHostPort)
 	if err != nil {
@@ -168,5 +180,12 @@ func main() {
 			return
 		}
 		go proxy.OnConn(conn)
+	}
+}
+
+func check(err error) {
+	if err != nil {
+		fmt.Println("check err", err)
+		panic(err.Error())
 	}
 }

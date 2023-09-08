@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/araddon/dateparse"
-	"github.com/araddon/qlbridge/expr/builtins"
 	"github.com/aws/aws-sdk-go/aws"
 	_ "github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/qlbridge/expr/builtins"
 	"github.com/disney/quanta/shared"
 	"github.com/google/uuid"
 	"github.com/hamba/avro"
@@ -18,8 +19,8 @@ import (
 	"github.com/vmware/vmware-go-kcl/clientlibrary/metrics"
 	"github.com/vmware/vmware-go-kcl/clientlibrary/metrics/cloudwatch"
 	wk "github.com/vmware/vmware-go-kcl/clientlibrary/worker"
+
 	//"golang.org/x/sync/errgroup"
-	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
 	"os"
 	"os/signal"
@@ -27,6 +28,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 // Variables to identify the build

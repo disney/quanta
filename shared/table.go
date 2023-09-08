@@ -8,15 +8,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/araddon/qlbridge/value"
+	"github.com/disney/quanta/qlbridge/value"
 	"github.com/hashicorp/consul/api"
 	"gopkg.in/yaml.v2"
 )
-
-// type TableCacheStruct struct { // used in core Table
-// 	TableCache     map[string]TableInterface
-// 	TableCacheLock sync.RWMutex
-// }
 
 type TableInterface interface {
 	// GetAttribute(name string) (AttributeInterface, error)
@@ -33,7 +28,7 @@ type BasicTable struct {
 	DefaultPredicate string                     `yaml:"defaultPredicate,omitempty"`
 	TimeQuantumType  string                     `yaml:"timeQuantumType,omitempty"`
 	TimeQuantumField string                     `yaml:"timeQuantumField,omitempty"`
-	DisableDedup     bool                       `yaml:"disableDedup,omitempty"`
+	Selector         string                     `yaml:"selector,omitempty"`
 	Attributes       []BasicAttribute           `yaml:"attributes"`
 	attributeNameMap map[string]*BasicAttribute `yaml:"-"`
 	ConsulClient     *api.Client                `yaml:"-"`
@@ -378,9 +373,9 @@ func (t *BasicTable) Compare(other *BasicTable) (equal bool, warnings []string, 
 			fmt.Errorf("Cannot alter time quantum existing = %s, new = %s", t.TimeQuantumType,
 				other.TimeQuantumType)
 	}
-	if t.DisableDedup != other.DisableDedup {
-		warnings = append(warnings, fmt.Sprintf("disable dedup setting changed existing = %v, new = %v",
-			t.DisableDedup, other.DisableDedup))
+	if t.Selector != other.Selector {
+		warnings = append(warnings, fmt.Sprintf("table selector changed existing = %v, new = %v",
+			t.Selector, other.Selector))
 	}
 
 	// Compare these attributes against other attributes - drops not allowed.

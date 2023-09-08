@@ -113,8 +113,6 @@ func (c *StringSearch) splitStringBatch(batch map[string]struct{}, replicas int)
 //     The key is a murmur32 hash of the original string.
 func (c *StringSearch) Index(str string) error {
 
-	fmt.Println("StringSearch index", str)
-
 	c.batchMutex.Lock()
 	defer c.batchMutex.Unlock()
 

@@ -114,7 +114,6 @@ func (m *SessionPool) Return(tableName string, conn *Session) {
 	defer m.sessPoolLock.Unlock()
 	conn.Flush()
 	cp := m.getPoolByTableName(tableName)
-	fmt.Println("SessionPool.Return", tableName, len(m.semaphores), m.closed)
 	select {
 	case m.semaphores <- struct{}{}:
 		select {
@@ -139,8 +138,6 @@ func (m *SessionPool) NewSession(tableName string) (*Session, error) {
 
 // Shutdown - Terminate and destroy the pool.
 func (m *SessionPool) Shutdown() {
-
-	fmt.Println("SessionPool.Shutdown")
 
 	for _, v := range m.sessPoolMap {
 		close(v.pool)

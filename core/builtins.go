@@ -5,6 +5,7 @@ package core
 //
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/araddon/dateparse"
 	"math"
@@ -38,6 +39,19 @@ func (m StringHashBSIMapper) MapValue(attr *Attribute, val interface{}, c *Sessi
 	case int64:
 		val = val.(int64)
 		strVal = fmt.Sprintf("%d", val)
+		result = Get64BitHash(strVal)
+	case map[string]interface{}:
+		x := val.(map[string]interface{})
+		if len(x) == 0 {
+			return
+		}
+		b, errx := json.Marshal(x)
+		if errx != nil {
+			err = errx
+			return
+		}
+		strVal = string(b)
+		val = strVal
 		result = Get64BitHash(strVal)
 	default:
 		err = fmt.Errorf("StringHashBSIMapper not expecting a '%T' for '%s'", val, attr.FieldName)

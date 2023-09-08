@@ -13,6 +13,7 @@ insert into customers_qa (cust_id, first_name, address, city, state, zip, phone,
 insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('8','Bill','777 Main','Wenatchee','WA','98800','425-333-2288','landline;home;business');
 insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('9','Bob','888 Main','Gig Harbor','WA','98444','425-333-2299','home');
 insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('10','Carl','999 Main','Spokane','WA','98231','425-333-2211','business');
+commit
 insert into orders_qa (cust_id, order_id, order_date, ship_via) values('1','1001','2023-06-01T01:00:00','UPS');
 insert into orders_qa (cust_id, order_id, order_date, ship_via) values('1','1002','2023-06-01T02:00:00','UPS');
 insert into orders_qa (cust_id, order_id, order_date, ship_via) values('10','1003','2023-06-01T03:00:00','FEDEX');
@@ -47,6 +48,7 @@ select * from customers_qa as c where c.cust_id not in (select cust_id from orde
 select * from customers_qa as c where c.cust_id in (select cust_id from orders_qa);@3
 -- Inserts
 insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('11','Carlo','888 Western','Boise','ID','87305','208-313-2211','business');
+commit
 insert into orders_qa (cust_id, order_id, order_date, ship_via) values('11','1004','2023-07-01T03:00:00','USPS');
 commit
 select count(*) from orders_qa where cust_id != null;@4

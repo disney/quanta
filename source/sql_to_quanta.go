@@ -597,7 +597,7 @@ func (m *SQLToQuanta) walkArrayNode(node *expr.ArrayNode, q *shared.QueryFragmen
 		//u.Debug(string(u.JsonHelper(*q).PrettyJson()))
 		return nil, nil
 	}
-	return nil, fmt.Errorf("Uknown Error")
+	return nil, fmt.Errorf("unknown Error")
 }
 
 // Binary Node:   operations for >, >=, <, <=, =, !=, AND, OR, Like, IN and IS
@@ -656,7 +656,8 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 	}
 
 	lhval, lhok, isLident := m.eval(node.Args[0])
-	if n, isId := node.Args[0].(*expr.IdentityNode); lhok && isId {
+	n, isId := node.Args[0].(*expr.IdentityNode)
+	if lhok && isId {
 		if l, r, hasLeft := n.LeftRight(); hasLeft && l != m.tbl.Name {
 			if _, tok := m.tableAliases[l]; !tok {
 				return nil, fmt.Errorf("cannot find a table alias for '%v' on field '%v'", l, r)
@@ -960,35 +961,6 @@ func (m *SQLToQuanta) handleBSI(op string, lhval, rhval value.Value, q *shared.Q
 func (m *SQLToQuanta) walkFilterUnary(node *expr.UnaryNode, q *shared.QueryFragment) (value.Value, error) {
 
 	switch node.Operator.T {
-
-	case lex.TokenIs: // IS keyword
-
-		// node.Arg.data is expr.NullNode{}
-		// node.Operator is lex.TokenIs
-
-		isNull := false
-		hasNot := false
-		if node.String() == "(NULL)" {
-			isNull = true
-		}
-		if node.String() == "not" {
-			isNull = true
-			hasNot = true
-		}
-
-		//	switch curNode := node.Arg.(type) {
-
-		fmt.Printf("QueryFragment: %v\n", q)
-		fmt.Printf("isNull: %v\n", isNull)
-		fmt.Printf("hasNot: %v\n", hasNot)
-		fmt.Printf("curNode: %v\n", node)
-
-		// I  think what we want to do is return an = null Node or a != null node
-
-		u.Warnf("not implemented: %#v", node)
-		u.Warnf("Unknown token %v", node.Operator.T)
-		return nil, fmt.Errorf("not implemented unary function: %v", node.String())
-	//}
 	case lex.TokenNegate: // NOT keyword
 		q.Negate = true
 		switch curNode := node.Arg.(type) {

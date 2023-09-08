@@ -690,14 +690,9 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		// Can't use batch operation here unfortunately, but at least we have local batch cache
 		localKey := indexPath(tbuf, tbuf.PKAttributes[0].FieldName, tbuf.Table.PrimaryKey+".PK")
 		if lColID, ok := s.BatchBuffer.LookupLocalCIDForString(localKey, pkLookupVal.String()); !ok {
-			var colID uint64
-			var errx error
-			var found bool
-			if !tbuf.Table.DisableDedup {
-				colID, found, errx = s.lookupColumnID(tbuf, pkLookupVal.String(), "")
-				if errx != nil {
-					return false, fmt.Errorf("Dedup lookup error - %v", errx)
-				}
+			colID, found, errx := s.lookupColumnID(tbuf, pkLookupVal.String(), "")
+			if errx != nil {
+				return false, fmt.Errorf("Dedup lookup error - %v", errx)
 			}
 			if found {
 				tbuf.CurrentColumnID = colID
@@ -717,11 +712,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 			}
 		} else {
 			tbuf.CurrentColumnID = lColID
-			if tbuf.Table.DisableDedup {
-				u.Infof("PK %s found in cache but dedup is disabled.  PK mapping error?", pkLookupVal.String())
-			} else {
-				return false, nil
-			}
+			u.Warnf("PK %s found in cache.  PK mapping error?", pkLookupVal.String())
 		}
 	} else {
 		if providedColID == 0 {

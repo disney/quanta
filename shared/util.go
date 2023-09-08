@@ -283,7 +283,7 @@ func DeleteTable(consul *api.Client, name string) error {
 	if name == "" {
 		return fmt.Errorf("table name must not be empty")
 	}
-	path := fmt.Sprintf("schema/%s", name)
+	path := fmt.Sprintf("schema/%s/", name)
 	_, err := consul.KV().DeleteTree(path, nil)
 	if err != nil {
 		return fmt.Errorf("DeleteTable: %v", err)

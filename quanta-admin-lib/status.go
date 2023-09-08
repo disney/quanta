@@ -13,7 +13,7 @@ type StatusCmd struct {
 // Run - Status command implementation
 func (s *StatusCmd) Run(ctx *Context) error {
 
-	conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
+	conn := GetClientConnection(ctx.ConsulAddr, ctx.Port)
 
 	fmt.Println()
 	fmt.Println("ADDRESS            STATUS    DATA CENTER                              SHARDS   MEMORY   VERSION")

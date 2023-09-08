@@ -1,5 +1,7 @@
 tableName: cities
 primaryKey: id
+selector: type="cities"
+encoding: contentType
 attributes:
 - sourceName: /id
   fieldName: id

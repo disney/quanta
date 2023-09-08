@@ -34,7 +34,7 @@ func (v *VersionCmd) Run(ctx *Context) error {
 
 //
 
-func getClientConnection(consulAddr string, port int) *shared.Conn {
+func GetClientConnection(consulAddr string, port int) *shared.Conn {
 
 	fmt.Printf("Connecting to Consul at: [%s] ...\n", consulAddr)
 	consulClient, err := api.NewClient(&api.Config{Address: consulAddr})

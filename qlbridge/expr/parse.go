@@ -87,6 +87,7 @@ func (m *LexTokenPager) lexNext() {
 		if tok.T == lex.TokenEOF {
 			m.done = true
 		}
+		// fmt.Println("lexNext: ", tok)
 		m.tokens = append(m.tokens, tok)
 	}
 }
@@ -372,13 +373,18 @@ func (t *tree) C(depth int) Node {
 			t.Next()
 			return NewUnary(cur, t.cInner(n, depth+1))
 		case lex.TokenIs:
-			t.Next()
-			if t.Cur().T == lex.TokenNegate {
-				cur = t.Next()
+			t.Next()                          // skip IS token
+			if t.Cur().T == lex.TokenNegate { // 'n IS NOT rhs', rhs might be 'TokenNull'
+				cur = t.Next() // skip NOT token
 				ne := lex.Token{T: lex.TokenNE, V: "!="}
-				return NewBinaryNode(ne, n, t.P(depth+1))
+				rhs := t.P(depth + 1)
+				return NewBinaryNode(ne, n, rhs)
+			} else if t.Cur().T == lex.TokenNull { // 'n IS rhs' case, rhs might be 'TokenNull'
+				eq := lex.Token{T: lex.TokenEqual, V: "="}
+				rhs := t.P(depth)
+				return NewBinaryNode(eq, n, rhs)
 			}
-			u.Warnf("TokenIS?  is this supported?")
+			u.Warnf("TokenIS? is this supported?")
 			return NewUnary(cur, t.cInner(n, depth+1))
 		default:
 			return t.cInner(n, depth)

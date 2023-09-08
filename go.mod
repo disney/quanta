@@ -4,12 +4,11 @@ go 1.14
 
 require (
 	github.com/Jeffail/tunny v0.0.0-20190930221602-f13eb662a36a
-	github.com/RoaringBitmap/roaring v1.3.0
+	github.com/RoaringBitmap/roaring v1.5.0
 	github.com/akrylysov/pogreb v0.9.1
 	github.com/alecthomas/kong v0.2.17
 	github.com/araddon/dateparse v0.0.0-20210207001429-0eec95c9db7e
 	github.com/araddon/gou v0.0.0-20211019181548-e7d08105776c
-	//	github.com/araddon/qlbridge v0.0.2
 	github.com/aviddiviner/go-murmur v0.0.0-20150519214947-b9740d71e571
 	github.com/aws/aws-sdk-go v1.44.146
 	github.com/aws/aws-sdk-go-v2 v1.16.4
@@ -26,7 +25,7 @@ require (
 	github.com/golang/protobuf v1.5.3
 	github.com/google/btree v1.0.0
 	github.com/google/uuid v1.3.0
-	github.com/hamba/avro v1.6.0
+	github.com/hamba/avro/v2 v2.15.0
 	github.com/harlow/kinesis-consumer v0.3.5
 	github.com/hashicorp/consul/api v1.10.1
 	github.com/hashicorp/consul/sdk v0.8.0

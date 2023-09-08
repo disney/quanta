@@ -17,8 +17,9 @@ import (
 
 func TestLocalQuery(t *testing.T) {
 
+	acquirePort4000.Lock()
+	defer acquirePort4000.Unlock()
 	var err error
-
 	shared.SetUTCdefault()
 
 	// erase the storage
@@ -50,10 +51,11 @@ func TestLocalQuery(t *testing.T) {
 // This should work from scratch with nothing running except consul.
 // It should also work with a cluster already running and basic_queries.sql loaded which is MUCH faster.
 // eg. go run ./driver.go -script_file ./sqlscripts/basic_queries.sql -validate -host 127.0.0.1 -user MOLIG004 -db quanta -port 4000 -log_level DEBUG
-func XTestIsNull(t *testing.T) {
+func TestIsNull(t *testing.T) {
 
+	acquirePort4000.Lock()
+	defer acquirePort4000.Unlock()
 	var err error
-
 	shared.SetUTCdefault()
 
 	isLocalRunning := IsLocalRunning()
@@ -94,10 +96,11 @@ func XTestIsNull(t *testing.T) {
 	state.Release()
 }
 
-func XTestIsNotNull(t *testing.T) {
+func TestIsNotNull(t *testing.T) {
 
+	acquirePort4000.Lock()
+	defer acquirePort4000.Unlock()
 	var err error
-
 	shared.SetUTCdefault()
 
 	isLocalRunning := IsLocalRunning()
@@ -115,7 +118,6 @@ func XTestIsNotNull(t *testing.T) {
 
 	// query
 
-	//statement := "select cust_id,first_name,last_name from customers_qa where last_name != null;"
 	statement := "select cust_id,first_name,last_name from customers_qa where last_name is not null;"
 	rows, err := state.db.Query(statement)
 	check(err)

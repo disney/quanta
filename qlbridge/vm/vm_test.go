@@ -294,7 +294,7 @@ var (
 	}
 )
 
-// atw FIXME:
+// atw FIXME: fails
 func XXTestRunExpr(t *testing.T) {
 
 	for _, test := range vmTests {
@@ -338,7 +338,7 @@ func XXTestRunExpr(t *testing.T) {
 			continue
 		}
 
-		//u.Infof("results=%T   %#v", val, val)
+		u.Infof("results=%T   %#v", val, val)
 		if test.result != nil && val.Value() != test.result {
 			t.Fatalf("\n%s \n\t%v--%T\nexpected\n\t%v--%T", test.qlText, val.Value(), val.Value(), test.result, test.result)
 		} else if test.result == nil {

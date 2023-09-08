@@ -16,8 +16,9 @@ import (
 
 func TestRetainData(t *testing.T) {
 
+	acquirePort4000.Lock()
+	defer acquirePort4000.Unlock()
 	var err error
-
 	shared.SetUTCdefault()
 
 	// erase the storage

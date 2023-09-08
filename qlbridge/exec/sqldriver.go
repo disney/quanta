@@ -164,7 +164,7 @@ func (m *qlbConn) Prepare(query string) (driver.Stmt, error) {
 func (m *qlbConn) Close() error {
 
 	if m.stmts != nil {
-		for k, _ := range m.stmts {
+		for k := range m.stmts {
 			k.Close()
 			delete(m.stmts, k)
 		}

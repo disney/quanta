@@ -22,7 +22,7 @@ type VerifyCmd struct {
 // Run - Verify implementation
 func (f *VerifyCmd) Run(ctx *Context) error {
 
-	conn := getClientConnection(ctx.ConsulAddr, ctx.Port)
+	conn := GetClientConnection(ctx.ConsulAddr, ctx.Port)
 	table, err := shared.LoadSchema("", f.Table, conn.Consul)
 	if err != nil {
 		return fmt.Errorf("Error loading table %s - %v", f.Table, err)

@@ -75,7 +75,7 @@ func BuildSqlJobPlanned(planner plan.Planner, executor Executor, ctx *plan.Conte
 			return nil, err
 		}
 		if stmt == nil {
-			return nil, fmt.Errorf("Not statement for parse? %v", ctx.Raw)
+			return nil, fmt.Errorf("not statement for parse? %v", ctx.Raw)
 		}
 		ctx.Stmt = stmt
 	}

@@ -29,6 +29,14 @@ func (c *CreateCmd) Run(ctx *Context) error {
 	if err3 != nil {
 		return fmt.Errorf("Error loading schema %v", err3)
 	}
+	// let's check the types of the fields
+	for i := 0; i < len(table.Attributes); i++ {
+		fmt.Println(table.Attributes[i].FieldName, table.Attributes[i].Type)
+		typ := shared.TypeFromString(table.Attributes[i].Type)
+		if typ == shared.NotDefined {
+			return fmt.Errorf("unknown type %s for field %s", table.Attributes[i].Type, table.Attributes[i].FieldName)
+		}
+	}
 
 	// Check if the table already exists, if not deploy and verify.  Else, compare and verify.
 	ok, _ := shared.TableExists(consulClient, table.Name)
@@ -42,7 +50,7 @@ func (c *CreateCmd) Run(ctx *Context) error {
 			return fmt.Errorf("cannot create table due to missing parent FK constraint dependency")
 		}
 
-		err = performCreate(consulClient, table, ctx.Port)
+		err = performCreate(consulClient, table, ctx.Port) // this is the create
 		if err != nil {
 			return fmt.Errorf("errors during performCreate: %v", err)
 		}

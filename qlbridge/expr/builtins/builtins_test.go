@@ -942,7 +942,7 @@ func TestValidation(t *testing.T) {
 	}
 }
 
-// atw FIXME:
+// atw FIXME: What is happening here? Many of these panic.
 func XXTestBuiltins(t *testing.T) {
 
 	t1 := dateparse.MustParse("12/18/2015")

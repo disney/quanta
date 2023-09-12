@@ -21,6 +21,7 @@ BIN_PRODUCER=quanta-s3-kinesis-producer
 BIN_KCL=quanta-kcl-consumer
 BIN_ADMIN=quanta-admin
 BIN_RBAC=quanta-rbac-util
+BIN_RUN=sqlrunner
 COVERAGE_DIR=coverage
 COV_PROFILE=${COVERAGE_DIR}/test-coverage.txt
 COV_HTML=${COVERAGE_DIR}/test-coverage.html
@@ -32,6 +33,7 @@ PKG_KCL=github.com/disney/quanta/${BIN_KCL}
 PKG_PRODUCER=github.com/disney/quanta/${BIN_PRODUCER}
 PKG_ADMIN=github.com/disney/quanta/${BIN_ADMIN}
 PKG_RBAC=github.com/disney/quanta/${BIN_RBAC}
+PKG_RUN=github.com/disney/quanta/${BIN_RUN}
 #PLATFORMS=darwin linux 
 PLATFORM?=linux
 ARCHITECTURES?=arm64 amd64
@@ -99,6 +101,10 @@ build_all: format vet
 	$(foreach GOARCH, $(ARCHITECTURES),\
 	$(shell export GOARCH=$(GOARCH);\
 	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_RBAC)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_RBAC} \
+	))
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_RUN)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_RUN} \
 	))
 	$(foreach GOARCH, $(ARCHITECTURES),\
 	$(shell export GOARCH=$(GOARCH);\

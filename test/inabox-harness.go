@@ -141,6 +141,7 @@ func StartNode(nodeStart int) (*server.Node, error) {
 
 type LocalProxyControl struct {
 	Stop chan bool
+	Src  *source.QuantaSource
 }
 
 func StartProxy(count int, testConfigPath string) *LocalProxyControl {
@@ -220,7 +221,7 @@ func StartProxy(count int, testConfigPath string) *LocalProxyControl {
 		u.Error(err)
 	}
 	fmt.Println("Proxy after NewQuantaSource")
-
+	localProxy.Src = proxy.Src
 	schema.RegisterSourceAsSchema("quanta", proxy.Src)
 
 	fmt.Println("Proxy starting to listen. ")
@@ -282,7 +283,7 @@ type ClusterLocalState struct {
 	m2                  *server.Node
 	proxyControl        *LocalProxyControl
 	weStartedTheCluster bool
-	proxyConnect        *ProxyConnect // for sql runner
+	proxyConnect        *ProxyConnectStrings // for sql runner
 	db                  *sql.DB
 }
 
@@ -334,7 +335,7 @@ func WaitForLocalActive(state *ClusterLocalState) {
 func Ensure_cluster() *ClusterLocalState {
 	var state = &ClusterLocalState{}
 
-	var proxyConnect ProxyConnect
+	var proxyConnect ProxyConnectStrings
 	proxyConnect.Host = "127.0.0.1"
 	proxyConnect.User = "MOLIG004"
 	proxyConnect.Password = ""

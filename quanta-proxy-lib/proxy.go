@@ -18,11 +18,13 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/qlbridge/exec"
+	"github.com/disney/quanta/qlbridge/expr"
 	"github.com/disney/quanta/qlbridge/lex"
 	"github.com/disney/quanta/qlbridge/rel"
 	"github.com/disney/quanta/qlbridge/schema"
 	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/source"
+	"github.com/hashicorp/consul/api"
 	"github.com/lestrrat-go/jwx/jwk"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -159,10 +161,6 @@ func NewProxyHandler(authProvider *AuthProvider) *ProxyHandler {
 
 	exec.RegisterSqlDriver()
 
-	// var driver driver.Driver
-	// driver = exec.Register()
-	// sql.Register("qlbridge", driver)
-
 	h := &ProxyHandler{authProvider: authProvider, stmts: make(map[interface{}]*sql.Stmt, 0)}
 	var err error
 	h.db, err = sql.Open("qlbridge", "quanta")
@@ -213,18 +211,89 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 
 	u.Debugf("handleQuery called with [%v], arg count = %d", query, len(args))
 
-	query = reWhitespace.ReplaceAllString(query, " ")
-	hasInto := strings.Contains(strings.ToLower(query), "into")
-	ss := strings.Split(query, " ")
-	if strings.ToLower(ss[0]) == "select" && hasInto {
-		ss[0] = "selectinto"
-	}
+	// should we just parse the sql instead of this? todo: (atw)
 
-	operation := strings.ToLower(ss[0])
+	query = reWhitespace.ReplaceAllString(query, " ")           // scan 1
+	hasInto := strings.Contains(strings.ToLower(query), "into") // scan 2
+	splitQuery := strings.Split(query, " ")                     // scan 3
+	if strings.ToLower(splitQuery[0]) == "select" && hasInto {
+		splitQuery[0] = "selectinto"
+	}
+	splitQueryLower := strings.Split(strings.ToLower(query), " ") // shoould we parse instead? todo: (atw) scan 4
+	operation := splitQueryLower[0]
 	switch operation {
+
+	case "create":
+
+		if len(splitQuery) > 4 && splitQueryLower[1] == "view" {
+			if splitQueryLower[2] != "as" {
+				// is  "CREATE VIEW myView AS ..."
+				// save in consul.
+				name := splitQueryLower[2] //  is name mixed?
+
+				selectStmt := strings.Split(strings.Join(splitQuery[4:], " "), ";")[0] // remove trailing ;
+				// fmt.Println("create view sel", selectStmt)
+				// fmt.Println("create view name", name)
+				consulApi := Src.GetConnection().Consul
+
+				consulApi.KV().Put(&api.KVPair{
+					Key:   "quantaviews/views/" + name,
+					Value: []byte(selectStmt),
+				}, nil)
+				fromI, err2 := findFromIndex(splitQueryLower)
+				if err2 != nil {
+					return nil, err2
+				}
+				from := splitQuery[fromI+1] // is mixed case correct?
+				name = strings.ToLower(name)
+				//fmt.Println("view from", name, from)
+				// get the table schema for 'from'
+				// fromTable, ok := Src.GetSessionPool().TableCache.TableCache[from]
+				// if !ok {
+				// 	return nil, fmt.Errorf("invalid query from %s missng table %s", query, from)
+				// }
+				// _ = fromTable
+				e, _ := shared.TableExists(consulApi, name)
+				if e {
+					shared.DeleteTable(consulApi, name)
+				}
+
+				// get a clone of the 'from' table schema
+				viewTable, err3 := shared.LoadSchema("", from, consulApi)
+				if err3 != nil {
+					return nil, fmt.Errorf("loading schema 3 %v", err3)
+				}
+
+				// get the view schema for 'from' - clone it, rename it, save it
+				// mark it as being a view somehow.
+				viewTable.Name = name
+				viewTable.IsViewOf = from
+
+				var err error
+				// save it
+				err = shared.UpdateModTimeForTable(consulApi, viewTable.Name)
+				if err != nil {
+					return nil, fmt.Errorf("updateModTimeForTable  error %v", err)
+				}
+				fmt.Println("viewTable uploading new viewTable", viewTable.Name)
+				err = shared.MarshalConsul(viewTable, consulApi) // marshal into consul kv. Also triggers a reload.
+				if err != nil {
+					return nil, fmt.Errorf("marshalling view table %v", err)
+				}
+			}
+		} else {
+			// todo: handle create table
+			return nil, fmt.Errorf("invalid query %s", query)
+		}
+
+		r, err := mysql.BuildSimpleResultset([]string{""}, [][]interface{}{
+			{int(1)},
+		}, binary)
+		return &mysql.Result{Status: 0, InsertId: 0, AffectedRows: 0, Resultset: r}, err
+
 	case "commit":
 		api := shared.NewBitmapIndex(Src.GetConnection())
-		err :=  api.Commit()
+		err := api.Commit()
 		return nil, err
 
 	case "begin", "rollback":
@@ -237,6 +306,8 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 		var r *mysql.Resultset
 		var err error
 
+		// FIXME: stop scanning the query over and over. (atw) first ToLower and then contains.
+		// use splitQueryLower instead of query.
 		//for handling go mysql driver select @@max_allowed_packet
 		if strings.Contains(strings.ToLower(query), "max_allowed_packet") {
 			r, err = mysql.BuildSimpleResultset([]string{"@@max_allowed_packet"}, [][]interface{}{
@@ -278,7 +349,7 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 			return &mysql.Result{Status: 0, InsertId: 0, AffectedRows: 0, Resultset: r}, nil
 		}
 		if strings.Contains(strings.ToLower(query), "select cast") ||
-					strings.Contains(strings.ToLower(query), "select schema") {
+			strings.Contains(strings.ToLower(query), "select schema") {
 			r, err = mysql.BuildSimpleResultset([]string{""}, [][]interface{}{
 				{""},
 			}, binary)
@@ -298,6 +369,26 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 				return nil, err2
 			}
 		} else {
+
+			fromI, err2 := findFromIndex(splitQueryLower) // FIXME: fails when multiple froms
+			if err2 != nil {
+				return nil, err2
+			}
+			from := splitQueryLower[fromI+1]
+			// fmt.Println("found FROM table name", from)
+			// get the table schema for 'from'
+			tableFound, err := Src.Table(from) // inefficient?
+			if err != nil {
+				return nil, fmt.Errorf("error opening connection for table %s - %v", from, err)
+			}
+
+			if tableFound.IsViewOf != "" { // means don't use this table, use the base table of the view instead.
+				query, err = rewriteViewUsingSelect(query, from, tableFound)
+				if err != nil {
+					return nil, nil
+				}
+			}
+
 			rows, err2 = h.db.Query(query, args...)
 			if err2 != nil {
 				u.Errorf("could not execute query: %v", err2)
@@ -386,6 +477,85 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 	default:
 		return nil, fmt.Errorf("invalid query %s", query)
 	}
+}
+
+// rewriteViewUsingSelect will take the text of the WHERE in the view and append it to the WHERE in the query
+// with and AND.  It will also replace the FROM with the real table name.
+func rewriteViewUsingSelect(query string, from string, tableFound *schema.Table) (string, error) {
+	aView := tableFound.Name
+	consulApi := Src.GetConnection().Consul
+	key := "quantaviews/views/" + aView
+	originalSelect, _, err := consulApi.KV().Get(key, nil)
+	if err != nil {
+		return "", fmt.Errorf("didn't find view %s - %v", from, err)
+	}
+	fmt.Println("found view", aView, string(originalSelect.Value))
+	// rewrite the query to use the real table name
+	// replace the FROM with the real table name
+	// replace the WHERE with (a) AND (b)
+	query = strings.Replace(strings.ToLower(query), from, tableFound.IsViewOf, 1)
+	fmt.Println("is view rewriting query", query)
+
+	viewFoundIntf, err := rel.ParseSql(string(originalSelect.Value)) // we could cache this
+	if err != nil {
+		return "", fmt.Errorf("parsing view %s - %v", string(originalSelect.Value), err)
+	}
+	viewFound, ok := viewFoundIntf.(*rel.SqlSelect)
+	if !ok {
+		return "", fmt.Errorf("casting view %v - %v", viewFoundIntf, err)
+	}
+	tmp, ok := viewFound.Where.Expr.(*expr.BinaryNode)
+	if ok {
+		tmp.Paren = true
+	}
+	// fmt.Println("viewFound where", viewFound.Where)
+
+	queryIntf, err := rel.ParseSql(query)
+	if err != nil {
+		return "", fmt.Errorf("parsing view %s - %v", string(originalSelect.Value), err)
+	}
+	queryParsed, ok := queryIntf.(*rel.SqlSelect)
+	if !ok {
+		return "", fmt.Errorf("casting view %v - %v", queryParsed, err)
+	}
+	tmp, ok = queryParsed.Where.Expr.(*expr.BinaryNode)
+	if ok {
+		tmp.Paren = true
+	}
+
+	atok := lex.Token{}
+	atok.T = lex.TokenLogicAnd
+	atok.V = "AND"
+	and := &expr.BinaryNode{} //Left: xlt10, Right: sql4.Where, Operator: lex.TokenAnd}
+	// and.Paren = true
+	and.Operator = atok
+	and.Operator.T = lex.TokenAnd
+	and.Args = []expr.Node{viewFound.Where.Expr, queryParsed.Where.Expr}
+	queryParsed.Where.Expr = and
+
+	// viewFound.Where.Expr.
+	fmt.Println("query where", queryParsed.Where)
+	fmt.Println("final query", queryParsed)
+	query = queryParsed.String()
+	fmt.Println("transformed query", queryParsed)
+	return query, nil
+}
+
+func findFromIndex(splitQueryLower []string) (int, error) {
+	fromI := -1
+	for i := 0; i < len(splitQueryLower); i++ {
+		if splitQueryLower[i] == "from" {
+			fromI = i
+			break
+		}
+	}
+	if fromI == -1 {
+		return -1, fmt.Errorf("missing  %v", splitQueryLower)
+	}
+	if fromI >= len(splitQueryLower)-1 {
+		return -1, fmt.Errorf("invalid query FROM at end %s", splitQueryLower)
+	}
+	return fromI, nil
 }
 
 // HandleQuery - Handle incoming query.

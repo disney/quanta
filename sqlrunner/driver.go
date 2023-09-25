@@ -68,7 +68,7 @@ func main() {
 	log.Debugf("port : %s", *port)
 	log.Debugf("log_level : %s", *log_level)
 
-	var proxyConnect test.ProxyConnect
+	var proxyConnect test.ProxyConnectStrings
 	proxyConnect.Host = *host
 	proxyConnect.User = *user
 	proxyConnect.Password = *password
@@ -89,7 +89,7 @@ func main() {
 	}
 
 	f, err := os.Open(*scriptFile)
-  if err != nil {
+	if err != nil {
 		log.Fatal("Proxy Connection Failed : ", err)
 	}
 	defer f.Close()

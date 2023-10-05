@@ -711,6 +711,11 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 func (p *Projector) checkColumnID(v *Attribute, cID, child uint64,
 	bsiResults map[string]map[string]*roaring64.BSI) (colID uint64, err error) {
 
+	if len(p.joinAttributes) == 0 {
+		colID = cID
+		return
+	}
+
 	if child > 0 && v.Parent.Name == p.childTable {
 		cID = child
 	}

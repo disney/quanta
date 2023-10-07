@@ -520,7 +520,7 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 		}
 		var lBatch map[interface{}]interface{}
 		var err error
-		if v.MappingStrategy == "ParentRelation" || (p.innerJoin && v.Parent.Name != p.childTable) {
+		if v.MappingStrategy == "ParentRelation" || (p.innerJoin && v.Parent.Name != p.leftTable) {
 			lBatch, err = p.getPartitionedStrings(lookupAttribute, trxColumnIDs)
 		} else {
 			lBatch, err = p.getPartitionedStrings(lookupAttribute, columnIDs)
@@ -742,7 +742,8 @@ func (p *Projector) checkColumnID(v *Attribute, cID, child uint64,
 		} else {
 			// Translate ColID
 			if b, fok := bsiResults[r.Parent.Name][r.FieldName]; !fok {
-				err = fmt.Errorf("bsi lookup failed for %s - %s", r.Parent.Name, r.FieldName)
+				//err = fmt.Errorf("bsi lookup failed for %s - %s", r.Parent.Name, r.FieldName)
+				colID = cID
 			} else {
 				val, found := b.GetValue(cID)
 				if found {

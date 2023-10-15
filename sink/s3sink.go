@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	u "github.com/araddon/gou"
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
@@ -57,6 +58,7 @@ type (
 		config        *aws.Config
 		path          string
 		s3svc         *s3.Client
+		writerLock    sync.Mutex
 	}
 )
 
@@ -322,6 +324,8 @@ func (s *S3ParquetSink) Next(dest []driver.Value, colIndex map[string]int) error
 	for j := 0; j < len(vals); j++ {
 		rec[j] = &vals[j]
 	}
+	s.writerLock.Lock()
+	defer s.writerLock.Unlock()
 	if err := s.csvWriter.WriteString(rec); err != nil {
 		return err
 	}

@@ -220,7 +220,7 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	processingOrig := true
 	if orig, ok := p.Context().Stmt.(*rel.SqlSelect); ok {
 		processingOrig = orig.From[0].Name == req.From[0].Name
-		if len(orig.From) == 1 && req.Where != nil && req.Where.Source != nil {
+		if len(orig.From) == 1 {
 			x := orig.From[0]
 			if _, tok := m.tableAliases[x.Name]; !tok {
 				m.tableAliases[x.Name] = x.Name

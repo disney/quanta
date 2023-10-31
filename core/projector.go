@@ -521,10 +521,15 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 		var lBatch map[interface{}]interface{}
 		var err error
 		if v.MappingStrategy == "ParentRelation" || 
-				(p.innerJoin && v.Parent.Name != p.leftTable && p.leftTable != "") {
+				(p.innerJoin && v.Parent.Name != p.childTable && p.childTable != "") && 
+				(v.Parent.Name != p.leftTable && p.leftTable != "") {
 			lBatch, err = p.getPartitionedStrings(lookupAttribute, trxColumnIDs)
+			//u.Debugf("TRANSLATING PROJ %v, LEFT = %v, CHILD = %v, INNER = %v", v.Parent.Name, p.leftTable, 
+			//	p.childTable, p.innerJoin)
 		} else {
 			lBatch, err = p.getPartitionedStrings(lookupAttribute, columnIDs)
+			//u.Debugf("NOT TRANSLATING PROJ %v, LEFT = %v, CHILD = %v, INNER = %v", v.Parent.Name, p.leftTable, 
+			//	p.childTable, p.innerJoin)
 		}
 		if err != nil {
 			return nil, err

@@ -225,7 +225,7 @@ func rewriteWhere(stmt *SqlSelect, from *SqlSource, node expr.Node, cols Columns
 		default:
 			u.Warnf("un-implemented op: %#v", nt)
 		}
-	case *expr.ArrayNode:
+	case *expr.ArrayNode, *expr.ValueNode:
 		return node, cols
 	default:
 		u.Warnf("%T node types are not suppored yet for where rewrite", node)

@@ -36,6 +36,7 @@ type SqlInfo struct {
 	Validate         bool
 	Err              error
 	Rows             *sql.Rows
+	FailedChildren   []SqlInfo
 }
 
 type StatementType int64
@@ -99,8 +100,15 @@ func AnalyzeRow(proxyConfig ProxyConnectStrings, row []string, validate bool) Sq
 	}
 
 	if strings.HasPrefix(sqlInfo.Statement, "#") || strings.HasPrefix(sqlInfo.Statement, "--") {
-		log.Printf("Skipping row - commented out: %s", sqlInfo.Statement)
+		// log.Printf("Skipping row - commented out: %s", sqlInfo.Statement)
 		return sqlInfo
+	}
+
+	parts := strings.Split(sqlInfo.Statement, ";@")
+	sqlInfo.Statement = parts[0]
+	if len(parts) > 1 {
+		sqlInfo.ExpectedRowcount, err = strconv.ParseInt(parts[1], 10, 64)
+		check(err)
 	}
 
 	var statementType StatementType
@@ -118,6 +126,11 @@ func AnalyzeRow(proxyConfig ProxyConnectStrings, row []string, validate bool) Sq
 		statementType = Admin
 	} else if strings.Contains(lowerStmt, "create") {
 		statementType = Create
+	} else if strings.HasPrefix(sqlInfo.Statement, "commit") {
+		// time.Sleep(1 * time.Second) // for experimental purposes only
+		statementType = Select // ?? it has to be something
+	} else {
+		log.Fatalf("Unsupported Statement : %v", sqlInfo.Statement)
 	}
 
 	err = nil

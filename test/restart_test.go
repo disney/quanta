@@ -16,8 +16,8 @@ import (
 
 func TestRetainData(t *testing.T) {
 
-	acquirePort4000.Lock()
-	defer acquirePort4000.Unlock()
+	AcquirePort4000.Lock()
+	defer AcquirePort4000.Unlock()
 	var err error
 	shared.SetUTCdefault()
 

@@ -305,7 +305,7 @@ func (m *BitmapIndex) openCompleteFile(index, field string, rowIDOrBits int64, t
 }
 
 // Called during server startup.  Iterates filesystem and loads up fragement queue.
-func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
+func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment, fragsPendingQueue chan int) error {
 
 	m.fragFileLock.Lock()
 	defer m.fragFileLock.Unlock()
@@ -456,7 +456,16 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 		for _, field := range index {
 			for _, ts := range field {
 				for _, frag := range ts {
-					fragQueue <- frag
+					select {
+					case fragsPendingQueue <- 1:
+					default:
+						return fmt.Errorf("Update: fragsPendingQueue is full")
+					}
+					select {
+					case fragQueue <- frag:
+					default:
+						return fmt.Errorf("Update: fragment queue is full")
+					}
 				}
 			}
 		}

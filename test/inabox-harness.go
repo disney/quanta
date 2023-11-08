@@ -33,7 +33,7 @@ import (
 
 // some tests start a cluster and must listen on port 4000
 // this is a mutex to ensure that only one test at a time can listen on port 4000
-var acquirePort4000 sync.Mutex
+var AcquirePort4000 sync.Mutex
 
 // tests will time out so run like this:
 // go test -timeout 10m
@@ -383,6 +383,41 @@ func Ensure_cluster() *ClusterLocalState {
 	state.db, err = state.proxyConnect.ProxyConnectConnect()
 	check(err)
 	return state
+}
+
+func MergeSqlInfo(total *SqlInfo, got SqlInfo) {
+	total.ExpectedRowcount += got.ExpectedRowcount
+	total.ActualRowCount += got.ActualRowCount
+	total.ExpectError = got.ExpectError
+	if len(got.ErrorText) > 0 && !got.ExpectError {
+		total.ErrorText += "\n" + got.ErrorText
+		fmt.Println("got.ErrorText", got.ErrorText)
+	}
+	if got.ExpectedRowcount != got.ActualRowCount {
+		total.FailedChildren = append(total.FailedChildren, got)
+	}
+}
+
+func ExecuteSqlFile(state *ClusterLocalState, filename string) SqlInfo {
+	bytes, err := os.ReadFile(filename)
+	check(err)
+	sql := string(bytes)
+	lines := strings.Split(sql, "\n")
+	var total SqlInfo
+	total.Statement = ""
+	hadSelect := false
+	for _, line := range lines {
+		if !hadSelect {
+			if strings.HasPrefix(strings.ToLower(line), "select ") {
+				hadSelect = true
+				// time.Sleep(5 * time.Second) // For experiments only.
+			}
+		}
+		lineLines := strings.Split(line, "\\") // \\ is a line continuation
+		got := AnalyzeRow(*state.proxyConnect, lineLines, true)
+		MergeSqlInfo(&total, got)
+	}
+	return total
 }
 
 func check(err error) {

@@ -46,21 +46,22 @@ var (
 // tableCache - Schema metadata cache (essentially same YAML file used by loader).
 type BitmapIndex struct {
 	*Node
-	memoryLimitMb   int
-	bitmapCache     map[string]map[string]map[uint64]map[int64]*StandardBitmap
-	bitmapCacheLock sync.RWMutex
-	bsiCache        map[string]map[string]map[int64]*BSIBitmap
-	bsiCacheLock    sync.RWMutex
-	fragQueue       chan *BitmapFragment
-	workers         int
-	fragFileLock    sync.Mutex
-	setBitThreads   *CountTrigger
-	writeSignal     chan bool
-	tableCache      map[string]*shared.BasicTable
-	tableCacheLock  sync.RWMutex
-	partitionQueue  chan *PartitionOperation
-	bitmapCount     int
-	bsiCount        int
+	memoryLimitMb     int
+	bitmapCache       map[string]map[string]map[uint64]map[int64]*StandardBitmap
+	bitmapCacheLock   sync.RWMutex
+	bsiCache          map[string]map[string]map[int64]*BSIBitmap
+	bsiCacheLock      sync.RWMutex
+	fragQueue         chan *BitmapFragment
+	fragsPendingQueue chan int // maybe make this an atomic counter.
+	workers           int
+	fragFileLock      sync.Mutex
+	setBitThreads     *CountTrigger
+	writeSignal       chan bool
+	tableCache        map[string]*shared.BasicTable
+	tableCacheLock    sync.RWMutex
+	partitionQueue    chan *PartitionOperation
+	bitmapCount       int
+	bsiCount          int
 }
 
 // NewBitmapIndex - Construct and initialize bitmap server state.
@@ -125,6 +126,7 @@ func (m *BitmapIndex) Init() error {
 	m.partitionQueue = make(chan *PartitionOperation, 100000)
 	//m.fragQueue = make(chan *BitmapFragment, 20000000)
 	m.fragQueue = make(chan *BitmapFragment, 10000000)
+	m.fragsPendingQueue = make(chan int, 10000000)
 	m.bitmapCache = make(map[string]map[string]map[uint64]map[int64]*StandardBitmap)
 	m.bsiCache = make(map[string]map[string]map[int64]*BSIBitmap)
 	m.workers = 20
@@ -136,7 +138,7 @@ func (m *BitmapIndex) Init() error {
 	}
 
 	// Read files from disk
-	err := m.readBitmapFiles(m.fragQueue)
+	err := m.readBitmapFiles(m.fragQueue, m.fragsPendingQueue)
 	if err != nil {
 		return fmt.Errorf("cannot initialize bitmap server error: %v", err)
 	}
@@ -219,6 +221,14 @@ func (m *BitmapIndex) BatchMutate(stream pb.BitmapIndex_BatchMutateServer) error
 				m.updateBitmapCache(frag)
 			}
 			return nil
+		}
+
+		select {
+		case m.fragsPendingQueue <- 1:
+			// fmt.Println("pushing fragQueue, fragsPendingQueue", len(m.fragsPendingQueue), len(m.fragQueue))
+		default:
+			// Fragment pending queue is full
+			return fmt.Errorf("BatchMutate: fragsPendingQueue is full")
 		}
 
 		select {
@@ -362,6 +372,13 @@ func (m *BitmapIndex) batchProcessLoop(threadID int) {
 			} else {
 				m.updateBitmapCache(frag)
 			}
+			select {
+			case unused := <-m.fragsPendingQueue:
+				_ = unused
+				// fmt.Println("Have fragsPendingQueue 1", len(m.fragsPendingQueue), len(m.fragQueue), threadID)
+			default:
+				fmt.Println("ERROR finished frag but no pending flag i1 ", threadID)
+			}
 			continue
 		default: // Don't block
 		}
@@ -372,6 +389,13 @@ func (m *BitmapIndex) batchProcessLoop(threadID int) {
 				m.updateBSICache(frag)
 			} else {
 				m.updateBitmapCache(frag)
+			}
+			select {
+			case unused := <-m.fragsPendingQueue:
+				_ = unused
+				// fmt.Println("Have fragsPendingQueue 2", len(m.fragsPendingQueue), len(m.fragQueue), threadID)
+			default:
+				fmt.Println("ERROR finished frag but no pending flag i2 ", threadID)
 			}
 			continue
 		case <-m.writeSignal:
@@ -1005,7 +1029,12 @@ func (m *BitmapIndex) Update(ctx context.Context, req *pb.UpdateRequest) (*empty
 		ba[0] = buf
 		frag = newBitmapFragment(req.Index, req.Field, req.RowIdOrValue, ts, ba, isBSI, false, true)
 	}
-
+	select {
+	case m.fragsPendingQueue <- 1:
+	default:
+		// Fragment pending queue is full
+		return &empty.Empty{}, fmt.Errorf("Update: fragsPendingQueue is full")
+	}
 	select {
 	case m.fragQueue <- frag:
 	default:
@@ -1015,9 +1044,13 @@ func (m *BitmapIndex) Update(ctx context.Context, req *pb.UpdateRequest) (*empty
 	return &empty.Empty{}, nil
 }
 
-// Commit - Block until the persistence queue is empty.
+// Commit - process frags until they are gone, if any.
+// then wait for pending queue to drain
+// typically the frag queue will be empty and the pending queue might have something
+// needs load testing.
 func (m *BitmapIndex) Commit(ctx context.Context, e *empty.Empty) (*empty.Empty, error) {
 
+	// fmt.Println("Commit called on server", m.Node.hashKey, len(m.fragQueue))
 	for {
 		select {
 		case frag := <-m.fragQueue:
@@ -1026,12 +1059,28 @@ func (m *BitmapIndex) Commit(ctx context.Context, e *empty.Empty) (*empty.Empty,
 			} else {
 				m.updateBitmapCache(frag)
 			}
+			select {
+			case unused := <-m.fragsPendingQueue:
+				_ = unused
+				// fmt.Println("Have fragsPendingQueue commit", len(m.fragsPendingQueue), len(m.fragQueue))
+			default:
+				fmt.Println("ERROR finished frag but no pending flag commit ")
+			}
+
 		default: // Don't block queue is empty
+			// Wait for pending queue to drain
+			// not sure if this will race
+			start := time.Now()
+			for len(m.fragsPendingQueue) > 0 {
+				time.Sleep(time.Millisecond * 1)
+				if time.Since(start).Seconds() > 10 {
+					return &empty.Empty{}, fmt.Errorf("Commit: fragsPendingQueue is not draining")
+				}
+			}
 			return e, nil
 		}
 	}
 }
-
 
 // CheckoutSequence returns another batch of column IDs to the client.
 func (m *BitmapIndex) CheckoutSequence(ctx context.Context,

@@ -7,12 +7,13 @@ package core
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/araddon/dateparse"
 	"math"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/araddon/dateparse"
 )
 
 // StringHashBSIMapper - High cardinality string mapping.
@@ -63,7 +64,7 @@ func (m StringHashBSIMapper) MapValue(attr *Attribute, val interface{}, c *Sessi
 			if attr.Searchable {
 				err = c.StringIndex.Index(strVal)
 			}
-			stringPath := indexPath(tbuf, attr.FieldName, "strings")    // indexPath() is in core/session.go
+			stringPath := indexPath(tbuf, attr.FieldName, "strings") // indexPath() is in core/session.go
 			c.BatchBuffer.SetPartitionedString(stringPath, tbuf.CurrentColumnID, val)
 			err = m.UpdateBitmap(c, attr.Parent.Name, attr.FieldName, result, attr.IsTimeSeries)
 		} else {
@@ -259,12 +260,26 @@ func (m FloatScaleBSIMapper) MapValue(attr *Attribute, val interface{},
 		err = fmt.Errorf("type passed for '%s' is of type '%T' which in unsupported", attr.FieldName, val)
 		return
 	}
-	result = uint64(floatVal * float64(math.Pow10(attr.Scale)))
-	var checkRound float64
-	checkRound = float64(result) / float64(math.Pow10(attr.Scale))
-	if checkRound != floatVal {
-		err = fmt.Errorf("this would result in rounding error for field '%s', value should have %d decimal places", 
-			attr.FieldName, attr.Scale)
+	if floatVal != 0 {
+		// don't let 7509.999999999999 become 75.09 instead of 75.1
+		scaled := floatVal * float64(math.Pow10(attr.Scale)) // this will change 75.1 to 7509.999999999999
+		// adjustment := .000000000001 * math.Log10(scaled) // the slow way
+		// adjusted := scaled + adjustment
+		// read math.Nextafter. It's a hoot. They operate on the int64 representation of the float !
+		var adjusted float64
+		if floatVal > 0 {
+			adjusted = math.Nextafter(scaled, float64(math.MaxFloat64)) // this will change 7509.999999999999 to 7510.00000000000
+		} else {
+			adjusted = math.Nextafter(scaled, float64(-math.MaxFloat64))
+		}
+		result = uint64(adjusted)
+		checkRound := float64(result) / float64(math.Pow10(attr.Scale))
+		if checkRound != floatVal {
+			err = fmt.Errorf("this would result in rounding error for field '%s', value should have %d decimal places",
+				attr.FieldName, attr.Scale)
+		}
+	} else {
+		result = uint64(0)
 	}
 	if c != nil {
 		err = m.UpdateBitmap(c, attr.Parent.Name, attr.FieldName, result, attr.IsTimeSeries)

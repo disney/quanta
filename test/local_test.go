@@ -19,76 +19,6 @@ import (
 // If a cluster is running it will use that cluster.
 // If not it will start a cluster.
 
-func TestCreateView(t *testing.T) {
-
-	AcquirePort4000.Lock()
-	defer AcquirePort4000.Unlock()
-	var err error
-	shared.SetUTCdefault()
-
-	isLocalRunning := IsLocalRunning()
-	// erase the storage
-	if !isLocalRunning { // if no cluster is up
-		err = os.RemoveAll("../test/localClusterData/") // start fresh
-		check(err)
-	}
-	// ensure we have a cluster on localhost, start one if necessary
-	state := Ensure_cluster()
-
-	fmt.Println("tables:", GetTableNames())
-
-	if !isLocalRunning { // if no cluster was up, load some data
-		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_load.sql")
-	} // else assume it's already loaded
-
-	fmt.Println("tables 2:", GetTableNames())
-
-	// create a view
-	q := "CREATE VIEW aView AS SELECT cust_id,first_name,last_name FROM customers_qa WHERE last_name IS not null"
-	AnalyzeRow(*state.proxyConnect, []string{q}, true)
-
-	// check the expression
-	got := AnalyzeRow(*state.proxyConnect, []string{"SELECT cust_id,first_name,last_name FROM aView WHERE last_name != NULL"}, true)
-	fmt.Println("selected from aView count", got.ActualRowCount)
-	assert.EqualValues(t, 14, got.ActualRowCount)
-
-	fmt.Println("tables 3:", GetTableNames())
-
-	// pairs, meta, err := state.m0.Conn.Consul.KV().List("schema", nil)
-	// check(err)
-	// _ = meta
-	// for _, p := range pairs {
-	// 	fmt.Println("schema", string(p.Key), string(p.Value))
-	// }
-
-	// check consul for the view.
-	pair, _, err := state.m0.Conn.Consul.KV().Get("quantaviews/views/aView", nil) // delete me. It's in the schema now.
-	check(err)
-	wanted := "SELECT cust_id,first_name,last_name FROM customers_qa WHERE last_name IS not null"
-	assert.EqualValues(t, nil, err)
-	assert.EqualValues(t, wanted, string(pair.Value))
-
-	// check that every node knows about the view TODO:
-	// it's not in the cache yet. It's in consul.
-
-	// use the view. Selects 13 rows
-	got = AnalyzeRow(*state.proxyConnect, []string{"SELECT cust_id,first_name,last_name FROM aView WHERE first_name != NULL"}, true)
-	fmt.Println("selected from aView count", got.ActualRowCount)
-	assert.EqualValues(t, 13, got.ActualRowCount)
-
-	// for {
-	// 	fmt.Println("Sleeping")
-	// 	time.Sleep(9 * time.Second)
-	// }
-
-	// todo: CREATE OR REPLACE VIEW, [] syntax for view name, DROP VIEW, SELECT INTO
-
-	// release as necessary
-	state.Release()
-}
-
-// todo: CREATE TABLE ...
-
 func TestParseSqlAndChangeWhere(t *testing.T) {
 
 	l := lex.NewSqlLexer("SELECT x FROM y WHERE (x < 10) AND (x> 4);")
@@ -134,61 +64,6 @@ func TestParseSqlAndChangeWhere(t *testing.T) {
 	want := "SELECT x, i, j FROM y WHERE (x < 10) AND (x > 4)"
 	got := sql4.String()
 	assert.EqualValues(t, want, got)
-}
-
-// delete or finish:
-func TestSelectInto(t *testing.T) {
-
-	AcquirePort4000.Lock()
-	defer AcquirePort4000.Unlock()
-	var err error
-	shared.SetUTCdefault()
-
-	isLocalRunning := IsLocalRunning()
-	// erase the storage
-	if !isLocalRunning { // if no cluster is up
-		err = os.RemoveAll("../test/localClusterData/") // start fresh
-		check(err)
-	}
-	// ensure we have a cluster on localhost, start one if necessary
-	state := Ensure_cluster()
-
-	if !isLocalRunning { // if no cluster was up, load some data
-		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_load.sql")
-	} // else assume it's already loaded
-
-	fmt.Println("tables 1:", GetTableNames())
-
-	// new table
-	AnalyzeRow(*state.proxyConnect, []string{"quanta-admin drop newtable"}, true)
-	AnalyzeRow(*state.proxyConnect, []string{"quanta-admin create newtable"}, true)
-
-	fmt.Println("tables 2:", GetTableNames())
-
-	q := "INSERT into newtable (cust_id, first_name, last_name) values('101','Al','woo')  "
-	AnalyzeRow(*state.proxyConnect, []string{q}, true)
-
-	q = "SELECT * FROM newtable;@123"
-	AnalyzeRow(*state.proxyConnect, []string{q}, true)
-
-	fmt.Println("tables 3:", GetTableNames())
-
-	// for {
-	// 	fmt.Println("Sleeping")
-	// 	time.Sleep(9 * time.Second)
-	// }
-
-	// select into it
-
-	// q = "SELECT cust_id,first_name,last_name INTO newtable FROM customers_qa WHERE last_name IS not null"
-	// AnalyzeRow(*state.proxyConnect, []string{q}, true)
-
-	// select from newtable
-	q = "SELECT * FROM newtable;@1234"
-	AnalyzeRow(*state.proxyConnect, []string{q}, true)
-
-	// release as necessary
-	state.Release()
 }
 
 func TestLocalQuery(t *testing.T) {

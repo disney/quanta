@@ -24,6 +24,7 @@ import (
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -46,22 +47,32 @@ var (
 // tableCache - Schema metadata cache (essentially same YAML file used by loader).
 type BitmapIndex struct {
 	*Node
-	memoryLimitMb     int
-	bitmapCache       map[string]map[string]map[uint64]map[int64]*StandardBitmap
-	bitmapCacheLock   sync.RWMutex
-	bsiCache          map[string]map[string]map[int64]*BSIBitmap
-	bsiCacheLock      sync.RWMutex
-	fragQueue         chan *BitmapFragment
-	fragsPendingQueue chan int // maybe make this an atomic counter.
-	workers           int
-	fragFileLock      sync.Mutex
-	setBitThreads     *CountTrigger
-	writeSignal       chan bool
-	tableCache        map[string]*shared.BasicTable
-	tableCacheLock    sync.RWMutex
-	partitionQueue    chan *PartitionOperation
-	bitmapCount       int
-	bsiCount          int
+	memoryLimitMb   int
+	bitmapCache     map[string]map[string]map[uint64]map[int64]*StandardBitmap
+	bitmapCacheLock sync.RWMutex
+	bsiCache        map[string]map[string]map[int64]*BSIBitmap
+	bsiCacheLock    sync.RWMutex
+	fragQueue       chan *BitmapFragment
+	workersCount    int
+	fragFileLock    sync.Mutex
+	setBitThreads   *CountTrigger
+	writeSignal     chan bool
+	tableCache      map[string]*shared.BasicTable
+	tableCacheLock  sync.RWMutex
+	partitionQueue  chan *PartitionOperation
+	bitmapCount     int
+	bsiCount        int
+	workers         []*WorkerThread
+}
+
+type WorkerThread struct {
+	index int
+	aux   chan *BitmapFragment
+}
+
+func NewWorkerThread(index int) *WorkerThread {
+	aux := make(chan *BitmapFragment, 100)
+	return &WorkerThread{index: index, aux: aux}
 }
 
 // NewBitmapIndex - Construct and initialize bitmap server state.
@@ -126,19 +137,22 @@ func (m *BitmapIndex) Init() error {
 	m.partitionQueue = make(chan *PartitionOperation, 100000)
 	//m.fragQueue = make(chan *BitmapFragment, 20000000)
 	m.fragQueue = make(chan *BitmapFragment, 10000000)
-	m.fragsPendingQueue = make(chan int, 10000000)
 	m.bitmapCache = make(map[string]map[string]map[uint64]map[int64]*StandardBitmap)
 	m.bsiCache = make(map[string]map[string]map[int64]*BSIBitmap)
-	m.workers = 20
+	m.workersCount = 20
 	m.writeSignal = make(chan bool, 1)
 	m.setBitThreads = NewCountTrigger(m.writeSignal)
 
-	for i := 0; i < m.workers; i++ {
-		go m.batchProcessLoop(i + 1)
+	m.workers = make([]*WorkerThread, m.workersCount)
+	for i := 0; i < m.workersCount; i++ {
+		m.workers[i] = NewWorkerThread(i)
+	}
+	for i := 0; i < m.workersCount; i++ {
+		go m.batchProcessLoop(m.workers[i])
 	}
 
 	// Read files from disk
-	err := m.readBitmapFiles(m.fragQueue, m.fragsPendingQueue)
+	err := m.readBitmapFiles(m.fragQueue)
 	if err != nil {
 		return fmt.Errorf("cannot initialize bitmap server error: %v", err)
 	}
@@ -222,15 +236,6 @@ func (m *BitmapIndex) BatchMutate(stream pb.BitmapIndex_BatchMutateServer) error
 			}
 			return nil
 		}
-
-		select {
-		case m.fragsPendingQueue <- 1:
-			// fmt.Println("pushing fragQueue, fragsPendingQueue", len(m.fragsPendingQueue), len(m.fragQueue))
-		default:
-			// Fragment pending queue is full
-			return fmt.Errorf("BatchMutate: fragsPendingQueue is full")
-		}
-
 		select {
 		case m.fragQueue <- frag:
 		default:
@@ -311,15 +316,20 @@ type BitmapFragment struct {
 	BitData     [][]byte
 	ModTime     time.Time // Modification time stamp
 	IsBSI       bool
-	IsClear     bool // Is this a clear operation?  Othewise set bits.
+	IsClear     bool // Is this a clear operation?  Otherwise set bits.
 	IsUpdate    bool
-	IsInit      bool // Is this fragment part of init disk read?
+	IsInit      bool      // Is this fragment part of init disk read?
+	IsNop       bool      // Is this a no-op?
+	Done        chan bool // when the fragment is done processing
 }
 
 func newBitmapFragment(index, field string, rowIDOrBits int64, ts time.Time, f [][]byte,
 	isBSI, isClear, isUpdate bool) *BitmapFragment {
-	return &BitmapFragment{IndexName: index, FieldName: field, RowIDOrBits: rowIDOrBits, Time: ts,
+	res := &BitmapFragment{IndexName: index, FieldName: field, RowIDOrBits: rowIDOrBits, Time: ts,
 		BitData: f, ModTime: time.Now(), IsBSI: isBSI, IsClear: isClear, IsUpdate: isUpdate}
+
+	res.Done = make(chan bool, 1)
+	return res
 }
 
 // Lookup field metadata (time quantum, exclusivity)
@@ -361,42 +371,45 @@ func (m *BitmapIndex) isBSI(index, field string) bool {
 //
 // The weird repetition in the select statement below is a go hack for prioritizing work.  Select
 // case processing order is non-deterministic.
-func (m *BitmapIndex) batchProcessLoop(threadID int) {
+//
+// The aux channel is for when we need to send a nop to a particular thread. As oppposed to putting
+// a frag in fragQueue where any thread can pick it up. It is much smaller.
+func (m *BitmapIndex) batchProcessLoop(worker *WorkerThread) {
 
 	for {
+		// fmt.Println("top worker loop", m.Node.hashKey, worker.index)
 		// This is a way to make sure that the fraq queue has priority over persistence.
 		select {
+		case nop := <-worker.aux:
+			nop.Done <- true
+			continue
 		case frag := <-m.fragQueue:
-			if frag.IsBSI {
+			if frag.IsNop {
+				//nothing
+			} else if frag.IsBSI {
 				m.updateBSICache(frag)
 			} else {
 				m.updateBitmapCache(frag)
 			}
-			select {
-			case unused := <-m.fragsPendingQueue:
-				_ = unused
-				// fmt.Println("Have fragsPendingQueue 1", len(m.fragsPendingQueue), len(m.fragQueue), threadID)
-			default:
-				fmt.Println("ERROR finished frag but no pending flag i1 ", threadID)
-			}
+			frag.Done <- true
 			continue
 		default: // Don't block
 		}
 
+		// this is where is waits for a frag or a write signal
 		select {
+		case nop := <-worker.aux:
+			nop.Done <- true
+			continue
 		case frag := <-m.fragQueue:
-			if frag.IsBSI {
+			if frag.IsNop {
+				// nothing
+			} else if frag.IsBSI {
 				m.updateBSICache(frag)
 			} else {
 				m.updateBitmapCache(frag)
 			}
-			select {
-			case unused := <-m.fragsPendingQueue:
-				_ = unused
-				// fmt.Println("Have fragsPendingQueue 2", len(m.fragsPendingQueue), len(m.fragQueue), threadID)
-			default:
-				fmt.Println("ERROR finished frag but no pending flag i2 ", threadID)
-			}
+			frag.Done <- true
 			continue
 		case <-m.writeSignal:
 			go m.checkPersistBitmapCache(false)
@@ -407,7 +420,7 @@ func (m *BitmapIndex) batchProcessLoop(threadID int) {
 			m.checkPersistBSICache(true)
 			m.shardCount = m.bsiCount + m.bitmapCount
 		}
-	}
+	} // back to top, forever
 }
 
 /*
@@ -1030,12 +1043,6 @@ func (m *BitmapIndex) Update(ctx context.Context, req *pb.UpdateRequest) (*empty
 		frag = newBitmapFragment(req.Index, req.Field, req.RowIdOrValue, ts, ba, isBSI, false, true)
 	}
 	select {
-	case m.fragsPendingQueue <- 1:
-	default:
-		// Fragment pending queue is full
-		return &empty.Empty{}, fmt.Errorf("Update: fragsPendingQueue is full")
-	}
-	select {
 	case m.fragQueue <- frag:
 	default:
 		// Fragment queue is full
@@ -1044,42 +1051,66 @@ func (m *BitmapIndex) Update(ctx context.Context, req *pb.UpdateRequest) (*empty
 	return &empty.Empty{}, nil
 }
 
-// Commit - process frags until they are gone, if any.
-// then wait for pending queue to drain
-// typically the frag queue will be empty and the pending queue might have something
-// needs load testing.
+// flush will first wait until everything currently in the queue is processed, maybe more
+// then it will wait until every worker comes around to the top of its loop so nothing still in progress
+// then it will return
+func (m *BitmapIndex) flush() error {
+
+	// fmt.Println("flush starting", m.Node.hashKey)
+
+	// part 1. Put a nop on the queue, wait for it reach any worker
+	frag := newBitmapFragment("", "", 0, time.Now(), nil, false, false, false)
+	frag.IsNop = true
+	m.fragQueue <- frag
+	select {
+	case <-frag.Done:
+		// fmt.Println("flush part 1 done", m.Node.hashKey)
+	case <-time.After(30 * time.Second):
+		err := fmt.Errorf("flush part 1 timeout %v", m.Node.hashKey)
+		return err
+	}
+
+	// part 2 put a nop in the aux of every worker, wait for it to reach the top of the loop
+	// when any frag that might have been in progress is done
+	group := errgroup.Group{}
+
+	for i := range m.workers {
+		index := i
+		group.Go(func() error {
+			w := m.workers[index]
+			frag := newBitmapFragment("", "", 0, time.Now(), nil, false, false, false)
+			frag.IsNop = true
+			w.aux <- frag
+			select {
+			case <-frag.Done:
+				// fmt.Println("flush part 2 done")
+			case <-time.After(30 * time.Second):
+				err := fmt.Errorf("flush part 2 timeout index= %v %v", w.index, m.Node.hashKey)
+				return err
+			}
+			return nil
+		})
+	}
+
+	// Wait for all goroutines to complete.
+	if err := group.Wait(); err != nil {
+		fmt.Printf("flush errgroup tasks ended up with an error: %v %v\n", err, m.Node.hashKey)
+		return err
+	} else {
+		// fmt.Println("flush all works done successfully", m.Node.hashKey)
+	}
+	// done
+	return nil
+}
+
+// Commit - we just call flush for now
 func (m *BitmapIndex) Commit(ctx context.Context, e *empty.Empty) (*empty.Empty, error) {
 
-	// fmt.Println("Commit called on server", m.Node.hashKey, len(m.fragQueue))
-	for {
-		select {
-		case frag := <-m.fragQueue:
-			if frag.IsBSI {
-				m.updateBSICache(frag)
-			} else {
-				m.updateBitmapCache(frag)
-			}
-			select {
-			case unused := <-m.fragsPendingQueue:
-				_ = unused
-				// fmt.Println("Have fragsPendingQueue commit", len(m.fragsPendingQueue), len(m.fragQueue))
-			default:
-				fmt.Println("ERROR finished frag but no pending flag commit ")
-			}
-
-		default: // Don't block queue is empty
-			// Wait for pending queue to drain
-			// not sure if this will race
-			start := time.Now()
-			for len(m.fragsPendingQueue) > 0 {
-				time.Sleep(time.Millisecond * 1)
-				if time.Since(start).Seconds() > 10 {
-					return &empty.Empty{}, fmt.Errorf("Commit: fragsPendingQueue is not draining")
-				}
-			}
-			return e, nil
-		}
+	err := m.flush()
+	if err != nil {
+		return &empty.Empty{}, err
 	}
+	return e, nil
 }
 
 // CheckoutSequence returns another batch of column IDs to the client.
@@ -1223,5 +1254,8 @@ func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperation
 		return &empty.Empty{}, fmt.Errorf("unknown operation type for table operation request")
 	}
 
-	return &empty.Empty{}, nil
+	// do a 'commit' here to make sure all nodes are in sync
+	err := m.flush()
+
+	return &empty.Empty{}, err
 }

@@ -40,6 +40,10 @@ func (m StringHashBSIMapper) MapValue(attr *Attribute, val interface{}, c *Sessi
 		val = val.(int64)
 		strVal = fmt.Sprintf("%d", val)
 		result = Get64BitHash(strVal)
+	case float64:
+		val = val.(float64)
+		strVal = fmt.Sprintf("%.2f", val)
+		result = Get64BitHash(strVal)
 	case map[string]interface{}:
 		x := val.(map[string]interface{})
 		if len(x) == 0 {

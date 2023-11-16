@@ -307,7 +307,11 @@ func (suite *DockerNodesRunnerSuite) TestJoinsOneTwo() {
 
 	cmd = "docker run --name join_queries0 -w /quanta/sqlrunner --network mynet -t node sqlrunner -script_file ./sqlscripts/joins_sql_body.sql"
 	cmd += " -validate"
+<<<<<<< HEAD
 	cmd += " -repeats 4"
+=======
+	cmd += " -repeats 1"
+>>>>>>> f797db1 (first version of docker_nodes_test)
 	cmd += " -host " + suite.proxyAddress[0] // this is the proxy
 	cmd += " -consul " + suite.consulAddress + ":8500"
 	cmd += " -user MOLIG004"

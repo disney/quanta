@@ -35,6 +35,8 @@ import (
 // this is a mutex to ensure that only one test at a time can listen on port 4000
 var AcquirePort4000 sync.Mutex
 
+var ConsulAddress = "127.0.0.1:8500" // also used by sqlrunner main.
+
 // tests will time out so run like this:
 // go test -timeout 10m
 
@@ -257,6 +259,11 @@ func StartProxy(count int, testConfigPath string) *LocalProxyControl {
 	return localProxy
 }
 
+func IsConsuleRunning() bool {
+	_, err := http.Get("http://localhost:8500/v1/health/service/quanta") // was quanta-node
+	return err == nil
+}
+
 func IsLocalRunning() bool {
 
 	result := "[]"
@@ -277,14 +284,58 @@ func IsLocalRunning() bool {
 	return !isNotRunning
 }
 
+func AreRemoteNodesUp() bool {
+
+	now := time.Now()
+	allAreUp := false
+	for !allAreUp {
+		result := "[]"
+		res, err := http.Get("http://localhost:8500/v1/health/checks/quanta") // was quanta-node
+		if err == nil {
+			resBody, err := io.ReadAll(res.Body)
+			if err == nil {
+				result = string(resBody)
+			}
+		} else {
+			fmt.Println("is consul not running?", err)
+		}
+		// fmt.Println("result:", result)
+
+		parts := strings.Split(result, `"Status": "`)
+		allAreUp = true
+		// this is pretty cheap and fragile
+		for i := 1; i < 4; i++ {
+			if len(parts) == 4 {
+				if !strings.HasPrefix(parts[1], "passing") {
+					allAreUp = false
+				}
+			} else {
+				allAreUp = false
+			}
+		}
+		if !allAreUp {
+			time.Sleep(100 * time.Millisecond)
+		}
+		if time.Since(now) > 30*time.Second {
+			fmt.Println("ERROR AreRemoteNodesUp timeout")
+			fmt.Println("ERROR AreRemoteNodesUp timeout")
+			fmt.Println("ERROR AreRemoteNodesUp timeout")
+			fmt.Println("ERROR AreRemoteNodesUp timeout")
+			fmt.Println("ERROR AreRemoteNodesUp timeout")
+			return false
+		}
+	}
+	return allAreUp
+}
+
 type ClusterLocalState struct {
 	m0                  *server.Node
 	m1                  *server.Node
 	m2                  *server.Node
 	proxyControl        *LocalProxyControl
 	weStartedTheCluster bool
-	proxyConnect        *ProxyConnectStrings // for sql runner
-	db                  *sql.DB
+	ProxyConnect        *ProxyConnectStrings // for sql runner
+	Db                  *sql.DB
 }
 
 func StartNodes(state *ClusterLocalState) {
@@ -299,7 +350,9 @@ func (state *ClusterLocalState) StopNodes() {
 	cmd := admin.ShutdownCmd{}
 	cmd.NodeIP = "all" // this would probably work
 
-	ctx := admin.Context{ConsulAddr: consulAddress,
+	consul := "127.0.0.1:8500" // this is strictly local
+
+	ctx := admin.Context{ConsulAddr: consul,
 		Port:  4000,
 		Debug: true}
 
@@ -342,7 +395,7 @@ func Ensure_cluster() *ClusterLocalState {
 	proxyConnect.Port = "4000"
 	proxyConnect.Database = "quanta"
 
-	state.proxyConnect = &proxyConnect
+	state.ProxyConnect = &proxyConnect
 
 	isNotRunning := !IsLocalRunning()
 	if isNotRunning {
@@ -380,7 +433,7 @@ func Ensure_cluster() *ClusterLocalState {
 	err = ctx.GrantRole(rbac.SystemAdmin, "MOLIG004", "quanta", true)
 	check(err)
 
-	state.db, err = state.proxyConnect.ProxyConnectConnect()
+	state.Db, err = state.ProxyConnect.ProxyConnectConnect()
 	check(err)
 	return state
 }
@@ -413,8 +466,8 @@ func ExecuteSqlFile(state *ClusterLocalState, filename string) SqlInfo {
 				// time.Sleep(5 * time.Second) // For experiments only.
 			}
 		}
-		lineLines := strings.Split(line, "\\") // \\ is a line continuation
-		got := AnalyzeRow(*state.proxyConnect, lineLines, true)
+		lineLines := strings.Split(line, "\\") // '\' is a line continuation
+		got := AnalyzeRow(*state.ProxyConnect, lineLines, true)
 		MergeSqlInfo(&total, got)
 	}
 	return total

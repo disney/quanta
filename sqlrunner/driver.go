@@ -1,14 +1,11 @@
 package main
 
 import (
-	csv "encoding/csv"
 	"flag"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"os"
+	"strings"
 	"time"
-	"unicode/utf8"
 
 	runtime "github.com/banzaicloud/logrus-runtime-formatter"
 	"github.com/disney/quanta/rbac"
@@ -18,8 +15,6 @@ import (
 	logger "github.com/sirupsen/logrus"
 )
 
-var consulAddress = "127.0.0.1:8500"
-
 // var buf bytes.Buffer
 var log = logger.New()
 
@@ -27,7 +22,7 @@ func main() {
 	shared.SetUTCdefault()
 
 	scriptFile := flag.String("script_file", "", "Path to the sql file to execute.")
-	scriptDelimiter := flag.String("script_delimiter", "@", "The delimiter to use in the script file.  The default is a colon (:).")
+	// scriptDelimiter := flag.String("script_delimiter", "@", "The delimiter to use in the script file.  The default is a colon (:).")
 	validate := flag.Bool("validate", false, "If not set, the Sql statement will be executed but not validated.")
 	host := flag.String("host", "", "Quanta host to connect to.")
 	user := flag.String("user", "", "The username that will connect to the database.")
@@ -36,6 +31,7 @@ func main() {
 	port := flag.String("port", "4000", "Port to connect to.")
 	consul := flag.String("consul", "127.0.0.1:8500", "Address of consul.")
 	log_level := flag.String("log_level", "", "Set the logging level to DEBUG for additional logging.")
+	repeats := flag.Int("repeats", 1, "to execute the scriptFile more that once. Default is 1")
 	flag.Parse()
 
 	if *scriptFile == "" || *host == "" || *user == "" {
@@ -60,13 +56,14 @@ func main() {
 	}
 
 	log.Debugf("script_file : %s", *scriptFile)
-	log.Debugf("delimiter : %s", *scriptDelimiter)
+	// log.Debugf("delimiter : %s", *scriptDelimiter)
 	log.Debugf("validate : %t", *validate)
 	log.Debugf("host : %s", *host)
 	log.Debugf("user : %s", *user)
 	log.Debugf("database : %s", *database)
 	log.Debugf("port : %s", *port)
 	log.Debugf("log_level : %s", *log_level)
+	fmt.Printf("repeats : %d\n", *repeats)
 
 	var proxyConnect test.ProxyConnectStrings
 	proxyConnect.Host = *host
@@ -75,33 +72,10 @@ func main() {
 	proxyConnect.Port = *port
 	proxyConnect.Database = *database
 
-	consulAddress = *consul
+	test.ConsulAddress = *consul
+	log.Debugf("ConsulAddress : %s", test.ConsulAddress)
 
-	directory := "./"                       // The current directory
-	files, err := ioutil.ReadDir(directory) //read the files from the directory
-	fmt.Println("current files", len(files))
-	if err != nil {
-		fmt.Println("error reading directory:", err) //print error if directory is not read properly
-		return
-	}
-	for _, file := range files {
-		fmt.Println(file.Name()) //print the files from the directory
-	}
-
-	f, err := os.Open(*scriptFile)
-	if err != nil {
-		log.Fatal("Proxy Connection Failed : ", err)
-	}
-	defer f.Close()
-
-	csvReader := csv.NewReader(f)
-	csvReader.FieldsPerRecord = -1
-
-	log.Debugf("Setting the delimiter : %s", *scriptDelimiter)
-	csvReader.Comma, _ = utf8.DecodeRuneInString(*scriptDelimiter)
-
-	consulAddress := *consul
-	consulClient, err := api.NewClient(&api.Config{Address: consulAddress})
+	consulClient, err := api.NewClient(&api.Config{Address: test.ConsulAddress})
 	check(err)
 
 	conn := shared.NewDefaultConnection()
@@ -125,20 +99,30 @@ func main() {
 	err = ctx.GrantRole(rbac.DomainUser, "MOLIG004", "quanta", true)
 	check(err)
 
-	for {
-		row, err := csvReader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Print("If you are using the validate option, be sure and add the expected rowcount after the sql statement.")
-			log.Print("Statement example:  select * from table;@100")
-			log.Fatal(err)
-		}
-
-		test.AnalyzeRow(proxyConnect, row, *validate)
+	for rep := 0; rep < *repeats; rep++ {
+		executeFile(rep, *scriptFile, proxyConnect, *validate)
 	}
 	logFinalResult()
+}
+
+func executeFile(rep int, scriptFile string, proxyConnect test.ProxyConnectStrings, validate bool) {
+
+	fmt.Println("rep", rep)
+
+	// We can afford to read the whole file into memory
+	// If not then use a line reader. Let's not use a csv reader since the file is not csv.
+	bytes, err := os.ReadFile(scriptFile)
+	if err != nil {
+		fmt.Println("scriptFile Open Failed", err)
+		log.Fatal("scriptFile Open Failed : ", err)
+	}
+	sql := string(bytes)
+	lines := strings.Split(sql, "\n")
+
+	for _, row := range lines {
+		lineLines := strings.Split(row, "\\") // a '\' is a line continuation
+		test.AnalyzeRow(proxyConnect, lineLines, validate)
+	}
 }
 
 func logAdminOutput(command string, output []byte) {

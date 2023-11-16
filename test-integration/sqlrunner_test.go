@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-// requirements: Consul must be running on localhost:8500
+// requirements: Consul must be running on localhost:8500 (it can't be the one in the docker container)
 // optional: a local cluster running on localhost:4000
 // if there is no local cluster, one will be started. That is slower.
 

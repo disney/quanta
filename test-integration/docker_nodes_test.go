@@ -56,7 +56,6 @@ func (suite *DockerNodesRunnerSuite) SetupSuite() {
 	if !test.IsConsuleRunning() {
 		test.Sh("docker network rm mynet")
 		test.Sh("docker network create -d bridge --subnet=172.20.0.0/16 mynet")
-		// test.Sh("docker run -d -p 8500:8500 -h consul --name consul progrium/consul -server -bootstrap")
 		test.Sh("docker run -d -p 8500:8500 -p 8600:8600/udp --network mynet	--name=myConsul consul:1.10 agent -dev -ui -client=0.0.0.0")
 	}
 	// get the IP address of the consul container --format {{.NetworkSettings.Networks.mynet.IPAddress}}
@@ -308,7 +307,7 @@ func (suite *DockerNodesRunnerSuite) TestJoinsOneTwo() {
 
 	cmd = "docker run --name join_queries0 -w /quanta/sqlrunner --network mynet -t node sqlrunner -script_file ./sqlscripts/joins_sql_body.sql"
 	cmd += " -validate"
-	cmd += " -repeats 1"
+	cmd += " -repeats 4"
 	cmd += " -host " + suite.proxyAddress[0] // this is the proxy
 	cmd += " -consul " + suite.consulAddress + ":8500"
 	cmd += " -user MOLIG004"

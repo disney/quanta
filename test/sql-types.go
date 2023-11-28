@@ -113,6 +113,9 @@ func AnalyzeRow(proxyConfig ProxyConnect, row []string, validate bool) {
 		}
 	} else if strings.Contains(strings.ToLower(sqlInfo.Statement), "quanta-admin") {
 		statementType = Admin
+	} else if strings.HasPrefix(sqlInfo.Statement, "commit") {
+		// time.Sleep(1 * time.Second) // for experimental purposes only
+		statementType = Select // ?? it has to be something
 	}
 
 	err = nil

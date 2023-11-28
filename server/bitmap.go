@@ -1051,14 +1051,14 @@ func (m *BitmapIndex) Update(ctx context.Context, req *pb.UpdateRequest) (*empty
 	return &empty.Empty{}, nil
 }
 
-// flush will first wait until everything currently in the queue is processed, maybe more
-// then it will wait until every worker comes around to the top of its loop so nothing still in progress
-// then it will return
+// Flush will first wait until everything currently in the queue is processed, maybe more.
+// Then it will wait until every worker comes around to the top of its loop so nothing is still in progress.
+// Then it will return.
 func (m *BitmapIndex) flush() error {
 
 	// fmt.Println("flush starting", m.Node.hashKey)
 
-	// part 1. Put a nop on the queue, wait for it reach any worker
+	// part 1. Put a nop on the queue, wait for it reach some worker
 	frag := newBitmapFragment("", "", 0, time.Now(), nil, false, false, false)
 	frag.IsNop = true
 	m.fragQueue <- frag
@@ -1070,8 +1070,8 @@ func (m *BitmapIndex) flush() error {
 		return err
 	}
 
-	// part 2 put a nop in the aux of every worker, wait for it to reach the top of the loop
-	// when any frag that might have been in progress is done
+	// Part 2 Put a nop in the aux of EVERY worker, wait for it to reach the top of the loop
+	// when any frag that might have been in progress is done.
 	group := errgroup.Group{}
 
 	for i := range m.workers {

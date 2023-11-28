@@ -87,7 +87,22 @@ func main() {
 
 	sharedKV := shared.NewKVStore(conn)
 
-	time.Sleep(5 * time.Second)
+	// we're in cluster so we can just call admin status directly
+
+	now := time.Now()
+	for {
+		status, active, size := sharedKV.GetClusterState()
+		log.Debugf("consul status sqlrunner clusterState %v count %v size %v\n", status, active, size)
+		fmt.Printf("consul status sqlrunner clusterState %v count %v size %v\n", status, active, size)
+
+		if status.String() == "GREEN" && active >= 3 && size >= 3 {
+			break
+		}
+		if time.Since(now) > time.Second*30 {
+			log.Fatal("consul timeout driver after NewKVStore")
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 
 	ctx, err := rbac.NewAuthContext(sharedKV, "USER001", true)
 	check(err)

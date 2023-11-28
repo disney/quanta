@@ -284,48 +284,40 @@ func IsLocalRunning() bool {
 	return !isNotRunning
 }
 
-func AreRemoteNodesUp() bool {
+func WaitForStatusGreen(consulAddress string, nodeName string) {
+
+	// docker exec admin --consul-addr 172.20.0.2:8500  status
 
 	now := time.Now()
-	allAreUp := false
-	for !allAreUp {
-		result := "[]"
-		res, err := http.Get("http://localhost:8500/v1/health/checks/quanta") // was quanta-node
-		if err == nil {
-			resBody, err := io.ReadAll(res.Body)
-			if err == nil {
-				result = string(resBody)
-			}
-		} else {
-			fmt.Println("is consul not running?", err)
+	for {
+		if time.Since(now) > time.Second*30 { // syncing could take a while
+			log.Fatal("consul timeout driver after WaitForStatusGreen")
 		}
-		// fmt.Println("result:", result)
 
-		parts := strings.Split(result, `"Status": "`)
-		allAreUp = true
-		// this is pretty cheap and fragile
-		for i := 1; i < 4; i++ {
-			if len(parts) == 4 {
-				if !strings.HasPrefix(parts[1], "passing") {
-					allAreUp = false
-				}
-			} else {
-				allAreUp = false
+		cmd := "docker exec " + nodeName + " admin --consul-addr " + consulAddress + " status"
+		out, err := Shell(cmd, "")
+		_ = err
+		// fmt.Println("status", out, err)
+		// eg   Connecting to Consul at: [172.20.0.2:8500] ...
+		//  	Connecting to Quanta services at port: [4000] ...
+		//		ADDRESS            STATUS    DATA CENTER                              SHARDS   MEMORY   VERSION
+		//      ================   ======    ==================================   ==========   =======  =========================
+		//      172.20.0.3         Active    dc1                                           0   0        :
+		//		172.20.0.4         Syncing   dc1                                           0   0        :
+		//		172.20.0.5         Active    dc1                                           0   0        :
+		//		172.20.0.6         Active    dc1                                           0   0        :
+		//
+		//		Cluster State = GREEN, Active nodes = 3, Target Cluster Size = 3
+		//
+		state := strings.Split(out, "Cluster State = ")
+		if len(state) == 2 {
+			if strings.HasPrefix(state[1], "GREEN") {
+				return
 			}
 		}
-		if !allAreUp {
-			time.Sleep(100 * time.Millisecond)
-		}
-		if time.Since(now) > 30*time.Second {
-			fmt.Println("ERROR AreRemoteNodesUp timeout")
-			fmt.Println("ERROR AreRemoteNodesUp timeout")
-			fmt.Println("ERROR AreRemoteNodesUp timeout")
-			fmt.Println("ERROR AreRemoteNodesUp timeout")
-			fmt.Println("ERROR AreRemoteNodesUp timeout")
-			return false
-		}
+
+		time.Sleep(100 * time.Millisecond)
 	}
-	return allAreUp
 }
 
 type ClusterLocalState struct {
@@ -422,6 +414,11 @@ func Ensure_cluster() *ClusterLocalState {
 	defer conn.Disconnect()
 
 	sharedKV := shared.NewKVStore(conn)
+
+	fmt.Println("consul status ", sharedKV.Consul.Status())
+
+	// atw fix me time.Sleep(5 * time.Second)
+	fmt.Println("before rbac.NewAuthContext in inabox-harness driver.go")
 
 	ctx, err := rbac.NewAuthContext(sharedKV, "USER001", true)
 	check(err)

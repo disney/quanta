@@ -66,64 +66,6 @@ func TestParseSqlAndChangeWhere(t *testing.T) {
 	assert.EqualValues(t, want, got)
 }
 
-<<<<<<< HEAD
-=======
-// delete or finish:
-func TestSelectInto(t *testing.T) {
-
-	acquirePort4000.Lock()
-	defer acquirePort4000.Unlock()
-	var err error
-	shared.SetUTCdefault()
-
-	isLocalRunning := IsLocalRunning()
-	// erase the storage
-	if !isLocalRunning { // if no cluster is up
-		err = os.RemoveAll("../test/localClusterData/") // start fresh
-		check(err)
-	}
-	// ensure we have a cluster on localhost, start one if necessary
-	state := Ensure_cluster()
-
-	if !isLocalRunning { // if no cluster was up, load some data
-		executeSqlFile(state, "../sqlrunner/sqlscripts/basic_load.sql")
-	} // else assume it's already loaded
-
-	fmt.Println("tables 1:", GetTableNames())
-
-	// new table
-	AnalyzeRow(*state.proxyConnect, []string{"quanta-admin drop newtable"}, true)
-	AnalyzeRow(*state.proxyConnect, []string{"quanta-admin create newtable"}, true)
-
-	fmt.Println("tables 2:", GetTableNames())
-
-	q := "INSERT into newtable (cust_id, first_name, last_name) values('101','Al','woo')  "
-	AnalyzeRow(*state.proxyConnect, []string{q}, true)
-
-	q = "SELECT * FROM newtable;@123"
-	AnalyzeRow(*state.proxyConnect, []string{q}, true)
-
-	fmt.Println("tables 3:", GetTableNames())
-
-	// for {
-	// 	fmt.Println("Sleeping")
-	// 	time.Sleep(9 * time.Second)
-	// }
-
-	// select into it
-
-	// q = "SELECT cust_id,first_name,last_name INTO newtable FROM customers_qa WHERE last_name IS not null"
-	// AnalyzeRow(*state.proxyConnect, []string{q}, true)
-
-	// select from newtable
-	q = "SELECT * FROM newtable;@1234"
-	AnalyzeRow(*state.proxyConnect, []string{q}, true)
-
-	// release as necessary
-	state.Release()
-}
-
->>>>>>> 2731aeb (added views view test)
 func TestLocalQuery(t *testing.T) {
 
 	AcquirePort4000.Lock()
@@ -366,13 +308,6 @@ func TestAvgAge(t *testing.T) {
 
 	// release as necessary
 	state.Release()
-}
-
-func GetTableNames() []string {
-	ctx := admin.Context{ConsulAddr: "localhost:8500", Port: 4000}
-	tableNames, err := admin.GetTableNames(&ctx)
-	check(err)
-	return tableNames
 }
 
 func GetTableNames() []string {

@@ -935,6 +935,9 @@ func (s *Session) CloseSession() error {
 			return err
 		}
 	}
+	if s.BitIndex != nil {
+		s.BitIndex.Commit()
+	}
 	return nil
 }
 

@@ -908,6 +908,9 @@ func (s *Session) Flush() error {
 			return err
 		}
 	}
+	if s.BitIndex != nil {
+		s.BitIndex.Commit()
+	}
 	return nil
 }
 

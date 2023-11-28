@@ -12,7 +12,7 @@ import (
 	"github.com/disney/quanta/qlbridge/expr/builtins"
 	"github.com/disney/quanta/shared"
 	"github.com/google/uuid"
-	"github.com/hamba/avro"
+	"github.com/hamba/avro/v2"
 	"github.com/hashicorp/consul/api"
 	cfg "github.com/vmware/vmware-go-kcl/clientlibrary/config"
 	kc "github.com/vmware/vmware-go-kcl/clientlibrary/interfaces"

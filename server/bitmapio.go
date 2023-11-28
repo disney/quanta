@@ -456,7 +456,11 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 		for _, field := range index {
 			for _, ts := range field {
 				for _, frag := range ts {
-					fragQueue <- frag
+					select {
+					case fragQueue <- frag:
+					default:
+						return fmt.Errorf("Update: fragment queue is full")
+					}
 				}
 			}
 		}

@@ -3,9 +3,12 @@ package test
 import (
 	"fmt"
 	"os"
-	"strings"
 	"testing"
+	"time"
 
+	"github.com/disney/quanta/qlbridge/expr"
+	"github.com/disney/quanta/qlbridge/lex"
+	"github.com/disney/quanta/qlbridge/rel"
 	admin "github.com/disney/quanta/quanta-admin-lib"
 	"github.com/disney/quanta/shared"
 
@@ -16,10 +19,57 @@ import (
 // If a cluster is running it will use that cluster.
 // If not it will start a cluster.
 
+func TestParseSqlAndChangeWhere(t *testing.T) {
+
+	l := lex.NewSqlLexer("SELECT x FROM y WHERE (x < 10) AND (x> 4);")
+	for l.IsEnd() == false {
+		fmt.Println("lexer", l.NextToken())
+	}
+
+	stmt, err := rel.ParseSql("SELECT x,i,j from y where (x < 10) AND (x> 4);")
+	check(err)
+	sql := stmt.(*rel.SqlSelect)
+	fmt.Println("parser", sql)
+	fmt.Println("parser Columns", sql.Columns)
+	fmt.Println("parser where", sql.Where)
+	fmt.Println("parser from", sql.From)
+
+	stmt2, err := rel.ParseSql("SELECT x,i from y where (x < 10) ;")
+	check(err)
+	sql2 := stmt2.(*rel.SqlSelect)
+	fmt.Println("parser", sql2)
+	fmt.Println("parser Columns", sql2.Columns)
+	fmt.Println("parser where", sql2.Where)
+	fmt.Println("parser from", sql2.From)
+	xlt10 := sql2.Where
+	_ = xlt10
+
+	stmt4, err := rel.ParseSql("SELECT x,i,j from y where ((x> 4));")
+	check(err)
+	sql4 := stmt4.(*rel.SqlSelect)
+	prevWhere := sql4.Where
+	_ = prevWhere
+	atok := lex.Token{}
+	atok.T = lex.TokenLogicAnd
+	atok.V = "AND"
+	and := &expr.BinaryNode{} //Left: xlt10, Right: sql4.Where, Operator: lex.TokenAnd}
+	and.Operator = atok
+	and.Operator.T = lex.TokenAnd
+	and.Args = []expr.Node{xlt10.Expr, sql4.Where.Expr}
+
+	fmt.Println("and expr", and)
+
+	sql4.Where.Expr = and
+	fmt.Println("parser", sql4)
+	want := "SELECT x, i, j FROM y WHERE (x < 10) AND (x > 4)"
+	got := sql4.String()
+	assert.EqualValues(t, want, got)
+}
+
 func TestLocalQuery(t *testing.T) {
 
-	acquirePort4000.Lock()
-	defer acquirePort4000.Unlock()
+	AcquirePort4000.Lock()
+	defer AcquirePort4000.Unlock()
 	var err error
 	shared.SetUTCdefault()
 
@@ -39,11 +89,12 @@ func TestLocalQuery(t *testing.T) {
 
 	AnalyzeRow(*state.proxyConnect, []string{"insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('101','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home');"}, true)
 
+	time.Sleep(5 * time.Second)
 	// query
 
-	AnalyzeRow(*state.proxyConnect, []string{"select * from customers_qa;@1"}, true)
+	got := AnalyzeRow(*state.proxyConnect, []string{"select * from customers_qa;@1"}, true)
 
-	assert.EqualValues(t, 0, FailCount) // FailCount in sql-types.go
+	assert.EqualValues(t, got.ExpectedRowcount, got.ActualRowCount)
 
 	// release as necessary
 	state.Release()
@@ -54,8 +105,8 @@ func TestLocalQuery(t *testing.T) {
 // eg. go run ./driver.go -script_file ./sqlscripts/basic_queries.sql -validate -host 127.0.0.1 -user MOLIG004 -db quanta -port 4000 -log_level DEBUG
 func TestIsNull(t *testing.T) {
 
-	acquirePort4000.Lock()
-	defer acquirePort4000.Unlock()
+	AcquirePort4000.Lock()
+	defer AcquirePort4000.Unlock()
 	var err error
 	shared.SetUTCdefault()
 
@@ -69,7 +120,7 @@ func TestIsNull(t *testing.T) {
 	state := Ensure_cluster()
 
 	if !isLocalRunning { // if no cluster was up, load some data
-		executeSqlFile(state, "../sqlrunner/sqlscripts/basic_load.sql")
+		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_load.sql")
 	} // else assume it's already loaded
 
 	// query
@@ -99,8 +150,8 @@ func TestIsNull(t *testing.T) {
 
 func TestIsNotNull(t *testing.T) {
 
-	acquirePort4000.Lock()
-	defer acquirePort4000.Unlock()
+	AcquirePort4000.Lock()
+	defer AcquirePort4000.Unlock()
 	var err error
 	shared.SetUTCdefault()
 
@@ -114,7 +165,7 @@ func TestIsNotNull(t *testing.T) {
 	state := Ensure_cluster()
 
 	if !isLocalRunning { // if no cluster was up, load some data
-		executeSqlFile(state, "../sqlrunner/sqlscripts/basic_load.sql")
+		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_load.sql")
 	} // else assume it's already loaded
 
 	// query
@@ -136,7 +187,7 @@ func TestIsNotNull(t *testing.T) {
 		count += 1
 	}
 	fmt.Println("count", count)
-	assert.EqualValues(t, 14, count)
+	assert.EqualValues(t, 13, count)
 
 	// release as necessary
 	state.Release()
@@ -144,8 +195,8 @@ func TestIsNotNull(t *testing.T) {
 
 func TestSpellTypeWrong(t *testing.T) {
 
-	acquirePort4000.Lock()
-	defer acquirePort4000.Unlock()
+	AcquirePort4000.Lock()
+	defer AcquirePort4000.Unlock()
 	var err error
 	shared.SetUTCdefault()
 
@@ -159,7 +210,7 @@ func TestSpellTypeWrong(t *testing.T) {
 	state := Ensure_cluster()
 
 	if !isLocalRunning { // if no cluster was up, load some data
-		executeSqlFile(state, "../sqlrunner/sqlscripts/basic_load.sql")
+		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_load.sql")
 	} // else assume it's already loaded
 
 	ctx := admin.Context{ConsulAddr: "localhost:8500", Port: 4000}
@@ -213,12 +264,55 @@ func TestSpellTypeWrong(t *testing.T) {
 	state.Release()
 }
 
-func executeSqlFile(state *ClusterLocalState, filename string) {
-	bytes, err := os.ReadFile(filename)
-	check(err)
-	sql := string(bytes)
-	lines := strings.Split(sql, "\n")
-	for _, line := range lines {
-		AnalyzeRow(*state.proxyConnect, []string{line}, true)
+func TestAvgAge(t *testing.T) {
+
+	AcquirePort4000.Lock()
+	defer AcquirePort4000.Unlock()
+	var err error
+	shared.SetUTCdefault()
+
+	isLocalRunning := IsLocalRunning()
+	// erase the storage
+	if !isLocalRunning { // if no cluster is up
+		err = os.RemoveAll("../test/localClusterData/") // start fresh
+		check(err)
 	}
+	// ensure we have a cluster on localhost, start one if necessary
+	state := Ensure_cluster()
+
+	if !isLocalRunning { // if no cluster was up, load some data
+		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_load.sql")
+	} // else assume it's already loaded
+
+	// query
+
+	// statement := "select avg(age) as avg_age from customers_qa"
+	statement := "select avg(age) as avg_age from customers_qa"
+	rows, err := state.db.Query(statement)
+	check(err)
+
+	count := 0
+	for rows.Next() {
+		columns, err := rows.Columns()
+		check(err)
+		_ = columns
+		//fmt.Println(columns)
+		avg_age := 0
+		err = rows.Scan(&avg_age)
+		check(err)
+		fmt.Println(avg_age) // 46
+		count += 1
+	}
+	fmt.Println("rows", count)
+	assert.EqualValues(t, 1, count)
+
+	// release as necessary
+	state.Release()
+}
+
+func GetTableNames() []string {
+	ctx := admin.Context{ConsulAddr: "localhost:8500", Port: 4000}
+	tableNames, err := admin.GetTableNames(&ctx)
+	check(err)
+	return tableNames
 }

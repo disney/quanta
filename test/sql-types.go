@@ -15,7 +15,7 @@ import (
 
 // These types and routines are in support of sqlrunner
 
-type ProxyConnect struct {
+type ProxyConnectStrings struct {
 	Env           string
 	Host          string
 	Port          string
@@ -35,6 +35,8 @@ type SqlInfo struct {
 	ErrorText        string
 	Validate         bool
 	Err              error
+	Rows             *sql.Rows
+	FailedChildren   []SqlInfo
 }
 
 type StatementType int64
@@ -47,13 +49,14 @@ const (
 	Select StatementType = 2
 	Count  StatementType = 3
 	Admin  StatementType = 4
+	Create StatementType = 5
 )
 
 var PassCount int64
 var FailCount int64
 var FailedStatements []string
 
-func (ci *ProxyConnect) ProxyConnectConnect() (*sql.DB, error) {
+func (ci *ProxyConnectStrings) ProxyConnectConnect() (*sql.DB, error) {
 
 	var db *sql.DB
 	var err error
@@ -67,7 +70,7 @@ func (ci *ProxyConnect) ProxyConnectConnect() (*sql.DB, error) {
 	return db, nil
 }
 
-func (ci *ProxyConnect) getQuantaHost() mysql.Config {
+func (ci *ProxyConnectStrings) getQuantaHost() mysql.Config {
 
 	cfg := mysql.Config{
 		User:                 ci.User,
@@ -81,7 +84,7 @@ func (ci *ProxyConnect) getQuantaHost() mysql.Config {
 	return cfg
 }
 
-func AnalyzeRow(proxyConfig ProxyConnect, row []string, validate bool) {
+func AnalyzeRow(proxyConfig ProxyConnectStrings, row []string, validate bool) SqlInfo {
 
 	var err error
 	var sqlInfo SqlInfo
@@ -93,26 +96,41 @@ func AnalyzeRow(proxyConfig ProxyConnect, row []string, validate bool) {
 	sqlInfo.Validate = validate
 
 	if sqlInfo.Statement == "" {
-		return
+		return sqlInfo
 	}
 
 	if strings.HasPrefix(sqlInfo.Statement, "#") || strings.HasPrefix(sqlInfo.Statement, "--") {
-		log.Printf("Skipping row - commented out: %s", sqlInfo.Statement)
-		return
+		// log.Printf("Skipping row - commented out: %s", sqlInfo.Statement)
+		return sqlInfo
+	}
+
+	parts := strings.Split(sqlInfo.Statement, ";@")
+	sqlInfo.Statement = parts[0]
+	if len(parts) > 1 {
+		sqlInfo.ExpectedRowcount, err = strconv.ParseInt(parts[1], 10, 64)
+		check(err)
 	}
 
 	var statementType StatementType
-	if strings.HasPrefix(strings.ToLower(sqlInfo.Statement), "insert") {
+	lowerStmt := strings.ToLower(sqlInfo.Statement)
+	if strings.HasPrefix(lowerStmt, "insert") {
 		statementType = Insert
-	} else if strings.HasPrefix(strings.ToLower(sqlInfo.Statement), "update") {
+	} else if strings.HasPrefix(lowerStmt, "update") {
 		statementType = Update
-	} else if strings.HasPrefix(strings.ToLower(sqlInfo.Statement), "select") {
+	} else if strings.HasPrefix(lowerStmt, "select") {
 		statementType = Select
 		if strings.Contains(sqlInfo.Statement, "count(*)") {
 			statementType = Count
 		}
-	} else if strings.Contains(strings.ToLower(sqlInfo.Statement), "quanta-admin") {
+	} else if strings.Contains(lowerStmt, "quanta-admin") {
 		statementType = Admin
+	} else if strings.Contains(lowerStmt, "create") {
+		statementType = Create
+	} else if strings.HasPrefix(sqlInfo.Statement, "commit") {
+		// time.Sleep(1 * time.Second) // for experimental purposes only
+		statementType = Select // ?? it has to be something
+	} else {
+		log.Fatalf("Unsupported Statement : %v", sqlInfo.Statement)
 	}
 
 	err = nil
@@ -120,7 +138,7 @@ func AnalyzeRow(proxyConfig ProxyConnect, row []string, validate bool) {
 	if statementType == Admin {
 		sqlInfo.ExecuteAdmin()
 		time.Sleep(1 * time.Second)
-		return
+		return sqlInfo
 	}
 
 	db, err := proxyConfig.ProxyConnectConnect()
@@ -145,19 +163,41 @@ func AnalyzeRow(proxyConfig ProxyConnect, row []string, validate bool) {
 		}
 	}
 
-	if statementType == Insert {
+	switch statementType {
+	case Insert:
 		sqlInfo.ExecuteInsert(db)
-	} else if statementType == Update {
+	case Update:
 		sqlInfo.ExecuteUpdate(db)
-	} else if statementType == Select {
+	case Select:
 		//time.Sleep(500 * time.Millisecond)
 		sqlInfo.ExecuteQuery(db)
-	} else if statementType == Count {
+	case Count:
 		//time.Sleep(500 * time.Millisecond)
 		sqlInfo.ExecuteScalar(db)
-	} else {
+	case Create:
+		sqlInfo.ExecuteCreate(db)
+	default:
 		log.Fatalf("Unsupported Statement : %v", sqlInfo.Statement)
+
 	}
+	return sqlInfo
+
+	// if statementType == Insert {
+	// 	sqlInfo.ExecuteInsert(db)
+	// } else if statementType == Update {
+	// 	sqlInfo.ExecuteUpdate(db)
+	// } else if statementType == Select {
+	// 	//time.Sleep(500 * time.Millisecond)
+	// 	sqlInfo.ExecuteQuery(db)
+	// } else if statementType == Count {
+	// 	//time.Sleep(500 * time.Millisecond)
+	// 	sqlInfo.ExecuteScalar(db)
+	// } else if statementType == Create {
+	// 	//time.Sleep(500 * time.Millisecond)
+	// 	sqlInfo.ExecuteCreate(db)
+	// } else {
+	// 	log.Fatalf("Unsupported Statement : %v", sqlInfo.Statement)
+	// }
 }
 
 func (s *SqlInfo) ExecuteAdmin() {
@@ -214,6 +254,7 @@ func (s *SqlInfo) ExecuteQuery(db *sql.DB) {
 	if s.Err == nil {
 		s.ActualRowCount = GetRowCount(rows)
 	}
+	s.Rows = rows
 	s.logResult()
 }
 
@@ -223,6 +264,17 @@ func (s *SqlInfo) ExecuteScalar(db *sql.DB) {
 	rows, s.Err = db.Query(s.Statement)
 	if s.Err == nil {
 		s.ActualRowCount, s.Err = GetScalarCount(rows)
+	}
+	s.logResult()
+}
+
+func (s *SqlInfo) ExecuteCreate(db *sql.DB) {
+
+	var rows *sql.Rows
+	rows, s.Err = db.Query(s.Statement)
+	if s.Err == nil {
+		s.ActualRowCount = 1 // atw FIXME ? GetRowCount(rows)
+		_ = rows
 	}
 	s.logResult()
 }

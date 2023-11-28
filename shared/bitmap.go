@@ -598,21 +598,22 @@ func (c *BitmapIndex) TableOperation(table, operation string) error {
 	return nil
 }
 
-// Send a tableOperation request to all nodes.
+// Send a tableOperation request to one node.
 func (c *BitmapIndex) tableOperationClient(client pb.BitmapIndexClient, req *pb.TableOperationRequest,
 	clientIndex int) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), OpDeadline)
 	defer cancel()
 
-	if _, err := client.TableOperation(ctx, req); err != nil {
+	_, err := client.TableOperation(ctx, req)
+	if err != nil {
 		return fmt.Errorf("%v.TableOperation(_) = _, %v, node = %s", client, err,
 			c.ClientConnections()[clientIndex].Target())
 	}
 	return nil
 }
 
-// Commit - Block until persistence queues are synced (empty).
+// Commit - Send commitClient to all nodes. Wait for all to complete.
 func (c *BitmapIndex) Commit() error {
 
 	sop := AllActive
@@ -640,13 +641,13 @@ func (c *BitmapIndex) Commit() error {
 	return nil
 }
 
-
-// Send a Commit request to all nodes.
+// Send a Commit request to a node.
 func (c *BitmapIndex) commitClient(client pb.BitmapIndexClient, clientIndex int) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), OpDeadline)
 	defer cancel()
-	if _, err := client.Commit(ctx, &empty.Empty{}); err != nil {
+	_, err := client.Commit(ctx, &empty.Empty{}) // where does this go, on the nodes?
+	if err != nil {
 		return fmt.Errorf("%v.Commit(_) = _, %v, node = %s", client, err,
 			c.ClientConnections()[clientIndex].Target())
 	}

@@ -19,7 +19,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /usr/bin/quanta-node  quanta-node.go
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /usr/bin/quanta-proxy  ./quanta-proxy/main.go
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /usr/bin/sqlrunner  ./sqlrunner/driver.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o /usr/bin/sqlrunner  ./sqlrunner/sqlrunner.go
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /usr/bin/admin  ./quanta-admin/main.go
 

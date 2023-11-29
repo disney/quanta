@@ -207,6 +207,8 @@ func (suite *NodeStabilitySuite) TestBasic4minus1AndBack() {
 	_ = out
 	_ = err
 
+	test.StopAndRemoveContainer("q-node-1")
+
 }
 
 // TestBasicOneTwo is a baseline test that should always pass

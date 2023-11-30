@@ -41,8 +41,6 @@ type SqlInfo struct {
 
 type StatementType int64
 
-var consulAddress = "127.0.0.1:8500"
-
 const (
 	Insert StatementType = 0
 	Update StatementType = 1
@@ -217,9 +215,13 @@ func (s *SqlInfo) ExecuteAdmin() {
 	ctx, err := parser.Parse(command) // os.Args[1:])
 	parser.FatalIfErrorf(err)
 
-	err = ctx.Run(&admin.Context{ConsulAddr: consulAddress,
+	adminCtx := &admin.Context{ConsulAddr: ConsulAddress,
 		Port:  admin.Cli.Port,
-		Debug: admin.Cli.Debug})
+		Debug: admin.Cli.Debug}
+
+	fmt.Println("executeAdmin ctx.Run ", adminCtx)
+
+	err = ctx.Run(adminCtx)
 	if err != nil {
 		fmt.Println("executeAdmin ctx.Run ", err)
 		return

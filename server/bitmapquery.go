@@ -16,7 +16,7 @@ import (
 	"github.com/RoaringBitmap/roaring/roaring64"
 	u "github.com/araddon/gou"
 
-	// "github.com/golang/protobuf/ptypes/wrappers"
+	"runtime/debug"
 	"time"
 
 	pb "github.com/disney/quanta/grpc"
@@ -25,6 +25,13 @@ import (
 
 // Query API endpoint for client wrapper functions.
 func (m *BitmapIndex) Query(ctx context.Context, query *pb.BitmapQuery) (*pb.QueryResult, error) {
+
+	defer func() {
+		if r := recover(); r != nil {
+			err := fmt.Errorf("Panic recover: \n" + string(debug.Stack()))
+			u.Error(err)
+		}
+	}()
 
 	if query == nil {
 		return nil, fmt.Errorf("query must not be nil")

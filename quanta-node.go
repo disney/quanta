@@ -45,6 +45,7 @@ func main() {
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 	environment := app.Flag("env", "Environment [DEV, QA, STG, VAL, PROD]").Default("DEV").String()
 	logLevel := app.Flag("log-level", "Log Level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
+	pprof := app.Flag("pprof", "Start the pprof server").Default("false").String()
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -56,11 +57,20 @@ func main() {
 		fmt.Println("bindAddr", *bindAddr)
 	}
 
-	go func() {
-		// Initialize Prometheus metrics endpoint.
-		http.Handle("/metrics", promhttp.Handler())
-		http.ListenAndServe(":2112", nil)
-	}()
+	fmt.Println("pprof is ", *pprof)
+	if *pprof == "true" { // start the pprof server which serves cpu and memory usage etc.
+		go func() {
+			fmt.Println("pprof ListenAndServe", http.ListenAndServe(":6060", nil))
+		}()
+	}
+
+	if *pprof != "true" {
+		go func() {
+			// Initialize Prometheus metrics endpoint.
+			http.Handle("/metrics", promhttp.Handler())
+			http.ListenAndServe(":2112", nil)
+		}()
+	}
 
 	u.Warnf("Node identifier '%s'", *hashKey)
 	u.Infof("Connecting to Consul at: [%s] ...\n", *consul)

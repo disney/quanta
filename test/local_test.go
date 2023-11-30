@@ -83,16 +83,16 @@ func TestLocalQuery(t *testing.T) {
 
 	// load something
 
-	AnalyzeRow(*state.proxyConnect, []string{"quanta-admin drop orders_qa"}, true)
-	AnalyzeRow(*state.proxyConnect, []string{"quanta-admin drop customers_qa"}, true)
-	AnalyzeRow(*state.proxyConnect, []string{"quanta-admin create customers_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop orders_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop customers_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create customers_qa"}, true)
 
-	AnalyzeRow(*state.proxyConnect, []string{"insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('101','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home');"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('101','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home');"}, true)
 
 	time.Sleep(5 * time.Second)
 	// query
 
-	got := AnalyzeRow(*state.proxyConnect, []string{"select * from customers_qa;@1"}, true)
+	got := AnalyzeRow(*state.ProxyConnect, []string{"select * from customers_qa;@1"}, true)
 
 	assert.EqualValues(t, got.ExpectedRowcount, got.ActualRowCount)
 
@@ -120,13 +120,13 @@ func TestIsNull(t *testing.T) {
 	state := Ensure_cluster()
 
 	if !isLocalRunning { // if no cluster was up, load some data
-		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_load.sql")
+		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries_load.sql")
 	} // else assume it's already loaded
 
 	// query
 
 	statement := "select cust_id,first_name,last_name from customers_qa where last_name is null;"
-	rows, err := state.db.Query(statement)
+	rows, err := state.Db.Query(statement)
 	check(err)
 
 	count := 0
@@ -165,13 +165,13 @@ func TestIsNotNull(t *testing.T) {
 	state := Ensure_cluster()
 
 	if !isLocalRunning { // if no cluster was up, load some data
-		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_load.sql")
+		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries_load.sql")
 	} // else assume it's already loaded
 
 	// query
 
 	statement := "select cust_id,first_name,last_name from customers_qa where last_name is not null;"
-	rows, err := state.db.Query(statement)
+	rows, err := state.Db.Query(statement)
 	check(err)
 
 	count := 0
@@ -210,7 +210,7 @@ func TestSpellTypeWrong(t *testing.T) {
 	state := Ensure_cluster()
 
 	if !isLocalRunning { // if no cluster was up, load some data
-		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_load.sql")
+		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries_load.sql")
 	} // else assume it's already loaded
 
 	ctx := admin.Context{ConsulAddr: "localhost:8500", Port: 4000}
@@ -281,14 +281,14 @@ func TestAvgAge(t *testing.T) {
 	state := Ensure_cluster()
 
 	if !isLocalRunning { // if no cluster was up, load some data
-		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_load.sql")
+		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries_load.sql")
 	} // else assume it's already loaded
 
 	// query
 
 	// statement := "select avg(age) as avg_age from customers_qa"
 	statement := "select avg(age) as avg_age from customers_qa"
-	rows, err := state.db.Query(statement)
+	rows, err := state.Db.Query(statement)
 	check(err)
 
 	count := 0

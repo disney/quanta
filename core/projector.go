@@ -520,10 +520,15 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 		}
 		var lBatch map[interface{}]interface{}
 		var err error
-		if v.MappingStrategy == "ParentRelation" || (p.innerJoin && v.Parent.Name != p.childTable) {
+		if v.MappingStrategy == "ParentRelation" || 
+				(v.Parent.Name != p.childTable && p.childTable != "" && !p.negate && p.innerJoin) {
 			lBatch, err = p.getPartitionedStrings(lookupAttribute, trxColumnIDs)
+			//u.Debugf("TRANSLATING PROJ %v, LEFT = %v, CHILD = %v, INNER = %v", v.Parent.Name, p.leftTable, 
+			//	p.childTable, p.innerJoin)
 		} else {
 			lBatch, err = p.getPartitionedStrings(lookupAttribute, columnIDs)
+			//u.Debugf("NOT TRANSLATING PROJ %v, LEFT = %v, CHILD = %v, INNER = %v", v.Parent.Name, p.leftTable, 
+			//	p.childTable, p.innerJoin)
 		}
 		if err != nil {
 			return nil, err
@@ -711,6 +716,11 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 func (p *Projector) checkColumnID(v *Attribute, cID, child uint64,
 	bsiResults map[string]map[string]*roaring64.BSI) (colID uint64, err error) {
 
+	if len(p.joinAttributes) == 0 {
+		colID = cID
+		return
+	}
+
 	if child > 0 && v.Parent.Name == p.childTable {
 		cID = child
 	}
@@ -737,7 +747,8 @@ func (p *Projector) checkColumnID(v *Attribute, cID, child uint64,
 		} else {
 			// Translate ColID
 			if b, fok := bsiResults[r.Parent.Name][r.FieldName]; !fok {
-				err = fmt.Errorf("bsi lookup failed for %s - %s", r.Parent.Name, r.FieldName)
+				//err = fmt.Errorf("bsi lookup failed for %s - %s", r.Parent.Name, r.FieldName)
+				colID = cID
 			} else {
 				val, found := b.GetValue(cID)
 				if found {

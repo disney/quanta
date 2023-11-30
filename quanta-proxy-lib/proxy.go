@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/qlbridge/exec"
+	"github.com/disney/quanta/qlbridge/expr"
 	"github.com/disney/quanta/qlbridge/lex"
 	"github.com/disney/quanta/qlbridge/rel"
 	"github.com/disney/quanta/qlbridge/schema"
@@ -388,6 +389,85 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 	default:
 		return nil, fmt.Errorf("invalid query %s", query)
 	}
+}
+
+// rewriteViewUsingSelect will take the text of the WHERE in the view and append it to the WHERE in the query
+// with and AND.  It will also replace the FROM with the real table name.
+func rewriteViewUsingSelect(query string, from string, tableFound *schema.Table) (string, error) {
+	aView := tableFound.Name
+	consulApi := Src.GetConnection().Consul
+	key := "quantaviews/views/" + aView
+	originalSelect, _, err := consulApi.KV().Get(key, nil)
+	if err != nil {
+		return "", fmt.Errorf("didn't find view %s - %v", from, err)
+	}
+	fmt.Println("found view", aView, string(originalSelect.Value))
+	// rewrite the query to use the real table name
+	// replace the FROM with the real table name
+	// replace the WHERE with (a) AND (b)
+	query = strings.Replace(strings.ToLower(query), from, tableFound.IsViewOf, 1)
+	fmt.Println("is view rewriting query", query)
+
+	viewFoundIntf, err := rel.ParseSql(string(originalSelect.Value)) // we could cache this
+	if err != nil {
+		return "", fmt.Errorf("parsing view %s - %v", string(originalSelect.Value), err)
+	}
+	viewFound, ok := viewFoundIntf.(*rel.SqlSelect)
+	if !ok {
+		return "", fmt.Errorf("casting view %v - %v", viewFoundIntf, err)
+	}
+	tmp, ok := viewFound.Where.Expr.(*expr.BinaryNode)
+	if ok {
+		tmp.Paren = true
+	}
+	// fmt.Println("viewFound where", viewFound.Where)
+
+	queryIntf, err := rel.ParseSql(query)
+	if err != nil {
+		return "", fmt.Errorf("parsing view %s - %v", string(originalSelect.Value), err)
+	}
+	queryParsed, ok := queryIntf.(*rel.SqlSelect)
+	if !ok {
+		return "", fmt.Errorf("casting view %v - %v", queryParsed, err)
+	}
+	tmp, ok = queryParsed.Where.Expr.(*expr.BinaryNode)
+	if ok {
+		tmp.Paren = true
+	}
+
+	atok := lex.Token{}
+	atok.T = lex.TokenLogicAnd
+	atok.V = "AND"
+	and := &expr.BinaryNode{} //Left: xlt10, Right: sql4.Where, Operator: lex.TokenAnd}
+	// and.Paren = true
+	and.Operator = atok
+	and.Operator.T = lex.TokenAnd
+	and.Args = []expr.Node{viewFound.Where.Expr, queryParsed.Where.Expr}
+	queryParsed.Where.Expr = and
+
+	// viewFound.Where.Expr.
+	fmt.Println("query where", queryParsed.Where)
+	fmt.Println("final query", queryParsed)
+	query = queryParsed.String()
+	fmt.Println("transformed query", queryParsed)
+	return query, nil
+}
+
+func findFromIndex(splitQueryLower []string) (int, error) {
+	fromI := -1
+	for i := 0; i < len(splitQueryLower); i++ {
+		if splitQueryLower[i] == "from" {
+			fromI = i
+			break
+		}
+	}
+	if fromI == -1 {
+		return -1, fmt.Errorf("missing  %v", splitQueryLower)
+	}
+	if fromI >= len(splitQueryLower)-1 {
+		return -1, fmt.Errorf("invalid query FROM at end %s", splitQueryLower)
+	}
+	return fromI, nil
 }
 
 // HandleQuery - Handle incoming query.

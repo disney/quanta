@@ -195,7 +195,7 @@ func rewriteWhere(stmt *SqlSelect, from *SqlSource, node expr.Node, cols Columns
 			} else {
 				//u.Warnf("n1=%#v  n2=%#v    %#v", n1, n2, nt)
 			}
-		case lex.TokenEqual, lex.TokenEqualEqual, lex.TokenGT, lex.TokenGE, lex.TokenLE, lex.TokenNE:
+		case lex.TokenEqual, lex.TokenEqualEqual, lex.TokenGT, lex.TokenGE, lex.TokenLE, lex.TokenNE, lex.TokenIN:
 			var n1, n2 expr.Node
 			n1, cols = rewriteWhere(stmt, from, nt.Args[0], cols)
 			n2, cols = rewriteWhere(stmt, from, nt.Args[1], cols)
@@ -225,6 +225,8 @@ func rewriteWhere(stmt *SqlSelect, from *SqlSource, node expr.Node, cols Columns
 		default:
 			u.Warnf("un-implemented op: %#v", nt)
 		}
+	case *expr.ArrayNode, *expr.ValueNode:
+		return node, cols
 	default:
 		u.Warnf("%T node types are not suppored yet for where rewrite", node)
 	}

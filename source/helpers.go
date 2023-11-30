@@ -87,7 +87,7 @@ func decorateRow(row []driver.Value, proj *rel.Projection, rowCols map[string]in
 			continue
 		}
 		nodeVal, ok := vm.Eval(ctx, v.Col.Expr)
-		if !ok {
+		if !ok || nodeVal.Value() == nil {
 			newRow[i] = "NULL"
 			continue
 		}

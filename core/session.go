@@ -323,6 +323,9 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 					if len(vals) != 1 {
 						return fmt.Errorf("Expected 1 value from direct parent id mapping.")
 					}
+					if vals[0] == nil {
+						continue
+					}
 					if colId, ok := vals[0].(int64); !ok {
 						return fmt.Errorf("cannot cast %v to uint64 for parent relation %v type is %T",
 							vals[0], v.FieldName, vals[0])
@@ -905,6 +908,9 @@ func (s *Session) Flush() error {
 			return err
 		}
 	}
+	if s.BitIndex != nil {
+		s.BitIndex.Commit()
+	}
 	return nil
 }
 
@@ -928,6 +934,9 @@ func (s *Session) CloseSession() error {
 		if err := s.BatchBuffer.Flush(); err != nil {
 			return err
 		}
+	}
+	if s.BitIndex != nil {
+		s.BitIndex.Commit()
 	}
 	return nil
 }

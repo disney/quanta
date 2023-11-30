@@ -3,13 +3,14 @@ package core
 import (
 	"errors"
 	"fmt"
-	u "github.com/araddon/gou"
-	sch "github.com/araddon/qlbridge/schema"
-	"github.com/disney/quanta/shared"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	u "github.com/araddon/gou"
+	sch "github.com/disney/quanta/qlbridge/schema"
+	"github.com/disney/quanta/shared"
 )
 
 // ErrPoolDrained - Special case error indicates that the pool is exhausted
@@ -25,6 +26,10 @@ type SessionPool struct {
 	semaphores   chan struct{}
 	poolSize     int
 	maxUsed      int32
+
+	TableCache *TableCacheStruct
+
+	closed bool // when semaphores is closed, race warning
 }
 
 // SessionPool - Pool of Quanta connections
@@ -33,7 +38,7 @@ type sessionPoolEntry struct {
 }
 
 // NewSessionPool - Construct a session pool to constrain resource consumption.
-func NewSessionPool(appHost *shared.Conn, schema *sch.Schema, baseDir string, poolSize int) *SessionPool {
+func NewSessionPool(tableCache *TableCacheStruct, appHost *shared.Conn, schema *sch.Schema, baseDir string, poolSize int) *SessionPool {
 
 	if poolSize == 0 {
 		poolSize = runtime.NumCPU()
@@ -41,6 +46,7 @@ func NewSessionPool(appHost *shared.Conn, schema *sch.Schema, baseDir string, po
 
 	p := &SessionPool{AppHost: appHost, schema: schema, baseDir: baseDir,
 		sessPoolMap: make(map[string]*sessionPoolEntry), semaphores: make(chan struct{}, poolSize), poolSize: poolSize}
+	p.TableCache = tableCache
 	for i := 0; i < poolSize; i++ {
 		p.semaphores <- struct{}{}
 	}
@@ -78,9 +84,11 @@ func (m *SessionPool) Borrow(tableName string) (*Session, error) {
 		select {
 		case r := <-cp.pool:
 			var err error
-			if m.schema != nil && m.schema.Since(time.Until(r.CreatedAt)) {
+			if r == nil || (m.schema != nil && m.schema.Since(time.Until(r.CreatedAt))) {
 				u.Warnf("pooled connection is stale after schema change, refreshing.")
-				r.CloseSession()
+				if r != nil {
+					r.CloseSession()
+				}
 				r, err = m.NewSession(tableName)
 				if err != nil {
 					return nil, err
@@ -115,13 +123,12 @@ func (m *SessionPool) Return(tableName string, conn *Session) {
 		}
 	default: //Don't block
 	}
-	return
 }
 
 // NewSession - Construct a new session.
 func (m *SessionPool) NewSession(tableName string) (*Session, error) {
 
-	conn, err := OpenSession(m.baseDir, tableName, false, m.AppHost)
+	conn, err := OpenSession(m.TableCache, m.baseDir, tableName, false, m.AppHost)
 	if err != nil {
 		u.Errorf("error opening quanta connection - %v", err)
 		return nil, err
@@ -138,11 +145,16 @@ func (m *SessionPool) Shutdown() {
 			x.CloseSession()
 		}
 	}
+	m.closed = true
 	close(m.semaphores)
 }
 
 // Recover from network event.  Purge session and optionally recover unflushed buffers.
 func (m *SessionPool) Recover(unflushedCh chan *shared.BatchBuffer) {
+
+	if m.closed {
+		return
+	}
 
 	m.sessPoolLock.Lock()
 	defer m.sessPoolLock.Unlock()

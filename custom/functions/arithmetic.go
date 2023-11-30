@@ -6,18 +6,17 @@ import (
 	"strings"
 	"time"
 
-    //u "github.com/araddon/gou"
-    "github.com/araddon/dateparse"
-	"github.com/araddon/qlbridge/expr"
-	"github.com/araddon/qlbridge/value"
+	//u "github.com/araddon/gou"
+	"github.com/araddon/dateparse"
+	"github.com/disney/quanta/qlbridge/expr"
+	"github.com/disney/quanta/qlbridge/value"
 )
 
 // Avg average of values.  Note, this function DOES NOT persist state doesn't aggregate
 // across multiple calls.  That would be responsibility of write context.
 //
-//    avg(1,2,3) => 2.0, true
-//    avg("hello") => math.NaN, false
-//
+//	avg(1,2,3) => 2.0, true
+//	avg("hello") => math.NaN, false
 type Avg struct{}
 
 // Type is NumberType
@@ -73,9 +72,8 @@ func avgEval(ctx expr.EvalContext, vals []value.Value) (value.Value, bool) {
 // Sum function to add values. Note, this function DOES NOT persist state doesn't aggregate
 // across multiple calls.  That would be responsibility of write context.
 //
-//   sum(1, 2, 3) => 6
-//   sum(1, "horse", 3) => nan, false
-//
+//	sum(1, 2, 3) => 6
+//	sum(1, "horse", 3) => nan, false
 type Sum struct{}
 
 // Type is number
@@ -135,13 +133,11 @@ func sumEval(ctx expr.EvalContext, vals []value.Value) (value.Value, bool) {
 	return value.NewNumberValue(sumval), true
 }
 
-
 // TimeDiff function to add values. Note, this function DOES NOT persist state doesn't aggregate
 // across multiple calls.  That would be responsibility of write context.
 //
-//   timediff("now", "Apr 7, 2014 4:58:55 PM") => 72765h8m31.126651125s 
-//   timediff("now", "Apr 7, 2014 4:58:55 PM", "milliseconds") => 261954462212
-//
+//	timediff("now", "Apr 7, 2014 4:58:55 PM") => 72765h8m31.126651125s
+//	timediff("now", "Apr 7, 2014 4:58:55 PM", "milliseconds") => 261954462212
 type TimeDiff struct{}
 
 // Type is number
@@ -202,7 +198,7 @@ func timeDiffEval(ctx expr.EvalContext, vals []value.Value) (value.Value, bool) 
 		return value.NewStringValue(""), true
 	}
 
-	diff :=  value1.Sub(value2)
+	diff := value1.Sub(value2)
 	switch outFormat {
 	case "nanoseconds":
 		return value.NewStringValue(fmt.Sprintf("%v", diff.Nanoseconds())), true

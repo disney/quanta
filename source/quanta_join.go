@@ -10,14 +10,13 @@ import (
 	u "github.com/araddon/gou"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
-	"github.com/araddon/qlbridge/datasource"
-	"github.com/araddon/qlbridge/exec"
-	"github.com/araddon/qlbridge/expr"
-	"github.com/araddon/qlbridge/lex"
-	"github.com/araddon/qlbridge/plan"
-	"github.com/araddon/qlbridge/rel"
 	"github.com/disney/quanta/core"
-	"github.com/disney/quanta/shared"
+	"github.com/disney/quanta/qlbridge/datasource"
+	"github.com/disney/quanta/qlbridge/exec"
+	"github.com/disney/quanta/qlbridge/expr"
+	"github.com/disney/quanta/qlbridge/lex"
+	"github.com/disney/quanta/qlbridge/plan"
+	"github.com/disney/quanta/qlbridge/rel"
 )
 
 var (
@@ -26,8 +25,6 @@ var (
 	// Ensure that we implement the Task Runner interface
 	_ exec.TaskRunner = (*JoinMerge)(nil)
 )
-
-// TODO: General cleanup.   Pass QuantaSource in so that core.Session pooling is implemented.
 
 // JoinMerge - Scans 2 source tasks for rows, calls server side join transpose
 type JoinMerge struct {
@@ -40,6 +37,7 @@ type JoinMerge struct {
 	allTables   []string
 	driverTable string
 	aliases     map[string]*rel.SqlSource
+	isSubQuery  bool
 }
 
 // NewQuantaJoinMerge - Construct a QuantaJoinMerge task.
@@ -53,9 +51,12 @@ func NewQuantaJoinMerge(ctx *plan.Context, l, r exec.TaskRunner, p *plan.JoinMer
 	m.ltask = l
 	m.rtask = r
 	m.leftStmt = p.LeftFrom
+	u.Debugf("LEFT STMT = %#v", p.LeftFrom)
 	m.rightStmt = p.RightFrom
+	u.Debugf("RIGHT STMT = %#v", p.RightFrom)
 	orig := m.Ctx.Stmt.(*rel.SqlSelect)
 	m.allTables = make([]string, len(orig.From))
+	m.isSubQuery = len(orig.From) == 1
 	m.aliases = make(map[string]*rel.SqlSource)
 	for i, v := range orig.From {
 		m.allTables[i] = v.Name
@@ -291,21 +292,23 @@ func (m *JoinMerge) Run() error {
 		return fmt.Errorf("driver table not specified")
 	}
 
+	for k, v := range foundSets {
+		u.Debugf("TABLE = %v, COUNT = %d", k, v.GetCardinality())
+	}
+
 	joinTypes := make(map[string]bool)
 	negate := false
+	innerJoin := false
 	for _, v := range m.aliases {
 		if v.JoinExpr != nil && v.JoinExpr.(*expr.BinaryNode).Operator.T == lex.TokenNE {
 			negate = true
+			u.Debugf("JOINEXPR = %#v, NEGATE = %v", v.JoinExpr, negate)
 		}
-		if v.Name == m.driverTable {
-			continue
-		}
-		if v.JoinType == lex.TokenInner {
-			joinTypes[v.Name] = true
-		} else {
-			joinTypes[v.Name] = false
+		if v.JoinType == lex.TokenInner || (m.isSubQuery && !negate) {
+			innerJoin = true
 		}
 	}
+	joinTypes[m.driverTable] = innerJoin
 
 	if orig.IsAggQuery() {
 		nm := m.Ctx.Projection.Proj.Columns[0].As
@@ -318,10 +321,20 @@ func (m *JoinMerge) Run() error {
 			ct, _ := rs.Sum(rs.GetExistenceBitmap())
 			// This test is necessary only if the foreign key can contain NULL values (which is the point of OUTER joins)
 			// A corner case can exist if there are no predicates in which case there are cancelling AndNot operations
-			if (isOuter) && (!lisdefaultedpredicate || !risdefaultedpredicate) {
-				driverSet := foundSets[m.driverTable]
-				diff := roaring64.AndNot(driverSet, rs.GetExistenceBitmap()).GetCardinality()
-				ct = int64(diff)
+			//if isOuter && (!lisdefaultedpredicate || !risdefaultedpredicate) {
+			_ = lisdefaultedpredicate
+			_ = risdefaultedpredicate
+			if isOuter {
+				bm := roaring64.NewBitmap()
+				for k, v := range foundSets {
+					if k == m.driverTable {
+						continue
+					}
+					bm = v.Clone()
+					bm.AndNot(rs.GetExistenceBitmap())
+
+				}
+				ct += int64(bm.GetCardinality())
 			}
 			//u.Debugf("%p RESULT = %d", m, ct)
 			vals := make([]driver.Value, 2)
@@ -345,25 +358,38 @@ func (m *JoinMerge) Run() error {
 		if err != nil {
 			return err
 		}
-		if len(orig.From) == 1 {  // Assume Subquery
-			_, cn, projFields, joinFields, err = createFinalProjectionFromMaps(orig, m.aliases, m.allTables, 
-					m.Ctx.Schema, m.driverTable)
+		u.Debugf("FP = %#v, CN = %#v, RN = %#v, PROJF = %#v, JF = %#v", fp, cn, rn, projFields, joinFields)
+		if m.isSubQuery {
+			u.Debugf("LEN ALLTABLES = %d", len(m.allTables))
+			_, cn, rn, projFields, joinFields, err = createFinalProjectionFromMaps(orig, m.aliases, m.allTables,
+				m.Ctx.Schema, m.driverTable)
 			if err != nil {
 				return err
 			}
+			u.Debugf("SUBQUERY CN = %#v, RN = %#v, PROJF = %#v, JF = %#v", cn, rn, projFields, joinFields)
 		}
-		con, err := m.makeBufferedConnection(m.driverTable)
+		val, found := m.Ctx.Session.Get(sessionPool)
+		if !found {
+			return fmt.Errorf("cannot obtain session pool from session")
+		}
+		sessionPool, ok := val.Value().(*core.SessionPool)
+		if !ok {
+			return fmt.Errorf("cannot cast session pool from stashed value")
+		}
+
+		con, err := sessionPool.Borrow(m.driverTable)
 		if err != nil {
-			return err
+			return fmt.Errorf("connot borrow a connection from the pool.")
 		}
-		defer con.CloseSession()
+		defer sessionPool.Return(m.driverTable, con)
 		// driver table found set may have been reduced by join results
-		proj, err2 := core.NewProjection(con, foundSets, joinFields, projFields, m.driverTable,
+		proj, err2 := core.NewProjection(con, foundSets, joinFields, projFields, m.driverTable, m.leftStmt.Name,
 			fromTime, toTime, joinTypes, negate)
 		if err2 != nil {
 			return err2
 		}
 		isExport := false
+		u.Debugf("DRIVERTABLE = %v, NEGATE PROJECTION = %v", m.driverTable, negate)
 
 		// Parallelize projection for SELECT ... INTO
 		if orig.Into != nil {
@@ -378,41 +404,22 @@ func (m *JoinMerge) Run() error {
 	return nil
 }
 
-func (m *JoinMerge) makeBufferedConnection(driverTable string) (*core.Session, error) {
-
-	port, ok := m.Ctx.Session.Get(servicePort)
-	if !ok {
-		return nil, fmt.Errorf("cannot obtain service port from session")
-	}
-	basePath, ok := m.Ctx.Session.Get(basePath)
-	if !ok {
-		return nil, fmt.Errorf("cannot obtain base path from session")
-	}
-	clientConn := shared.NewDefaultConnection()
-	clientConn.ServicePort = int(port.Value().(int64))
-	clientConn.Quorum = 3
-	if err := clientConn.Connect(nil); err != nil {
-		return nil, fmt.Errorf("error opening quanta connection - %v", err)
-	}
-	return core.OpenSession(basePath.ToString(), driverTable, false, clientConn)
-}
-
 func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitmap,
 	fromTime, toTime int64, negate bool) (*roaring64.BSI, bool, error) {
 
-	conn := shared.NewDefaultConnection()
-	port, ok := m.Ctx.Session.Get(servicePort)
+	val, found := m.Ctx.Session.Get(sessionPool)
+	if !found {
+		return nil, false, fmt.Errorf("cannot obtain session pool from session")
+	}
+	sessionPool, ok := val.Value().(*core.SessionPool)
 	if !ok {
-		return nil, false, fmt.Errorf("cannot obtain service port from session")
+		return nil, false, fmt.Errorf("cannot cast session pool from stashed value")
 	}
-	conn.ServicePort = int(port.Value().(int64))
-	if err := conn.Connect(nil); err != nil {
-		u.Errorf("%v", err)
-		return nil, false, err
+	con, err := sessionPool.Borrow(table)
+	if err != nil {
+		return nil, false, fmt.Errorf("connot borrow a connection from the pool.")
 	}
-
-	client := shared.NewBitmapIndex(conn)
-	defer cleanup(client)
+	defer sessionPool.Return(table, con)
 
 	joinCols := make([]string, 0)
 	filterSetArray := make([]*roaring64.Bitmap, 0)
@@ -430,19 +437,27 @@ func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitma
 		}
 	}
 
-	rs, err := client.Join(table, joinCols, fromTime, toTime, foundSet, filterSetArray, negate)
+	u.Debugf("TABLE %s, JOINCOLS = %#v, FS = %d, FILTER = %#v, NEGATE = %v", table, joinCols,
+		foundSet.GetCardinality(), filterSetArray, negate)
+
+	rs, err := con.BitIndex.Join(table, joinCols, fromTime, toTime, foundSet, filterSetArray, false)
 	if err != nil {
 		return nil, false, err
 	}
-	return rs, isOuter, nil
-
-}
-
-func cleanup(client *shared.BitmapIndex) error {
-
-	if err := client.Disconnect(); err != nil {
-		u.Errorf("%v", err)
-		return err
+	if negate {
+		childTransposed := rs.GetExistenceBitmap()
+		parent := filterSetArray[0]
+		driver := roaring64.AndNot(parent, childTransposed)
+		rsa := roaring64.NewBSI(0, 1)
+		var i uint64
+		var da []uint64
+		da = driver.ToArray()
+		for i = 0; i < uint64(len(da)); i++ {
+			rsa.SetValue(i, int64(1))
+		}
+		rs = rsa
+		u.Debugf("PARENT = %d, CHILD = %d,  FDIFF %d", parent.GetCardinality(), childTransposed.GetCardinality(),
+			driver.GetCardinality())
 	}
-	return nil
+	return rs, isOuter, nil
 }

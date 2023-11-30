@@ -3,19 +3,21 @@ package main
 
 import (
 	"fmt"
-	u "github.com/araddon/gou"
-	"github.com/disney/quanta/server"
-	"github.com/disney/quanta/shared"
-	"github.com/hashicorp/consul/api"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	u "github.com/araddon/gou"
+	"github.com/disney/quanta/server"
+	"github.com/disney/quanta/shared"
+	"github.com/hashicorp/consul/api"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 var (
@@ -26,6 +28,10 @@ var (
 )
 
 func main() {
+
+	fmt.Println("hello from Node")
+	fmt.Println("IP address", GetOutboundIP())
+
 	app := kingpin.New(os.Args[0], "Quanta server node.").DefaultEnvars()
 	app.Version("Version: " + Version + "\nBuild: " + Build)
 	hashKey := app.Arg("hash-key", "Consistent hash key for node.").String()
@@ -43,6 +49,12 @@ func main() {
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	shared.InitLogging(*logLevel, *environment, "Data-Node", Version, "Quanta")
+
+	if *bindAddr == "0.0.0.0" { // if there's no bind address given then find our ip address
+		myaddr := GetOutboundIP().String()
+		*bindAddr = myaddr
+		fmt.Println("bindAddr", *bindAddr)
+	}
 
 	go func() {
 		// Initialize Prometheus metrics endpoint.
@@ -62,10 +74,12 @@ func main() {
 	_ = *certFile
 	_ = *keyFile
 
+	fmt.Println("before server.NewNode")
 	m, err := server.NewNode(fmt.Sprintf("%v:%v", Version, Build), int(*port), *bindAddr, *dataDir, *hashKey, consulClient)
 	if err != nil {
 		u.Errorf("[node: Cannot initialize node config: error: %s", err)
 	}
+	fmt.Println("after server.NewNode")
 
 	kvStore := server.NewKVStore(m)
 	m.AddNodeService(kvStore)
@@ -75,6 +89,8 @@ func main() {
 
 	bitmapIndex := server.NewBitmapIndex(m, int(*memLimit))
 	m.AddNodeService(bitmapIndex)
+
+	fmt.Println("after AddNodeService ...")
 
 	// Start listening endpoint
 	m.Start()
@@ -89,10 +105,12 @@ func main() {
 			u.Errorf("Interrupt signal received.  Starting Shutdown...")
 			ticker.Stop()
 			m.Leave()
-			time.Sleep(5)
+			time.Sleep(5 * time.Second)
 			os.Exit(0)
 		}
 	}()
+
+	fmt.Println("after m.InitServices")
 
 	start := time.Now()
 	err = m.InitServices()
@@ -101,6 +119,8 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Printf("Data node initialized in %v.", elapsed)
+
+	fmt.Println("before m.Join")
 
 	err = m.Join("quanta")
 	if err != nil {
@@ -129,4 +149,15 @@ func metricsTicker(node *server.Node) *time.Ticker {
 		}
 	}()
 	return t
+}
+
+// Get preferred outbound ip of this machine
+func GetOutboundIP() net.IP {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return localAddr.IP
 }

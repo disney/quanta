@@ -7,8 +7,8 @@ import (
 )
 
 func TestLoadTable(t *testing.T) {
-
-	table, err := LoadTable("./testdata", nil, "cities", nil)
+	tcs := NewTableCacheStruct()
+	table, err := LoadTable(tcs, "./testdata", nil, "cities", nil)
 	assert.Nil(t, err)
 	if assert.NotNil(t, table) {
 		assert.NotNil(t, table.BasicTable)
@@ -31,8 +31,8 @@ func TestLoadTable(t *testing.T) {
 }
 
 func TestLoadTableWithPK(t *testing.T) {
-
-	table, err := LoadTable("./testdata", nil, "cityzip", nil)
+	tcs := NewTableCacheStruct()
+	table, err := LoadTable(tcs, "./testdata", nil, "cityzip", nil)
 	assert.Nil(t, err)
 	pki, err2 := table.GetPrimaryKeyInfo()
 	assert.Nil(t, err2)
@@ -41,8 +41,8 @@ func TestLoadTableWithPK(t *testing.T) {
 }
 
 func TestLoadTableWithRelation(t *testing.T) {
-
-	table, err := LoadTable("./testdata", nil, "cityzip", nil)
+	tcs := NewTableCacheStruct()
+	table, err := LoadTable(tcs, "./testdata", nil, "cityzip", nil)
 	assert.Nil(t, err)
 	fka, err2 := table.GetAttribute("city_id")
 	assert.Nil(t, err2)

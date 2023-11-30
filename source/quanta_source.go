@@ -5,15 +5,16 @@ package source
 import (
 	"database/sql/driver"
 	"fmt"
-	u "github.com/araddon/gou"
-	"github.com/araddon/qlbridge/schema"
-	"github.com/araddon/qlbridge/value"
-	"github.com/disney/quanta/core"
-	"github.com/disney/quanta/shared"
-	"github.com/hashicorp/consul/api"
 	"io/ioutil"
 	"os"
 	"strings"
+
+	u "github.com/araddon/gou"
+	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/qlbridge/schema"
+	"github.com/disney/quanta/qlbridge/value"
+	"github.com/disney/quanta/shared"
+	"github.com/hashicorp/consul/api"
 )
 
 const (
@@ -41,10 +42,11 @@ type QuantaSource struct {
 	lastResultPos int
 	baseDir       string
 	sessionPool   *core.SessionPool
+	clientConn    *shared.Conn
 }
 
 // NewQuantaSource - Construct a QuantaSource.
-func NewQuantaSource(baseDir, consulAddr string, servicePort, sessionPoolSize int) (*QuantaSource, error) {
+func NewQuantaSource(tableCache *core.TableCacheStruct, baseDir, consulAddr string, servicePort, sessionPoolSize int) (*QuantaSource, error) {
 
 	m := &QuantaSource{}
 	var err error
@@ -66,8 +68,9 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort, sessionPoolSize in
 
 	// Register for member leave/join notifications.
 	clientConn.RegisterService(m)
+	m.clientConn = clientConn
 
-	m.sessionPool = core.NewSessionPool(clientConn, m.Schema, baseDir, sessionPoolSize)
+	m.sessionPool = core.NewSessionPool(tableCache, clientConn, m.Schema, baseDir, sessionPoolSize)
 
 	m.baseDir = baseDir
 	if m.baseDir != "" {
@@ -84,19 +87,24 @@ func NewQuantaSource(baseDir, consulAddr string, servicePort, sessionPoolSize in
 func (m *QuantaSource) MemberLeft(nodeID string, index int) {
 
 	u.Warnf("node %v left the cluster, purging sessions", nodeID)
-	m.sessionPool.Recover(nil)  // TODO: Need to re-evalute this when inserts are fully implemented.
+	m.sessionPool.Recover(nil) // TODO: Need to re-evalute this when inserts are fully implemented.
 }
 
 // MemberJoined - A new node joined the cluster.
 func (m *QuantaSource) MemberJoined(nodeID, ipAddress string, index int) {
 
 	u.Warnf("node %v joined the cluster, purging sessions", nodeID)
-	m.sessionPool.Recover(nil)  // TODO: Need to re-evalute this when inserts are fully implemented.
+	m.sessionPool.Recover(nil) // TODO: Need to re-evalute this when inserts are fully implemented.
 }
 
 // GetSessionPool - Return the underlying session pool instance.
 func (m *QuantaSource) GetSessionPool() *core.SessionPool {
 	return m.sessionPool
+}
+
+// GetConnection - Return the underlying client connection
+func (m *QuantaSource) GetConnection() *shared.Conn {
+	return m.clientConn
 }
 
 // Init initilize this db
@@ -128,7 +136,7 @@ func (m *QuantaSource) Open(tableName string) (schema.Conn, error) {
 		u.Errorf("Could not find table for '%s'.'%s'", m.Schema.Name, tableName)
 		return nil, fmt.Errorf("Could not find '%v'.'%v' schema)", m.Schema.Name, tableName)
 	}
-	return NewSQLToQuanta(m, tbl), nil
+	return NewSQLToQuanta(m.sessionPool.TableCache, m, tbl), nil
 }
 
 // Table by name
@@ -151,7 +159,9 @@ func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 	}
 	tbl := schema.NewTable(table)
 	cols := make([]string, 0)
-	for _, v := range ts.Attributes {
+	// for _, v := range ts.Attributes { copies lock. That's a no no
+	for i := 0; i < len(ts.Attributes); i++ {
+		v := &ts.Attributes[i]
 		if v.FieldName == "" {
 			if v.MappingStrategy == "ChildRelation" {
 				continue // Ignore these

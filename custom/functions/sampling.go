@@ -2,18 +2,17 @@ package functions
 
 import (
 	"fmt"
+
 	u "github.com/araddon/gou"
-	"github.com/araddon/qlbridge/expr"
-	"github.com/araddon/qlbridge/value"
+	"github.com/disney/quanta/qlbridge/expr"
+	"github.com/disney/quanta/qlbridge/value"
 	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/source"
 )
 
-//
 // StratifiedSample - Perform stratified sampling.  Use in query predicate attribute filter.
 //
 // stratifed_sample("fieldName", 1.5)
-//
 type StratifiedSample struct{}
 
 // Type - return type.
@@ -38,7 +37,7 @@ func stratifiedSampleEval(ctx expr.EvalContext, args []value.Value) (value.Value
 
 	q.Field = args[0].Value().(string)
 
-	if fr, ft, err := m.ResolveField(q.Field); ft || err != nil {
+	if fr, ft, err := m.ResolveField(m.ResolveTable(nil), q.Field); ft || err != nil {
 		if ft {
 			u.Errorf("Sampling on BSI field %s not supported.", q.Field)
 			return nil, false

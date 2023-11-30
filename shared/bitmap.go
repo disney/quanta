@@ -8,11 +8,13 @@ package shared
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/RoaringBitmap/roaring/roaring64"
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
+	"github.com/golang/protobuf/ptypes/empty"
 	"golang.org/x/sync/errgroup"
-	"time"
 )
 
 var (
@@ -25,12 +27,10 @@ const (
 	ifDelim = "/"
 )
 
-//
 // BitmapIndex - Client side API for bitmap operations.
 //
 // Conn - "base" class wrapper for network connection to servers.
 // client - Array of client API wrappers, one each for every server node.
-//
 type BitmapIndex struct {
 	*Conn
 	client []pb.BitmapIndexClient
@@ -131,10 +131,8 @@ func (c *BitmapIndex) updateClient(client pb.BitmapIndexClient, req *pb.UpdateRe
 	return nil
 }
 
-//
 // BatchMutate - Send a batch of standard bitmap mutations to the server cluster for processing.
 // Does this by calling BatchMutateNode in parallel for optimal throughput.
-//
 func (c *BitmapIndex) BatchMutate(batch map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap,
 	clear bool) error {
 
@@ -201,11 +199,9 @@ func (c *BitmapIndex) BatchMutateNode(clear bool, client pb.BitmapIndexClient,
 	return nil
 }
 
-//
 // splitBitmapBatch - For a given batch of standard bitmap mutations, separate them into
 // sub-batches based upon a consistently hashed shard key so that they can be send to their
 // respective nodes.  For standard bitmaps, this shard key consists of [index/field/rowid/timestamp].
-//
 func (c *BitmapIndex) splitBitmapBatch(batch map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap,
 ) []map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap {
 
@@ -247,10 +243,8 @@ func (c *BitmapIndex) splitBitmapBatch(batch map[string]map[string]map[uint64]ma
 	return batches
 }
 
-//
 // BatchSetValue - Send a batch of BSI mutations to the server cluster for processing.  Does this by calling
 // BatchSetValueNode in parallel for optimal throughput.
-//
 func (c *BitmapIndex) BatchSetValue(batch map[string]map[string]map[int64]*roaring64.BSI) error {
 
 	batches := c.splitBSIBatch(batch)
@@ -316,12 +310,10 @@ func (c *BitmapIndex) BatchSetValueNode(client pb.BitmapIndexClient,
 	return nil
 }
 
-//
 // For a given batch of BSI mutations, separate them into sub-batches based upon
 // a consistently hashed shard key so that they can be send to their respective nodes.
 // For BSI fields, this shard key consists of [index/field/timestamp].  All BSI slices
 // for a given field are co-located.
-//
 func (c *BitmapIndex) splitBSIBatch(batch map[string]map[string]map[int64]*roaring64.BSI,
 ) []map[string]map[string]map[int64]*roaring64.BSI {
 
@@ -357,9 +349,7 @@ func (c *BitmapIndex) splitBSIBatch(batch map[string]map[string]map[int64]*roari
 	return batches
 }
 
-//
 // BulkClear - Send a resultset bitmap to all nodes and perform bulk clear operation.
-//
 func (c *BitmapIndex) BulkClear(index, fromTime, toTime string,
 	foundSet *roaring64.Bitmap) error {
 
@@ -419,9 +409,7 @@ func (c *BitmapIndex) clearClient(client pb.BitmapIndexClient, req *pb.BulkClear
 	return nil
 }
 
-//
 // CheckoutSequence - Request a sequence generator from owning server node.
-//
 func (c *BitmapIndex) CheckoutSequence(indexName, pkField string, ts time.Time,
 	reservationSize int) (*Sequencer, error) {
 
@@ -462,9 +450,7 @@ func (c *BitmapIndex) sequencerClient(client pb.BitmapIndexClient, req *pb.Check
 	return result, nil
 }
 
-//
 // Projection - Send fields and target set for a given index to cluster for projection processing.
-//
 func (c *BitmapIndex) Projection(index string, fields []string, fromTime, toTime int64,
 	foundSet *roaring64.Bitmap, negate bool) (map[string]*roaring64.BSI, map[string]map[uint64]*roaring64.Bitmap, error) {
 
@@ -539,7 +525,10 @@ func (c *BitmapIndex) Projection(index string, fields []string, fromTime, toTime
 	aggbsiResults := make(map[string]*roaring64.BSI)
 	for k, v := range bsiResults {
 		bsi := roaring64.NewDefaultBSI()
-		bsi.ParOr(0, v...)
+		//bsi.ParOr(0, v...)
+		for _, z := range v {
+			bsi.ParOr(0, z)
+		}
 		aggbsiResults[k] = bsi
 	}
 	aggbitmapResults := make(map[string]map[uint64]*roaring64.Bitmap)
@@ -613,11 +602,52 @@ func (c *BitmapIndex) TableOperation(table, operation string) error {
 func (c *BitmapIndex) tableOperationClient(client pb.BitmapIndexClient, req *pb.TableOperationRequest,
 	clientIndex int) error {
 
-	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	ctx, cancel := context.WithTimeout(context.Background(), OpDeadline)
 	defer cancel()
 
 	if _, err := client.TableOperation(ctx, req); err != nil {
 		return fmt.Errorf("%v.TableOperation(_) = _, %v, node = %s", client, err,
+			c.ClientConnections()[clientIndex].Target())
+	}
+	return nil
+}
+
+// Commit - Block until persistence queues are synced (empty).
+func (c *BitmapIndex) Commit() error {
+
+	sop := AllActive
+	var eg errgroup.Group
+
+	// Send the same commit request to each node.  They must be all Active
+	indices, err := c.SelectNodes(nil, sop)
+	if err != nil {
+		return fmt.Errorf("commit: %v", err)
+	}
+	for _, n := range indices {
+		client := c.client[n]
+		clientIndex := n
+		eg.Go(func() error {
+			if err := c.commitClient(client, clientIndex); err != nil {
+				return err
+			}
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+	return nil
+}
+
+
+// Send a Commit request to all nodes.
+func (c *BitmapIndex) commitClient(client pb.BitmapIndexClient, clientIndex int) error {
+
+	ctx, cancel := context.WithTimeout(context.Background(), OpDeadline)
+	defer cancel()
+	if _, err := client.Commit(ctx, &empty.Empty{}); err != nil {
+		return fmt.Errorf("%v.Commit(_) = _, %v, node = %s", client, err,
 			c.ClientConnections()[clientIndex].Target())
 	}
 	return nil

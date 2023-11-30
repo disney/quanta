@@ -9,7 +9,15 @@ package server
 import (
 	"context"
 	"fmt"
+	"net"
+	"os"
+	"reflect"
+	"strconv"
+	"strings"
+	"time"
+
 	u "github.com/araddon/gou"
+	"github.com/disney/quanta/core"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
@@ -20,11 +28,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/testdata"
-	"net"
-	"os"
-	"reflect"
-	"strings"
-	"time"
 )
 
 const (
@@ -109,6 +112,10 @@ type Node struct {
 
 	State         StateType
 	localServices map[string]NodeService
+
+	TableCache *core.TableCacheStruct
+
+	listener net.Listener
 }
 
 // NewNode - Construct a new node instance.
@@ -119,6 +126,7 @@ func NewNode(version string, port int, bindAddr, dataDir, hashKey string, consul
 	m.localServices = make(map[string]NodeService, 0)
 	m.ServicePort = port
 	m.Quorum = 0
+	m.TableCache = core.NewTableCacheStruct()
 	if hashKey == "" {
 		return nil, fmt.Errorf("hash key is empty")
 	}
@@ -180,6 +188,8 @@ func (n *Node) Join(name string) error {
 		return fmt.Errorf("node: can't register %s service: %s", n.serviceName, err)
 	}
 
+	time.Sleep(1 * time.Second) // wait for everyone to register (atw)
+
 	err = n.Connect(n.consul)
 	if err != nil {
 		return fmt.Errorf("node: Connect failed: %v", err)
@@ -193,6 +203,8 @@ func (n *Node) Join(name string) error {
 
 func (n *Node) register() (err error) {
 
+	fmt.Printf("register node serviceName=%v hashKey=%v bindAddr=%v port=%v\n", n.serviceName, n.hashKey, n.BindAddr, n.ServicePort)
+
 	err = n.consul.Agent().ServiceRegister(&api.AgentServiceRegistration{
 		Name: n.serviceName,
 		ID:   n.hashKey,
@@ -200,8 +212,17 @@ func (n *Node) register() (err error) {
 			GRPC:     fmt.Sprintf("%v:%v/%v", n.BindAddr, n.ServicePort, n.checkURL),
 			Interval: checkInterval.String(),
 		},
+		Tags:    []string{"hashkey: " + n.hashKey, "address: " + n.BindAddr, "port: " + strconv.Itoa(n.ServicePort)},
+		Port:    n.ServicePort,
+		Address: n.BindAddr, // comes out as Service.Address and not Node.Address
 	})
 	return err
+}
+
+func (n *Node) Quit() {
+	n.Conn.Quit()
+	n.Conn.Disconnect()
+	n.server.Stop()
 }
 
 // Start the node endpoint.  Does not block.
@@ -209,7 +230,8 @@ func (n *Node) Start() {
 
 	go func() {
 		if n.ServicePort > 0 {
-			lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", n.BindAddr, n.ServicePort))
+			var err error
+			n.listener, err = net.Listen("tcp", fmt.Sprintf("%s:%d", n.BindAddr, n.ServicePort))
 			if err != nil {
 				u.Errorf("error starting node listening endpoint: %v", err)
 				n.Err <- err
@@ -225,7 +247,7 @@ func (n *Node) Start() {
 					}
 				}
 			}()
-			n.server.Serve(lis)
+			n.server.Serve(n.listener)
 		} else {
 			n.server.Serve(shared.TestListener)
 		}
@@ -282,13 +304,13 @@ func (n *Node) Status(ctx context.Context, e *empty.Empty) (*pb.StatusMessage, e
 		return nil, err
 	}
 	return &pb.StatusMessage{
-		NodeState:   n.State.String(),
-		LocalIP:     ip.String(),
-		LocalPort:   uint32(n.ServicePort),
-		Version:     n.version,
-		Replicas:    uint32(n.Replicas),
-		ShardCount:  uint32(n.shardCount),
-		MemoryUsed:  uint32(n.memoryUsed),
+		NodeState:  n.State.String(),
+		LocalIP:    ip.String(),
+		LocalPort:  uint32(n.ServicePort),
+		Version:    n.version,
+		Replicas:   uint32(n.Replicas),
+		ShardCount: uint32(n.shardCount),
+		MemoryUsed: uint32(n.memoryUsed),
 	}, nil
 }
 
@@ -297,6 +319,7 @@ func (n *Node) Shutdown(ctx context.Context, e *empty.Empty) (*empty.Empty, erro
 
 	u.Warn("Received Shutdown call via API.")
 	err := n.Leave()
+	n.listener.Close()
 	return e, err
 }
 

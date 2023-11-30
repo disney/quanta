@@ -20,7 +20,7 @@ func GenerateSQLInsert(table string, s interface{}) string {
 	for i, v := range cols {
 		colBuilder.WriteString(v)
 		valBuilder.WriteString("?")
-		if i < len(cols) - 1 {
+		if i < len(cols)-1 {
 			colBuilder.WriteString(", ")
 			valBuilder.WriteString(", ")
 		}
@@ -58,14 +58,13 @@ func BindParams(s interface{}) []interface{} {
 	return values
 }
 
-
 // NameMapper is the function used to convert struct fields which do not have sql tags
 // into database column names.
 //
 // The default mapper converts field names to lower case. If instead you would prefer
 // field names converted to snake case, simply assign sqlstruct.ToSnakeCase to the variable:
 //
-//		sqlstruct.NameMapper = sqlstruct.ToSnakeCase
+//	sqlstruct.NameMapper = sqlstruct.ToSnakeCase
 //
 // Alternatively for a custom mapping, any func(string) string can be used instead.
 var NameMapper func(string) string = strings.ToLower
@@ -109,7 +108,7 @@ func getFieldInfo(typ reflect.Type) fieldInfo {
 		tag := f.Tag.Get(TagName)
 
 		// Skip unexported fields or fields marked with "-"
-		if f.PkgPath != "" || tag == "-" || tag == ""{
+		if f.PkgPath != "" || tag == "-" || tag == "" {
 			continue
 		}
 
@@ -157,7 +156,6 @@ func Columns(s interface{}) string {
 	return strings.Join(cols(s), ", ")
 }
 
-
 // ColumnList returns a string containing a sorted, comma-separated list of column names as
 func ColumnList(s interface{}) []string {
 	return cols(s)
@@ -167,6 +165,7 @@ func ColumnList(s interface{}) []string {
 // given alias.
 //
 // For each field in the given struct it will generate a statement like:
+//
 //	alias.field AS alias_field
 //
 // It is intended to be used in conjunction with the ScanAliased function.
@@ -253,7 +252,6 @@ func ToSnakeCase(src string) string {
 	return strings.ToLower(buf.String())
 }
 
-
 // GetAllRows - Handles database/sql *Rows and returns and array of row maps
 func GetAllRows(rows *sql.Rows) ([]map[string]interface{}, error) {
 
@@ -262,7 +260,7 @@ func GetAllRows(rows *sql.Rows) ([]map[string]interface{}, error) {
 	for rows.Next() {
 		columns := make([]interface{}, len(cols))
 		columnPointers := make([]interface{}, len(cols))
-		for i, _ := range columns {
+		for i := range columns {
 			columnPointers[i] = &columns[i]
 		}
 		if err := rows.Scan(columnPointers...); err != nil {

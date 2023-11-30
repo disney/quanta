@@ -5,6 +5,7 @@ package core
 //
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/araddon/dateparse"
 	"math"
@@ -35,6 +36,27 @@ func (m StringHashBSIMapper) MapValue(attr *Attribute, val interface{}, c *Sessi
 		if strVal != "" {
 			result = Get64BitHash(strVal)
 		}
+	case int64:
+		val = val.(int64)
+		strVal = fmt.Sprintf("%d", val)
+		result = Get64BitHash(strVal)
+	case float64:
+		val = val.(float64)
+		strVal = fmt.Sprintf("%.2f", val)
+		result = Get64BitHash(strVal)
+	case map[string]interface{}:
+		x := val.(map[string]interface{})
+		if len(x) == 0 {
+			return
+		}
+		b, errx := json.Marshal(x)
+		if errx != nil {
+			err = errx
+			return
+		}
+		strVal = string(b)
+		val = strVal
+		result = Get64BitHash(strVal)
 	default:
 		err = fmt.Errorf("StringHashBSIMapper not expecting a '%T' for '%s'", val, attr.FieldName)
 		return
@@ -242,6 +264,12 @@ func (m FloatScaleBSIMapper) MapValue(attr *Attribute, val interface{},
 		return
 	}
 	result = uint64(floatVal * float64(math.Pow10(attr.Scale)))
+	var checkRound float64
+	checkRound = float64(result) / float64(math.Pow10(attr.Scale))
+	if checkRound != floatVal {
+		err = fmt.Errorf("this would result in rounding error for field '%s', value should have %d decimal places", 
+			attr.FieldName, attr.Scale)
+	}
 	if c != nil {
 		err = m.UpdateBitmap(c, attr.Parent.Name, attr.FieldName, result, attr.IsTimeSeries)
 	}
@@ -333,6 +361,9 @@ func (m StringEnumMapper) MapValue(attr *Attribute, val interface{},
 		multi = val.([]string)
 	case int32:
 		strVal := fmt.Sprintf("%d", val.(int32))
+		multi = []string{strVal}
+	case int64:
+		strVal := fmt.Sprintf("%d", val.(int64))
 		multi = []string{strVal}
 	default:
 		return 0, fmt.Errorf("cannot cast '%s' from '%T' to a string", attr.FieldName, val)

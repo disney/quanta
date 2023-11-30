@@ -1,7 +1,7 @@
 package shared
 
 import (
-	"github.com/hamba/avro"
+	"github.com/hamba/avro/v2"
 	"regexp"
 )
 
@@ -22,20 +22,20 @@ func ToAvroSchema(table *BasicTable) avro.Schema {
 		var field *avro.Field
 		switch TypeFromString(v.Type) {
 		case String:
-			field, _ = avro.NewField(name, avro.NewPrimitiveSchema(avro.String, nil), nil)
+			field, _ = avro.NewField(name, avro.NewPrimitiveSchema(avro.String, nil))
 		case Integer:
-			field, _ = avro.NewField(name, avro.NewPrimitiveSchema(avro.Long, nil), nil)
+			field, _ = avro.NewField(name, avro.NewPrimitiveSchema(avro.Long, nil))
 		case Float:
-			field, _ = avro.NewField(name, avro.NewPrimitiveSchema(avro.Double, nil), nil)
+			field, _ = avro.NewField(name, avro.NewPrimitiveSchema(avro.Double, nil))
 		case Date:
 			field, _ = avro.NewField(name, avro.NewPrimitiveSchema(avro.Long,
-				avro.NewPrimitiveLogicalSchema(avro.Date)), nil)
+				avro.NewPrimitiveLogicalSchema(avro.Date)))
 		case DateTime:
-			field, _ = avro.NewField(name, avro.NewPrimitiveSchema(avro.Long, nil), nil)
+			field, _ = avro.NewField(name, avro.NewPrimitiveSchema(avro.Long, nil))
 			//field, _ = avro.NewField(name, avro.NewPrimitiveSchema(avro.Long,
 			//	avro.NewPrimitiveLogicalSchema(avro.TimestampMillis)), nil)
 		case Boolean:
-			field, _ = avro.NewField(name, avro.NewPrimitiveSchema(avro.Boolean, nil), nil)
+			field, _ = avro.NewField(name, avro.NewPrimitiveSchema(avro.Boolean, nil))
 		default:
 		}
 		fields = append(fields, field)

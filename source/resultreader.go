@@ -3,15 +3,17 @@ package source
 import (
 	"database/sql/driver"
 	"fmt"
+	"math"
+	"strings"
+	"time"
+
 	"github.com/RoaringBitmap/roaring/roaring64"
 	u "github.com/araddon/gou"
-	"github.com/araddon/qlbridge/datasource"
-	"github.com/araddon/qlbridge/exec"
-	"github.com/araddon/qlbridge/rel"
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/qlbridge/datasource"
+	"github.com/disney/quanta/qlbridge/exec"
+	"github.com/disney/quanta/qlbridge/rel"
 	"github.com/disney/quanta/shared"
-	"math"
-	"time"
 )
 
 var (
@@ -141,16 +143,16 @@ func (m *ResultReader) Run() error {
 		//u.Debugf("In source Scanner iter %#v", msg)
 		outCh <- msg
 		return nil
-	//} else if orig != nil && len(orig.From) > 1 {
+		//} else if orig != nil && len(orig.From) > 1 {
 	} else if len(m.sql.p.Stmt.JoinNodes()) > 0 {
 		// This query must be part of a join.  Pass along the roaring bitmap results to the next
 		// tasks in the process flow.
-/*
-		allTables := make([]string, len(orig.From))
-		for i, v := range orig.From {
-			allTables[i] = v.Name
-		}
-*/
+		/*
+			allTables := make([]string, len(orig.From))
+			for i, v := range orig.From {
+				allTables[i] = v.Name
+			}
+		*/
 		dataMap := make(map[string]interface{})
 		dataMap["results"] = m.response.Results
 		dataMap["fromTime"] = fromTime.UnixNano()
@@ -164,16 +166,24 @@ func (m *ResultReader) Run() error {
 		msg := datasource.NewContextSimpleNative(dataMap)
 		outCh <- msg
 		return nil
-	} else if cols[0].As == "@rownum" && len(cols) == 1 {
+	} else if strings.HasSuffix(cols[0].As, "@rownum") && len(cols) == 1 {
 		outputRownumMessages(outCh, m.response.Results, m.limit, m.offset)
 		return nil
 	}
 
 	if m.sql.isSum || m.sql.isAvg || m.sql.isMin || m.sql.isMax {
 		projFields := []string{fmt.Sprintf("%s.%s", m.sql.tbl.Name, m.sql.aggField)}
+		attr, isBSI, errx := m.sql.ResolveField(m.sql.tbl.Name, m.sql.aggField)
+		if errx != nil {
+			return errx
+		}
+		if !isBSI {
+			return fmt.Errorf("field %s.%s must be a BSI", attr.Parent.Name, attr.FieldName)
+		}
+
 		foundSet := make(map[string]*roaring64.Bitmap)
 		foundSet[m.sql.tbl.Name] = m.response.Results
-		proj, errx := core.NewProjection(m.conn, foundSet, nil, projFields, "",
+		proj, errx := core.NewProjection(m.conn, foundSet, nil, projFields, "", "",
 			fromTime.UnixNano(), toTime.UnixNano(), nil, false)
 		if errx != nil {
 			return errx
@@ -186,9 +196,20 @@ func (m *ResultReader) Run() error {
 			if errx != nil {
 				return errx
 			}
-			vals[0] = fmt.Sprintf("%d", sum)
-			if m.sql.isAvg && count != 0 {
-				vals[0] = fmt.Sprintf("%d", sum/int64(count))
+			switch shared.TypeFromString(attr.Type) {
+			case shared.Integer:
+				vals[0] = fmt.Sprintf("%d", sum)
+				if m.sql.isAvg && count != 0 {
+					vals[0] = fmt.Sprintf("%d", sum/int64(count))
+				}
+			case shared.Float:
+				fval := float64(sum)
+				f := fmt.Sprintf("%%.%df", attr.Scale)
+				if m.sql.isAvg && count != 0 {
+					fval = fval / float64(count)
+				}
+				vals[0] = fmt.Sprintf(f, float64(fval)/math.Pow10(attr.Scale))
+			default:
 			}
 		}
 		if m.sql.isMin || m.sql.isMax {
@@ -234,7 +255,7 @@ func (m *ResultReader) Run() error {
 			projFields := []string{fmt.Sprintf("%s.%s", m.sql.tbl.Name, m.sql.aggField)}
 			foundSet := make(map[string]*roaring64.Bitmap)
 			foundSet[m.sql.tbl.Name] = m.response.Results
-			proj, err3 := core.NewProjection(m.conn, foundSet, nil, projFields, "",
+			proj, err3 := core.NewProjection(m.conn, foundSet, nil, projFields, "", "",
 				fromTime.UnixNano(), toTime.UnixNano(), nil, false)
 			if err3 != nil {
 				return err3
@@ -271,23 +292,23 @@ func (m *ResultReader) Run() error {
 	//projFields := make([]string, 0)
 	var projFields []string
 	var rowCols map[string]int
-	m.sql.p.Proj, colNames, rowCols, projFields, _, err = createProjection(orig, m.sql.tbl.Schema, "", 
+	m.sql.p.Proj, colNames, rowCols, projFields, _, err = createProjection(orig, m.sql.tbl.Schema, "",
 		m.sql.whereProj)
 	if err != nil {
 		return err
 	}
-/*
-	cols = m.sql.p.Proj.Columns
-	for _, v := range cols {
-		if v.As != "@rownum" {
-			projFields = append(projFields, fmt.Sprintf("%s.%s", m.sql.tbl.Name, v.Name))
+	/*
+		cols = m.sql.p.Proj.Columns
+		for _, v := range cols {
+			if v.As != "@rownum" {
+				projFields = append(projFields, fmt.Sprintf("%s.%s", m.sql.tbl.Name, v.Name))
+			}
 		}
-	}
-*/
+	*/
 
 	foundSet := make(map[string]*roaring64.Bitmap)
 	foundSet[m.sql.tbl.Name] = m.response.Results
-	proj, err3 := core.NewProjection(m.conn, foundSet, nil, projFields, "",
+	proj, err3 := core.NewProjection(m.conn, foundSet, nil, projFields, "", "",
 		fromTime.UnixNano(), toTime.UnixNano(), nil, false)
 	if err3 != nil {
 		return err3

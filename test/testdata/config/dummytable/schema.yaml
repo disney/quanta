@@ -1,0 +1,21 @@
+tableName: dummytable
+primaryKey: id
+attributes:
+
+- sourceName: /id
+  fieldName: id
+  mappingStrategy: StringHashBSI
+  type: String
+
+- fieldName: f1
+  sourceName: /f1
+  type: string
+  mappingStrategy: StringHashBSI
+  exclusive: true
+
+- fieldName: f2
+  sourceName: /f2
+  type: String
+  mappingStrategy: StringHashBSI
+  exclusive: true
+

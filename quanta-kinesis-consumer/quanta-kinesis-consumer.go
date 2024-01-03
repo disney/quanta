@@ -185,8 +185,8 @@ func main() {
 		}
 		log.Printf("DynamoDB checkpoint table name [%s]", main.CheckpointTable)
 		if main.InitialPos == "LATEST" {
-			u.Errorf("Checkpoint enabled.  Shard iterator is 'LATEST' setting it to 'NEXT_SEQUENCE_NUMBER'.")
-			main.InitialPos = "NEXT_SEQUENCE_NUMBER"
+			u.Errorf("Checkpoint enabled.  Shard iterator is 'LATEST' setting it to 'AFTER_SEQUENCE_NUMBER'.")
+			main.InitialPos = "AFTER_SEQUENCE_NUMBER"
 		}
 	}
 	

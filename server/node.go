@@ -378,6 +378,51 @@ var (
 		Name: "node_state",
 		Help: "The State of the node [Starting = 0, Joining = 1, Syncing = 2, Active = 3]",
 	})
+
+	pKVStoreCloserLatency = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "index_closer_latency",
+		Help: "Index closer thread latency",
+	})
+
+	pBitmapCacheUpdLatency = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "bitmap_cache_update_latency",
+		Help: "Bitmap cache update latency",
+	})
+
+	pBSICacheUpdLatency = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "bsi_cache_update_latency",
+		Help: "BSI cache update latency",
+	})
+
+	pBitmapPersistLatency = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "bitmap_persistence_latency",
+		Help: "Bitmap persistence latency",
+	})
+
+	pBSIPersistLatency = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "bsi_persistence_latency",
+		Help: "BSI persistence latency",
+	})
+
+	pBitmapEdgeTCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "bitmap_edge_t_count",
+		Help: "Count of edge triggered bitmap writes",
+	})
+
+	pBitmapTimeTCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "bitmap_time_t_count",
+		Help: "Count of time triggered bitmap writes",
+	})
+
+	pBSIEdgeTCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "bsi_edge_t_count",
+		Help: "Count of edge triggered bsi writes",
+	})
+
+	pBSITimeTCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "bsi_time_t_count",
+		Help: "Count of time triggered bsi writes",
+	})
 )
 
 // PublishMetrics - Update Prometheus metrics
@@ -386,6 +431,27 @@ func (n *Node) PublishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 	// Update Prometheus metrics
 	pUptimeHours.Set(float64(upTime) / float64(1000000000*3600))
 	pState.Set(float64(n.State))
+
+	kvService := n.GetNodeService("KVStore").(*KVStore)
+	if kvService != nil {
+		pKVStoreCloserLatency.Set(float64(kvService.cleanupLatency))
+	} else {
+		u.Debug("Cannot publish metrics for KVStore.");
+	}
+
+	bitService := n.GetNodeService("BitmapIndex").(*BitmapIndex)
+	if bitService != nil {
+		pBitmapCacheUpdLatency.Set(float64(bitService.updBitmapTime.Load()))
+		pBSICacheUpdLatency.Set(float64(bitService.updBSITime.Load()))
+		pBitmapPersistLatency.Set(float64(bitService.saveBitmapTime.Load()))
+		pBSIPersistLatency.Set(float64(bitService.saveBSITime.Load()))
+		pBitmapEdgeTCount.Set(float64(bitService.saveBitmapECnt.Load()))
+		pBSIEdgeTCount.Set(float64(bitService.saveBSIECnt.Load()))
+		pBitmapTimeTCount.Set(float64(bitService.saveBitmapTCnt.Load()))
+		pBSITimeTCount.Set(float64(bitService.saveBSITCnt.Load()))
+	} else {
+		u.Debug("Cannot publish metrics for Bitmap Index.");
+	}
 
 	return time.Now()
 }

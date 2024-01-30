@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -61,8 +60,16 @@ func main() {
 	// unused password = app.Flag("password", "Password for account for MySQL DB (just press enter for now when logging in on mysql console)").Default("").String()
 	consul := app.Flag("consul-endpoint", "Consul agent address/port").Default("127.0.0.1:8500").String()
 	poolSize := app.Flag("session-pool-size", "Session pool size").Int()
+	pprof := app.Flag("pprof", "Start the pprof server").Default("false").String()
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
+
+	log.Printf("pprof flag is: %s \n", *pprof)
+	if *pprof == "true" { // start the pprof server which serves cpu and memory usage etc.
+		go func() {
+			log.Printf("pprof ListenAndServe %v", http.ListenAndServe(":6060", nil))
+		}()
+	}
 
 	proxy.QuantaPort = *quantaPortP
 	proxy.Region = *region
@@ -79,11 +86,13 @@ func main() {
 		shared.InitLogging(*logging, *environment, "Proxy", proxy.Version, "Quanta")
 	}
 
-	go func() {
-		// Initialize Prometheus metrics endpoint.
-		http.Handle("/metrics", promhttp.Handler())
-		http.ListenAndServe(":2112", nil)
-	}()
+	if *pprof != "true" {
+		go func() {
+			// Initialize Prometheus metrics endpoint. Not currently compatible with pprof.
+			http.Handle("/metrics", promhttp.Handler())
+			http.ListenAndServe(":2112", nil)
+		}()
+	}
 
 	proxy.ConsulAddr = *consul
 	log.Printf("Connecting to Consul at: [%s] ...\n", proxy.ConsulAddr)
@@ -180,12 +189,5 @@ func main() {
 			return
 		}
 		go proxy.OnConn(conn)
-	}
-}
-
-func check(err error) {
-	if err != nil {
-		fmt.Println("check err", err)
-		panic(err.Error())
 	}
 }

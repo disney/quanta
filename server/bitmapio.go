@@ -456,7 +456,11 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 		for _, field := range index {
 			for _, ts := range field {
 				for _, frag := range ts {
-					fragQueue <- frag
+					select {
+					case fragQueue <- frag:
+					default:
+						return fmt.Errorf("Update: fragment queue is full")
+					}
 				}
 			}
 		}
@@ -468,17 +472,26 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 func (m *BitmapIndex) purgePartition(aop *Partition) {
 
 	t := aop.Time.UnixNano()
-	if aop.RowIDOrBits > 0 {
+	// atw - TODO - understand
+	// The condition is wrong for bools.
+	// Since the keys are unique we can just delete the key.
+	// from both caches.
+	//if aop.RowIDOrBits > 0
+	{
+		// phoneType, city, isActive, rownum, isLegalAge
 		rowID := uint64(aop.RowIDOrBits)
 		m.bitmapCacheLock.Lock()
 		defer m.bitmapCacheLock.Unlock()
-		if _, ok := m.bitmapCache[aop.Index][aop.Field][rowID][t]; ok {
+		_, ok := m.bitmapCache[aop.Index][aop.Field][rowID][t]
+		if ok {
 			delete(m.bitmapCache[aop.Index][aop.Field][rowID], t)
 		}
-	} else {
+	} // else
+	{ // numFamilyMembers, first_name, address, hashedCurtid. age, height, last_name
 		m.bsiCacheLock.Lock()
 		defer m.bsiCacheLock.Unlock()
-		if _, ok := m.bsiCache[aop.Index][aop.Field][t]; ok {
+		_, ok := m.bsiCache[aop.Index][aop.Field][t]
+		if ok {
 			delete(m.bsiCache[aop.Index][aop.Field], t)
 		}
 	}

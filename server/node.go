@@ -4,6 +4,9 @@ package server
 // This code manages the abstractions necessary for a server node.  This includes code
 // to register node membership with Consul.  It is the "base class" containg common node level
 // functions to support business APIs.
+// A node normally listens for grpc messages on port 4000.  This is configurable.
+// See quanta-node.go for the main entry point.
+//
 //
 
 import (
@@ -121,7 +124,7 @@ type Node struct {
 // NewNode - Construct a new node instance.
 func NewNode(version string, port int, bindAddr, dataDir, hashKey string, consul *api.Client) (*Node, error) {
 
-	conn := shared.NewDefaultConnection()
+	conn := shared.NewDefaultConnection("nodeKey-" + hashKey)
 	m := &Node{Conn: conn, version: version}
 	m.localServices = make(map[string]NodeService, 0)
 	m.ServicePort = port
@@ -303,7 +306,7 @@ func (n *Node) Status(ctx context.Context, e *empty.Empty) (*pb.StatusMessage, e
 	if err != nil {
 		return nil, err
 	}
-	return &pb.StatusMessage{
+	status := &pb.StatusMessage{
 		NodeState:  n.State.String(),
 		LocalIP:    ip.String(),
 		LocalPort:  uint32(n.ServicePort),
@@ -311,7 +314,11 @@ func (n *Node) Status(ctx context.Context, e *empty.Empty) (*pb.StatusMessage, e
 		Replicas:   uint32(n.Replicas),
 		ShardCount: uint32(n.shardCount),
 		MemoryUsed: uint32(n.memoryUsed),
-	}, nil
+	}
+
+	u.Debug("Node Status: ", n.hashKey, status.NodeState, " shards", status.ShardCount)
+
+	return status, nil
 }
 
 // Shutdown - Shut the node down.
@@ -378,6 +385,51 @@ var (
 		Name: "node_state",
 		Help: "The State of the node [Starting = 0, Joining = 1, Syncing = 2, Active = 3]",
 	})
+
+	pKVStoreCloserLatency = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "index_closer_latency",
+		Help: "Index closer thread latency",
+	})
+
+	pBitmapCacheUpdLatency = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "bitmap_cache_update_latency",
+		Help: "Bitmap cache update latency",
+	})
+
+	pBSICacheUpdLatency = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "bsi_cache_update_latency",
+		Help: "BSI cache update latency",
+	})
+
+	pBitmapPersistLatency = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "bitmap_persistence_latency",
+		Help: "Bitmap persistence latency",
+	})
+
+	pBSIPersistLatency = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "bsi_persistence_latency",
+		Help: "BSI persistence latency",
+	})
+
+	pBitmapEdgeTCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "bitmap_edge_t_count",
+		Help: "Count of edge triggered bitmap writes",
+	})
+
+	pBitmapTimeTCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "bitmap_time_t_count",
+		Help: "Count of time triggered bitmap writes",
+	})
+
+	pBSIEdgeTCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "bsi_edge_t_count",
+		Help: "Count of edge triggered bsi writes",
+	})
+
+	pBSITimeTCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "bsi_time_t_count",
+		Help: "Count of time triggered bsi writes",
+	})
 )
 
 // PublishMetrics - Update Prometheus metrics
@@ -387,5 +439,33 @@ func (n *Node) PublishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 	pUptimeHours.Set(float64(upTime) / float64(1000000000*3600))
 	pState.Set(float64(n.State))
 
+	kvService := n.GetNodeService("KVStore").(*KVStore)
+	if kvService != nil {
+		pKVStoreCloserLatency.Set(float64(kvService.cleanupLatency))
+	} else {
+		u.Debug("Cannot publish metrics for KVStore.");
+	}
+
+	bitService := n.GetNodeService("BitmapIndex").(*BitmapIndex)
+	if bitService != nil {
+		pBitmapCacheUpdLatency.Set(float64(bitService.updBitmapTime.Load()))
+		pBSICacheUpdLatency.Set(float64(bitService.updBSITime.Load()))
+		pBitmapPersistLatency.Set(float64(bitService.saveBitmapTime.Load()))
+		pBSIPersistLatency.Set(float64(bitService.saveBSITime.Load()))
+		pBitmapEdgeTCount.Set(float64(bitService.saveBitmapECnt.Load()))
+		pBSIEdgeTCount.Set(float64(bitService.saveBSIECnt.Load()))
+		pBitmapTimeTCount.Set(float64(bitService.saveBitmapTCnt.Load()))
+		pBSITimeTCount.Set(float64(bitService.saveBSITCnt.Load()))
+	} else {
+		u.Debug("Cannot publish metrics for Bitmap Index.");
+	}
+
 	return time.Now()
 }
+
+// InvokeUpdates - server side force re-fetch of all status unused deprecated
+// func (n *Node) InvokeUpdates(context.Context, *emptypb.Empty) (*emptypb.Empty, error) {
+// 	fmt.Println("server InvokeUpdates", n.hashKey)
+// 	n.Conn.GetAllPeerStatus()
+// 	return &emptypb.Empty{}, nil
+// }

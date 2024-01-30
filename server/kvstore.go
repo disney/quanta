@@ -35,6 +35,7 @@ type KVStore struct {
 	storeCacheLock  sync.RWMutex
 	enumGuard       singleflight.Group
 	exit			chan bool
+	cleanupLatency  int64						// current cleanup thread duration (Prometheus)
 }
 
 type cacheEntry struct {
@@ -132,12 +133,17 @@ func (m *KVStore) cleanupProcessLoop() {
 // Scan open cache entries and close out indices
 func (m *KVStore) cleanup() {
 
+	start := time.Now()
+
 	for k, v := range m.storeCache {
 		if time.Since(v.accessTime).Hours() >= maxOpenHours {
 			u.Debugf("Closed %v due to inactivity.", k)
 			m.closeStore(k)
 		}
 	}
+
+	elapsed := time.Since(start)
+	m.cleanupLatency = elapsed.Milliseconds()
 }
 
 

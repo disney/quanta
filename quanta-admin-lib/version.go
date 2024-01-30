@@ -32,9 +32,9 @@ func (v *VersionCmd) Run(ctx *Context) error {
 	return nil
 }
 
-//
-
-func GetClientConnection(consulAddr string, port int) *shared.Conn {
+// GetClientConnection - Create a connection to the Quanta service
+// The 'owner' is used for debugging.
+func GetClientConnection(consulAddr string, port int, owner string) *shared.Conn {
 
 	fmt.Printf("Connecting to Consul at: [%s] ...\n", consulAddr)
 	consulClient, err := api.NewClient(&api.Config{Address: consulAddr})
@@ -43,7 +43,7 @@ func GetClientConnection(consulAddr string, port int) *shared.Conn {
 		log.Fatal(err)
 	}
 	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
-	conn := shared.NewDefaultConnection()
+	conn := shared.NewDefaultConnection(owner)
 	conn.ServicePort = port
 	conn.Quorum = 0
 	if err := conn.Connect(consulClient); err != nil {

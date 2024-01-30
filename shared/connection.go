@@ -15,11 +15,13 @@ package shared
 import (
 	"context"
 	"fmt"
-	"log"
+
+	"math"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
@@ -78,10 +80,13 @@ type Conn struct {
 	nodeStatusMap      map[string]*pb.StatusMessage
 	activeCount        int
 	IsLocalCluster     bool
+	owner              string // for debugging
 }
 
 // NewDefaultConnection - Configure a connection with default values.
-func NewDefaultConnection() *Conn {
+func NewDefaultConnection(owner string) *Conn {
+
+	u.Info("NewDefaultConnection", owner)
 	m := &Conn{}
 	m.ServiceName = "quanta"
 	m.ServicePort = 4000
@@ -91,6 +96,7 @@ func NewDefaultConnection() *Conn {
 	m.Replicas = 2
 	m.registeredServices = make(map[string]Service)
 	m.nodeStatusMap = make(map[string]*pb.StatusMessage, 0)
+	m.owner = owner // for debugging
 	return m
 }
 
@@ -175,6 +181,8 @@ func (m *Conn) RegisterService(svc Service) {
 // Connect with configured values.
 func (m *Conn) Connect(consul *api.Client) (err error) {
 
+	u.Info("Conn Connect", m.owner)
+
 	if m.ServicePort > 0 {
 		if consul != nil {
 			m.Consul = consul
@@ -184,7 +192,7 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 				return fmt.Errorf("client: can't create Consul API client: %s", err)
 			}
 		}
-		err = m.update()
+		err = m.updateHealth(true) // initial scan
 		if err != nil {
 			return fmt.Errorf("node: can't fetch %s services list: %s", m.ServiceName, err)
 		}
@@ -197,27 +205,36 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 			return fmt.Errorf("node: quorum size %d currently,  must be at least %d to handle requests for service %s",
 				len(m.idMap), m.Quorum, m.ServiceName)
 		}
+
 		m.clientConn, err = m.CreateNodeConnections(true)
 		m.Admin = make([]pb.ClusterAdminClient, len(m.clientConn))
+		activeCount := 0
 		for i := 0; i < len(m.clientConn); i++ {
 			id := m.ids[i]
-			entry := m.idMap[id]
 
 			adminClient := pb.NewClusterAdminClient(m.clientConn[i])
 			m.Admin[i] = adminClient
 
 			status, err := m.getNodeStatusForIndex(i)
+			// u.Info("Conn Connect getNodeStatusForIndex", m.owner, i, status.NodeState, err)
 			if err == nil {
 				m.nodeStatusMap[id] = status
 				if status.NodeState == "Active" {
-					m.activeCount++
+					activeCount++
 				}
 			} else {
 				u.Errorf("getNodeStatusForIndex: %v", err)
 			}
-			//m.SendMemberJoined(id, entry.Node.Address, i)
-			m.SendMemberJoined(id, entry.Service.Address, i)
 		}
+
+		for i := 0; i < len(m.clientConn); i++ {
+			id := m.ids[i]
+			entry := m.idMap[id]
+			m.SendMemberJoined(id, entry.Service.Address, i) // why?
+		}
+
+		m.GetAllPeerStatus()
+
 		go m.poll()
 	} else {
 		// ServicePort is 0
@@ -281,7 +298,7 @@ func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.Client
 		target := fmt.Sprintf("%s:%d", entry.Service.Address, nodeConnPort)
 		nodeConns[i], err = grpc.Dial(target, m.grpcOpts...)
 		if err != nil {
-			log.Fatalf("fail to dial: %v", err)
+			u.Logf(u.FATAL, "fail to dial: %v", err)
 		}
 	}
 	return nodeConns, nil
@@ -316,7 +333,7 @@ func (m *Conn) SelectNodes(key interface{}, op OpType) ([]int, error) {
 
 	clusterState, _, _ := m.GetClusterState()
 	if clusterState != Green && op == AllActive {
-		return nil, fmt.Errorf("This operation requires [%v], but the cluster state is [%v]", op, clusterState)
+		return nil, fmt.Errorf("selectNodes requires [%v], but the cluster state is [%v] node=%v", op, clusterState, m.owner)
 	}
 
 	all := (op == AllActive || op == Admin || op == WriteIntentAll || op == ReadIntentAll)
@@ -327,6 +344,10 @@ func (m *Conn) SelectNodes(key interface{}, op OpType) ([]int, error) {
 
 	nodeKeys := m.HashTable.GetN(replicas, ToString(key))
 	indices := make([]int, 0)
+
+	// u.Info("SelectNodes GetN", ToString(key), nodeKeys)
+
+	// u.Info("SelectNodes nodeStatusMap", m.owner, m.nodeStatusMap)
 
 	for _, v := range nodeKeys {
 		status, found := m.nodeStatusMap[v]
@@ -355,14 +376,14 @@ func (m *Conn) SelectNodes(key interface{}, op OpType) ([]int, error) {
 }
 
 // GetClientIndexForNodeID - The the index into m.clientConn for a node ID.
-func (m *Conn) GetClientIndexForNodeID(nodeID string) int {
+func (m *Conn) GetClientIndexForNodeID(nodeID string) (int, error) {
 
 	m.nodeMapLock.RLock()
 	defer m.nodeMapLock.RUnlock()
 	if j, ok := m.nodeMap[nodeID]; ok {
-		return j
+		return j, nil
 	}
-	return -1
+	return -1, fmt.Errorf("GetClientIndexForNodeID: nodeID %s not found. owner %s", nodeID, m.owner)
 }
 
 // GetNodeForID - Return the Consul ServiceEntry for a given node ID.
@@ -407,6 +428,42 @@ func (m *Conn) Disconnect() error {
 func (m *Conn) poll() {
 	var err error
 
+	// defer u.Info("Conn poll QUIT", m.owner)
+
+	consul := m.Consul
+
+	// poll for AnyNodeStatusChangeTime
+	// which is a node changes it's Status. This is a long poll, it will block until "AnyNodeStatusChangeTime" changes
+	go func() {
+		lastIndex := uint64(0)
+		// defer u.Info("Conn poll AnyNodeStatusChangeTime QUIT", m.owner)
+		for {
+			select {
+			case <-m.Stop:
+				// u.Info("Conn poll AnyNodeStatusChangeTime STOP", m.owner)
+				return
+			case err = <-m.Err:
+				if err != nil {
+					u.Errorf("[client %s] error: %s", m.ServiceName, err)
+				}
+				return
+			case <-time.After(m.pollWait):
+				// u.Info("Conn poll AnyNodeStatusChangeTime start", m.owner)
+				options := &api.QueryOptions{WaitIndex: lastIndex}
+				pair, meta, err := consul.KV().Get("AnyNodeStatusChangeTime", options)
+				if err != nil {
+					u.Error("Conn poll AnyNodeStatusChangeTime error", m.owner, err)
+					continue
+				} else {
+					// u.Info("Conn poll AnyNodeStatusChangeTime changed", m.owner, string(pair.Value))
+					lastIndex = meta.LastIndex
+					m.GetAllPeerStatus()
+				}
+				_ = pair
+			}
+		}
+	}()
+
 	for {
 		select {
 		case <-m.Stop:
@@ -417,7 +474,7 @@ func (m *Conn) poll() {
 			}
 			return
 		case <-time.After(m.pollWait):
-			err = m.update()
+			err = m.updateHealth(false) // long poll
 			if err != nil {
 				u.Errorf("[client %s] error: %s", m.ServiceName, err)
 			}
@@ -425,12 +482,31 @@ func (m *Conn) poll() {
 	}
 }
 
-// Update blocks until the service list changes or until the Consul agent's
+// TenthSecs returns the current time in 10ths of a second mod one minute
+func TenthSecs() float64 {
+
+	now := float64(time.Now().UnixMilli()) / 100.0 // 10ths of a second
+	now += 0.00000001                              // avoid rounding errors
+	now = float64(int(now))                        // truncate to 10ths of a second
+	now = math.Mod(now, 600) / 10                  // 0-59.9
+	return now
+}
+
+// updateHealth blocks until the service list changes or until the Consul agent's
 // timeout is reached (10 minutes by default).
-func (m *Conn) update() (err error) {
+// if initial then the conn was just created.
+func (m *Conn) updateHealth(initial bool) (err error) {
+
+	now := TenthSecs()
+	u.Debug("Conn update", m.owner, now)
+	defer func() {
+		passed := TenthSecs() - now
+		u.Debug("Done Conn update", m.owner, now, "DONE", passed, "size", m.clusterSizeTarget, "active", m.activeCount, m.nodeMap)
+	}()
 
 	opts := &api.QueryOptions{WaitIndex: m.waitIndex}
 	serviceEntries, meta, err := m.Consul.Health().Service(m.ServiceName, "", false, opts)
+
 	if err != nil {
 		return err
 	}
@@ -453,17 +529,14 @@ func (m *Conn) update() (err error) {
 	idMap := make(map[string]*api.ServiceEntry)
 	for _, entry := range serviceEntries {
 
-		// bytes, _ := json.Marshal(entry)
-		// fmt.Println("update entry json", string(bytes))
-		// fmt.Printf("update entry i=%v Service.ID=%v Node.ID=%v Node.Address=%v status=%v \n", i, entry.Service.ID, entry.Node.ID, entry.Service.Address, entry.Checks[0].Status)
-
 		if entry.Service.ID == "shutdown" {
-			fmt.Println("have shutdown entry.Service.ID ", entry)
+			u.Info("have shutdown entry.Service.ID ", entry)
 			continue
 		}
+		// what are these checks?  why are there two?
 		if entry.Checks[0].Status == "passing" && entry.Checks[1].Status == "passing" {
 			// node := strings.Split(entry.Node.Node, ".")[0]
-			// let's not use the Node.Node, which is always like 'mbp-atw-2.lan' locally atw danger danger
+			// let's not use the Node.Node, which is always like 'mbp-atw-2.lan' locally
 			// node = entry.Node.ID and the ID's all the same too
 			node := entry.Service.ID // this is like "quanta-node-1" which is better
 			idMap[node] = entry
@@ -471,53 +544,8 @@ func (m *Conn) update() (err error) {
 		}
 	}
 
-	// Identify new member joins
-	for index, id := range ids {
-		if m.waitIndex > 0 { // not initial update
-			if _, ok := m.nodeMap[id]; !ok {
-				entry := idMap[id]
-				// insert new connection and admin stub
-				m.clientConn = append(m.clientConn, nil)
-				copy(m.clientConn[index+1:], m.clientConn[index:])
-				servicePort := entry.Service.Port // m.ServicePort
-				target := fmt.Sprintf("%s:%d", entry.Service.Address, servicePort)
-				m.clientConn[index], err = grpc.Dial(target, m.grpcOpts...)
-				if err != nil {
-					return err
-				}
-				m.Admin = append(m.Admin, nil)
-				copy(m.Admin[index+1:], m.Admin[index:])
-				m.Admin[index] = pb.NewClusterAdminClient(m.clientConn[index])
-				u.Infof("NODE %s joined at index %d\n", id, index)
-				m.SendMemberJoined(id, entry.Service.Address, index)
-			}
-		}
-	}
-	// Identify member leaves
-	for id, index := range m.nodeMap {
-		if _, ok := idMap[id]; !ok {
-			// delete connection and admin stub
-			if index >= len(m.clientConn) {
-				continue
-			}
-			m.clientConn[index].Close()
-			if len(m.clientConn) > 1 {
-				m.clientConn = append(m.clientConn[:index], m.clientConn[index+1:]...)
-			} else {
-				m.clientConn = make([]*grpc.ClientConn, 0)
-			}
-			if len(m.Admin) > 1 {
-				m.Admin = append(m.Admin[:index], m.Admin[index+1:]...)
-			} else {
-				m.Admin = make([]pb.ClusterAdminClient, 0)
-			}
-			delete(m.nodeStatusMap, id)
-			u.Infof("NODE %s left at index %d\n", id, index)
-			m.SendMemberLeft(id, index)
-		}
-	}
+	oldNodeMap := m.nodeMap
 
-	// Construct new state replacements
 	m.nodes = make([]*api.ServiceEntry, 0)
 	m.nodeMap = make(map[string]int)
 	for _, entry := range serviceEntries {
@@ -529,31 +557,79 @@ func (m *Conn) update() (err error) {
 	for i, id := range ids {
 		m.nodeMap[id] = i
 	}
+
+	u.Info("Conn update nodeMap", m.owner, "old", oldNodeMap, "new", m.nodeMap, uintptr(unsafe.Pointer(m)))
+
+	// Identify new member joins, if is an update and not first scan.
+	if !initial {
+		for index, id := range ids {
+			_, ok := oldNodeMap[id]
+			if !ok {
+				entry := idMap[id]
+				// insert new connection and admin stub
+				m.clientConn = append(m.clientConn, nil)
+				copy(m.clientConn[index+1:], m.clientConn[index:])
+				servicePort := entry.Service.Port // m.ServicePort
+				target := fmt.Sprintf("%s:%d", entry.Service.Address, servicePort)
+				m.clientConn[index], err = grpc.Dial(target, m.grpcOpts...)
+				if err != nil {
+					u.Info("Conn new member dial fail", err)
+					return err
+				}
+				m.Admin = append(m.Admin, nil)
+				copy(m.Admin[index+1:], m.Admin[index:])
+				m.Admin[index] = pb.NewClusterAdminClient(m.clientConn[index])
+				u.Infof("NODE %s joined at index %d in %s\n", id, index, m.owner)
+				m.SendMemberJoined(id, entry.Service.Address, index)
+			}
+		}
+	}
+	// Identify member leaves
+	if !initial {
+		for id, index := range oldNodeMap {
+			_, ok := idMap[id]
+			if !ok {
+				// delete connection and admin stub
+				if index >= len(m.clientConn) {
+					continue
+				}
+				u.Info("Conn member left", m.owner, id)
+
+				m.clientConn[index].Close()
+				if len(m.clientConn) > 1 {
+					m.clientConn = append(m.clientConn[:index], m.clientConn[index+1:]...)
+				} else {
+					m.clientConn = make([]*grpc.ClientConn, 0)
+				}
+				if len(m.Admin) > 1 {
+					m.Admin = append(m.Admin[:index], m.Admin[index+1:]...)
+				} else {
+					m.Admin = make([]pb.ClusterAdminClient, 0)
+				}
+				delete(m.nodeStatusMap, id)
+				u.Infof("NODE %s left at index %d\n", id, index)
+				m.SendMemberLeft(id, index)
+			}
+		}
+	}
+
 	m.idMap = idMap
 	m.ids = ids
+
+	u.Debug("Conn update new rendezvous ids", m.owner, ids, m.nodeMap, "old", oldNodeMap)
 
 	m.HashTable = rendezvous.New(ids)
 	m.waitIndex = meta.LastIndex
 
 	// Refresh statuses
-	m.activeCount = 0
 
-	// if Admin connections are not initialized then skip this until next update, we are being called from Connect
-	if len(m.Admin) == 0 {
+	// don't scan for status if the admin is not set up. This happens when we are called from Connect, initial = true
+	if initial {
 		return nil
 	}
 
-	for k, v := range m.nodeMap {
-		status, err := m.getNodeStatusForIndex(v)
-		if err == nil {
-			m.nodeStatusMap[k] = status
-			if status.NodeState == "Active" {
-				m.activeCount++
-			}
-		} else {
-			u.Errorf("update getNodeStatusForIndex in update: k = %s, i = %d - %v", k, v, err)
-		}
-	}
+	m.GetAllPeerStatus()
+
 	return nil
 }
 
@@ -587,6 +663,8 @@ func (m *Conn) CheckNodeForKey(key, nodeID string) (bool, int) {
 	m.nodeMapLock.RLock()
 	defer m.nodeMapLock.RUnlock()
 
+	// u.Debug("CheckNodeForKey GetN", m.Replicas, key, nodeID)
+
 	nodeKeys := m.HashTable.GetN(m.Replicas, key)
 
 	for i, v := range nodeKeys {
@@ -618,7 +696,7 @@ func (m *Conn) SendMemberLeft(nodeID string, index int) {
 	}
 }
 
-// SendMemberJoined - Notify listening service of MemberLeft event.
+// SendMemberJoined - Notify listening service of MemberJoined event.
 func (m *Conn) SendMemberJoined(nodeID, ipAddress string, index int) {
 
 	m.registerLock.RLock()
@@ -643,7 +721,7 @@ func (m *Conn) GetNodeStatusForID(nodeID string) (*pb.StatusMessage, error) {
 	defer m.nodeMapLock.RUnlock()
 	s, ok := m.nodeStatusMap[nodeID]
 	if !ok {
-		return nil, fmt.Errorf("no node status for %s", nodeID)
+		return nil, fmt.Errorf("no node status for %s owner %s", nodeID, m.owner)
 	}
 	return s, nil
 }
@@ -657,6 +735,8 @@ func (m *Conn) getNodeStatusForID(nodeID string) (*pb.StatusMessage, error) {
 	return m.getNodeStatusForIndex(clientIndex)
 }
 
+// getNodeStatusForIndex - calls 'status' grpc on the admin client for the given index.
+// admin must be filled out.
 func (m *Conn) getNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
@@ -669,7 +749,7 @@ func (m *Conn) getNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error)
 	admin := m.Admin[clientIndex]
 	result, err := admin.Status(ctx, &empty.Empty{})
 	if err != nil {
-		target := ""
+		target := "unknown"
 		if clientIndex < len(m.clientConn) {
 			target = m.clientConn[clientIndex].Target()
 		}
@@ -724,4 +804,44 @@ func (m *Conn) GetClusterState() (status ClusterState, activeCount, clusterSizeT
 		return
 	}
 	return
+}
+
+// GetAllPeerStatus - grpc node status from all nodes in the cluster
+// count them as we go.
+func (m *Conn) GetAllPeerStatus() {
+
+	// u.Debug("GetAllPeerStatus top", m.owner, m.nodeMap)
+
+	// m.nodeMapLock.Lock() // we can't lock here, it will deadlock? FIXME:
+	// defer m.nodeMapLock.Unlock()
+
+	activeCount := 0
+	nodeStatusMap := make(map[string]*pb.StatusMessage, 0)
+
+	// Get the node status for all nodes in the cluster
+	for k, v := range m.nodeMap {
+		status, err := m.getNodeStatusForIndex(v)
+
+		// u.Debug("GetAllPeerStatus getNodeStatusForIndex", m.owner, k, v, status.NodeState)
+		if err == nil {
+			nodeStatusMap[k] = status
+			if status.NodeState == "Active" {
+				activeCount++
+			}
+		} else {
+			u.Errorf("GetAllPeerStatus getNodeStatusForIndex in update: k = %s, i = %d - %v", k, v, err)
+		}
+	}
+
+	// u.Debug("GetAllPeerStatus done", m.owner, m.nodeMap, activeCount, nodeStatusMap)
+
+	// got a deadlock from this. FIXME: there's probably a race condition here.
+	// m.nodeMapLock.Lock()
+	// defer m.nodeMapLock.Unlock()
+
+	m.activeCount = activeCount
+	for k, v := range nodeStatusMap {
+		m.nodeStatusMap[k] = v
+	}
+	// u.Debug("GetAllPeerStatus bottom", m.owner, m.nodeMap, m.activeCount)
 }

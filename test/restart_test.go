@@ -16,8 +16,8 @@ import (
 
 func TestRetainData(t *testing.T) {
 
-	acquirePort4000.Lock()
-	defer acquirePort4000.Unlock()
+	AcquirePort4000.Lock()
+	defer AcquirePort4000.Unlock()
 	var err error
 	shared.SetUTCdefault()
 
@@ -30,21 +30,21 @@ func TestRetainData(t *testing.T) {
 		t.FailNow()
 	}
 	// ensure_custer
-	state := Ensure_cluster()
-	state.db, err = state.proxyConnect.ProxyConnectConnect()
+	state := Ensure_cluster(3)
+	state.Db, err = state.ProxyConnect.ProxyConnectConnect()
 	_ = err
 
 	// load something
 
-	AnalyzeRow(*state.proxyConnect, []string{"quanta-admin drop orders_qa"}, true)
-	AnalyzeRow(*state.proxyConnect, []string{"quanta-admin drop customers_qa"}, true)
-	AnalyzeRow(*state.proxyConnect, []string{"quanta-admin create customers_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop orders_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop customers_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create customers_qa"}, true)
 
-	AnalyzeRow(*state.proxyConnect, []string{"insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('101','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home');"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('101','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home');"}, true)
 
 	// query
 
-	AnalyzeRow(*state.proxyConnect, []string{"select * from customers_qa;@1"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"select * from customers_qa;@1"}, true)
 	assert.EqualValues(t, 0, FailCount) // FailCount in sql-types.go
 
 	// release as necessary
@@ -54,11 +54,11 @@ func TestRetainData(t *testing.T) {
 
 	fmt.Println("starting local in memory cluster")
 	time.Sleep(10 * time.Second)
-	state = Ensure_cluster()
+	state = Ensure_cluster(3)
 
 	// query
 
-	AnalyzeRow(*state.proxyConnect, []string{"select * from customers_qa;@1"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"select * from customers_qa;@1"}, true)
 
 	assert.EqualValues(t, 0, FailCount) // FailCount in sql-types.go
 

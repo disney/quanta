@@ -111,6 +111,7 @@ type (
 		cols           []string               // array of column names
 		lastRefreshed  time.Time              // Last time we refreshed this schema
 		rows           [][]driver.Value
+		IsViewOf       string
 	}
 
 	// Field Describes the column info, name, data type, defaults, index, null
@@ -322,15 +323,18 @@ func (m *Schema) refreshSchemaUnlocked() {
 
 	if m.DS != nil {
 		for _, tableName := range m.DS.Tables() {
-			//u.Debugf("%p:%s  DS T:%T table name %s", m, m.Name, m.DS, tableName)
+			// fmt.Println("refreshSchemaUnlocked table name", tableName)
+			// u.Debugf("%p:%s  DS T:%T table name %s", m, m.Name, m.DS, tableName)
 			m.addschemaForTableUnlocked(tableName, m)
 		}
 	}
 
 	for _, ss := range m.schemas {
-		//u.Infof("schema  %p:%s", ss, ss.Name)
+		// u.Infof("schema  %p:%s", ss, ss.Name)
+		// fmt.Println("refreshSchemaUnlocked schema", ss)
 		ss.refreshSchemaUnlocked()
 		for _, tableName := range ss.Tables() {
+			fmt.Println("addschemaForTableUnlocked tableName", tableName)
 			//tbl := ss.tableMap[tableName]
 			//u.Debugf("s:%p ss:%p add table name %s  tbl:%#v", m, ss, tableName, tbl)
 			m.addschemaForTableUnlocked(tableName, ss)
@@ -405,6 +409,7 @@ func (m *Schema) addTable(tbl *Table) error {
 }
 
 func (m *Schema) addschemaForTableUnlocked(tableName string, ss *Schema) {
+
 	found := false
 	for _, curTableName := range m.tableNames {
 		if tableName == curTableName {

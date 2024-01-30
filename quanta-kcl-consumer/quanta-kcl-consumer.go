@@ -12,7 +12,7 @@ import (
 	"github.com/disney/quanta/qlbridge/expr/builtins"
 	"github.com/disney/quanta/shared"
 	"github.com/google/uuid"
-	"github.com/hamba/avro"
+	"github.com/hamba/avro/v2"
 	"github.com/hashicorp/consul/api"
 	cfg "github.com/vmware/vmware-go-kcl/clientlibrary/config"
 	kc "github.com/vmware/vmware-go-kcl/clientlibrary/interfaces"
@@ -230,7 +230,7 @@ func (m *Main) Init() (*wk.Worker, error) {
 		return nil, err
 	}
 
-	m.clientConn = shared.NewDefaultConnection()
+	m.clientConn = shared.NewDefaultConnection("kcl-consumer")
 	m.clientConn.ServicePort = m.Port
 	m.clientConn.Quorum = 3
 	if err := m.clientConn.Connect(m.ConsulClient); err != nil {

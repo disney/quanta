@@ -1,0 +1,21 @@
+tableName: newtable
+primaryKey: cust_id
+attributes:
+
+- sourceName: /cust_id
+  fieldName: cust_id
+  mappingStrategy: StringHashBSI
+  type: String
+
+- fieldName: first_name
+  sourceName: /first_name
+  type: String
+  mappingStrategy: StringHashBSI
+  exclusive: true
+
+- fieldName: last_name
+  sourceName: /last_name
+  type: String
+  mappingStrategy: StringHashBSI
+  exclusive: true
+

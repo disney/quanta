@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"time"
+	"unsafe"
 
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
@@ -17,7 +18,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// Synchronize flow.  Remote nodes call this when starting.  Peer nodes respond my pushing data.
+// Synchronize flow.  Remote nodes call this when starting.  Peer nodes respond by pushing data.
+// called by BitmapIndex in bitmap.go in verifyNode
+// nodeKey is the nodeID of the node that is starting up.
 func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 
 	var memberCount int
@@ -25,34 +28,47 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 	if err != nil {
 		return -1, err
 	}
-	quorumSize := c.Conn.Replicas + 1
+	quorumSize := c.Conn.Replicas + 1 // why?
 	if clusterSizeTarget > quorumSize {
 		quorumSize = clusterSizeTarget
 	}
-	fmt.Println("BitmapIndex Synchronize quorumSize", quorumSize, "node", nodeKey)
+	u.Debug("BitmapIndex Synchronize quorumSize", quorumSize, "node", nodeKey, " owner", c.Conn.owner)
 
 	ourPollInterval := DefaultPollInterval
 	if c.IsLocalCluster {
 		ourPollInterval /= 5 // faster please. I can see my life passing before my eyes.
 	}
+	ourPollInterval = 1 * time.Second
+	useThisInterval := 1 * time.Millisecond // start immediately
+
+	for len(c.Conn.GetNodeMap()) < quorumSize {
+		time.Sleep(100 * time.Millisecond)
+	}
+	u.Debug("BitmapIndex Synchronize nodeMap len", len(c.Conn.GetNodeMap()), "quorumSize", quorumSize, "node", nodeKey, " owner", c.Conn.owner)
 
 	// Are we even ready to launch this process yet?
 	// Do we have a quorum?
 	// Are all participants (other nodes except me) in a state of readiness (Active, Syncing  or Joining)?
+	pass := 0
 	for {
 		var startingCount, readyCount, unknownCount int
-		nodeMap := c.Conn.GetNodeMap()
+		u.Debug("BitmapIndex Synchronize nodeMap", c.Conn.owner, c.Conn.GetNodeMap(), "pass", pass, uintptr(unsafe.Pointer(c.Conn)))
+		pass += 1
 		select {
 		case _, open := <-c.Conn.Stop:
 			if !open {
-				err := fmt.Errorf("Shutdown initiated while waiting to start synchronization")
+				err := fmt.Errorf("shutdown initiated while waiting to start synchronization")
 				return -1, err
 			}
-		case <-time.After(ourPollInterval):
-			for id := range nodeMap {
-				// fmt.Println("Synchronize 1", id, c.Conn.ServicePort, c.Conn.ServiceName)
+		case <-time.After(useThisInterval):
+			useThisInterval = ourPollInterval
+
+			u.Debug("BitmapIndex Synchronize node loop starting", c.Conn.owner, pass, c.Conn.GetNodeMap(), uintptr(unsafe.Pointer(c.Conn)))
+
+			for id := range c.Conn.GetNodeMap() {
+				u.Debug("Synchronize getNodeStatusForID starts", id, c.Conn.owner, pass)
 				status, err := c.Conn.getNodeStatusForID(id)
-				// fmt.Println("Synchronize getNodeStatusForID", id, status, err)
+				u.Debug("Synchronize getNodeStatusForID after", id, c.Conn.owner, status.NodeState, pass)
 				if err != nil {
 					u.Warnf("error %v\n", err)
 					unknownCount++
@@ -73,7 +89,8 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 					unknownCount++
 				}
 			}
-		}
+			u.Debug("BitmapIndex Synchronize node loop done", c.Conn.owner, pass, c.Conn.GetNodeMap(), uintptr(unsafe.Pointer(c.Conn)))
+		} // end select
 		// No nodes in starting state and quorum reached
 		if startingCount == 0 && unknownCount == 0 && readyCount >= quorumSize {
 			memberCount = readyCount
@@ -82,30 +99,33 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 		if unknownCount > 0 {
 			u.Infof("%d nodes in unknown state.", unknownCount)
 		}
-		u.Infof("%s Join status nodemap len = %d, starting = %d, ready = %d, unknown = %d\n", nodeKey,
-			len(nodeMap), startingCount, readyCount, unknownCount)
-	}
+		u.Infof("%s BitmapIndex Synchronize Join status %v, starting = %d, ready = %d, unknown = %d quorum = %d\n", nodeKey,
+			c.Conn.GetNodeMap(), startingCount, readyCount, unknownCount, quorumSize)
+	} // end for
 
-	time.Sleep(ourPollInterval)
-	u.Warnf("All %d cluster members are ready to push data to me, I am now in Syncing State.", memberCount)
+	time.Sleep(ourPollInterval) // why? atw delete me
+	u.Warnf("All %d cluster members are ready to push data to me (%s), I am now in Syncing State.", memberCount, nodeKey)
 
 	resultChan := make(chan int64, memberCount-1)
 	var diffCount int
 	var eg errgroup.Group
 	// Connect to all peers (except myself) and kick off a syncronization push process.
 	for i, n := range c.client {
-		myIndex := c.Conn.GetClientIndexForNodeID(nodeKey)
-		if myIndex == -1 {
+		myIndex, err := c.Conn.GetClientIndexForNodeID(nodeKey)
+		if err != nil {
 			u.Errorf("shared/sync:GetClientIndexForNodeID(%s) failed", nodeKey)
 			os.Exit(1)
 		}
 		if myIndex == i {
-			continue
+			continue // don't sync with myself
 		}
 		client := n
 		clientIndex := i
 		eg.Go(func() error {
-			diffc, err := c.syncClient(client, nodeKey, clientIndex)
+			u.Debug("Synchronize syncClient", nodeKey, c.owner, clientIndex)
+			diffc, err := c.syncClient(client, nodeKey, clientIndex) // send sync grpc request to peer
+			u.Debug("done Synchronize syncClient", nodeKey, c.owner, clientIndex)
+
 			if err != nil {
 				return err
 			}
@@ -132,7 +152,7 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 	return diffCount, nil
 }
 
-// Send a sync request.
+// syncClient Sends a sync request grpg.
 func (c *BitmapIndex) syncClient(client pb.BitmapIndexClient, nodeKey string, clientIndex int) (int64, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), SyncDeadline)

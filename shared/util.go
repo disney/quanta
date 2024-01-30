@@ -5,7 +5,7 @@ package shared
 import (
 	"encoding/binary"
 	"fmt"
-	"log"
+
 	"net"
 	"os"
 	"os/signal"
@@ -131,7 +131,7 @@ func putRecursive(typ reflect.Type, value reflect.Value, consul *api.Client, roo
 			continue
 		}
 		if value.Field(i).Kind() == reflect.Bool {
-			if fv.(bool) == true {
+			if fv.(bool) {
 				fv = "true"
 			} else {
 				fv = "false"
@@ -161,7 +161,7 @@ func UnmarshalConsul(consul *api.Client, name string) (BasicTable, error) {
 	table := BasicTable{Name: name}
 	keys, _, _ := consul.KV().Keys("schema/"+name, "", nil)
 	if len(keys) == 0 {
-		return table, fmt.Errorf("Table %s not found.", name)
+		return table, fmt.Errorf("table %s not found", name)
 	}
 	ps := reflect.ValueOf(&table)
 	err := getRecursive(reflect.TypeOf(table), ps.Elem(), consul, "schema/"+name)
@@ -631,7 +631,7 @@ func SetUTCdefault() {
 	os.Setenv("TZ", "UTC")
 	loc, err := time.LoadLocation("UTC")
 	if err != nil {
-		log.Fatal(err)
+		u.Log(u.FATAL, err)
 	}
 	time.Local = loc // -> this is setting the global timezone
 

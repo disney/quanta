@@ -60,8 +60,7 @@ func addANode(suite *test.BaseDockerSuite, index int) {
 	fmt.Println("docker run node", out, err)
 }
 
-// TestBasic3Plus1 runs a basic test with 3 nodes, then removes adds 1 node and runs the test again
-// btw this test is broken
+// TestBasic3Plus1 runs a basic test with 3 nodes, then adds 1 node and runs the test again
 func (suite *NodeStabilitySuite31) TestBasic3Plus1() {
 
 	fmt.Println("NodeStabilitySuite TestBasic3Plus1")
@@ -80,6 +79,8 @@ func (suite *NodeStabilitySuite31) TestBasic3Plus1() {
 	// fmt.Println("sqlrunner run", out, err)
 	_ = out
 	_ = err
+	hasFailed := strings.Contains(out, "FAILED")
+	suite.Assert().EqualValues(false, hasFailed)
 
 	test.StopAndRemoveContainer("basic_queries0")
 
@@ -96,6 +97,8 @@ func (suite *NodeStabilitySuite31) TestBasic3Plus1() {
 	//fmt.Println("sqlrunner run", out, err)
 	_ = out
 	_ = err
+	hasFailed = strings.Contains(out, "FAILED")
+	suite.Assert().EqualValues(false, hasFailed)
 
 	// now add a node
 	addANode(&suite.BaseDockerSuite, 3) // add q-node-3
@@ -109,7 +112,8 @@ func (suite *NodeStabilitySuite31) TestBasic3Plus1() {
 
 	// Wait for the cluster to ge GREEN
 	test.WaitForStatusGreen(suite.ConsulAddress+":8500", "q-node-0")
-	// time.Sleep(10 * time.Second)
+
+	// time.Sleep(60 * time.Second)
 
 	test.StopAndRemoveContainer("basic_queries0")
 
@@ -126,7 +130,7 @@ func (suite *NodeStabilitySuite31) TestBasic3Plus1() {
 	//fmt.Println("sqlrunner run", out, err)
 	_ = out
 	_ = err
-	hasFailed := strings.Contains(out, "FAILED")
+	hasFailed = strings.Contains(out, "FAILED")
 	suite.Assert().EqualValues(false, hasFailed)
 
 	test.StopAndRemoveContainer("q-node-3")
@@ -151,6 +155,8 @@ func (suite *NodeStabilitySuite31) TestBasicOneTwo() {
 	// fmt.Println("sqlrunner run", out, err)
 	_ = out
 	_ = err
+	hasFailed := strings.Contains(out, "FAILED")
+	suite.Assert().EqualValues(false, hasFailed)
 
 	test.StopAndRemoveContainer("basic_queries0")
 
@@ -167,4 +173,7 @@ func (suite *NodeStabilitySuite31) TestBasicOneTwo() {
 	//fmt.Println("sqlrunner run", out, err)
 	_ = out
 	_ = err
+	hasFailed = strings.Contains(out, "FAILED")
+	suite.Assert().EqualValues(false, hasFailed)
+
 }

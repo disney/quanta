@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	u "github.com/araddon/gou"
+
 	runtime "github.com/banzaicloud/logrus-runtime-formatter"
 	"github.com/disney/quanta/rbac"
 	"github.com/disney/quanta/shared"
@@ -35,10 +37,10 @@ func main() {
 	flag.Parse()
 
 	if *scriptFile == "" || *host == "" || *user == "" {
-		log.Println()
-		log.Println("The arguments script_file, host, user and password are required.")
-		log.Println()
-		log.Println("Example: ./sqlrunner -script_file test.sql -validate -host 1.1.1.1 -user username -password whatever -db quanta -port 4000 -log_level DEBUG")
+		u.Warn()
+		u.Warn("The arguments script_file, host, user and password are required.")
+		u.Warn()
+		u.Warn("Example: ./sqlrunner -script_file test.sql -validate -host 1.1.1.1 -user username -password whatever -db quanta -port 4000 -log_level DEBUG")
 		os.Exit(0)
 	}
 
@@ -55,15 +57,14 @@ func main() {
 		}).Info("SqlRunner is running...")
 	}
 
-	log.Debugf("script_file : %s", *scriptFile)
-	// log.Debugf("delimiter : %s", *scriptDelimiter)
-	log.Debugf("validate : %t", *validate)
-	log.Debugf("host : %s", *host)
-	log.Debugf("user : %s", *user)
-	log.Debugf("database : %s", *database)
-	log.Debugf("port : %s", *port)
-	log.Debugf("log_level : %s", *log_level)
-	fmt.Printf("repeats : %d\n", *repeats)
+	u.Debugf("script_file : %s", *scriptFile)
+	u.Debugf("validate : %t", *validate)
+	u.Debugf("host : %s", *host)
+	u.Debugf("user : %s", *user)
+	u.Debugf("database : %s", *database)
+	u.Debugf("port : %s", *port)
+	u.Debugf("log_level : %s", *log_level)
+	u.Debugf("repeats : %d\n", *repeats)
 
 	var proxyConnect test.ProxyConnectStrings
 	proxyConnect.Host = *host
@@ -73,16 +74,16 @@ func main() {
 	proxyConnect.Database = *database
 
 	test.ConsulAddress = *consul
-	log.Debugf("ConsulAddress : %s", test.ConsulAddress)
+	u.Debugf("ConsulAddress : %s", test.ConsulAddress)
 
 	consulClient, err := api.NewClient(&api.Config{Address: test.ConsulAddress})
 	check(err)
 
-	conn := shared.NewDefaultConnection()
+	conn := shared.NewDefaultConnection("sqlrunner")
 	// conn.ServicePort = main.Port
 	conn.Quorum = 3
 	if err := conn.Connect(consulClient); err != nil {
-		log.Fatal(err)
+		u.Log(u.FATAL, err)
 	}
 
 	sharedKV := shared.NewKVStore(conn)
@@ -92,14 +93,13 @@ func main() {
 	now := time.Now()
 	for {
 		status, active, size := sharedKV.GetClusterState()
-		log.Debugf("consul status sqlrunner clusterState %v count %v size %v\n", status, active, size)
-		fmt.Printf("consul status sqlrunner clusterState %v count %v size %v\n", status, active, size)
+		u.Debugf("consul status sqlrunner clusterState %v count %v size %v\n", status, active, size)
 
 		if status.String() == "GREEN" && active >= 3 && size >= 3 {
 			break
 		}
 		if time.Since(now) > time.Second*30 {
-			log.Fatal("consul timeout driver after NewKVStore")
+			u.Log(u.FATAL, "consul timeout driver after NewKVStore")
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
@@ -122,14 +122,11 @@ func main() {
 
 func executeFile(rep int, scriptFile string, proxyConnect test.ProxyConnectStrings, validate bool) {
 
-	fmt.Println("rep", rep)
-
 	// We can afford to read the whole file into memory
 	// If not then use a line reader. Let's not use a csv reader since the file is not csv.
 	bytes, err := os.ReadFile(scriptFile)
 	if err != nil {
-		fmt.Println("scriptFile Open Failed", err)
-		log.Fatal("scriptFile Open Failed : ", err)
+		u.Log(u.FATAL, "scriptFile Open Failed : ", err)
 	}
 	sql := string(bytes)
 	lines := strings.Split(sql, "\n")

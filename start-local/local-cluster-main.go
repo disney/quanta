@@ -21,7 +21,7 @@ import (
 func main() {
 	shared.SetUTCdefault()
 
-	state := test.Ensure_cluster()
+	state := test.Ensure_cluster(3)
 
 	// Wait for Ctrl+C to exit
 	c := make(chan os.Signal, 1)

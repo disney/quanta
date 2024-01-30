@@ -2,6 +2,7 @@ package test_integration
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/disney/quanta/shared"
@@ -63,6 +64,8 @@ func (suite *NodeStabilitySuite) TestBasic4minus1() {
 	// fmt.Println("sqlrunner run", out, err)
 	_ = out
 	_ = err
+	hasFailed := strings.Contains(out, "FAILED")
+	suite.Assert().EqualValues(false, hasFailed)
 
 	test.StopAndRemoveContainer("basic_queries0")
 
@@ -81,6 +84,8 @@ func (suite *NodeStabilitySuite) TestBasic4minus1() {
 	//fmt.Println("sqlrunner run", out, err)
 	_ = out
 	_ = err
+	hasFailed = strings.Contains(out, "FAILED")
+	suite.Assert().EqualValues(false, hasFailed)
 
 	test.StopAndRemoveContainer("q-node-1")
 
@@ -110,6 +115,8 @@ func (suite *NodeStabilitySuite) TestBasic4minus1() {
 	//fmt.Println("sqlrunner run", out, err)
 	_ = out
 	_ = err
+	hasFailed = strings.Contains(out, "FAILED")
+	suite.Assert().EqualValues(false, hasFailed)
 
 }
 
@@ -153,6 +160,8 @@ func (suite *NodeStabilitySuite) TestBasic4minus1AndBack() {
 	//fmt.Println("sqlrunner run", out, err)
 	_ = out
 	_ = err
+	hasFailed := strings.Contains(out, "FAILED")
+	suite.Assert().EqualValues(false, hasFailed)
 
 	test.StopAndRemoveContainer("q-node-1")
 
@@ -182,6 +191,8 @@ func (suite *NodeStabilitySuite) TestBasic4minus1AndBack() {
 	//fmt.Println("sqlrunner run", out, err)
 	_ = out
 	_ = err
+	hasFailed = strings.Contains(out, "FAILED")
+	suite.Assert().EqualValues(false, hasFailed)
 
 	addANode(&suite.BaseDockerSuite, 1) // add q-node-1
 	err = shared.SetClusterSizeTarget(consulClient, 4)
@@ -206,6 +217,8 @@ func (suite *NodeStabilitySuite) TestBasic4minus1AndBack() {
 	//fmt.Println("sqlrunner run", out, err)
 	_ = out
 	_ = err
+	hasFailed = strings.Contains(out, "FAILED")
+	suite.Assert().EqualValues(false, hasFailed)
 
 	test.StopAndRemoveContainer("q-node-1")
 
@@ -230,6 +243,8 @@ func (suite *NodeStabilitySuite) TestBasicOneTwo() {
 	// fmt.Println("sqlrunner run", out, err)
 	_ = out
 	_ = err
+	hasFailed := strings.Contains(out, "FAILED")
+	suite.Assert().EqualValues(false, hasFailed)
 
 	test.StopAndRemoveContainer("basic_queries0")
 
@@ -246,4 +261,7 @@ func (suite *NodeStabilitySuite) TestBasicOneTwo() {
 	//fmt.Println("sqlrunner run", out, err)
 	_ = out
 	_ = err
+	hasFailed = strings.Contains(out, "FAILED")
+	suite.Assert().EqualValues(false, hasFailed)
+
 }

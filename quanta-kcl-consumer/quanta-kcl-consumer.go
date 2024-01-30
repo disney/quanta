@@ -230,7 +230,7 @@ func (m *Main) Init() (*wk.Worker, error) {
 		return nil, err
 	}
 
-	m.clientConn = shared.NewDefaultConnection()
+	m.clientConn = shared.NewDefaultConnection("kcl-consumer")
 	m.clientConn.ServicePort = m.Port
 	m.clientConn.Quorum = 3
 	if err := m.clientConn.Connect(m.ConsulClient); err != nil {

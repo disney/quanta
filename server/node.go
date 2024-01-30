@@ -124,7 +124,7 @@ type Node struct {
 // NewNode - Construct a new node instance.
 func NewNode(version string, port int, bindAddr, dataDir, hashKey string, consul *api.Client) (*Node, error) {
 
-	conn := shared.NewDefaultConnection()
+	conn := shared.NewDefaultConnection("nodeKey-" + hashKey)
 	m := &Node{Conn: conn, version: version}
 	m.localServices = make(map[string]NodeService, 0)
 	m.ServicePort = port
@@ -306,7 +306,7 @@ func (n *Node) Status(ctx context.Context, e *empty.Empty) (*pb.StatusMessage, e
 	if err != nil {
 		return nil, err
 	}
-	return &pb.StatusMessage{
+	status := &pb.StatusMessage{
 		NodeState:  n.State.String(),
 		LocalIP:    ip.String(),
 		LocalPort:  uint32(n.ServicePort),
@@ -314,7 +314,11 @@ func (n *Node) Status(ctx context.Context, e *empty.Empty) (*pb.StatusMessage, e
 		Replicas:   uint32(n.Replicas),
 		ShardCount: uint32(n.shardCount),
 		MemoryUsed: uint32(n.memoryUsed),
-	}, nil
+	}
+
+	u.Debug("Node Status: ", n.hashKey, status.NodeState, " shards", status.ShardCount)
+
+	return status, nil
 }
 
 // Shutdown - Shut the node down.
@@ -392,3 +396,10 @@ func (n *Node) PublishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 
 	return time.Now()
 }
+
+// InvokeUpdates - server side force re-fetch of all status unused deprecated
+// func (n *Node) InvokeUpdates(context.Context, *emptypb.Empty) (*emptypb.Empty, error) {
+// 	fmt.Println("server InvokeUpdates", n.hashKey)
+// 	n.Conn.GetAllPeerStatus()
+// 	return &emptypb.Empty{}, nil
+// }

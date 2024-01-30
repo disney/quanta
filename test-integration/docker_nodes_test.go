@@ -2,6 +2,7 @@ package test_integration
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -40,151 +41,6 @@ func (suite *DockerNodesRunnerSuite) SetupSuite() {
 
 	suite.SetupDockerCluster(3, 2)
 
-	// // TODO: move this all to a separate function?
-	// var err error
-	// var out string
-
-	// somethingRestarted := false
-
-	// proxyConnect := test.ProxyConnectStrings{}
-	// proxyConnect.Host = "127.0.0.1"
-	// proxyConnect.User = "MOLIG004"
-	// proxyConnect.Password = ""
-	// proxyConnect.Port = "4000"
-	// proxyConnect.Database = "quanta"
-
-	// suite.state = &test.ClusterLocalState{}
-	// suite.state.ProxyConnect = &proxyConnect
-	// suite.state.Db, err = suite.state.ProxyConnect.ProxyConnectConnect()
-	// check(err)
-
-	// // check if consul is running
-	// if !test.IsConsuleRunning() {
-	// 	test.Sh("docker network rm mynet")
-	// 	test.Sh("docker network create -d bridge --subnet=172.20.0.0/16 mynet")
-	// 	test.Sh("docker run -d -p 8500:8500 -p 8600:8600/udp --network mynet	--name=myConsul consul:1.10 agent -dev -ui -client=0.0.0.0")
-	// }
-	// // get the IP address of the consul container --format {{.NetworkSettings.Networks.mynet.IPAddress}}
-	// out, err = test.Shell("docker inspect --format {{.NetworkSettings.Networks.mynet.IPAddress}} myConsul", "")
-	// fmt.Println("docker inspect myConsul", out, err)
-	// suite.consulAddress = strings.TrimSpace(out)
-
-	// // check if there's a new build of the node image
-	// out, err = test.Shell("docker inspect --format {{.Id}} node", "")
-	// if err != nil {
-	// 	fmt.Println("docker inspect node", err, out)
-	// 	// check(err)
-	// 	out = ""
-	// } else {
-	// 	fmt.Println("docker inspect node", out)
-	// }
-
-	// // build the image, as necessary
-	// beforeSha := out
-	// out, err = test.Shell("docker build -t node -f ../test/docker-nodes/Dockerfile ../", "")
-	// _ = out
-	// check(err)
-	// out, err = test.Shell("docker inspect --format {{.Id}} node", "")
-	// check(err)
-	// imageChanged := out != beforeSha // if the sha changed, we need to restart the nodes
-	// fmt.Println("imageChanged", imageChanged)
-
-	// // check the nodes and see if we need to start/restart them
-	// nodeToPprof := 1 // to set pprof on a node, set this to the index
-	// for index := 0; index < 3; index++ {
-	// 	i := fmt.Sprintf("%d", index)
-	// 	// check node is running
-	// 	out, err = test.Shell("docker exec q-node-"+i+" pwd", "")
-	// 	itsUp := false
-	// 	if err == nil {
-	// 		itsUp = out == "/quanta\n"
-	// 	}
-	// 	if itsUp && imageChanged {
-	// 		stopAndRemoveContainer("q-node-" + i)
-	// 	}
-	// 	if !itsUp || imageChanged { // start the node as necessary
-	// 		// quanta-node is the entrypoint, node is the image
-	// 		// q-node-0 ./data-dir 0.0.0.0 4000 are the args
-	// 		// port := fmt.Sprintf("%d", 4010+index) // -p port + ":4000
-
-	// 		somethingRestarted = true
-
-	// 		pprofPortMap := ""
-	// 		if index == nodeToPprof {
-	// 			pprofPortMap = " -p 6060:6060"
-	// 		}
-	// 		options := "-d --network mynet" + pprofPortMap + " --name q-node-" + i + " -t node"
-	// 		cmd := "docker run " + options + " quanta-node --consul-endpoint " + suite.consulAddress + ":8500  q-node-" + i + " ./data-dir 0.0.0.0 4000"
-	// 		if index == nodeToPprof {
-	// 			cmd += " --pprof true"
-	// 		}
-	// 		out, err := test.Shell(cmd, "")
-	// 		// check(err)
-	// 		fmt.Println("docker node command", cmd)
-	// 		fmt.Println("docker run node", out, err)
-	// 	}
-	// }
-
-	// // Wait for the nodes to come up
-	// // test.WaitForStatusGreen("127.0.0.1:8500") // does this even work? Why not?
-	// // fmt.Println("WaitForStatusGreen")
-	// if somethingRestarted {
-	// 	time.Sleep(10 * time.Second)
-	// }
-
-	// // check the PROXIES and see if we need to start/restart them
-	// proxyToPprof := -1 // to set pprof on a node, set this to the index
-	// for index := 0; index < len(suite.proxyAddress); index++ {
-	// 	i := fmt.Sprintf("%d", index)
-	// 	// check node is running, quanta-proxy
-	// 	out, err = test.Shell("docker exec quanta-proxy-"+i+" pwd", "")
-	// 	itsUp := false
-	// 	if err == nil {
-	// 		itsUp = out == "/quanta\n"
-	// 	}
-	// 	if itsUp && imageChanged {
-	// 		stopAndRemoveContainer("quanta-proxy-" + i)
-	// 	}
-	// 	if !itsUp || imageChanged { // start the proxy as necessary
-	// 		somethingRestarted = true
-	// 		// quanta-proxy is the entrypoint, node is the image
-	// 		// --consul-endpoint 172.20.0.2:8500 are the args
-	// 		pprofPortMap := ""
-	// 		if index == proxyToPprof {
-	// 			pprofPortMap = " -p 6060:6060"
-	// 		}
-	// 		port := fmt.Sprintf("%d", 4000+index)
-	// 		options := "-d -p " + port + ":4000" + pprofPortMap + " --network mynet --name quanta-proxy-" + i + " -t node"
-	// 		cmd := "docker run " + options + " quanta-proxy --consul-endpoint " + suite.consulAddress + ":8500"
-	// 		if index == proxyToPprof {
-	// 			cmd += " --pprof true"
-	// 		}
-	// 		out, err := test.Shell(cmd, "")
-	// 		// check(err)
-	// 		fmt.Println("docker proxy command", cmd)
-	// 		fmt.Println("docker run", out, err)
-	// 	}
-	// }
-
-	// if somethingRestarted {
-	// 	time.Sleep(10 * time.Second)
-	// }
-	// // tode check if the proxies are up
-
-	// for index := 0; index < len(suite.proxyAddress); index++ {
-	// 	istr := fmt.Sprintf("%d", index)
-	// 	out, err = test.Shell("docker inspect --format {{.NetworkSettings.Networks.mynet.IPAddress}} quanta-proxy-"+istr, "")
-	// 	fmt.Println("docker inspect quanta-proxy", out, err)
-	// 	suite.proxyAddress[index] = strings.TrimSpace(out)
-	// 	if suite.proxyAddress[index] == "" {
-	// 		suite.Fail("FAIL proxyAddress is empty")
-	// 		suite.Fail("FAIL proxyAddress is empty")
-	// 		suite.Fail("FAIL proxyAddress is empty")
-	// 	}
-	// }
-	// if somethingRestarted {
-	// 	time.Sleep(5 * time.Second)
-	// }
 }
 
 func (suite *DockerNodesRunnerSuite) TearDownSuite() {
@@ -245,6 +101,9 @@ func (suite *DockerNodesRunnerSuite) TestBasicTorture() {
 			//fmt.Println("sqlrunner run", out, err)
 			_ = out
 			_ = err
+			hasFailed := strings.Contains(out, "FAILED")
+			suite.Assert().EqualValues(false, hasFailed)
+
 			return err
 		})
 	}
@@ -294,6 +153,9 @@ func (suite *DockerNodesRunnerSuite) TestJoinsTorture() {
 			//fmt.Println("sqlrunner run", out, err)
 			_ = out
 			_ = err
+			hasFailed := strings.Contains(out, "FAILED")
+			suite.Assert().EqualValues(false, hasFailed)
+
 			return err
 		})
 	}
@@ -339,6 +201,9 @@ func (suite *DockerNodesRunnerSuite) TestJoinsOneTwo() {
 	//fmt.Println("sqlrunner run", out, err)
 	_ = out
 	_ = err
+	hasFailed := strings.Contains(out, "FAILED")
+	suite.Assert().EqualValues(false, hasFailed)
+
 }
 
 // TestBasicOneTwo is same as TestBasic does the load first and then the queries - 10 times
@@ -380,6 +245,8 @@ func (suite *DockerNodesRunnerSuite) TestBasicOneTwo() {
 	//fmt.Println("sqlrunner run", out, err)
 	_ = out
 	_ = err
+	hasFailed := strings.Contains(out, "FAILED")
+	suite.Assert().EqualValues(false, hasFailed)
 
 }
 
@@ -398,7 +265,10 @@ func (suite *DockerNodesRunnerSuite) TestBasic() {
 	cmd += " -log_level DEBUG"
 
 	out, err := test.Shell(cmd, "")
-	fmt.Println("sqlrunner run", out, err)
+	// fmt.Println("sqlrunner run", out, err)
+	hasFailed := strings.Contains(out, "FAILED")
+	suite.Assert().EqualValues(false, hasFailed)
+	_ = err
 }
 
 // TestBasicProxy1 is the same as TestBasic but uses proxy 1
@@ -419,6 +289,9 @@ func (suite *DockerNodesRunnerSuite) TestBasicProxy1() {
 
 	out, err := test.Shell(cmd, "")
 	fmt.Println("sqlrunner run", out, err)
+	hasFailed := strings.Contains(out, "FAILED")
+	suite.Assert().EqualValues(false, hasFailed)
+
 }
 
 // XTestBasic doesn't work because ExecuteSqlFile calls AnalyzeRow which might invoke create table

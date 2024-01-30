@@ -1,9 +1,9 @@
-// Data Node launcher.
+// Data Node launchor.
 package main
 
 import (
 	"fmt"
-	"log"
+
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -76,8 +76,8 @@ func main() {
 	u.Infof("Connecting to Consul at: [%s] ...\n", *consul)
 	consulClient, err := api.NewClient(&api.Config{Address: *consul})
 	if err != nil {
-		u.Errorf("Is the consul agent running?")
-		log.Fatalf("[node: Cannot initialize endpoint config: error: %s", err)
+		// Is the consul agent running?
+		u.Errorf("node: Cannot initialize endpoint config: error: %s", err)
 	}
 
 	_ = *tls
@@ -126,9 +126,9 @@ func main() {
 	err = m.InitServices()
 	elapsed := time.Since(start)
 	if err != nil {
-		log.Fatal(err)
+		u.Error(err)
 	}
-	log.Printf("Data node initialized in %v.", elapsed)
+	u.Debugf("Data node initialized in %v.", elapsed)
 
 	fmt.Println("before m.Join")
 
@@ -165,7 +165,7 @@ func metricsTicker(node *server.Node) *time.Ticker {
 func GetOutboundIP() net.IP {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
-		log.Fatal(err)
+		u.Log(u.FATAL, err)
 	}
 	defer conn.Close()
 	localAddr := conn.LocalAddr().(*net.UDPAddr)

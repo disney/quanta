@@ -41,7 +41,7 @@ func (suite *SQLRunnerSuite) SetupSuite() {
 		check(err)
 	}
 	// ensure we have a cluster on localhost, start one if necessary
-	suite.state = test.Ensure_cluster()
+	suite.state = test.Ensure_cluster(3)
 }
 
 func (suite *SQLRunnerSuite) TearDownSuite() {

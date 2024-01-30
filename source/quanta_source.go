@@ -58,7 +58,7 @@ func NewQuantaSource(tableCache *core.TableCacheStruct, baseDir, consulAddr stri
 		}
 	}
 
-	clientConn := shared.NewDefaultConnection()
+	clientConn := shared.NewDefaultConnection("QuantaSource")
 	clientConn.ServicePort = servicePort
 	clientConn.Quorum = 3
 	if err := clientConn.Connect(consulClient); err != nil {

@@ -30,7 +30,7 @@ func TestRetainData(t *testing.T) {
 		t.FailNow()
 	}
 	// ensure_custer
-	state := Ensure_cluster()
+	state := Ensure_cluster(3)
 	state.Db, err = state.ProxyConnect.ProxyConnectConnect()
 	_ = err
 
@@ -54,7 +54,7 @@ func TestRetainData(t *testing.T) {
 
 	fmt.Println("starting local in memory cluster")
 	time.Sleep(10 * time.Second)
-	state = Ensure_cluster()
+	state = Ensure_cluster(3)
 
 	// query
 

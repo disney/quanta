@@ -8,11 +8,12 @@ package shared
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/RoaringBitmap/roaring/roaring64"
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/pborman/uuid"
-	"time"
 )
 
 const (
@@ -69,24 +70,22 @@ type BitmapQueryResponse struct {
 	Results      *roaring64.Bitmap
 }
 
-//
 // IntermediateResult - Container for query results returned from individual server nodes.
 // Aggregated results are stored in this structure for further processing on the client.
 // Also serves as a 'scratch pad' for query processing.
-//
 type IntermediateResult struct {
-	Index            string
-	SamplePct        float32
-	SampleIsUnion    bool
-	unions           []*roaring64.Bitmap
-	intersects       []*roaring64.Bitmap
-	andDifferences   []*roaring64.Bitmap
-	orDifferences    []*roaring64.Bitmap
-	existences       []*roaring64.Bitmap
-	samples          []*RowBitmap
-	joinFkList       []FK
-	union            *roaring64.Bitmap
-	existence        *roaring64.Bitmap
+	Index          string
+	SamplePct      float32
+	SampleIsUnion  bool
+	unions         []*roaring64.Bitmap
+	intersects     []*roaring64.Bitmap
+	andDifferences []*roaring64.Bitmap
+	orDifferences  []*roaring64.Bitmap
+	existences     []*roaring64.Bitmap
+	samples        []*RowBitmap
+	joinFkList     []FK
+	union          *roaring64.Bitmap
+	existence      *roaring64.Bitmap
 }
 
 // FK - Foreign key container.
@@ -176,9 +175,7 @@ func (r *IntermediateResult) GetOrDifferences() []*roaring64.Bitmap {
 
 // AddSamples - Add a stratified sample predicate batch.
 func (r *IntermediateResult) AddSamples(b []*RowBitmap) {
-	for _, x := range b {
-		r.samples = append(r.samples, x)
-	}
+	r.samples = append(r.samples, b...)
 }
 
 // AddSample - Add a stratified sample row.
@@ -264,7 +261,7 @@ func (r *IntermediateResult) MarshalQueryResult() (qr *pb.QueryResult, err error
 		sampleRows[i] = &pb.BitmapResult{Field: rb.Field, RowId: rb.RowID, Bitmap: sampleBuf}
 	}
 
-	differenceBuf = make([][]byte, len(r.andDifferences) + len(r.orDifferences))
+	differenceBuf = make([][]byte, len(r.andDifferences)+len(r.orDifferences))
 	for i, bm := range r.andDifferences {
 		differenceBuf[i], err = bm.MarshalBinary()
 		if err != nil {
@@ -272,7 +269,7 @@ func (r *IntermediateResult) MarshalQueryResult() (qr *pb.QueryResult, err error
 		}
 	}
 	for i, bm := range r.orDifferences {
-		differenceBuf[i + len(r.andDifferences)], err = bm.MarshalBinary()
+		differenceBuf[i+len(r.andDifferences)], err = bm.MarshalBinary()
 		if err != nil {
 			return nil, fmt.Errorf("Cannot marshal intermediate difference result bitmap - %v", err)
 		}
@@ -749,10 +746,8 @@ func FromProto(q *pb.BitmapQuery, dataMap map[string]*roaring64.Bitmap) *BitmapQ
 
 }
 
-//
 // GroupQueryFragmentsByIndex - Break up a query and group all of the predicate fragments by index.
 // This function returns a map of the predicates keyed by index name.
-//
 func (q *BitmapQuery) GroupQueryFragmentsByIndex() map[string]*pb.BitmapQuery {
 
 	query := q.ToProto()

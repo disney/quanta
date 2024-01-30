@@ -14,7 +14,7 @@ type BaseDockerSuite struct {
 	State *ClusterLocalState
 	Total SqlInfo
 
-	ConsulAddress string
+	ConsulAddress string // the address in the docker network
 	ProxyAddress  []string
 }
 

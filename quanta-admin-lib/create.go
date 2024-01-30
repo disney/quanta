@@ -2,7 +2,8 @@ package admin
 
 import (
 	"fmt"
-	"log"
+
+	u "github.com/araddon/gou"
 
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
@@ -18,11 +19,11 @@ type CreateCmd struct {
 // Run - Create command implementation
 func (c *CreateCmd) Run(ctx *Context) error {
 
-	fmt.Printf("Configuration directory = %s\n", c.SchemaDir)
-	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
+	u.Infof("Configuration directory = %s\n", c.SchemaDir)
+	u.Infof("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
 	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
 	if err != nil {
-		fmt.Println("Is the consul agent running?")
+		u.Info("Is the consul agent running?")
 		return fmt.Errorf("Error connecting to consul %v", err)
 	}
 	table, err3 := shared.LoadSchema(c.SchemaDir, c.Table, consulClient)
@@ -31,7 +32,7 @@ func (c *CreateCmd) Run(ctx *Context) error {
 	}
 	// let's check the types of the fields
 	for i := 0; i < len(table.Attributes); i++ {
-		fmt.Println(table.Attributes[i].FieldName, table.Attributes[i].Type)
+		u.Info(table.Attributes[i].FieldName, table.Attributes[i].Type)
 		typ := shared.TypeFromString(table.Attributes[i].Type)
 		if typ == shared.NotDefined {
 			return fmt.Errorf("unknown type %s for field %s", table.Attributes[i].Type, table.Attributes[i].FieldName)
@@ -55,7 +56,7 @@ func (c *CreateCmd) Run(ctx *Context) error {
 			return fmt.Errorf("errors during performCreate: %v", err)
 		}
 
-		fmt.Printf("Successfully created table %s\n", table.Name)
+		u.Infof("Successfully created table %s\n", table.Name)
 		return nil
 	}
 
@@ -69,15 +70,15 @@ func (c *CreateCmd) Run(ctx *Context) error {
 		return fmt.Errorf("error comparing deployed table %v", err6)
 	}
 	if ok2 {
-		fmt.Printf("Table already exists.  No differences detected.\n")
+		u.Infof("Table already exists.  No differences detected.\n")
 		return nil
 	}
 
 	// If --confirm flag not set then print warnings and exit.
 	if !c.Confirm {
-		fmt.Printf("Warnings:\n")
+		u.Infof("Warnings:\n")
 		for _, warning := range warnings {
-			fmt.Printf("    -> %v\n", warning)
+			u.Infof("    -> %v\n", warning)
 		}
 		return fmt.Errorf("if you wish to deploy the changes then re-run with --confirm flag")
 	}
@@ -86,7 +87,7 @@ func (c *CreateCmd) Run(ctx *Context) error {
 		return fmt.Errorf("errors during performCreate: %v", err)
 	}
 
-	fmt.Printf("Successfully deployed modifications to table %s\n", table.Name)
+	u.Infof("Successfully deployed modifications to table %s\n", table.Name)
 	return nil
 }
 
@@ -98,12 +99,13 @@ func performCreate(consul *api.Client, table *shared.BasicTable, port int) error
 	}
 	defer shared.Unlock(consul, lock)
 
-	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
-	conn := shared.NewDefaultConnection()
+	u.Infof("Connecting to Quanta services at port: [%d] ...\n", port)
+	conn := shared.NewDefaultConnection("performCreate")
+	defer conn.Disconnect()
 	conn.ServicePort = port
 	conn.Quorum = 3
 	if err := conn.Connect(consul); err != nil {
-		log.Fatal(err)
+		u.Log(u.FATAL, err)
 	}
 	services := shared.NewBitmapIndex(conn)
 

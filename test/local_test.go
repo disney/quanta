@@ -79,7 +79,7 @@ func TestLocalQuery(t *testing.T) {
 		check(err)
 	}
 	// ensure we have a cluster on localhost, start one if necessary
-	state := Ensure_cluster()
+	state := Ensure_cluster(3)
 
 	// load something
 
@@ -117,7 +117,7 @@ func TestIsNull(t *testing.T) {
 		check(err)
 	}
 	// ensure we have a cluster on localhost, start one if necessary
-	state := Ensure_cluster()
+	state := Ensure_cluster(3)
 
 	if !isLocalRunning { // if no cluster was up, load some data
 		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries_load.sql")
@@ -162,7 +162,7 @@ func TestIsNotNull(t *testing.T) {
 		check(err)
 	}
 	// ensure we have a cluster on localhost, start one if necessary
-	state := Ensure_cluster()
+	state := Ensure_cluster(3)
 
 	if !isLocalRunning { // if no cluster was up, load some data
 		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries_load.sql")
@@ -207,7 +207,7 @@ func TestSpellTypeWrong(t *testing.T) {
 		check(err)
 	}
 	// ensure we have a cluster on localhost, start one if necessary
-	state := Ensure_cluster()
+	state := Ensure_cluster(3)
 
 	if !isLocalRunning { // if no cluster was up, load some data
 		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries_load.sql")
@@ -278,7 +278,7 @@ func TestAvgAge(t *testing.T) {
 		check(err)
 	}
 	// ensure we have a cluster on localhost, start one if necessary
-	state := Ensure_cluster()
+	state := Ensure_cluster(3)
 
 	if !isLocalRunning { // if no cluster was up, load some data
 		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries_load.sql")

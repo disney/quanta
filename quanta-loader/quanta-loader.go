@@ -317,7 +317,7 @@ func (m *Main) Init() error {
 		return err
 	}
 
-	m.apiHost = shared.NewDefaultConnection()
+	m.apiHost = shared.NewDefaultConnection("loader")
 	m.apiHost.ServicePort = m.Port
 	m.apiHost.Quorum = 3
 	if err = m.apiHost.Connect(consul); err != nil {

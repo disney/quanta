@@ -500,7 +500,7 @@ func (c *BitmapIndex) Projection(index string, fields []string, fromTime, toTime
 
 			newBsi := roaring64.NewDefaultBSI()
 			if err := newBsi.UnmarshalBinary(v.Bitmaps); err != nil {
-				return nil, nil, fmt.Errorf("Error unmarshalling BSI projection results - %v", err)
+				return nil, nil, fmt.Errorf("unmarshalling BSI projection results - %v", err)
 			}
 			bsiResults[v.Field] = append(bsi, newBsi)
 		}
@@ -515,7 +515,7 @@ func (c *BitmapIndex) Projection(index string, fields []string, fromTime, toTime
 			}
 			newBm := roaring64.NewBitmap()
 			if err := newBm.UnmarshalBinary(v.Bitmap); err != nil {
-				return nil, nil, fmt.Errorf("Error unmarshalling bitmap projection results - %v", err)
+				return nil, nil, fmt.Errorf("unmarshalling bitmap projection results - %v", err)
 			}
 			field[v.RowId] = append(bm, newBm)
 		}

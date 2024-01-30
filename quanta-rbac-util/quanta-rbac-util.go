@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/disney/quanta/rbac"
-	"github.com/disney/quanta/shared"
-	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
 	"os"
 	"strings"
+
+	"github.com/disney/quanta/rbac"
+	"github.com/disney/quanta/shared"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 // Variables to identify the build
@@ -51,7 +52,7 @@ func main() {
 	fmt.Printf("User ID %v.\n", main.UserID)
 	fmt.Printf("Service port %d.\n", main.Port)
 
-	conn := shared.NewDefaultConnection()
+	conn := shared.NewDefaultConnection("rbac-util")
 	conn.ServicePort = main.Port
 	conn.Quorum = 3
 	if err := conn.Connect(nil); err != nil {

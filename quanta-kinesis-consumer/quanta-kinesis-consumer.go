@@ -109,8 +109,8 @@ func NewMain() *Main {
 }
 
 type DataRecord struct {
-	TableName          string
-	Data               map[string]interface{}
+	TableName string
+	Data      map[string]interface{}
 }
 
 func main() {
@@ -308,7 +308,7 @@ func (m *Main) scanAndProcess(v *consumer.Record) error {
 				// Ideally we would grok the schema from the partition key somehow
 				continue
 			}
-			
+
 		} else { // Default is JSON
 			err := json.Unmarshal(v.Data, &out)
 			if err != nil {
@@ -464,7 +464,7 @@ func (m *Main) Init() (int, error) {
 		return 0, err
 	}
 
-	clientConn := shared.NewDefaultConnection()
+	clientConn := shared.NewDefaultConnection("ki")
 	clientConn.ServicePort = m.Port
 	clientConn.Quorum = 3
 	if err := clientConn.Connect(consulClient); err != nil {
@@ -570,7 +570,7 @@ func (m *Main) Init() (int, error) {
 						return err
 					}
 				}
-			
+
 				err = conn.PutRow(rec.TableName, rec.Data, 0, false, false)
 				if err != nil {
 					u.Errorf("ERROR in PutRow, shard %s - %v", shardId, err)
@@ -696,79 +696,79 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 				MetricName: aws.String("Processed"),
 				Unit:       aws.String("Count"),
 				Value:      aws.Float64(float64(m.processedRecs.Get())),
-/*
-				Dimensions: []*cloudwatch.Dimension{
-					{
-						Name:  aws.String("Table"),
-						Value: aws.String(m.Index),
+				/*
+					Dimensions: []*cloudwatch.Dimension{
+						{
+							Name:  aws.String("Table"),
+							Value: aws.String(m.Index),
+						},
 					},
-				},
-*/
+				*/
 			},
 			{
 				MetricName: aws.String("ProcessedPerSecond"),
 				Unit:       aws.String("Count/Second"),
 				Value:      aws.Float64(float64(m.processedRecs.Get()-m.processedRecL.Get()) / interval),
-/*
-				Dimensions: []*cloudwatch.Dimension{
-					{
-						Name:  aws.String("Table"),
-						Value: aws.String(m.Index),
+				/*
+					Dimensions: []*cloudwatch.Dimension{
+						{
+							Name:  aws.String("Table"),
+							Value: aws.String(m.Index),
+						},
 					},
-				},
-*/
+				*/
 			},
 			{
 				MetricName: aws.String("Errors"),
 				Unit:       aws.String("Count"),
 				Value:      aws.Float64(float64(m.errorCount.Get())),
-/*
-				Dimensions: []*cloudwatch.Dimension{
-					{
-						Name:  aws.String("Table"),
-						Value: aws.String(m.Index),
+				/*
+					Dimensions: []*cloudwatch.Dimension{
+						{
+							Name:  aws.String("Table"),
+							Value: aws.String(m.Index),
+						},
 					},
-				},
-*/
+				*/
 			},
 			{
 				MetricName: aws.String("ProcessedBytes"),
 				Unit:       aws.String("Bytes"),
 				Value:      aws.Float64(float64(m.totalBytes.Get())),
-/*
-				Dimensions: []*cloudwatch.Dimension{
-					{
-						Name:  aws.String("Table"),
-						Value: aws.String(m.Index),
+				/*
+					Dimensions: []*cloudwatch.Dimension{
+						{
+							Name:  aws.String("Table"),
+							Value: aws.String(m.Index),
+						},
 					},
-				},
-*/
+				*/
 			},
 			{
 				MetricName: aws.String("BytesPerSec"),
 				Unit:       aws.String("Bytes/Second"),
 				Value:      aws.Float64(float64(m.totalBytes.Get()-m.totalBytesL.Get()) / interval),
-/*
-				Dimensions: []*cloudwatch.Dimension{
-					{
-						Name:  aws.String("Table"),
-						Value: aws.String(m.Index),
+				/*
+					Dimensions: []*cloudwatch.Dimension{
+						{
+							Name:  aws.String("Table"),
+							Value: aws.String(m.Index),
+						},
 					},
-				},
-*/
+				*/
 			},
 			{
 				MetricName: aws.String("UpTimeHours"),
 				Unit:       aws.String("Count"),
 				Value:      aws.Float64(float64(upTime) / float64(1000000000*3600)),
-/*
-				Dimensions: []*cloudwatch.Dimension{
-					{
-						Name:  aws.String("Table"),
-						Value: aws.String(m.Index),
+				/*
+					Dimensions: []*cloudwatch.Dimension{
+						{
+							Name:  aws.String("Table"),
+							Value: aws.String(m.Index),
+						},
 					},
-				},
-*/
+				*/
 			},
 		},
 	})

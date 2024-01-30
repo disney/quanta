@@ -5,7 +5,7 @@ package shared
 import (
 	"encoding/binary"
 	"fmt"
-	"log"
+
 	"net"
 	"os"
 	"os/signal"
@@ -34,28 +34,27 @@ func ToString(v interface{}) string {
 }
 
 // ToBytes - Helper function to serialize data for GRPC.
-func ToBytes(v interface{}) []byte {
+func ToBytes(val interface{}) []byte {
 
-	switch v.(type) {
+	switch v := val.(type) {
 	case string:
-		return []byte(v.(string))
+		return []byte(v)
 	case uint64:
 		b := make([]byte, 8)
-		binary.LittleEndian.PutUint64(b, v.(uint64))
+		binary.LittleEndian.PutUint64(b, v)
 		return b
 	case int64:
 		b := make([]byte, 8)
-		binary.LittleEndian.PutUint64(b, uint64(v.(int64)))
+		binary.LittleEndian.PutUint64(b, uint64(v))
 		return b
 	case int:
 		b := make([]byte, 8)
-		binary.LittleEndian.PutUint64(b, uint64(v.(int)))
+		binary.LittleEndian.PutUint64(b, uint64(v))
 		return b
 	case float64:
 		u.Errorf("Unsupported float64 for %f", v.(float64))
 	}
 	u.Errorf("Unsupported type %T for data %#v", v, v)
-	return []byte{}
 }
 
 // UnmarshalValue - Unmarshal GRPC value from bytes.
@@ -131,7 +130,7 @@ func putRecursive(typ reflect.Type, value reflect.Value, consul *api.Client, roo
 			continue
 		}
 		if value.Field(i).Kind() == reflect.Bool {
-			if fv.(bool) == true {
+			if fv.(bool) {
 				fv = "true"
 			} else {
 				fv = "false"
@@ -161,7 +160,7 @@ func UnmarshalConsul(consul *api.Client, name string) (BasicTable, error) {
 	table := BasicTable{Name: name}
 	keys, _, _ := consul.KV().Keys("schema/"+name, "", nil)
 	if len(keys) == 0 {
-		return table, fmt.Errorf("Table %s not found.", name)
+		return table, fmt.Errorf("table %s not found", name)
 	}
 	ps := reflect.ValueOf(&table)
 	err := getRecursive(reflect.TypeOf(table), ps.Elem(), consul, "schema/"+name)
@@ -631,7 +630,7 @@ func SetUTCdefault() {
 	os.Setenv("TZ", "UTC")
 	loc, err := time.LoadLocation("UTC")
 	if err != nil {
-		log.Fatal(err)
+		u.Log(u.FATAL, err)
 	}
 	time.Local = loc // -> this is setting the global timezone
 

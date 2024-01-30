@@ -58,7 +58,7 @@ func NewQuantaSource(tableCache *core.TableCacheStruct, baseDir, consulAddr stri
 		}
 	}
 
-	clientConn := shared.NewDefaultConnection()
+	clientConn := shared.NewDefaultConnection("QuantaSource")
 	clientConn.ServicePort = servicePort
 	clientConn.Quorum = 3
 	if err := clientConn.Connect(consulClient); err != nil {
@@ -158,6 +158,7 @@ func (m *QuantaSource) Table(table string) (*schema.Table, error) {
 		pkMap[v.FieldName] = v
 	}
 	tbl := schema.NewTable(table)
+	tbl.IsViewOf = ts.IsViewOf
 	cols := make([]string, 0)
 	// for _, v := range ts.Attributes { copies lock. That's a no no
 	for i := 0; i < len(ts.Attributes); i++ {

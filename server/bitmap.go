@@ -9,7 +9,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
+
 	"math"
 	"os"
 	"path/filepath"
@@ -25,6 +25,7 @@ import (
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/hashicorp/consul/api"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -64,6 +65,7 @@ type BitmapIndex struct {
 	bitmapCount     int
 	bsiCount        int
 	workers         []*WorkerThread
+	cleanupLock     sync.RWMutex
 	updBitmapTime   atomic.Uint64
 	updBSITime      atomic.Uint64
 	saveBitmapECnt  atomic.Uint64
@@ -115,6 +117,7 @@ func NewBitmapIndex(node *Node, memoryLimitMb int) *BitmapIndex {
 				return nil
 			})
 	} else { // Normal (from Consul) initialization
+		fmt.Println("Bitmap server Normal (from Consul) initialization", e.hashKey)
 		var tables []string
 		err := shared.Retry(5, 2*time.Second, func() (err error) {
 			tables, err = shared.GetTables(e.consul)
@@ -137,6 +140,14 @@ func NewBitmapIndex(node *Node, memoryLimitMb int) *BitmapIndex {
 
 	pb.RegisterBitmapIndexServer(e.server, e)
 	return e
+}
+
+func (m *BitmapIndex) GetBitmapCache() map[string]map[string]map[uint64]map[int64]*StandardBitmap {
+	return m.bitmapCache
+}
+
+func (m *BitmapIndex) GetBsiCache() map[string]map[string]map[int64]*BSIBitmap {
+	return m.bsiCache
 }
 
 // Init - Initialization
@@ -190,7 +201,7 @@ func (m *BitmapIndex) JoinCluster() {
 	if m.Conn.ServicePort == 0 {
 		return // Skip this for test harness mode.
 	}
-	u.Infof("Bitmap server is joining the cluster.")
+	u.Infof("Bitmap server is joining the cluster %s.", m.hashKey)
 	m.verifyNode()
 }
 
@@ -405,7 +416,7 @@ func (m *BitmapIndex) batchProcessLoop(worker *WorkerThread) {
 		default: // Don't block
 		}
 
-		// this is where is waits for a frag or a write signal
+		// this is where it waits for a frag or a write signal
 		select {
 		case nop := <-worker.aux:
 			nop.Done <- true
@@ -428,6 +439,9 @@ func (m *BitmapIndex) batchProcessLoop(worker *WorkerThread) {
 			m.checkPersistBitmapCache(true)
 			m.checkPersistBSICache(true)
 			m.shardCount = m.bsiCount + m.bitmapCount
+			if worker.index == 0 {
+				u.Debug("batchProcessLoop shard count ", m.hashKey, " shard ", m.shardCount, "bsi ", m.bsiCount, "bitmap ", m.bitmapCount)
+			}
 		}
 	} // back to top, forever
 }
@@ -460,11 +474,9 @@ func (m *BitmapIndex) expireProcessLoop(memoryLimitMb int) {
 	}
 }
 
-/*
- * Partition cleanup/archive/expiration worker thread.
- *
- * Wake up on interval and run partition processing.
- */
+// partitionProcessLoop Partition cleanup/archive/expiration worker thread.
+// Wake up on interval and run partition processing.
+// note that cleanupStrandedShards is also called elesewhere
 func (m *BitmapIndex) partitionProcessLoop() {
 
 	for {
@@ -495,22 +507,28 @@ func (m *BitmapIndex) verifyNode() {
 	peerClient := m.Conn.GetService("BitmapIndex").(*shared.BitmapIndex)
 
 	m.State = Syncing
-	u.Warnf("Setting node state to Syncing")
+	u.Warnf("Setting node state to Syncing %s", m.GetNodeID())
 	tryCount := 1
 	for {
 		diffCount, err := peerClient.Synchronize(m.GetNodeID())
 		if err != nil {
-			log.Fatal(fmt.Errorf("Node synchronization/verification failed - %v", err))
+			u.Log(u.FATAL, fmt.Errorf("Node synchronization/verification failed - %v", err))
 		}
 		if diffCount == 0 {
 			m.State = Active
-			u.Warnf("Setting node state to Active")
+			u.Debugf("verifyNode Setting node state to Active for %s", m.hashKey)
+			// we need to 'touch' the health so everyone knows we are active atw
+			consul := m.Consul
+			valStr := fmt.Sprintf("%s_%d", m.hashKey, time.Now().UnixMilli())
+			pair := &api.KVPair{Key: "AnyNodeStatusChangeTime", Value: []byte(valStr)}
+			consul.KV().Put(pair, nil)
 			break
 		}
 		time.Sleep(shared.SyncRetryInterval)
 		tryCount++
 		u.Warnf("%d Differences detected, retrying Synchronization (attempt %d)", diffCount, tryCount)
 	}
+	u.Debug("verifyNode done ", m.hashKey)
 }
 
 // Updates to the standard bitmap field cache
@@ -740,6 +758,9 @@ func (m *BitmapIndex) Truncate(index string) {
 
 func (m *BitmapIndex) cleanupStrandedShards() {
 
+	m.cleanupLock.RLock()
+	defer m.cleanupLock.RUnlock()
+
 	m.iterateBSICache(func(p *Partition) error {
 		return m.cleanupOp(p)
 	})
@@ -792,14 +813,31 @@ func (m *BitmapIndex) cleanupOp(p *Partition) error {
 
 	hashKey := fmt.Sprintf("%s/%s/%s", p.Index, p.Field, p.Time.Format(timeFmt))
 	if p.RowIDOrBits > 0 {
+		// is count of bits
 		hashKey = fmt.Sprintf("%s/%s/%d/%s", p.Index, p.Field, p.RowIDOrBits, p.Time.Format(timeFmt))
 	}
 	nodeKeys := m.HashTable.GetN(m.Replicas, hashKey)
+
+	// fmt.Println("cleanupOp ", m.hashKey, " hashKey ", hashKey, " nodeKeys ", nodeKeys)
+
 	nMap := make(map[string]struct{}, 0)
 	for _, k := range nodeKeys {
 		nMap[k] = struct{}{}
 	}
-	if _, ok := nMap[m.hashKey]; !ok {
+	_, ok := nMap[m.hashKey]
+	if !ok {
+
+		fmt.Println("cleanupOp ", m.hashKey, " hashKey ", hashKey, " nodeKeys ", nodeKeys, "nmap", nMap, "field", p.Field)
+		if p.Field == "isActive" {
+			// seeking customers_qa/isActive/1/1970-01-01T00
+
+			fmt.Println("cleanupOp isActive", m.hashKey, " hashKey ", hashKey, " nodeKeys ", nodeKeys, "nmap", nMap, "field", p.Field)
+
+			nodeKeys2 := m.HashTable.GetN(m.Replicas, "customers_qa/isActive/0/1970-01-01T00")
+			nodeKeys3 := m.HashTable.GetN(m.Replicas, "customers_qa/isActive/1/1970-01-01T00")
+			fmt.Println("cleanupOp nodeKeys2", m.hashKey, nodeKeys2, nodeKeys3)
+		}
+
 		m.partitionQueue <- m.NewPartitionOperation(p, true)
 	}
 	return nil
@@ -1107,6 +1145,7 @@ func (m *BitmapIndex) flush() error {
 			}
 			return nil
 		})
+
 	}
 
 	// Wait for all goroutines to complete.
@@ -1116,6 +1155,7 @@ func (m *BitmapIndex) flush() error {
 	} else {
 		// fmt.Println("flush all works done successfully", m.Node.hashKey)
 	}
+
 	// done
 	return nil
 }

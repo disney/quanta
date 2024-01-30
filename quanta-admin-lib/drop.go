@@ -91,7 +91,8 @@ func checkForChildDependencies(consul *api.Client, tableName, operation string) 
 func nukeData(consul *api.Client, port int, tableName, operation string, dropEnums bool) error {
 
 	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
-	conn := shared.NewDefaultConnection()
+	conn := shared.NewDefaultConnection("drop")
+	defer conn.Disconnect()
 	conn.ServicePort = port
 	conn.Quorum = 3
 	if err := conn.Connect(consul); err != nil {

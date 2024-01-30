@@ -35,7 +35,7 @@ func (suite *RBACTestSuite) SetupSuite() {
 		node.Start()
 	}()
 
-	conn := shared.NewDefaultConnection()
+	conn := shared.NewDefaultConnection("RBACTestSuite")
 	conn.ServicePort = 0
 	err = conn.Connect(nil)
 	assert.NoError(suite.T(), err)

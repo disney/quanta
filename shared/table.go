@@ -32,6 +32,7 @@ type BasicTable struct {
 	Attributes       []BasicAttribute           `yaml:"attributes"`
 	attributeNameMap map[string]*BasicAttribute `yaml:"-"`
 	ConsulClient     *api.Client                `yaml:"-"`
+	IsViewOf         string                     `yaml:"isViewOf,omitempty"` // source table name
 }
 
 type AttributeInterface interface {
@@ -103,6 +104,13 @@ const (
 	JSON
 	NotDefined
 )
+
+func NewBasicTable() *BasicTable {
+	r := &BasicTable{}
+	r.attributeNameMap = make(map[string]*BasicAttribute)
+	r.Attributes = make([]BasicAttribute, 0)
+	return r
+}
 
 // String - Return string respresentation of DataType
 func (vt DataType) String() string {

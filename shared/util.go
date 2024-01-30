@@ -34,27 +34,28 @@ func ToString(v interface{}) string {
 }
 
 // ToBytes - Helper function to serialize data for GRPC.
-func ToBytes(val interface{}) []byte {
+func ToBytes(v interface{}) []byte {
 
-	switch v := val.(type) {
+	switch v.(type) {
 	case string:
-		return []byte(v)
+		return []byte(v.(string))
 	case uint64:
 		b := make([]byte, 8)
-		binary.LittleEndian.PutUint64(b, v)
+		binary.LittleEndian.PutUint64(b, v.(uint64))
 		return b
 	case int64:
 		b := make([]byte, 8)
-		binary.LittleEndian.PutUint64(b, uint64(v))
+		binary.LittleEndian.PutUint64(b, uint64(v.(int64)))
 		return b
 	case int:
 		b := make([]byte, 8)
-		binary.LittleEndian.PutUint64(b, uint64(v))
+		binary.LittleEndian.PutUint64(b, uint64(v.(int)))
 		return b
 	case float64:
 		u.Errorf("Unsupported float64 for %f", v.(float64))
 	}
 	u.Errorf("Unsupported type %T for data %#v", v, v)
+	return []byte{}
 }
 
 // UnmarshalValue - Unmarshal GRPC value from bytes.

@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Jeffail/tunny"
@@ -65,6 +66,14 @@ type BitmapIndex struct {
 	bsiCount        int
 	workers         []*WorkerThread
 	cleanupLock     sync.RWMutex
+	updBitmapTime   atomic.Uint64
+	updBSITime      atomic.Uint64
+	saveBitmapECnt  atomic.Uint64
+	saveBitmapTCnt  atomic.Uint64
+	saveBitmapTime  atomic.Uint64
+	saveBSIECnt     atomic.Uint64
+	saveBSITCnt     atomic.Uint64
+	saveBSITime     atomic.Uint64
 }
 
 type WorkerThread struct {
@@ -585,6 +594,7 @@ func (m *BitmapIndex) updateBitmapCache(f *BitmapFragment) {
 		existBm.Lock.Unlock()
 	}
 	elapsed := time.Since(start)
+	m.updBitmapTime.Store(uint64(elapsed.Milliseconds()))
 	if elapsed.Nanoseconds() > (1000000 * 25) {
 		u.Debugf("updateBitmapCache [%s/%s/%d/%s] done in %v.\n", f.IndexName, f.FieldName,
 			rowID, f.Time.Format(timeFmt), elapsed)
@@ -716,6 +726,7 @@ func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 		existBm.Lock.Unlock()
 	}
 	elapsed := time.Since(start)
+	m.updBSITime.Store(uint64(elapsed.Milliseconds()))
 	if elapsed.Nanoseconds() > (1000000 * 75) {
 		u.Debugf("updateBSICache [%s/%s/%s] done in %v.\n", f.IndexName, f.FieldName,
 			f.Time.Format(timeFmt), elapsed)
@@ -942,7 +953,7 @@ func (m *BitmapIndex) checkPersistBitmapCache(forceSync bool) {
 	defer m.bitmapCacheLock.RUnlock()
 
 	bitmapCount := 0
-	writeCount := 0
+	var writeCount uint64
 	start := time.Now()
 	for indexName, index := range m.bitmapCache {
 		for fieldName, field := range index {
@@ -967,11 +978,14 @@ func (m *BitmapIndex) checkPersistBitmapCache(forceSync bool) {
 	}
 
 	elapsed := time.Since(start)
+	m.saveBitmapTime.Store(uint64(elapsed.Milliseconds()))
 	m.bitmapCount = bitmapCount
 	if writeCount > 0 {
 		if forceSync {
+			m.saveBitmapTCnt.Store(writeCount)
 			u.Debugf("Persist [timer expired] %d files done in %v", writeCount, elapsed)
 		} else {
+			m.saveBitmapECnt.Store(writeCount)
 			u.Debugf("Persist [edge triggered] %d files done in %v", writeCount, elapsed)
 		}
 	}
@@ -987,7 +1001,7 @@ func (m *BitmapIndex) checkPersistBSICache(forceSync bool) {
 	m.bsiCacheLock.RLock()
 	defer m.bsiCacheLock.RUnlock()
 
-	writeCount := 0
+	var writeCount uint64
 	bsiCount := 0
 	start := time.Now()
 	for indexName, index := range m.bsiCache {
@@ -1011,11 +1025,14 @@ func (m *BitmapIndex) checkPersistBSICache(forceSync bool) {
 	}
 
 	elapsed := time.Since(start)
+	m.saveBSITime.Store(uint64(elapsed.Milliseconds()))
 	m.bsiCount = bsiCount
 	if writeCount > 0 {
 		if forceSync {
+			m.saveBSITCnt.Store(writeCount)
 			u.Debugf("Persist BSI [timer expired] %d files done in %v", writeCount, elapsed)
 		} else {
+			m.saveBSIECnt.Store(writeCount)
 			u.Debugf("Persist BSI [edge triggered] %d files done in %v", writeCount, elapsed)
 		}
 	}
@@ -1128,6 +1145,7 @@ func (m *BitmapIndex) flush() error {
 			}
 			return nil
 		})
+
 	}
 
 	// Wait for all goroutines to complete.
@@ -1137,6 +1155,7 @@ func (m *BitmapIndex) flush() error {
 	} else {
 		// fmt.Println("flush all works done successfully", m.Node.hashKey)
 	}
+
 	// done
 	return nil
 }

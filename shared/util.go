@@ -51,9 +51,10 @@ func ToBytes(val interface{}) []byte {
 		b := make([]byte, 8)
 		binary.LittleEndian.PutUint64(b, uint64(v))
 		return b
+	case float64:
+		u.Errorf("Unsupported float64 for %f", v.(float64))
 	}
-	msg := fmt.Sprintf("Unsupported type %T", val)
-	panic(msg)
+	u.Errorf("Unsupported type %T for data %#v", v, v)
 }
 
 // UnmarshalValue - Unmarshal GRPC value from bytes.

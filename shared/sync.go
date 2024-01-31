@@ -28,7 +28,7 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 	if err != nil {
 		return -1, err
 	}
-	quorumSize := c.Conn.Replicas + 1 // why?
+	quorumSize := c.Conn.Replicas + 1 // usually 2+1
 	if clusterSizeTarget > quorumSize {
 		quorumSize = clusterSizeTarget
 	}

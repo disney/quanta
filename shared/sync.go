@@ -122,7 +122,7 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 		client := n
 		clientIndex := i
 		eg.Go(func() error {
-			u.Debug("Synchronize syncClient", nodeKey, c.owner, clientIndex)
+			u.Debugf("Synchronize syncClient %v %v %v ", nodeKey, c.owner, clientIndex)
 			diffc, err := c.syncClient(client, nodeKey, clientIndex) // send sync grpc request to peer
 			u.Debug("done Synchronize syncClient", nodeKey, c.owner, clientIndex)
 

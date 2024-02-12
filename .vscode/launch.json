@@ -55,7 +55,7 @@
             "mode": "auto",
             "program": "./quanta-node.go",
             "args": ["ip-10-180-97-111",
-            "./test/localClusterData"
+            "./test/localClusterData","0.0.0.0","4000"
         ]
         }
 

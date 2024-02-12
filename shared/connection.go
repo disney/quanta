@@ -616,8 +616,10 @@ func (m *Conn) updateHealth(initial bool) (err error) {
 	m.idMap = idMap
 	m.ids = ids
 
-	u.Debug("Conn update new rendezvous ids", m.owner, ids, m.nodeMap, "old", oldNodeMap)
-
+	u.Debug("Conn update new rendezvous ids", m.owner, ids, m.nodeMap, "old", oldNodeMap, "clusterSizeTarget", m.clusterSizeTarget)
+	// if len(ids) > m.clusterSizeTarget { // atw fixme
+	// 	ids = ids[:m.clusterSizeTarget] // ignore any new nodes until clusterSizeTarget changes
+	// }
 	m.HashTable = rendezvous.New(ids)
 	m.waitIndex = meta.LastIndex
 
@@ -796,6 +798,11 @@ func (m *Conn) GetClusterState() (status ClusterState, activeCount, clusterSizeT
 	clusterSizeTarget = m.clusterSizeTarget
 	status = Red
 	if m.activeCount == m.clusterSizeTarget {
+		status = Green
+		return
+	}
+	// there may be more nodes than there should be, but we don't care about that
+	if m.activeCount > m.clusterSizeTarget {
 		status = Green
 		return
 	}

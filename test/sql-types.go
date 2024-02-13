@@ -10,6 +10,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	admin "github.com/disney/quanta/quanta-admin-lib"
+	"github.com/disney/quanta/shared"
 	"github.com/go-sql-driver/mysql"
 )
 
@@ -37,6 +38,7 @@ type SqlInfo struct {
 	Err              error
 	Rows             *sql.Rows
 	FailedChildren   []SqlInfo
+	RowDataArray     []map[string]interface{} // row data from select statements
 }
 
 type StatementType int64
@@ -124,11 +126,13 @@ func AnalyzeRow(proxyConfig ProxyConnectStrings, row []string, validate bool) Sq
 		statementType = Admin
 	} else if strings.Contains(lowerStmt, "create") {
 		statementType = Create
+	} else if strings.Contains(lowerStmt, "show") {
+		statementType = Select
 	} else if strings.HasPrefix(sqlInfo.Statement, "commit") {
 		// time.Sleep(1 * time.Second) // for experimental purposes only
 		statementType = Select // ?? it has to be something
 	} else {
-		log.Fatalf("Unsupported Statement : %v", sqlInfo.Statement)
+		log.Fatalf("AnalyzeRow unsupported statement : %v", sqlInfo.Statement)
 	}
 
 	err = nil
@@ -175,7 +179,7 @@ func AnalyzeRow(proxyConfig ProxyConnectStrings, row []string, validate bool) Sq
 	case Create:
 		sqlInfo.ExecuteCreate(db)
 	default:
-		log.Fatalf("Unsupported Statement : %v", sqlInfo.Statement)
+		log.Fatalf("AnalyzeRow 2 unsupported Statement : %v", sqlInfo.Statement)
 
 	}
 	return sqlInfo
@@ -204,7 +208,7 @@ func (s *SqlInfo) ExecuteAdmin() {
 	// var cmd string
 
 	statement := strings.Split(strings.TrimRight(strings.TrimLeft(s.Statement, " "), " "), " ")
-	log.Printf("Statement : %s", s.Statement)
+	log.Printf("Admin Statement : %s", s.Statement)
 
 	command := statement[1:]
 	parser, err := kong.New(&admin.Cli)
@@ -253,10 +257,14 @@ func (s *SqlInfo) ExecuteQuery(db *sql.DB) {
 
 	var rows *sql.Rows
 	rows, s.Err = db.Query(s.Statement)
-	if s.Err == nil {
-		s.ActualRowCount = GetRowCount(rows)
-	}
 	s.Rows = rows
+	if s.Err == nil {
+		//s.ActualRowCount = GetRowCount(rows)
+		rowsArr, err := shared.GetAllRows(rows)
+		s.RowDataArray = rowsArr
+		check(err)
+		s.ActualRowCount = int64(len(rowsArr))
+	}
 	s.logResult()
 }
 
@@ -275,7 +283,7 @@ func (s *SqlInfo) ExecuteCreate(db *sql.DB) {
 	var rows *sql.Rows
 	rows, s.Err = db.Query(s.Statement)
 	if s.Err == nil {
-		s.ActualRowCount = 1 // atw FIXME ? GetRowCount(rows)
+		s.ActualRowCount = 1
 		_ = rows
 	}
 	s.logResult()
@@ -335,16 +343,16 @@ func getPassFailError(statement string, expectedError string, actualError string
 	}
 }
 
-func GetRowCount(rows *sql.Rows) int64 {
+// after this is done, we can't get the rows later ! There's no rows.Reset() method.
+// func xxxGetRowCount(rows *sql.Rows) int64 {
+// 	var count = 0
+// 	for rows.Next() {
+// 		count += 1
+// 	}
+// 	return int64(count)
+// }
 
-	var count = 0
-	for rows.Next() {
-		count += 1
-	}
-
-	return int64(count)
-}
-
+// GetScalarCount is for when there's just one row and one column and it's a number
 func GetScalarCount(rows *sql.Rows) (int64, error) {
 
 	var count int64
@@ -354,6 +362,5 @@ func GetScalarCount(rows *sql.Rows) (int64, error) {
 			return count, err
 		}
 	}
-
 	return count, nil
 }

@@ -28,10 +28,7 @@ func TestLocalBasic3then4Zip(t *testing.T) {
 	// ensure we have a cluster on localhost, start one if necessary
 	state := Ensure_cluster(3)
 
-	testStatesAllMatch(t, state)
-
-	// WaitForStatusGreenLocal()
-	// do we have to? time.Sleep(5 * time.Second)
+	testStatesAllMatch(t, state, "initial")
 
 	// load something
 	if !isLocalRunning {
@@ -80,7 +77,7 @@ func TestLocalBasic3then4Zip(t *testing.T) {
 
 	// wait for sync
 	// WaitForStatusGreenLocal()
-	testStatesAllMatch(t, state)
+	testStatesAllMatch(t, state, "added node")
 
 	time.Sleep(5 * time.Second) // let batchProcessLoop shard count print out
 	fmt.Println("---- after adding node 3 ----")

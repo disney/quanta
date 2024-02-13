@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/shared"
 )
 
 // StatusCmd - Status command
@@ -16,6 +17,12 @@ func (s *StatusCmd) Run(ctx *Context) error {
 	conn := GetClientConnection(ctx.ConsulAddr, ctx.Port, "admin-status")
 	defer conn.Disconnect()
 
+	sizeTarget, err := shared.GetClusterSizeTarget(conn.Consul)
+	if err != nil {
+		return err
+	}
+	_ = sizeTarget
+
 	fmt.Print("admin StatusCmd top")
 	for _, v := range conn.Nodes() {
 		fmt.Print(" ", v.Service.ID)
@@ -26,6 +33,10 @@ func (s *StatusCmd) Run(ctx *Context) error {
 	fmt.Println("ADDRESS            STATUS    DATA CENTER                              SHARDS   MEMORY   VERSION")
 	fmt.Println("================   ======    ==================================   ==========   =======  =========================")
 	for _, node := range conn.Nodes() {
+		// there may be extra nodes in the list, ignore them
+		// if i >= sizeTarget {
+		// 	continue
+		// }
 		status := "Left"
 		version := ""
 		var shards uint32

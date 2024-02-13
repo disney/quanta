@@ -811,28 +811,39 @@ func (m *BitmapIndex) expireOp(p *Partition, exp time.Time) error {
 // cleanupOp - Remove stranded partitions
 func (m *BitmapIndex) cleanupOp(p *Partition) error {
 
-	hashKey := fmt.Sprintf("%s/%s/%s", p.Index, p.Field, p.Time.Format(timeFmt))
-	if p.RowIDOrBits > 0 {
+	isBool := false
+	m.tableCacheLock.RLock()
+	table := m.tableCache[p.Index]
+	attr, err := table.GetAttribute(p.Field)
+	if err == nil {
+		isBool = attr.Type == "Boolean"
+	}
+	m.tableCacheLock.RUnlock()
+
+	hashKey := ""
+	if p.RowIDOrBits > 0 || isBool { // wrong for bool value 0
 		// is count of bits
 		hashKey = fmt.Sprintf("%s/%s/%d/%s", p.Index, p.Field, p.RowIDOrBits, p.Time.Format(timeFmt))
+	} else {
+		hashKey = fmt.Sprintf("%s/%s/%s", p.Index, p.Field, p.Time.Format(timeFmt))
 	}
+
 	nodeKeys := m.HashTable.GetN(m.Replicas, hashKey)
 
 	// fmt.Println("cleanupOp ", m.hashKey, " hashKey ", hashKey, " nodeKeys ", nodeKeys)
 
-	nMap := make(map[string]struct{}, 0)
+	nMap := make(map[string]int, 0)
 	for _, k := range nodeKeys {
-		nMap[k] = struct{}{}
+		nMap[k] = 1
 	}
 	_, ok := nMap[m.hashKey]
 	if !ok {
 
-		fmt.Println("cleanupOp ", m.hashKey, " hashKey ", hashKey, " nodeKeys ", nodeKeys, "nmap", nMap, "field", p.Field)
-		if p.Field == "isActive" {
+		fmt.Println("cleanupOp key not in HashTable.GetN ", m.hashKey, " key ", hashKey, " nodeKeys ", nodeKeys, "nmap", nMap, "field", p.Field)
+		fmt.Println("cleanupOp will delete ", hashKey, "from node", m.hashKey)
+		if false && p.Field == "isActive" { // atw deleteme:  this is a test
 			// seeking customers_qa/isActive/1/1970-01-01T00
-
 			fmt.Println("cleanupOp isActive", m.hashKey, " hashKey ", hashKey, " nodeKeys ", nodeKeys, "nmap", nMap, "field", p.Field)
-
 			nodeKeys2 := m.HashTable.GetN(m.Replicas, "customers_qa/isActive/0/1970-01-01T00")
 			nodeKeys3 := m.HashTable.GetN(m.Replicas, "customers_qa/isActive/1/1970-01-01T00")
 			fmt.Println("cleanupOp nodeKeys2", m.hashKey, nodeKeys2, nodeKeys3)

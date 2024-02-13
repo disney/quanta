@@ -518,7 +518,6 @@ func Ensure_cluster(count int) *ClusterLocalState {
 
 		fmt.Println("consul status ", sharedKV.Consul.Status())
 
-		// atw fix me time.Sleep(5 * time.Second)
 		fmt.Println("before rbac.NewAuthContext in inabox-harness driver.go")
 
 		ctx, err := rbac.NewAuthContext(sharedKV, "USER001", true)

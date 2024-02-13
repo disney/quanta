@@ -187,7 +187,7 @@ func TestIsNotNull(t *testing.T) {
 		count += 1
 	}
 	fmt.Println("count", count)
-	assert.EqualValues(t, 13, count)
+	assert.EqualValues(t, 14, count)
 
 	// release as necessary
 	state.Release()

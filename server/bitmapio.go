@@ -24,7 +24,7 @@ type Partition struct {
 	Time        time.Time
 	TQType      string
 	HasStrings  bool
-	IsPK        bool
+	IsPK        bool // is primary key
 	Shard       interface{}
 }
 

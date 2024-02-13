@@ -4,7 +4,6 @@ package shared
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 
@@ -194,7 +193,8 @@ func LoadSchema(path string, name string, consulClient *api.Client) (*BasicTable
 
 	var table BasicTable
 	if path != "" {
-		b, err := ioutil.ReadFile(path + SEP + name + SEP + "schema.yaml")
+		fname := path + SEP + name + SEP + "schema.yaml"
+		b, err := os.ReadFile(fname)
 		if err != nil {
 			return nil, err
 		}

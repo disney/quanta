@@ -316,7 +316,7 @@ func (n *Node) Status(ctx context.Context, e *empty.Empty) (*pb.StatusMessage, e
 		MemoryUsed: uint32(n.memoryUsed),
 	}
 
-	u.Debug("Node Status: ", n.hashKey, status.NodeState, " shards", status.ShardCount)
+	u.Debugf("Node Status: %v %v %v %v ", n.hashKey, status.NodeState, " shards", status.ShardCount)
 
 	return status, nil
 }

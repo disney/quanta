@@ -141,14 +141,22 @@ build_kinesis_docker: build_all
 	docker build -t containerregistry.disney.com/digital/$(BIN_KINESIS)-$(PLATFORM)-$(GOARCH) --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployKinesisConsumerDockerfile . \
 	))
 
+# note: Consul must be running for this to work
 test: build_all
-	# tests and code coverage
-	mkdir -p $(COVERAGE_DIR)
-	export TZ=UTC; go test ${GOLIST} -short -v ${LDFLAGS_TEST} -coverprofile ${COV_PROFILE}
-	go tool cover -html=${COV_PROFILE} -o ${COV_HTML}
+	# tests and code coverage TODO: fix coverage (atw)
+	# mkdir -p $(COVERAGE_DIR)
+	# export TZ=UTC; go test ${GOLIST} -short -v ${LDFLAGS_TEST} -coverprofile ${COV_PROFILE}
+	# go tool cover -html=${COV_PROFILE} -o ${COV_HTML}
+	./run-go-tests.sh
 ifeq ($(UNAME), Darwin)
-	open ${COV_HTML}
+	# open ${COV_HTML}
 endif
+
+
+test-integration:   
+	./run-go-integration-tests.sh
+
+test-all:  test test-integration
 
 kcl:
 	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_KCL} ${LDFLAGS} ${PKG_KCL}

@@ -28,7 +28,7 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 	if err != nil {
 		return -1, err
 	}
-	quorumSize := c.Conn.Replicas + 1 // why?
+	quorumSize := c.Conn.Replicas + 1 // usually 2+1
 	if clusterSizeTarget > quorumSize {
 		quorumSize = clusterSizeTarget
 	}
@@ -122,7 +122,7 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 		client := n
 		clientIndex := i
 		eg.Go(func() error {
-			u.Debug("Synchronize syncClient", nodeKey, c.owner, clientIndex)
+			u.Debugf("Synchronize syncClient %v %v %v ", nodeKey, c.owner, clientIndex)
 			diffc, err := c.syncClient(client, nodeKey, clientIndex) // send sync grpc request to peer
 			u.Debug("done Synchronize syncClient", nodeKey, c.owner, clientIndex)
 

@@ -184,7 +184,12 @@ func main() {
 			os.Exit(1)
 		}
 		log.Printf("DynamoDB checkpoint table name [%s]", main.CheckpointTable)
+		if main.InitialPos == "LATEST" {
+			u.Errorf("Checkpoint enabled.  Shard iterator is 'LATEST' setting it to 'AFTER_SEQUENCE_NUMBER'.")
+			main.InitialPos = "AFTER_SEQUENCE_NUMBER"
+		}
 	}
+	
 	if shardKey != nil {
 		v := *shardKey
 		var path string

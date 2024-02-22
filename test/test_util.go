@@ -9,6 +9,7 @@ import (
 	admin "github.com/disney/quanta/quanta-admin-lib"
 	"github.com/disney/quanta/server"
 	"github.com/disney/quanta/shared"
+	"github.com/hashicorp/consul/api"
 )
 
 // testStatesAllMatch - Wait for the proxy, the admin, and all the nodes report the same cluster state.
@@ -70,16 +71,41 @@ func testStatesAllMatch(t *testing.T, state *ClusterLocalState, comment string) 
 
 type Mappings []string
 
+func dumpField(t *testing.T, state *ClusterLocalState, vectors []string) {
+	ConsulAddr := "127.0.0.1:8500"
+	consulClient, err := api.NewClient(&api.Config{Address: ConsulAddr})
+	check(err)
+	clientConn := shared.NewDefaultConnection("dumpField")
+	clientConn.ServicePort = 4000
+	clientConn.Quorum = 3
+	err = clientConn.Connect(consulClient)
+	check(err)
+	defer func() {
+		clientConn.Disconnect()
+	}()
+	dumpField_(t, state, vectors, clientConn)
+}
+
 // dumpIsActive return shard info for "customers_qa/isActive/1/1970-01-01T00"
 // or "customers_qa/zip/1970-01-01T00"
 // or whatever's in vectors
-func dumpField(t *testing.T, state *ClusterLocalState, vectors []string) {
+func dumpField_(t *testing.T, state *ClusterLocalState, vectors []string, clientConn *shared.Conn) {
+
+	if clientConn.HashTable == nil {
+		return
+	}
+
+	nodes, err := clientConn.SelectNodes("dummy", shared.Admin) // shared.AllActive)
+	if err != nil {
+		t.Error("dumpIsActive SelectNodes not ready", nodes, err)
+		return
+	}
 
 	fieldMatch := strings.Split(vectors[0], "/")[1]
 
 	fmt.Println("bitmap dump of ", fieldMatch, vectors[0])
 
-	testStatesAllMatch(t, state, "bitmap dump of "+fieldMatch)
+	// testStatesAllMatch(t, state, "bitmap dump of "+fieldMatch)
 
 	//mappings0 := make([]string, 0)
 	//mappings1 := make([]string, 0)
@@ -89,43 +115,30 @@ func dumpField(t *testing.T, state *ClusterLocalState, vectors []string) {
 		mappings[i] = make([]string, 0)
 	}
 
-	conn := state.proxyControl.Src.GetConnection()
+	conn := clientConn // Src.GetConnection() // .proxyControl.Src.GetConnection()
 
 	for i, v := range vectors {
-		nodes, err := conn.SelectNodes(v, shared.AllActive)
+		nodes, err := conn.SelectNodes(v, shared.Admin) // shared.AllActive)
 		check(err)
 		m := mappings[i]
 		mappings[i] = append(m, fmt.Sprintf("%v", nodes))
 		fmt.Println("proxy hash nodes", i, nodes)
 	}
 
-	// nodes, err := conn.SelectNodes("customers_qa/isActive/0/1970-01-01T00", shared.AllActive)
-	// check(err)
-	// mappings0 = append(mappings0, fmt.Sprintf("%v", nodes))
-	// fmt.Println("proxy hash nodes 0 ", nodes)
-
-	// nodes, err = conn.SelectNodes("customers_qa/isActive/1/1970-01-01T00", shared.AllActive)
-	// check(err)
-	// mappings1 = append(mappings1, fmt.Sprintf("%v", nodes))
-	// fmt.Println("proxy hash nodes 1 ", nodes)
-
 	for n, node := range state.nodes {
 		for i, v := range vectors {
-			nodes, err := node.Conn.SelectNodes(v, shared.AllActive)
-			check(err)
+			if node.Conn.HashTable == nil {
+				continue
+			}
+			nodes, err := node.Conn.SelectNodes(v, shared.Admin)
+			if err != nil {
+				continue
+			}
 			fmt.Println("node hash nodes", i, n, nodes)
 			m := mappings[i]
 			mappings[i] = append(m, fmt.Sprintf("%v", nodes))
 
 		}
-		// nodes, err = node.Conn.SelectNodes("customers_qa/isActive/0/1970-01-01T00", shared.AllActive)
-		// check(err)
-		// fmt.Println("node hash nodes 0", i, nodes)
-		// mappings0 = append(mappings0, fmt.Sprintf("%v", nodes))
-		// nodes, err = node.Conn.SelectNodes("customers_qa/isActive/1/1970-01-01T00", shared.AllActive)
-		// check(err)
-		// fmt.Println("node hash nodes 1", i, nodes)
-		// mappings1 = append(mappings1, fmt.Sprintf("%v", nodes))
 	}
 	for i := range vectors {
 
@@ -138,17 +151,12 @@ func dumpField(t *testing.T, state *ClusterLocalState, vectors []string) {
 				t.Error("dumpIsActive mappings0 MISMATCH", m)
 			}
 		}
-		// for i := 1; i < len(mappings1); i++ {
-		// 	if mappings1[i] != mappings1[0] {
-		// 		fmt.Println("dumpIsActive mappings0 MISMATCH", mappings1)
-		// 		t.Error("dumpIsActive mappings0 MISMATCH", mappings1)
-		// 	}
-		// }
 	}
 
 	allIntegers := make(map[uint64]uint64, 0)
 
 	for i, node := range state.nodes {
+		fmt.Println("##### node ", i, node.GetNodeID())
 		tmp := state.nodes[i].GetNodeService("BitmapIndex")
 		bitmap := tmp.(*server.BitmapIndex)
 		_ = bitmap

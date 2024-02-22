@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"unsafe"
 
 	"math"
 	"os"
@@ -144,6 +145,8 @@ func (m *BitmapIndex) GetBsiCache() map[string]map[string]map[int64]*BSIBitmap {
 // Init - Initialization
 func (m *BitmapIndex) Init() error {
 
+	fmt.Println("BitmapIndex Init", m.hashKey, uintptr(unsafe.Pointer(m)))
+
 	// TODO: Sensible configuration for queue sizes.
 	m.partitionQueue = make(chan *PartitionOperation, 100000)
 	//m.fragQueue = make(chan *BitmapFragment, 20000000)
@@ -177,6 +180,23 @@ func (m *BitmapIndex) Init() error {
 
 	// Partition operation worker thread
 	go m.partitionProcessLoop()
+
+	go func() { // make into proc
+		for {
+			select {
+			case <-m.Stop:
+				u.Debug("BitmapIndex Init() received stop signal", m.Node.hashKey)
+				return
+			case forceSync := <-m.writeSignal:
+				// fmt.Println(m.Node.hashKey, "had writeSignal, checkPersist*Cache(", forceSync, ")")
+				// go
+				m.checkPersistBitmapCache(forceSync)
+				// go
+				m.checkPersistBSICache(forceSync)
+				// fmt.Println(m.Node.hashKey, "had writeSignal DONE")
+			}
+		}
+	}()
 
 	return nil
 }
@@ -249,8 +269,8 @@ func (m *BitmapIndex) BatchMutate(stream pb.BitmapIndex_BatchMutateServer) error
 		}
 		select {
 		case m.fragQueue <- frag:
+			// fmt.Println(m.hashKey, "svr BatchMutate sent to fragQueue", frag.FieldName, frag.RowIDOrBits, frag.Time.Format(timeFmt), uintptr(unsafe.Pointer(m)))
 		default:
-			// Fragment queue is full
 			return fmt.Errorf("BatchMutate: fragment queue is full")
 		}
 	}
@@ -387,8 +407,12 @@ func (m *BitmapIndex) isBSI(index, field string) bool {
 // a frag in fragQueue where any thread can pick it up. It is much smaller.
 func (m *BitmapIndex) batchProcessLoop(worker *WorkerThread) {
 
+	// fmt.Println(m.Node.hashKey, "batchProcessLoop launched", worker.index, uintptr(unsafe.Pointer(m)))
+	// defer fmt.Println(m.Node.hashKey, "batchProcessLoop DONE", worker.index) // should never ever ever ever happen
+
 	for {
-		// fmt.Println("top worker loop", m.Node.hashKey, worker.index)
+		// fmt.Println(m.Node.hashKey, "batchProcessLoop top worker loop", worker.index)
+		// uintptr(unsafe.Pointer(m)
 		// This is a way to make sure that the fraq queue has priority over persistence.
 		select {
 		case nop := <-worker.aux:
@@ -402,15 +426,24 @@ func (m *BitmapIndex) batchProcessLoop(worker *WorkerThread) {
 			} else {
 				m.updateBitmapCache(frag)
 			}
-			frag.Done <- true
+			select {
+			case frag.Done <- true:
+			default:
+			}
 			continue
-		default: // Don't block
+
+		default:
+			// Don't block
 		}
+		// fmt.Println(m.Node.hashKey, "batchProcessLoop middle worker loop", worker.index, len(m.setBitThreads.trigger), len(m.writeSignal))
 
 		// this is where it waits for a frag or a write signal
 		select {
 		case nop := <-worker.aux:
-			nop.Done <- true
+			select {
+			case nop.Done <- true:
+			default:
+			}
 			continue
 		case frag := <-m.fragQueue:
 			if frag.IsNop {
@@ -420,19 +453,24 @@ func (m *BitmapIndex) batchProcessLoop(worker *WorkerThread) {
 			} else {
 				m.updateBitmapCache(frag)
 			}
-			frag.Done <- true
-			continue
-		case <-m.writeSignal:
-			go m.checkPersistBitmapCache(false)
-			go m.checkPersistBSICache(false)
+			select {
+			case frag.Done <- true:
+			default:
+			}
 			continue
 		case <-time.After(time.Second * 10):
-			m.checkPersistBitmapCache(true)
-			m.checkPersistBSICache(true)
+
+			forceSync := true
+			select {
+			case m.writeSignal <- forceSync:
+			default:
+				// it's ok to be full.  It's just a signal.
+			}
 			m.shardCount = m.bsiCount + m.bitmapCount
 			if worker.index == 0 {
-				u.Debug("batchProcessLoop shard count ", m.hashKey, " shard ", m.shardCount, "bsi ", m.bsiCount, "bitmap ", m.bitmapCount)
+				u.Debug("batchProcessLoop shard count ", m.hashKey, " shard ", m.shardCount, " bsi ", m.bsiCount, " bitmap ", m.bitmapCount)
 			}
+			// no default, block
 		}
 	} // back to top, forever
 }
@@ -501,7 +539,10 @@ func (m *BitmapIndex) verifyNode() {
 	u.Warnf("Setting node state to Syncing %s", m.GetNodeID())
 	tryCount := 1
 	for {
+		u.Debugf("verifyNode peerClient.Synchronize start %v", m.hashKey)
 		diffCount, err := peerClient.Synchronize(m.GetNodeID())
+		u.Debugf("verifyNode peerClient.Synchronize done %v %v %v", m.hashKey, diffCount, err)
+
 		if err != nil {
 			u.Log(u.FATAL, fmt.Errorf("Node synchronization/verification failed - %v", err))
 		}
@@ -517,7 +558,7 @@ func (m *BitmapIndex) verifyNode() {
 		}
 		time.Sleep(shared.SyncRetryInterval)
 		tryCount++
-		u.Warnf("%d Differences detected, retrying Synchronization (attempt %d)", diffCount, tryCount)
+		u.Warnf("%s %d Differences detected, retrying Synchronization (attempt %d)", m.hashKey, diffCount, tryCount)
 	}
 	u.Debug("verifyNode done ", m.hashKey)
 }
@@ -729,7 +770,7 @@ func (m *BitmapIndex) Truncate(index string) {
 	for _, rm := range fm {
 		for _, tm := range rm {
 			for ts := range tm {
-				//m.bitmapCacheLock.Lock()
+				//m.bitmapCacheLock.Lock() atw TODO: can this work or does it deadlock?
 				delete(tm, ts)
 				//m.bitmapCacheLock.Unlock()
 			}
@@ -1251,11 +1292,15 @@ func (c *CountTrigger) Add(n int) {
 	defer c.lock.Unlock()
 	c.num += n
 	if c.num == 0 {
+		const forceSync = false
 		select {
-		case c.trigger <- true:
+		// the trigger is the BitmapIndex.writeSignal
+		// We don't ask it to force
+		case c.trigger <- forceSync:
 			return
-			//default:
-			//	return
+		default:
+			// it is normal for it to get full.
+			return
 		}
 	}
 }

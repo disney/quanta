@@ -70,7 +70,7 @@ func TestShowTables(t *testing.T) {
 	// should we check mysql through the console?
 
 	// time.Sleep(999999999 * time.Second) // stay alive forever -
-	// -p "" // no password
+	// -p "" // omit for no password
 
 	showcmd := `mysql -h127.0.0.1 -P4000 -Dquanta -u"DEEMC004"  -A -e 'show tables'`
 	shellResult, err := Shell(showcmd, "") // \n is the password

@@ -109,3 +109,52 @@ func TestLocalBasic3then4(t *testing.T) {
 	// release as necessary
 	state.Release()
 }
+
+func TestStartLocal(t *testing.T) { // this is NOT a test. Too Slow. I use this manually
+	// TestBasic3 and then run this and see if it fails
+
+	state := &ClusterLocalState{}
+
+	go func(state *ClusterLocalState) {
+		for {
+			vectors := []string{"customers_qa/numFamilyMembers/1969-12-31T16"}
+			dumpField(t, state, vectors)
+			time.Sleep(1 * time.Second)
+		}
+	}(state)
+
+	Ensure_this_cluster(3, state)
+
+	time.Sleep(99999999 * time.Second)
+
+}
+func TestBasic3(t *testing.T) {
+
+	AcquirePort4000.Lock()
+	defer AcquirePort4000.Unlock()
+	var err error
+	shared.SetUTCdefault()
+
+	isLocalRunning := IsLocalRunning()
+
+	// erase the storage
+	if !isLocalRunning { // if no cluster is up
+		err = os.RemoveAll("../test/localClusterData/") // start fresh
+		check(err)
+	}
+	// ensure we have a cluster on localhost, start one if necessary
+	state := Ensure_cluster(3)
+
+	if !isLocalRunning {
+		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries_load.sql")
+	}
+
+	vectors := []string{"customers_qa/isActive/0/1970-01-01T00", "customers_qa/isActive/1/1970-01-01T00"}
+
+	testStatesAllMatch(t, state, "initial")
+	dumpField(t, state, vectors)
+
+	// release as necessary
+	state.Release()
+
+}

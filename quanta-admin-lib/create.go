@@ -32,7 +32,7 @@ func (c *CreateCmd) Run(ctx *Context) error {
 	}
 	// let's check the types of the fields
 	for i := 0; i < len(table.Attributes); i++ {
-		u.Info(table.Attributes[i].FieldName, table.Attributes[i].Type)
+		u.Info(table.Attributes[i].FieldName, " ", table.Attributes[i].Type)
 		typ := shared.TypeFromString(table.Attributes[i].Type)
 		if typ == shared.NotDefined {
 			return fmt.Errorf("unknown type %s for field %s", table.Attributes[i].Type, table.Attributes[i].FieldName)

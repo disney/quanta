@@ -180,6 +180,7 @@ func (c *BitmapIndex) BatchMutateNode(clear bool, client pb.BitmapIndexClient,
 		}
 	}
 	stream, err := client.BatchMutate(ctx)
+
 	if err != nil {
 		u.Errorf("%v.BatchMutate(_) = _, %v: ", c.client, err)
 		return fmt.Errorf("%v.BatchMutate(_) = _, %v: ", c.client, err)
@@ -191,12 +192,14 @@ func (c *BitmapIndex) BatchMutateNode(clear bool, client pb.BitmapIndexClient,
 			return fmt.Errorf("%v.Send(%v) = %v", stream, b[i], err)
 		}
 	}
-	_, err2 := stream.CloseAndRecv()
-	if err2 != nil {
-		u.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err2, nil)
-		return fmt.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err2, nil)
+
+	_, err = stream.CloseAndRecv()
+	if err != nil {
+		u.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err, nil)
+		return fmt.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err, nil)
 	}
-	return nil
+
+	return err
 }
 
 // splitBitmapBatch - For a given batch of standard bitmap mutations, separate them into
@@ -302,10 +305,10 @@ func (c *BitmapIndex) BatchSetValueNode(client pb.BitmapIndexClient,
 			return fmt.Errorf("%v.Send(%v) = %v", stream, b[i], err)
 		}
 	}
-	_, err2 := stream.CloseAndRecv()
-	if err2 != nil {
-		u.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err2, nil)
-		return fmt.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err2, nil)
+	_, err = stream.CloseAndRecv()
+	if err != nil {
+		u.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err, nil)
+		return fmt.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err, nil)
 	}
 	return nil
 }

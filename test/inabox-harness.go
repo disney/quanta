@@ -62,7 +62,7 @@ func StartNode(nodeStart int) (*server.Node, error) {
 		memLimit := 0
 
 		// Create /bitmap data directory
-		fmt.Printf("Creating bitmap data directory: %s", dataDir+"/bitmap")
+		fmt.Printf("Creating bitmap data directory: %s \n", dataDir+"/bitmap")
 		if _, err := os.Stat(dataDir + "/bitmap"); err != nil {
 			err = os.MkdirAll(dataDir+"/bitmap", 0777)
 			if err != nil {
@@ -98,17 +98,9 @@ func StartNode(nodeStart int) (*server.Node, error) {
 		m.AddNodeService(bitmapIndex)
 
 		// load the table schema from the file system manually here
-
+		//  eg.
 		// table := "cities"
 		// shared.LoadSchema("../test/testdata/config", table, consulClient)
-		// // ? m.TableCache.TableCache[table] = t
-
-		// table = "cityzip"
-		// shared.LoadSchema("../test/testdata/config", table, consulClient)
-
-		// table = "dmltest"
-		// shared.LoadSchema("../test/testdata/config", table, consulClient)
-
 		// Start listening endpoint
 		m.Start()
 
@@ -116,6 +108,7 @@ func StartNode(nodeStart int) (*server.Node, error) {
 		err = m.InitServices()
 		elapsed := time.Since(start)
 		if err != nil {
+			log.Printf("InitServices FAIL ERROR. %v", err)
 			log.Fatal(err)
 		}
 		log.Printf("Node initialized in %v.", elapsed)
@@ -251,7 +244,8 @@ func StartProxy(count int, testConfigPath string) *LocalProxyControl {
 		for range localProxy.Stop {
 			fmt.Println("Stopping proxy")
 			proxy.Src.Close()
-			listener.Close()
+			err := listener.Close()
+			check(err)
 		}
 
 	}(localProxy)
@@ -468,16 +462,25 @@ func WaitForLocalActive(state *ClusterLocalState) {
 		if allActive {
 			break
 		}
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 	}
 	fmt.Println("WaitForLocalActive allActive", allActive)
+}
+
+func Ensure_this_cluster(count int, state *ClusterLocalState) {
+	local_Ensure_cluster(count, state)
+}
+
+func Ensure_cluster(count int) *ClusterLocalState {
+	var state = &ClusterLocalState{}
+	local_Ensure_cluster(count, state)
+	return state
 }
 
 // Ensure_cluster checks to see if there already is a cluster and
 // starts a local one as needed.
 // This depends on having consul on port 8500 in a terminal
-func Ensure_cluster(count int) *ClusterLocalState {
-	var state = &ClusterLocalState{}
+func local_Ensure_cluster(count int, state *ClusterLocalState) {
 
 	var proxyConnect ProxyConnectStrings
 	proxyConnect.Host = "127.0.0.1"
@@ -538,7 +541,7 @@ func Ensure_cluster(count int) *ClusterLocalState {
 	state.Db, err = state.ProxyConnect.ProxyConnectConnect()
 	check(err)
 
-	return state
+	//return state
 }
 
 func MergeSqlInfo(total *SqlInfo, got SqlInfo) {

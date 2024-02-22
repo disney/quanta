@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"time"
-	"unsafe"
 
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
@@ -44,7 +43,7 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 	for len(c.Conn.GetNodeMap()) < quorumSize {
 		time.Sleep(100 * time.Millisecond)
 	}
-	u.Debug("BitmapIndex Synchronize nodeMap len", len(c.Conn.GetNodeMap()), "quorumSize", quorumSize, "node", nodeKey, " owner", c.Conn.owner)
+	u.Debug("BitmapIndex Synchronize nodeMap len ", len(c.Conn.GetNodeMap()), " quorumSize ", quorumSize, " node ", nodeKey, " owner ", c.Conn.owner)
 
 	// Are we even ready to launch this process yet?
 	// Do we have a quorum?
@@ -52,7 +51,7 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 	pass := 0
 	for {
 		var startingCount, readyCount, unknownCount int
-		u.Debug("BitmapIndex Synchronize nodeMap", c.Conn.owner, c.Conn.GetNodeMap(), "pass", pass, uintptr(unsafe.Pointer(c.Conn)))
+		u.Debug(c.Conn.owner, " BitmapIndex Synchronize nodeMap ", c.Conn.GetNodeMap(), " pass ", pass) // , uintptr(unsafe.Pointer(c.Conn)))
 		pass += 1
 		select {
 		case _, open := <-c.Conn.Stop:
@@ -63,12 +62,12 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 		case <-time.After(useThisInterval):
 			useThisInterval = ourPollInterval
 
-			u.Debug("BitmapIndex Synchronize node loop starting", c.Conn.owner, pass, c.Conn.GetNodeMap(), uintptr(unsafe.Pointer(c.Conn)))
+			u.Debug(c.Conn.owner, " BitmapIndex Synchronize node loop starting ", pass, " ", c.Conn.GetNodeMap())
 
 			for id := range c.Conn.GetNodeMap() {
-				u.Debug("Synchronize getNodeStatusForID starts", id, c.Conn.owner, pass)
+				u.Debugf("%s Synchronize getNodeStatusForID starts %v %v", id, c.Conn.owner, pass)
 				status, err := c.Conn.getNodeStatusForID(id)
-				u.Debug("Synchronize getNodeStatusForID after", id, c.Conn.owner, status.NodeState, pass)
+				u.Debugf("%s Synchronize getNodeStatusForID after %v %v %v", id, c.Conn.owner, status.NodeState, pass)
 				if err != nil {
 					u.Warnf("error %v\n", err)
 					unknownCount++
@@ -89,7 +88,7 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 					unknownCount++
 				}
 			}
-			u.Debug("BitmapIndex Synchronize node loop done", c.Conn.owner, pass, c.Conn.GetNodeMap(), uintptr(unsafe.Pointer(c.Conn)))
+			u.Debug(c.Conn.owner, " BitmapIndex Synchronize node loop done ", pass, " ", c.Conn.GetNodeMap())
 		} // end select
 		// No nodes in starting state and quorum reached
 		if startingCount == 0 && unknownCount == 0 && readyCount >= quorumSize {
@@ -122,9 +121,9 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 		client := n
 		clientIndex := i
 		eg.Go(func() error {
-			u.Debugf("Synchronize syncClient %v %v %v ", nodeKey, c.owner, clientIndex)
+			u.Debugf("Synchronize syncClient me:%v it:%v %v ", c.owner, nodeKey, clientIndex)
 			diffc, err := c.syncClient(client, nodeKey, clientIndex) // send sync grpc request to peer
-			u.Debug("done Synchronize syncClient", nodeKey, c.owner, clientIndex)
+			u.Debugf("done Synchronize syncClient me:%v it:%v %v ", c.owner, nodeKey, clientIndex)
 
 			if err != nil {
 				return err
@@ -144,9 +143,9 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 	}
 
 	if diffCount == 0 {
-		u.Warnf("Synchronization complete for node %s, no differences detected", nodeKey)
+		u.Warnf("%s Synchronization complete, no differences detected", nodeKey)
 	} else {
-		u.Warnf("Synchronization complete for node %s, %d differences detected", nodeKey, diffCount)
+		u.Warnf("%s Synchronization complete, differences detected %v", nodeKey, diffCount)
 	}
 
 	return diffCount, nil

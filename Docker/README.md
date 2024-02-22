@@ -41,12 +41,12 @@ The simplest approach for Consul cluster nodes is to deploy them as Docker conta
 
 For a development/test environment spin up a Docker node and run the following script:
 ```bash
-docker run -d --net=host -e 'CONSUL_LOCAL_CONFIG={"leave_on_terminate": true}' consul agent -server -bind=0.0.0.0 -bootstrap-expect=1
+docker run -d --net=host -e 'CONSUL_LOCAL_CONFIG={"leave_on_terminate": true}' hashicorp/consul agent -server -bind=0.0.0.0 -bootstrap-expect=1
 ```
 This will pull the image from Dockerhub automatically. Remember the address of this host as it will be used by the agents running alongside the Quanta component hosts.  Ideally this would be set up to use DNS.
 Run the following command to verify that the Consul server is running:
 ```bash
-docker ps
+docker ps -a
 ```
 You should see 1 instance running.
 

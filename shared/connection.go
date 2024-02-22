@@ -86,7 +86,7 @@ type Conn struct {
 // NewDefaultConnection - Configure a connection with default values.
 func NewDefaultConnection(owner string) *Conn {
 
-	u.Info("NewDefaultConnection", owner)
+	u.Info("NewDefaultConnection ", owner)
 	m := &Conn{}
 	m.ServiceName = "quanta"
 	m.ServicePort = 4000
@@ -201,10 +201,11 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 			return fmt.Errorf("node: uninitialized %s services list: %s", m.ServiceName, err)
 		}
 
-		if len(m.nodeMap) < m.Quorum {
-			return fmt.Errorf("node: quorum size %d currently,  must be at least %d to handle requests for service %s",
-				len(m.idMap), m.Quorum, m.ServiceName)
-		}
+		// Who uses this? do we need it?
+		// if len(m.nodeMap) < m.Quorum {
+		// 	return fmt.Errorf("node: quorum size %d currently,  must be at least %d to handle requests for service %s",
+		// 		len(m.idMap), m.Quorum, m.ServiceName)
+		// }
 
 		m.clientConn, err = m.CreateNodeConnections(true)
 		m.Admin = make([]pb.ClusterAdminClient, len(m.clientConn))
@@ -368,7 +369,8 @@ func (m *Conn) SelectNodes(key interface{}, op OpType) ([]int, error) {
 			}
 		}
 	}
-	if len(indices) == 0 { // Shouldn't happen
+	// what happens if we don't find any? Happens in test situations and startup
+	if len(indices) == 0 {
 		return nil, fmt.Errorf("SelectNodes assert fail: none selected: nodeKeys [%v], nodeStatusMap [%#v], op [%s]",
 			nodeKeys, m.nodeStatusMap, op)
 	}
@@ -498,10 +500,10 @@ func TenthSecs() float64 {
 func (m *Conn) updateHealth(initial bool) (err error) {
 
 	now := TenthSecs()
-	u.Debug("Conn update", m.owner, now)
+	u.Debugf("Conn update %v %v", m.owner, now)
 	defer func() {
 		passed := TenthSecs() - now
-		u.Debug("Done Conn update", m.owner, now, "DONE", passed, "size", m.clusterSizeTarget, "active", m.activeCount, m.nodeMap)
+		u.Debugf("Done Conn update  %v %v %v %v active %v %v ", m.owner, now, passed, m.clusterSizeTarget, m.activeCount, m.nodeMap)
 	}()
 
 	opts := &api.QueryOptions{WaitIndex: m.waitIndex}

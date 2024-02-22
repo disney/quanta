@@ -21,7 +21,7 @@ echo "TestAvgAge"
 go test -timeout 90s -run ^TestAvgAge$                  github.com/disney/quanta/test
 
 # from local3+1_test.go
-sleep 5
+sleep 15
 echo "starting TestLocalBasic3then4"
 go test -timeout 90s -run ^TestLocalBasic3then4$  github.com/disney/quanta/test
 
@@ -36,7 +36,6 @@ go test -timeout 200s -run ^TestLocalBasic3then4Zip$  github.com/disney/quanta/t
 
 # from restart_test.go
 # atw FIXME: fails: go test -timeout 90s -run ^TestRetainData$  github.com/disney/quanta/test
-
 
 # TODO: kill the consul, stop the docker containers, run tests in test-integration.sh
 

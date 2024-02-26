@@ -5,6 +5,7 @@ package shared
 import (
 	"encoding/binary"
 	"fmt"
+	"net/http"
 
 	"net"
 	"os"
@@ -19,8 +20,22 @@ import (
 	u "github.com/araddon/gou"
 	"github.com/disney/quanta/qlbridge/exec"
 	"github.com/hashicorp/consul/api"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/sync/errgroup"
 )
+
+// StartPprofAndPromListener will start the pprof and prometheus listeners
+// if pprof is set to "true".
+func StartPprofAndPromListener(pprof string) {
+
+	if pprof == "true" {
+		go func() {
+			http.ListenAndServe(":6060", http.DefaultServeMux)
+		}()
+	}
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(":2112", promhttp.Handler())
+}
 
 // ToString - Interface type to string
 func ToString(v interface{}) string {
@@ -34,27 +49,28 @@ func ToString(v interface{}) string {
 }
 
 // ToBytes - Helper function to serialize data for GRPC.
-func ToBytes(val interface{}) []byte {
+func ToBytes(v interface{}) []byte {
 
-	switch v := val.(type) {
+	switch v.(type) {
 	case string:
-		return []byte(v)
+		return []byte(v.(string))
 	case uint64:
 		b := make([]byte, 8)
-		binary.LittleEndian.PutUint64(b, v)
+		binary.LittleEndian.PutUint64(b, v.(uint64))
 		return b
 	case int64:
 		b := make([]byte, 8)
-		binary.LittleEndian.PutUint64(b, uint64(v))
+		binary.LittleEndian.PutUint64(b, uint64(v.(int64)))
 		return b
 	case int:
 		b := make([]byte, 8)
-		binary.LittleEndian.PutUint64(b, uint64(v))
+		binary.LittleEndian.PutUint64(b, uint64(v.(int)))
 		return b
 	case float64:
 		u.Errorf("Unsupported float64 for %f", v.(float64))
 	}
 	u.Errorf("Unsupported type %T for data %#v", v, v)
+	return []byte{}
 }
 
 // UnmarshalValue - Unmarshal GRPC value from bytes.

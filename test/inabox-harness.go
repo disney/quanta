@@ -501,11 +501,7 @@ func local_Ensure_cluster(count int, state *ClusterLocalState) {
 	isNotRunning := !IsLocalRunning()
 	if isNotRunning {
 
-		go func() {
-			log.Println("pprof ListenAndServe starting")
-			tmp := http.ListenAndServe(":6060", nil)
-			_ = tmp
-		}()
+		shared.StartPprofAndPromListener("true")
 
 		// start the cluster
 		StartNodes(state, count)

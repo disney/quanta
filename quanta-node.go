@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"net"
-	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
@@ -16,7 +15,6 @@ import (
 	"github.com/disney/quanta/server"
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -58,19 +56,7 @@ func main() {
 	}
 
 	fmt.Println("pprof is ", *pprof)
-	if *pprof == "true" { // start the pprof server which serves cpu and memory usage etc.
-		go func() {
-			fmt.Println("pprof ListenAndServe", http.ListenAndServe(":6060", nil))
-		}()
-	}
-
-	if *pprof != "true" {
-		go func() {
-			// Initialize Prometheus metrics endpoint.
-			http.Handle("/metrics", promhttp.Handler())
-			http.ListenAndServe(":2112", nil)
-		}()
-	}
+	shared.StartPprofAndPromListener(*pprof)
 
 	u.Warnf("Node identifier '%s'", *hashKey)
 	u.Infof("Connecting to Consul at: [%s] ...\n", *consul)

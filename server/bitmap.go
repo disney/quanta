@@ -534,7 +534,7 @@ func (m *BitmapIndex) partitionProcessLoop() {
 			m.executeOperation(p)
 			m.purgePartition(p.Partition)
 			runtime.GC()
-		case <-time.After(time.Second * 10):
+		case <-time.After(time.Hour):
 			state, _, _ := m.GetClusterState()
 			if m.State == Active && state == shared.Green {
 				m.cleanupStrandedShards()

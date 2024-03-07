@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"os"
 	"reflect"
 	"strings"
 	"time"
@@ -129,7 +128,8 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 	ci, err := m.GetClientIndexForNodeID(newNodeID)
 	if err != nil {
 		u.Errorf("%s GetClientForNodeID = %s failed.", m.hashKey, newNodeID)
-		os.Exit(1)
+		//os.Exit(1)
+		return &wrappers.Int64Value{Value: int64(-1)}, fmt.Errorf("GetClientForNodeID = %s failed.", newNodeID)
 	}
 	targetIP := m.ClientConnections()[ci].Target()
 

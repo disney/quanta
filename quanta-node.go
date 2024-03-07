@@ -124,6 +124,8 @@ func main() {
 	}
 
 	<-m.Stop
+	u.Debug(hashKey, "Node got m.Stop.")
+	m.Leave()
 	select {
 	case err = <-m.Err:
 	default:

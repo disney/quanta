@@ -1,14 +1,25 @@
 #!/bin/bash -e
 
+# from bigDataREtention
+
+sleep 1
+echo "starting TestBasicLoadBig"
+# this one loads 250k strings into first_name and quits
+go test -timeout 500s -run ^TestBasicLoadBig$  github.com/disney/quanta/test
+sleep 15
+echo "starting TestOpenwStrings"
+# this one starts the cluster and if it takes too long (rebuilding indexes) it will fail
+go test -timeout 90s -run ^TestOpenwStrings$  github.com/disney/quanta/test
+
 # from restart_test.go
 sleep 1
 echo "starting TestRetainData"
 go test -timeout 90s -run ^TestRetainData$  github.com/disney/quanta/test
-sleep 15
+sleep 30
 echo "starting TestRetainData_Part2"
 go test -timeout 90s -run ^TestRetainData_Part2$  github.com/disney/quanta/test
 sleep 15
-echo "starting TestRetainData_Part2"
+echo "starting TestRetainData_Part2 again"
 go test -timeout 90s -run ^TestRetainData_Part2$  github.com/disney/quanta/test
 
 # from sql_test.go

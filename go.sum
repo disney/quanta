@@ -66,6 +66,8 @@ github.com/RoaringBitmap/roaring v1.5.0 h1:V0VCSiHjroItEYCM3guC8T83ehi5QMt3oM9Ee
 github.com/RoaringBitmap/roaring v1.5.0/go.mod h1:plvDsJQpxOC5bw8LRteu/MLWHsHez/3y6cubLI4/1yE=
 github.com/RoaringBitmap/roaring v1.7.0 h1:OZF303tJCER1Tj3x+aArx/S5X7hrT186ri6JjrGvG68=
 github.com/RoaringBitmap/roaring v1.7.0/go.mod h1:6AXUsoIEzDTFFQCe1RbGA6uFONMhvejWj5rqITANK90=
+github.com/RoaringBitmap/roaring v1.9.0 h1:lwKhr90/j0jVXJyh5X+vQN1VVn77rQFfYnh6RDRGCcE=
+github.com/RoaringBitmap/roaring v1.9.0/go.mod h1:6AXUsoIEzDTFFQCe1RbGA6uFONMhvejWj5rqITANK90=
 github.com/akrylysov/pogreb v0.9.1 h1:kO4TD2qaiCD0TtIjEj3ta1rCTMtyp61RxuD4cet7S14=
 github.com/akrylysov/pogreb v0.9.1/go.mod h1:pNs6QmpQ1UlTJKDezuRWmaqkgUE2TuU0YTWyqJZ7+lI=
 github.com/alecthomas/kong v0.2.17 h1:URDISCI96MIgcIlQyoCAlhOmrSw6pZScBNkctg8r0W0=

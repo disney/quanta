@@ -15,6 +15,7 @@ type ShutdownCmd struct {
 }
 
 // Run - Shutdown command implementation
+// calls the shutdown method on the selected nodes
 func (s *ShutdownCmd) Run(ctx *Context) error {
 
 	conn := GetClientConnection(ctx.ConsulAddr, ctx.Port, "shutdown")

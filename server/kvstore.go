@@ -32,12 +32,11 @@ const (
 // KVStore - Server side state for KVStore service.
 type KVStore struct {
 	*Node
-
-	storeCache      map[string]*cacheEntry
-	storeCacheLock  sync.RWMutex
-	enumGuard       singleflight.Group
-	exit			chan bool
-	cleanupLatency  int64						// current cleanup thread duration (Prometheus)
+	storeCache     map[string]*cacheEntry
+	storeCacheLock sync.RWMutex
+	enumGuard      singleflight.Group
+	exit           chan bool
+	cleanupLatency int64 // current cleanup thread duration (Prometheus)
 }
 
 type cacheEntry struct {
@@ -61,6 +60,8 @@ func (m *KVStore) Init() error {
 	if m.Node.consul == nil {
 		return nil
 	}
+
+	start := time.Now()
 
 	tables, err := shared.GetTables(m.Node.consul)
 	if err != nil {
@@ -100,14 +101,39 @@ func (m *KVStore) Init() error {
 		}
 	}
 
+	wg := sync.WaitGroup{}
+	var gotError error
+
 	for _, v := range dbList {
-		u.Infof("Opening [%s]", v)
-		if _, err := m.getStore(v); err != nil {
-			return fmt.Errorf("cannot initialize kv store service: %v", err)
-		}
+		wg.Add(1)
+		go func(index string) {
+			defer wg.Done()
+			_, err := m.getStore(index)
+			if err != nil {
+				gotError = fmt.Errorf("cannot initialize kv store service: %v", err)
+			}
+		}(v)
+		// u.Infof("KVStore Init Opening [%s]", v)
+		// _, err := m.getStore(v)
+		// if err != nil {
+		// 	return fmt.Errorf("cannot initialize kv store service: %v", err)
+		// }
 	}
 
+	wg.Wait()
+
+	if gotError != nil {
+		return gotError
+	}
+
+	elapsed1 := time.Since(start)
+
 	go m.cleanupProcessLoop()
+
+	elapsed2 := time.Since(start)
+
+	fmt.Println(m.hashKey, "KVStore Init elapsed1", elapsed1, "elapsed2", elapsed2)
+
 	return nil
 }
 
@@ -135,6 +161,8 @@ func (m *KVStore) cleanupProcessLoop() {
 // Scan open cache entries and close out indices
 func (m *KVStore) cleanup() {
 
+	u.Debug(m.hashKey, " KVStore cleanup")
+
 	start := time.Now()
 
 	for k, v := range m.storeCache {
@@ -150,14 +178,18 @@ func (m *KVStore) cleanup() {
 
 // Shutdown service.
 func (m *KVStore) Shutdown() {
+
+	u.Debug(m.hashKey, " KVStore Shutdown")
+
 	m.storeCacheLock.Lock()
 	defer m.storeCacheLock.Unlock()
 	for k, v := range m.storeCache {
-		u.Infof("Sync and close [%s]", k)
-		v.db.Sync()
+		u.Infof("%s Sync and close [%s]", m.hashKey, k)
+		v.db.Sync() // waitGroup?
 		v.db.Close()
 	}
-	close(m.exit)
+	m.exit <- true
+	// ?? close(m.exit)
 }
 
 // JoinCluster - Join the cluster
@@ -184,7 +216,9 @@ func (m *KVStore) getStore(index string) (db *pogreb.DB, err error) {
 	m.storeCacheLock.Lock()
 	defer m.storeCacheLock.Unlock()
 	*/
-	db, err = pogreb.Open(m.Node.dataDir+sep+"index"+sep+index, nil)
+	path := m.Node.dataDir + sep + "index" + sep + index
+	// fmt.Println(m.hashKey, "KVStore getStore", path)
+	db, err = pogreb.Open(path, nil)
 	if err == nil {
 		m.storeCache[index] = &cacheEntry{db: db, accessTime: time.Now()}
 	} else {
@@ -348,6 +382,7 @@ func (m *KVStore) BatchLookup(stream pb.KVStore_BatchLookupServer) error {
 }
 
 // Items - Iterate over all items.
+// called by grpc stream
 func (m *KVStore) Items(index *wrappers.StringValue, stream pb.KVStore_ItemsServer) error {
 
 	if index.Value == "" {

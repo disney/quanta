@@ -222,7 +222,8 @@ func (n *Node) register() (err error) {
 	return err
 }
 
-func (n *Node) Quit() {
+// What is this for?
+func (n *Node) XxxxQuit() {
 	n.Conn.Quit()
 	n.Conn.Disconnect()
 	n.server.Stop()
@@ -240,15 +241,19 @@ func (n *Node) Start() {
 				n.Err <- err
 			}
 			go func() {
-				for {
-					select {
-					case <-n.Stop:
-						u.Info("Stopping GRPC server.")
-						n.server.Stop()
-						u.Info("Exiting.")
-						os.Exit(0)
-					}
+				for <-n.Stop {
+					n.server.Stop()
+					u.Info(n.hashKey, "node got n.Stop. Exiting.")
+					os.Exit(0)
 				}
+				// 	select {
+				// 	case <-n.Stop:
+				// 		u.Info(n.hashKey, "node got n.Stop Stopping GRPC server.")
+				// 		n.server.Stop()
+				// 		u.Info("Exiting.")
+				// 		os.Exit(0)
+				// 	}
+				// }
 			}()
 			n.server.Serve(n.listener)
 		} else {
@@ -273,13 +278,15 @@ func (n *Node) Member(key string) bool {
 // Consul. In that case, Consul's health check for the Node will fail
 func (n *Node) Leave() (err error) {
 
+	u.Debug(n.hashKey, "Node Leave")
+
 	err = n.Disconnect()
 	n.ShutdownServices()
 	n.State = Stopped
 	if err == nil {
 		err = n.consul.Agent().ServiceDeregister(n.hashKey)
 	}
-	close(n.Stop)
+	// close(n.Stop)
 	return err
 }
 
@@ -325,8 +332,10 @@ func (n *Node) Status(ctx context.Context, e *empty.Empty) (*pb.StatusMessage, e
 func (n *Node) Shutdown(ctx context.Context, e *empty.Empty) (*empty.Empty, error) {
 
 	u.Warn("Received Shutdown call via API.")
-	err := n.Leave()
+	err := n.Leave() // closes Stop
 	n.listener.Close()
+	// fmt.Println(n.hashKey, "Node Shutdown sending n.Stop")
+	// n.Stop <- true
 	return e, err
 }
 
@@ -338,7 +347,7 @@ func (n *Node) AddNodeService(api NodeService) {
 	n.localServices[name] = api
 }
 
-// ShutdownServices - Invoke service interface for Shudown event
+// ShutdownServices - Invoke service interface for Shutdown event
 func (n *Node) ShutdownServices() {
 
 	u.Warn("Shutting down services.")
@@ -443,7 +452,7 @@ func (n *Node) PublishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 	if kvService != nil {
 		pKVStoreCloserLatency.Set(float64(kvService.cleanupLatency))
 	} else {
-		u.Debug("Cannot publish metrics for KVStore.");
+		u.Debug("Cannot publish metrics for KVStore.")
 	}
 
 	bitService := n.GetNodeService("BitmapIndex").(*BitmapIndex)
@@ -457,7 +466,7 @@ func (n *Node) PublishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 		pBitmapTimeTCount.Set(float64(bitService.saveBitmapTCnt.Load()))
 		pBSITimeTCount.Set(float64(bitService.saveBSITCnt.Load()))
 	} else {
-		u.Debug("Cannot publish metrics for Bitmap Index.");
+		u.Debug("Cannot publish metrics for Bitmap Index.")
 	}
 
 	return time.Now()

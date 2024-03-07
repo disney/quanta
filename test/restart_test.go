@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/disney/quanta/shared"
 
@@ -14,7 +13,7 @@ import (
 // This requires that consul is running on localhost:8500
 // and that a cluster is NOT running.
 
-// TestRetainData fails when we can't get port 4000 closed and reopened  FIXME:
+// TestRetainData fails when we can't get port 4000 closed and reopened.
 func TestRetainData(t *testing.T) {
 
 	AcquirePort4000.Lock()
@@ -54,17 +53,28 @@ func TestRetainData(t *testing.T) {
 	// release as necessary
 	fmt.Println("releasing local in memory cluster")
 	state.Release()
+}
 
-	// restart the cluster
-	fmt.Println("starting local in memory cluster in 120")
-	time.Sleep(120 * time.Second) // wait for port 4000 to be released
-	state = Ensure_cluster(3)
+func TestRetainData_Part2(t *testing.T) {
+
+	AcquirePort4000.Lock()
+	defer AcquirePort4000.Unlock()
+	var err error
+	shared.SetUTCdefault()
+
+	// KEEP the storage
+
+	state := Ensure_cluster(3)
+	state.Db, err = state.ProxyConnect.ProxyConnectConnect()
+	_ = err
 
 	vectors := []string{"customers_qa/cust_id/1970-01-01T00"}
 
 	dumpField(t, state, vectors)
 
 	// query
+	got := AnalyzeRow(*state.ProxyConnect, []string{"select cust_id from customers_qa where cust_id != NULL ;@1"}, true)
+	assert.EqualValues(t, got.ExpectedRowcount, got.ActualRowCount)
 
 	got = AnalyzeRow(*state.ProxyConnect, []string{"select first_name from customers_qa;@1"}, true)
 	assert.EqualValues(t, got.ExpectedRowcount, got.ActualRowCount)

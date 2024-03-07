@@ -110,7 +110,7 @@ func TestLocalBasic3then4(t *testing.T) {
 	state.Release()
 }
 
-func TestStartLocal(t *testing.T) { // this is NOT a test. Too Slow. I use this manually
+func TestStartLocalFromFiles(t *testing.T) {
 	// TestBasic3 and then run this and see if it fails
 
 	state := &ClusterLocalState{}
@@ -125,9 +125,18 @@ func TestStartLocal(t *testing.T) { // this is NOT a test. Too Slow. I use this 
 
 	Ensure_this_cluster(3, state)
 
-	time.Sleep(99999999 * time.Second)
+	// time.Sleep(99999999 * time.Second)
+	got := ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries.sql")
+
+	for _, child := range got.FailedChildren {
+		fmt.Println("child failed", child.Statement)
+	}
+
+	assert.EqualValues(t, got.ExpectedRowcount, got.ActualRowCount)
+	assert.EqualValues(t, 0, len(got.FailedChildren))
 
 }
+
 func TestBasic3(t *testing.T) {
 
 	AcquirePort4000.Lock()

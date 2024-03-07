@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"io"
@@ -28,6 +29,7 @@ import (
 	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/sink"
 	"github.com/disney/quanta/source"
+	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/hashicorp/consul/api"
 )
 
@@ -122,6 +124,8 @@ func StartNode(nodeStart int) (*server.Node, error) {
 			fmt.Println("StartNodes returned from join")
 
 			<-m.Stop
+			fmt.Println(hashKey, "harness StartNodes got m.Stop")
+			m.Leave()
 			select {
 			case err = <-m.Err:
 			default:
@@ -421,21 +425,9 @@ func StartNodes(state *ClusterLocalState, count int) {
 
 func (state *ClusterLocalState) StopNodes() {
 
-	cmd := admin.ShutdownCmd{}
-	cmd.NodeIP = "all" // this would probably work
-
-	consul := "127.0.0.1:8500" // this is strictly local
-
-	ctx := admin.Context{ConsulAddr: consul,
-		Port:  4000,
-		Debug: true}
-
-	for i, node := range state.nodes {
-		port := 4010 + i
-		pstr := strconv.Itoa(port)
-		cmd.NodeIP = "127.0.0.1" + pstr // 4010, 4011, 4012 etc
-		cmd.Run(&ctx)
-		_ = node
+	for _, node := range state.nodes {
+		cx := context.Background()
+		node.Shutdown(cx, &empty.Empty{})
 	}
 }
 
@@ -501,11 +493,7 @@ func local_Ensure_cluster(count int, state *ClusterLocalState) {
 	isNotRunning := !IsLocalRunning()
 	if isNotRunning {
 
-		go func() {
-			log.Println("pprof ListenAndServe starting")
-			tmp := http.ListenAndServe(":6060", nil)
-			_ = tmp
-		}()
+		shared.StartPprofAndPromListener("true")
 
 		// start the cluster
 		StartNodes(state, count)

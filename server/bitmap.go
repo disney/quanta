@@ -425,7 +425,10 @@ func (m *BitmapIndex) batchProcessLoop(worker *WorkerThread) {
 		// This is a way to make sure that the fraq queue has priority over persistence.
 		select {
 		case nop := <-worker.aux:
-			nop.Done <- true
+			select {
+			case nop.Done <- true:
+			default:
+			}
 			continue
 		case frag := <-m.fragQueue:
 			if frag.IsNop {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"net"
-	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
@@ -19,7 +18,6 @@ import (
 	"github.com/disney/quanta/qlbridge/schema"
 	"github.com/hashicorp/consul/api"
 	"github.com/lestrrat-go/jwx/jwk"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/disney/quanta/core"
@@ -65,11 +63,7 @@ func main() {
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	log.Printf("pprof flag is: %s \n", *pprof)
-	if *pprof == "true" { // start the pprof server which serves cpu and memory usage etc.
-		go func() {
-			log.Printf("pprof ListenAndServe %v", http.ListenAndServe(":6060", nil))
-		}()
-	}
+	shared.StartPprofAndPromListener(*pprof)
 
 	proxy.QuantaPort = *quantaPortP
 	proxy.Region = *region
@@ -84,14 +78,6 @@ func main() {
 		u.SetupLogging("debug")
 	} else {
 		shared.InitLogging(*logging, *environment, "Proxy", proxy.Version, "Quanta")
-	}
-
-	if *pprof != "true" {
-		go func() {
-			// Initialize Prometheus metrics endpoint. Not currently compatible with pprof.
-			http.Handle("/metrics", promhttp.Handler())
-			http.ListenAndServe(":2112", nil)
-		}()
 	}
 
 	proxy.ConsulAddr = *consul

@@ -214,11 +214,11 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 	query = reWhitespace.ReplaceAllString(query, " ")           // scan 1
 	hasInto := strings.Contains(strings.ToLower(query), "into") // scan 2
 	splitQuery := strings.Split(query, " ")                     // scan 3
-	if strings.ToLower(splitQuery[0]) == "select" && hasInto {
-		splitQuery[0] = "selectinto"
-	}
 	splitQueryLower := strings.Split(strings.ToLower(query), " ") // shoould we parse instead? todo: (atw) scan 4
 	operation := splitQueryLower[0]
+	if strings.ToLower(splitQuery[0]) == "select" && hasInto {
+		operation = "selectinto"
+	}
 	switch operation {
 
 	case "commit":

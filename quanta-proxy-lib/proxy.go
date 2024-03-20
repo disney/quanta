@@ -212,14 +212,13 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 
 	// should we just parse the sql instead of this? todo: (atw)
 
-	query = reWhitespace.ReplaceAllString(query, " ")           // scan 1
-	hasInto := strings.Contains(strings.ToLower(query), "into") // scan 2
+	query = reWhitespace.ReplaceAllString(strings.ToLower(query), " ")           // scan 1
+	hasInto := strings.Contains(query, "into") // scan 2
 	splitQuery := strings.Split(query, " ")                     // scan 3
 	if strings.ToLower(splitQuery[0]) == "select" && hasInto {
 		splitQuery[0] = "selectinto"
 	}
-	splitQueryLower := strings.Split(strings.ToLower(query), " ") // shoould we parse instead? todo: (atw) scan 4
-	operation := splitQueryLower[0]
+	operation := splitQuery[0]
 	switch operation {
 
 	case "commit":

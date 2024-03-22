@@ -3,7 +3,7 @@
 # TODO: add coverage report (atw)
 
 # directories to ignore because they have no tests or are not go packages
-badDirectories="bin configuration custom Docker docs examples test test-integration"
+badDirectories="bin configuration custom Docker docs examples test test-integration test-integration-docker"
 
 function exists_in_list() {
     LIST=$badDirectories

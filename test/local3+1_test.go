@@ -40,7 +40,7 @@ func TestLocalBasic3then4(t *testing.T) {
 		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries_load.sql")
 	}
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(15 * time.Second)
 	dumpField(t, state, vectors) // see the mapping
 
 	// query
@@ -59,7 +59,7 @@ func TestLocalBasic3then4(t *testing.T) {
 	}
 
 	// check the data
-	time.Sleep(5 * time.Second)
+	time.Sleep(15 * time.Second)
 	dumpField(t, state, vectors) // see the mapping
 
 	fmt.Println("---- before adding node 3 ----")
@@ -82,7 +82,7 @@ func TestLocalBasic3then4(t *testing.T) {
 	// WaitForStatusGreenLocal()
 	testStatesAllMatch(t, state, "added node")
 
-	time.Sleep(5 * time.Second) // let batchProcessLoop shard count print out
+	time.Sleep(25 * time.Second) // let batchProcessLoop shard count print out
 	fmt.Println("---- after adding node 3 ----")
 	// check the data
 	dumpField(t, state, vectors)
@@ -100,7 +100,7 @@ func TestLocalBasic3then4(t *testing.T) {
 		}
 	}
 
-	// time.Sleep(30 * time.Second) // let batchProcessLoop shard count print out
+	time.Sleep(5 * time.Second) // let batchProcessLoop shard count print out
 	fmt.Println("---- much later ----")
 	// check the data
 	dumpField(t, state, vectors)

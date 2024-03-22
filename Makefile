@@ -147,14 +147,13 @@ test: build_all
 	# mkdir -p $(COVERAGE_DIR)
 	# export TZ=UTC; go test ${GOLIST} -short -v ${LDFLAGS_TEST} -coverprofile ${COV_PROFILE}
 	# go tool cover -html=${COV_PROFILE} -o ${COV_HTML}
-	./run-go-tests.sh
+	./test/run-go-tests.sh.
 ifeq ($(UNAME), Darwin)
 	# open ${COV_HTML}
 endif
 
-
-test-integration:   
-	./run-go-integration-tests.sh
+test-integration: build_all
+	./test/run-go-integration-tests.sh
 
 test-all:  test test-integration
 

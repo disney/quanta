@@ -21,7 +21,7 @@ type VerifyIndexCmd struct {
 // Run - VerifyIndex implementation
 func (f *VerifyIndexCmd) Run(ctx *Context) error {
 
-	conn := GetClientConnection(ctx.ConsulAddr, ctx.Port, "VerifyIndexCmd")
+	conn := shared.GetClientConnection(ctx.ConsulAddr, ctx.Port, "VerifyIndexCmd")
 	defer conn.Disconnect()
 	table, err := shared.LoadSchema("", f.Table, conn.Consul)
 	if err != nil {

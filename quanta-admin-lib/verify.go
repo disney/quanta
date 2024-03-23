@@ -22,7 +22,7 @@ type VerifyCmd struct {
 // Run - Verify implementation
 func (f *VerifyCmd) Run(ctx *Context) error {
 
-	conn := GetClientConnection(ctx.ConsulAddr, ctx.Port, "verify")
+	conn := shared.GetClientConnection(ctx.ConsulAddr, ctx.Port, "verify")
 	defer conn.Disconnect()
 	table, err := shared.LoadSchema("", f.Table, conn.Consul)
 	if err != nil {

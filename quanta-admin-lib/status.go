@@ -14,7 +14,7 @@ type StatusCmd struct {
 // Run - Status command implementation
 func (s *StatusCmd) Run(ctx *Context) error {
 
-	conn := GetClientConnection(ctx.ConsulAddr, ctx.Port, "admin-status")
+	conn := shared.GetClientConnection(ctx.ConsulAddr, ctx.Port, "admin-status")
 	defer conn.Disconnect()
 
 	sizeTarget, err := shared.GetClusterSizeTarget(conn.Consul)

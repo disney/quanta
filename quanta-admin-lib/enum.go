@@ -22,7 +22,7 @@ type VerifyEnumCmd struct {
 // Run - VerifyEnum implementation
 func (f *VerifyEnumCmd) Run(ctx *Context) error {
 
-	conn := GetClientConnection(ctx.ConsulAddr, ctx.Port, "verify")
+	conn := shared.GetClientConnection(ctx.ConsulAddr, ctx.Port, "verify")
 	defer conn.Disconnect()
 	table, err := shared.LoadSchema("", f.Table, conn.Consul)
 	if err != nil {

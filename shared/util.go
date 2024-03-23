@@ -651,3 +651,21 @@ func SetUTCdefault() {
 	time.Local = loc // -> this is setting the global timezone
 
 }
+
+// GetClientConnection - Create a connection to the Quanta service
+// The 'owner' is used for debugging.
+func GetClientConnection(consulAddr string, port int, owner string) *Conn {
+
+	consulClient, err := api.NewClient(&api.Config{Address: consulAddr})
+	if err != nil {
+		fmt.Println("Is the consul agent running?")
+		u.Log(u.FATAL, err)
+	}
+	conn := NewDefaultConnection(owner)
+	conn.ServicePort = port
+	conn.Quorum = 0
+	if err := conn.Connect(consulClient); err != nil {
+		u.Log(u.FATAL, err)
+	}
+	return conn
+}

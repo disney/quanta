@@ -70,7 +70,7 @@ func TestRetainData_Part2(t *testing.T) {
 
 	vectors := []string{"customers_qa/cust_id/1970-01-01T00"}
 
-	dumpField(t, state, vectors)
+	DumpField(t, state, vectors)
 
 	// query
 	got := AnalyzeRow(*state.ProxyConnect, []string{"select cust_id from customers_qa where cust_id != NULL ;@1"}, true)

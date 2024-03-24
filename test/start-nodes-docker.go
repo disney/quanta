@@ -158,7 +158,7 @@ func (suite *BaseDockerSuite) SetupDockerCluster(nodeCount int, proxyCount int) 
 		//time.Sleep(10 * time.Second)
 		WaitForStatusGreen(suite.ConsulAddress+":8500", "q-node-0") // does this even work? Why not?
 	}
-	// tode check if the proxies are up
+	// todo: check if the proxies are up
 
 	for index := 0; index < len(suite.ProxyAddress); index++ {
 		istr := fmt.Sprintf("%d", index)

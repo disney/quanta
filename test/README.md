@@ -108,3 +108,19 @@ Click on 'debug test'.
 Most all of quanta and it's libraries can have breakpoints and code can be traced.
 Hoever too much time spend with threads paused in a breakpoint will cause Nodes to time out
 so sometimes it's not possible to resume.
+
+### Testing with a docker cluster
+
+This will stop any containers running, start up container for a quanta
+cluster and run tests. This is a more realistic test but it is slower to 
+develop with and there are no breakpoints. The logs for the nodes are in
+docker and not in the consol.
+
+Consul running in a terminal must be stopped. The tests start consul in a container.
+
+Docker must be running. 
+Run the tests:
+```
+./test/run-docker-tests.sh
+```
+

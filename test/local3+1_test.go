@@ -30,7 +30,7 @@ func TestLocalBasic3then4(t *testing.T) {
 
 	vectors := []string{"customers_qa/isActive/0/1970-01-01T00", "customers_qa/isActive/1/1970-01-01T00"}
 
-	testStatesAllMatch(t, state, "initial")
+	TestStatesAllMatch(t, state, "initial")
 
 	// WaitForStatusGreenLocal()
 	// do we have to? time.Sleep(5 * time.Second)
@@ -41,7 +41,7 @@ func TestLocalBasic3then4(t *testing.T) {
 	}
 
 	time.Sleep(15 * time.Second)
-	dumpField(t, state, vectors) // see the mapping
+	DumpField(t, state, vectors) // see the mapping
 
 	// query
 	{
@@ -60,7 +60,7 @@ func TestLocalBasic3then4(t *testing.T) {
 
 	// check the data
 	time.Sleep(15 * time.Second)
-	dumpField(t, state, vectors) // see the mapping
+	DumpField(t, state, vectors) // see the mapping
 
 	fmt.Println("---- before adding node 3 ----")
 
@@ -80,12 +80,12 @@ func TestLocalBasic3then4(t *testing.T) {
 
 	// wait for sync
 	// WaitForStatusGreenLocal()
-	testStatesAllMatch(t, state, "added node")
+	TestStatesAllMatch(t, state, "added node")
 
 	time.Sleep(25 * time.Second) // let batchProcessLoop shard count print out
 	fmt.Println("---- after adding node 3 ----")
 	// check the data
-	dumpField(t, state, vectors)
+	DumpField(t, state, vectors)
 	fmt.Println("----")
 
 	{
@@ -103,7 +103,7 @@ func TestLocalBasic3then4(t *testing.T) {
 	time.Sleep(5 * time.Second) // let batchProcessLoop shard count print out
 	fmt.Println("---- much later ----")
 	// check the data
-	dumpField(t, state, vectors)
+	DumpField(t, state, vectors)
 	fmt.Println("----")
 
 	// release as necessary
@@ -118,7 +118,7 @@ func TestStartLocalFromFiles(t *testing.T) {
 	go func(state *ClusterLocalState) {
 		for {
 			vectors := []string{"customers_qa/numFamilyMembers/1969-12-31T16"}
-			dumpField(t, state, vectors)
+			DumpField(t, state, vectors)
 			time.Sleep(1 * time.Second)
 		}
 	}(state)
@@ -160,8 +160,8 @@ func TestBasic3(t *testing.T) {
 
 	vectors := []string{"customers_qa/isActive/0/1970-01-01T00", "customers_qa/isActive/1/1970-01-01T00"}
 
-	testStatesAllMatch(t, state, "initial")
-	dumpField(t, state, vectors)
+	TestStatesAllMatch(t, state, "initial")
+	DumpField(t, state, vectors)
 
 	// release as necessary
 	state.Release()

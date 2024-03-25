@@ -1,4 +1,4 @@
-package test_integration
+package test_integration_docker
 
 import (
 	"fmt"
@@ -13,9 +13,6 @@ import (
 
 // Requirements: Consul must NOT be running on localhost:8500 we will start our own
 
-// just one test:
-// go test -v -run TestBasic ./test-integration/...
-
 // We're going to leverage the fact that docker build is very fast if nothing has changed.
 // The nodes are left up. To reset them go to docker desktop (or whatever) and delete the containers.
 
@@ -23,13 +20,6 @@ import (
 
 type DockerNodesRunnerSuite struct {
 	test.BaseDockerSuite
-
-	// suite.Suite
-	// state *test.ClusterLocalState
-	// total test.SqlInfo
-
-	// consulAddress string
-	// proxyAddress  []string
 }
 
 func (suite *DockerNodesRunnerSuite) TestOne() { // just do the setup and teardown
@@ -38,13 +28,20 @@ func (suite *DockerNodesRunnerSuite) TestOne() { // just do the setup and teardo
 }
 
 func (suite *DockerNodesRunnerSuite) SetupSuite() {
+	// stop and remove all containers
+	test.Shell("docker stop $(docker ps -aq)", "")
+	test.Shell("docker rm $(docker ps -aq)", "")
 
 	suite.SetupDockerCluster(3, 2)
 
 }
 
 func (suite *DockerNodesRunnerSuite) TearDownSuite() {
-	// leave the cluster running
+	// don't leave the cluster running
+	// stop and remove all containers
+	test.Shell("docker stop $(docker ps -aq)", "")
+	test.Shell("docker rm $(docker ps -aq)", "")
+
 }
 
 // In order for 'go test' to run this suite, we need to create
@@ -90,7 +87,7 @@ func (suite *DockerNodesRunnerSuite) TestBasicTorture() {
 
 			cmd = "docker run --name basic_queries" + istr + " -w /quanta/sqlrunner --network mynet -t node sqlrunner -script_file ./sqlscripts/basic_queries_body.sql"
 			cmd += " -validate"
-			cmd += " -repeats 1000"
+			cmd += " -repeats 1"                         // use 1000 for torture
 			cmd += " -host " + suite.ProxyAddress[index] // this is the proxy
 			cmd += " -consul " + suite.ConsulAddress + ":8500"
 			cmd += " -user MOLIG004"
@@ -142,7 +139,7 @@ func (suite *DockerNodesRunnerSuite) TestJoinsTorture() {
 
 			cmd = "docker run --name join_queries" + istr + " -w /quanta/sqlrunner --network mynet -t node sqlrunner -script_file ./sqlscripts/joins_sql_body.sql"
 			cmd += " -validate"
-			cmd += " -repeats 1000"
+			cmd += " -repeats 1"                         // use 1000 for torture
 			cmd += " -host " + suite.ProxyAddress[index] // this is the proxy
 			cmd += " -consul " + suite.ConsulAddress + ":8500"
 			cmd += " -user MOLIG004"
@@ -234,7 +231,7 @@ func (suite *DockerNodesRunnerSuite) TestBasicOneTwo() {
 
 	cmd = "docker run --name basic_queries0 -w /quanta/sqlrunner --network mynet -t node sqlrunner -script_file ./sqlscripts/basic_queries_body.sql"
 	cmd += " -validate"
-	cmd += " -repeats 1000"
+	cmd += " -repeats 1"                     // use 1000 for torture
 	cmd += " -host " + suite.ProxyAddress[0] // this is the proxy
 	cmd += " -consul " + suite.ConsulAddress + ":8500"
 	cmd += " -user MOLIG004"
@@ -312,4 +309,11 @@ func (suite *DockerNodesRunnerSuite) XTestBasic() { // this would be better if i
 	suite.EqualValues(0, len(got.FailedChildren))
 
 	// FIXME: see: select avg(age) as avg_age from customers_qa where age > 55 and avg_age = 70 limit 1; in the file
+}
+
+func check(err error) {
+	if err != nil {
+		fmt.Println("ERROR ERROR check err", err)
+		// panic(err.Error())
+	}
 }

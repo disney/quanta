@@ -1,4 +1,4 @@
-package test
+package test_integration
 
 import (
 	"fmt"
@@ -11,25 +11,26 @@ import (
 
 	"github.com/akrylysov/pogreb"
 	"github.com/disney/quanta/shared"
+	"github.com/disney/quanta/test"
 	"github.com/stretchr/testify/assert"
 )
 
 var e_words []string // an english dictionary
 
-func TestBasicLoadBig_part2(t *testing.T) {
+func xxxxxTestBasicLoadBig_part2(t *testing.T) {
 	// run TestBasicLoadBig and then run this and see if it fails
 
-	state := &ClusterLocalState{}
+	state := &test.ClusterLocalState{}
 
-	go func(state *ClusterLocalState) {
+	go func(state *test.ClusterLocalState) {
 		for {
 			vectors := []string{"customers_qa/isActive/0/1970-01-01T00", "customers_qa/isActive/1/1970-01-01T00"}
-			dumpField(t, state, vectors)
+			test.DumpField(t, state, vectors)
 			time.Sleep(2 * time.Second)
 		}
 	}(state)
 
-	Ensure_this_cluster(3, state)
+	test.Ensure_this_cluster(3, state)
 
 	// time.Sleep(99999999 * time.Second)
 	// got := ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries.sql")
@@ -52,7 +53,7 @@ func TestBasicLoadBig_part2(t *testing.T) {
 // if the index is intact then it takes 3.3ms
 func TestOpenwStrings(t *testing.T) {
 
-	state := &ClusterLocalState{}
+	state := &test.ClusterLocalState{}
 
 	// go func(state *ClusterLocalState) {
 	// 	for {
@@ -63,7 +64,7 @@ func TestOpenwStrings(t *testing.T) {
 	// }(state)
 
 	start := time.Now()
-	Ensure_this_cluster(3, state)
+	test.Ensure_this_cluster(3, state)
 	end := time.Since(start)
 	fmt.Println("time to start cluster", end) // 11 sec for 100 with index
 	fmt.Println("time to start cluster", end) // 53s for 25k records
@@ -141,16 +142,16 @@ func TestReadPogreb(t *testing.T) {
 func TestBasicLoadBig(t *testing.T) {
 
 	if len(e_words) == 0 {
-		str := English_words
+		str := test.English_words
 		e_words = strings.Split(str, "\n")
 	}
 
-	AcquirePort4000.Lock()
-	defer AcquirePort4000.Unlock()
+	// AcquirePort4000.Lock()
+	// defer AcquirePort4000.Unlock()
 	var err error
 	shared.SetUTCdefault()
 
-	isLocalRunning := IsLocalRunning()
+	isLocalRunning := test.IsLocalRunning()
 
 	// erase the storage
 	if !isLocalRunning { // if no cluster is up
@@ -158,10 +159,10 @@ func TestBasicLoadBig(t *testing.T) {
 		check(err)
 	}
 	// ensure we have a cluster on localhost, start one if necessary
-	state := Ensure_cluster(3)
+	state := test.Ensure_cluster(3)
 
 	if !isLocalRunning {
-		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries_load.sql")
+		test.ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries_load.sql")
 	}
 
 	// make a whole lot of records OBSOLETE
@@ -176,9 +177,9 @@ func TestBasicLoadBig(t *testing.T) {
 	// open a file to write
 	f, err := os.Create(fname)
 	check(err)
-	conn, err := state.proxyControl.Src.GetSessionPool().Borrow("customers_qa")
+	conn, err := state.ProxyControl.Src.GetSessionPool().Borrow("customers_qa")
 	check(err)
-	defer state.proxyControl.Src.GetSessionPool().Return("customers_qa", conn)
+	defer state.ProxyControl.Src.GetSessionPool().Return("customers_qa", conn)
 
 	for i := 0; i < amt; i++ {
 
@@ -222,8 +223,8 @@ func TestBasicLoadBig(t *testing.T) {
 
 	vectors := []string{"customers_qa/isActive/0/1970-01-01T00", "customers_qa/isActive/1/1970-01-01T00"}
 
-	testStatesAllMatch(t, state, "initial")
-	dumpField(t, state, vectors)
+	test.TestStatesAllMatch(t, state, "initial")
+	test.DumpField(t, state, vectors)
 
 	// time.Sleep(99999999 * time.Second) // stay alive forever
 

@@ -28,7 +28,7 @@ func TestLocalBasic3then4Zip(t *testing.T) {
 	// ensure we have a cluster on localhost, start one if necessary
 	state := Ensure_cluster(3)
 
-	testStatesAllMatch(t, state, "initial")
+	TestStatesAllMatch(t, state, "initial")
 
 	// load something
 	if !isLocalRunning {
@@ -38,7 +38,7 @@ func TestLocalBasic3then4Zip(t *testing.T) {
 	vectors := []string{"customers_qa/zip/1970-01-01T00"}
 
 	time.Sleep(5 * time.Second)
-	dumpField(t, state, vectors) // see the mapping
+	DumpField(t, state, vectors) // see the mapping
 
 	// query
 	{
@@ -57,7 +57,7 @@ func TestLocalBasic3then4Zip(t *testing.T) {
 
 	// check the data
 	time.Sleep(5 * time.Second)
-	dumpField(t, state, vectors) // see the mapping
+	DumpField(t, state, vectors) // see the mapping
 
 	fmt.Println("---- before adding node 3 ----")
 
@@ -77,12 +77,12 @@ func TestLocalBasic3then4Zip(t *testing.T) {
 
 	// wait for sync
 	// WaitForStatusGreenLocal()
-	testStatesAllMatch(t, state, "added node")
+	TestStatesAllMatch(t, state, "added node")
 
 	time.Sleep(5 * time.Second) // let batchProcessLoop shard count print out
 	fmt.Println("---- after adding node 3 ----")
 	// check the data
-	dumpField(t, state, vectors)
+	DumpField(t, state, vectors)
 	fmt.Println("----")
 
 	{
@@ -100,7 +100,7 @@ func TestLocalBasic3then4Zip(t *testing.T) {
 	// time.Sleep(30 * time.Second) // let batchProcessLoop shard count print out
 	fmt.Println("---- much later ----")
 	// check the data
-	dumpField(t, state, vectors)
+	DumpField(t, state, vectors)
 	fmt.Println("----")
 
 	// release as necessary

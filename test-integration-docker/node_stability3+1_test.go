@@ -1,4 +1,4 @@
-package test_integration
+package test_integration_docker
 
 import (
 	"fmt"
@@ -13,16 +13,25 @@ import (
 
 // Requirements: Consul must NOT be running on localhost:8500 we will start our own
 
+// Contents:
+// TestOne - just do the setup and teardown
+// TestBasic3Plus1 runs a basic test with 3 nodes, then adds 1 node and runs the test again
+// TestBasicOneTwo is a baseline test that should always pass
+
 type NodeStabilitySuite31 struct {
 	test.BaseDockerSuite
 }
 
-func (suite *NodeStabilitySuite31) TestOne() { // just do the setup and teardown
+// TestOne - just do the setup and teardown
+func (suite *NodeStabilitySuite31) TestOne() {
 	suite.EqualValues(suite.Total.ExpectedRowcount, suite.Total.ActualRowCount)
 	suite.EqualValues(0, len(suite.Total.FailedChildren))
 }
 
 func (suite *NodeStabilitySuite31) SetupSuite() {
+	// stop and remove all containers
+	test.Shell("docker stop $(docker ps -aq)", "")
+	test.Shell("docker rm $(docker ps -aq)", "")
 
 	suite.SetupDockerCluster(3, 2)
 }
@@ -30,6 +39,10 @@ func (suite *NodeStabilitySuite31) SetupSuite() {
 func (suite *NodeStabilitySuite31) TearDownSuite() {
 	// leave the cluster running
 	// if you wish to stop the cluster, do that in docker
+	// stop and remove all containers
+	test.Shell("docker stop $(docker ps -aq)", "")
+	test.Shell("docker rm $(docker ps -aq)", "")
+
 }
 
 // In order for 'go test' to run this suite, we need to create

@@ -407,7 +407,7 @@ func WaitForStatusGreen(consulAddress string, nodeName string) {
 
 type ClusterLocalState struct {
 	nodes               []*server.Node
-	proxyControl        *LocalProxyControl
+	ProxyControl        *LocalProxyControl
 	weStartedTheCluster bool
 	ProxyConnect        *ProxyConnectStrings // for sql runner
 	Db                  *sql.DB
@@ -433,7 +433,7 @@ func (state *ClusterLocalState) StopNodes() {
 
 func (state *ClusterLocalState) Release() {
 	if state.weStartedTheCluster {
-		state.proxyControl.Stop <- true
+		state.ProxyControl.Stop <- true
 		time.Sleep(100 * time.Millisecond)
 		state.StopNodes()
 		time.Sleep(100 * time.Millisecond)
@@ -501,9 +501,9 @@ func local_Ensure_cluster(count int, state *ClusterLocalState) {
 		WaitForLocalActive(state)
 
 		configDir := ""
-		state.proxyControl = StartProxy(1, configDir)
+		state.ProxyControl = StartProxy(1, configDir)
 
-		sharedKV := shared.NewKVStore(state.proxyControl.Src.GetConnection())
+		sharedKV := shared.NewKVStore(state.ProxyControl.Src.GetConnection())
 
 		// need to sort this out and just have one
 

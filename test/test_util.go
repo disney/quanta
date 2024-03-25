@@ -12,8 +12,8 @@ import (
 	"github.com/hashicorp/consul/api"
 )
 
-// testStatesAllMatch - Wait for the proxy, the admin, and all the nodes report the same cluster state.
-func testStatesAllMatch(t *testing.T, state *ClusterLocalState, comment string) {
+// TestStatesAllMatch - Wait for the proxy, the admin, and all the nodes report the same cluster state.
+func TestStatesAllMatch(t *testing.T, state *ClusterLocalState, comment string) {
 	fmt.Println("tsam testStatesAllMatch " + comment)
 
 	consulAddress := "127.0.0.1:8500"
@@ -28,7 +28,7 @@ func testStatesAllMatch(t *testing.T, state *ClusterLocalState, comment string) 
 	for {
 		time.Sleep(100 * time.Millisecond)
 		states := make([]string, 0)
-		clusterState, active, target := state.proxyControl.Src.GetConnection().GetClusterState()
+		clusterState, active, target := state.ProxyControl.Src.GetConnection().GetClusterState()
 		states = append(states, clusterState.String())
 		fmt.Println("tsam proxy state", clusterState, "active", active, "target", target)
 		_ = active
@@ -71,7 +71,7 @@ func testStatesAllMatch(t *testing.T, state *ClusterLocalState, comment string) 
 
 type Mappings []string
 
-func dumpField(t *testing.T, state *ClusterLocalState, vectors []string) {
+func DumpField(t *testing.T, state *ClusterLocalState, vectors []string) {
 	ConsulAddr := "127.0.0.1:8500"
 	consulClient, err := api.NewClient(&api.Config{Address: ConsulAddr})
 	check(err)

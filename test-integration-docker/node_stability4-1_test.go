@@ -1,4 +1,4 @@
-package test_integration
+package test_integration_docker
 
 import (
 	"fmt"
@@ -13,29 +13,36 @@ import (
 
 // Requirements: Consul must NOT be running on localhost:8500 we will start our own
 
-type NodeStabilitySuite struct {
+type NodeStabilitySuite41 struct {
 	test.BaseDockerSuite
 }
 
-func (suite *NodeStabilitySuite) TestOne() { // just do the setup and teardown
+func (suite *NodeStabilitySuite41) TestOne() { // just do the setup and teardown
 	suite.EqualValues(suite.Total.ExpectedRowcount, suite.Total.ActualRowCount)
 	suite.EqualValues(0, len(suite.Total.FailedChildren))
 }
 
-func (suite *NodeStabilitySuite) SetupSuite() {
+func (suite *NodeStabilitySuite41) SetupSuite() {
+	// stop and remove all containers
+	test.Shell("docker stop $(docker ps -aq)", "")
+	test.Shell("docker rm $(docker ps -aq)", "")
 
 	suite.SetupDockerCluster(4, 2)
 }
 
-func (suite *NodeStabilitySuite) TearDownSuite() {
+func (suite *NodeStabilitySuite41) TearDownSuite() {
 	// leave the cluster running
 	// if you wish to stop the cluster, do that in docker
+	// stop and remove all containers
+	test.Shell("docker stop $(docker ps -aq)", "")
+	test.Shell("docker rm $(docker ps -aq)", "")
+
 }
 
 // In order for 'go test' to run this suite, we need to create
 // a normal test function and pass our suite to suite.Run
-func TestNodeStabilitySuite(t *testing.T) {
-	ourSuite := new(NodeStabilitySuite)
+func TestNodeStabilitySuite41(t *testing.T) {
+	ourSuite := new(NodeStabilitySuite41)
 	ourSuite.ProxyAddress = make([]string, 2)
 	suite.Run(t, ourSuite)
 
@@ -44,7 +51,7 @@ func TestNodeStabilitySuite(t *testing.T) {
 }
 
 // TestBasic4minus1 runs a basic test with 4 nodes, then removes one node and runs the test again
-func (suite *NodeStabilitySuite) TestBasic4minus1() {
+func (suite *NodeStabilitySuite41) TestBasic4minus1() {
 
 	fmt.Println("NodeStabilitySuite TestBasic4minus1")
 
@@ -122,7 +129,7 @@ func (suite *NodeStabilitySuite) TestBasic4minus1() {
 
 // TestBasic4minus1AndBack will run a basic test with 4 nodes,
 // then remove one node and run the test again, then add the node back and run the test again
-func (suite *NodeStabilitySuite) TestBasic4minus1AndBack() {
+func (suite *NodeStabilitySuite41) TestBasic4minus1AndBack() {
 
 	fmt.Println("NodeStabilitySuite TestBasic4minus1AndBack")
 
@@ -225,7 +232,7 @@ func (suite *NodeStabilitySuite) TestBasic4minus1AndBack() {
 }
 
 // TestBasicOneTwo is a baseline test that should always pass
-func (suite *NodeStabilitySuite) TestBasicOneTwo() {
+func (suite *NodeStabilitySuite41) TestBasicOneTwo() {
 
 	fmt.Println("NodeStabilitySuite TestBasicOneTwo")
 

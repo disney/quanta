@@ -390,7 +390,7 @@ func (t *BasicTable) Compare(other *BasicTable) (equal bool, warnings []string, 
 	for _, v := range t.Attributes {
 		otherAttr, err := other.GetAttribute(v.FieldName)
 		if err != nil {
-			return false, warnings, fmt.Errorf("attribute %s cannot be dropped", v.FieldName)
+			return false, warnings, fmt.Errorf("attribute cannot be dropped: %s", v.FieldName)
 		}
 		attrEqual, attrWarnings, attrErr := v.Compare(otherAttr)
 		if attrErr != nil {

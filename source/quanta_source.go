@@ -249,7 +249,7 @@ func (m *QuantaSource) Next() schema.Message {
 	return nil
 }
 
-// ListTableNames - Return table name strings.
+// ListTableNames - Return table name strings. from consul.
 func (m *QuantaSource) ListTableNames() []string {
 
 	if m.baseDir == "" {

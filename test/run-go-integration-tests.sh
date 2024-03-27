@@ -2,8 +2,21 @@
 
 # You can also add the -race flag to different go commands like go test, to help detect where race conditions happen: golang.org/doc/articles/race_detector.html 
 
-# from bigDataRetention.go
+# from table_mod_test.go
+sleep 5
+echo "starting TestTableMod_remove_column"
+go test -timeout 200s -run ^TestTableMod_remove_column$  github.com/disney/quanta/test
 
+sleep 5
+echo "starting TestTableMod_add"
+go test -timeout 200s -run ^TestTableMod_add$  github.com/disney/quanta/test
+
+sleep 5
+echo "starting TestTableMod_change"
+go test -timeout 200s -run ^TestTableMod_change$  github.com/disney/quanta/test
+
+
+# from bigDataRetention.go
 sleep 1
 echo "starting TestBasicLoadBig"
 # this one loads 250k strings into first_name and quits

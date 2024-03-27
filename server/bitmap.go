@@ -134,7 +134,7 @@ func NewBitmapIndex(node *Node, memoryLimitMb int) *BitmapIndex {
 				os.Exit(1)
 			} else {
 				e.tableCache[table] = t
-				u.Infof("Table %s initialized.", table)
+				u.Infof("Table initialized. %s", table)
 			}
 		}
 	}
@@ -149,6 +149,13 @@ func (m *BitmapIndex) GetBitmapCache() map[string]map[string]map[uint64]map[int6
 
 func (m *BitmapIndex) GetBsiCache() map[string]map[string]map[int64]*BSIBitmap {
 	return m.bsiCache
+}
+
+// GetTable - Get the table schema for a given key
+// used for testing and debugging.
+func (m *BitmapIndex) GetTable(tableName string) *shared.BasicTable {
+	t := m.tableCache[tableName]
+	return t
 }
 
 // Init - Initialization
@@ -190,7 +197,7 @@ func (m *BitmapIndex) Init() error {
 	// Partition operation worker thread
 	go m.partitionProcessLoop()
 
-	go func() { // make into proc
+	go func() { // wait for signal to persist cache
 		for {
 			select {
 			case <-m.Stop:
@@ -1328,6 +1335,7 @@ func (c *CountTrigger) Add(n int) {
 }
 
 // TableOperation - Process TableOperations.
+// fill m.tableCache
 func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperationRequest) (*empty.Empty, error) {
 
 	if req.Table == "" {
@@ -1343,7 +1351,7 @@ func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperation
 			m.tableCacheLock.Lock()
 			defer m.tableCacheLock.Unlock()
 			m.tableCache[req.Table] = table
-			u.Infof("schema for %s re-loaded and initialized", req.Table)
+			u.Infof("%s schema for table re-loaded and initialized %s", m.hashKey, req.Table)
 		}
 	case pb.TableOperationRequest_DROP:
 		m.tableCacheLock.Lock()

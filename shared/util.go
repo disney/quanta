@@ -334,7 +334,7 @@ func CheckParentRelation(consul *api.Client, table *BasicTable) (bool, error) {
 	return ok, err
 }
 
-// GetTables - Return a list of deployed tables.
+// GetTables - Return a list of deployed tables. From Consul.
 func GetTables(consul *api.Client) ([]string, error) {
 
 	results := make([]string, 0)

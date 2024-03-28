@@ -2,6 +2,7 @@ package admin
 
 import (
 	"fmt"
+	"strings"
 
 	u "github.com/araddon/gou"
 
@@ -15,6 +16,8 @@ type CreateCmd struct {
 	SchemaDir string `help:"Base directory containing schema files." default:"../sqlrunner/config"` //was ./config"
 	Confirm   bool   `help:"Confirm deployment."`
 }
+
+const DropAttributesAllowed = false
 
 // Run - Create command implementation
 func (c *CreateCmd) Run(ctx *Context) error {
@@ -58,36 +61,52 @@ func (c *CreateCmd) Run(ctx *Context) error {
 
 		u.Infof("Successfully created table %s\n", table.Name)
 		return nil
-	}
-
-	// If here then table already exists.  Perform compare
-	table2, err5 := shared.LoadSchema("", table.Name, consulClient)
-	if err5 != nil {
-		return fmt.Errorf("Error loading schema from consul %v", err5)
-	}
-	ok2, warnings, err6 := table2.Compare(table)
-	if err6 != nil {
-		return fmt.Errorf("error comparing deployed table %v", err6)
-	}
-	if ok2 {
-		u.Infof("Table already exists.  No differences detected.\n")
-		return nil
-	}
-
-	// If --confirm flag not set then print warnings and exit.
-	if !c.Confirm {
-		u.Infof("Warnings:\n")
-		for _, warning := range warnings {
-			u.Infof("    -> %v\n", warning)
+	} else {
+		u.Debugf("Table already exists. Comparing.\n")
+		// If here then table already exists.  Perform compare
+		table2, err5 := shared.LoadSchema("", table.Name, consulClient)
+		if err5 != nil {
+			return fmt.Errorf("Error loading schema from consul %v", err5)
 		}
-		return fmt.Errorf("if you wish to deploy the changes then re-run with --confirm flag")
-	}
-	err = performCreate(consulClient, table, ctx.Port)
-	if err != nil {
-		return fmt.Errorf("errors during performCreate: %v", err)
-	}
+		ok2, warnings, err6 := table2.Compare(table)
+		if err6 != nil {
+			if DropAttributesAllowed { // if drop attributes is allowed
+				str := fmt.Sprintf("%v", err6)
+				if strings.HasPrefix(str, "attribute cannot be dropped:") {
+					u.Infof("Warnings: %v\n", err6)
+					// do reverse compare to get dropped attributes TODO:
+					ok2, warnings, err6 = table.Compare(table2)
+					if err6 != nil {
+						return fmt.Errorf("error comparing deployed table reverse %v", err6)
+					}
+				} else {
+					return fmt.Errorf("error comparing deployed table %v", err6)
+				}
+			} else {
+				return fmt.Errorf("error comparing deployed table %v", err6)
+			}
+		}
+		if ok2 {
+			u.Infof("Table already exists.  No differences detected.\n")
+			return nil
+		}
 
-	u.Infof("Successfully deployed modifications to table %s\n", table.Name)
+		// If --confirm flag not set then print warnings and exit.
+		if !c.Confirm {
+			u.Infof("Warnings:\n")
+			for _, warning := range warnings {
+				u.Infof("    -> %v\n", warning)
+			}
+			return fmt.Errorf("if you wish to deploy the changes then re-run with --confirm flag")
+		}
+		// delete attributes dropped ?
+
+		err = performCreate(consulClient, table, ctx.Port)
+		if err != nil {
+			return fmt.Errorf("errors during performCreate: %v", err)
+		}
+		u.Infof("Successfully deployed modifications to table %s\n", table.Name)
+	}
 	return nil
 }
 

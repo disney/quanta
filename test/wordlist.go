@@ -1,5 +1,20 @@
 package test
 
+import "strings"
+
+var Word_Array []string = nil
+
+// This is only used to generate test data.
+
+func GetPseudoRandomWord(i int) string {
+	if Word_Array == nil {
+		Word_Array = strings.Split(English_words, "\n")
+	}
+	i = i * 3121 // prime number
+	i = i % len(Word_Array)
+	return (Word_Array)[i]
+}
+
 var English_words = `as
 his
 that

@@ -319,7 +319,7 @@ func (m *Main) scanAndProcess(v *consumer.Record) error {
 	out := make(map[string]interface{})
 	var table *core.Table
 
-	u.Debugf("Kinesis scanAndProcess top %v\n", v)
+	// u.Debugf("Kinesis scanAndProcess top %v\n", v)
 
 	for _, x := range m.tableCache.TableCache {
 		if x.SelectorNode == nil {
@@ -361,7 +361,7 @@ func (m *Main) scanAndProcess(v *consumer.Record) error {
 			return fmt.Errorf("cannot locate channel for shard key %v", key)
 		}
 		rec := DataRecord{TableName: table.Name, Data: out}
-		fmt.Println("Pushing record to channel", rec, shard[0])
+		// fmt.Println("Pushing record to channel", rec, shard[0])
 		ch <- rec
 		m.TotalRecs.Add(1)
 		m.TotalBytes.Add(len(v.Data))

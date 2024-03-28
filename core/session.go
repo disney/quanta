@@ -268,8 +268,9 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 	curTable := tbuf.Table
 
 	// Here we force the primary key to be handled first for table so that columnID is established in tbuf
-	if hasValues, err := s.processPrimaryKey(tbuf, row, pqTablePath, providedColID, isChild,
-		ignoreSourcePath, useNerdCapitalization); err != nil {
+	hasValues, err := s.processPrimaryKey(tbuf, row, pqTablePath, providedColID, isChild,
+		ignoreSourcePath, useNerdCapitalization)
+	if err != nil {
 		return err
 	} else if !hasValues {
 		return nil // nothing to do, no values in child relation

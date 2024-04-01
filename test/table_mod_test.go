@@ -8,6 +8,7 @@ import (
 	"time"
 
 	admin "github.com/disney/quanta/quanta-admin-lib"
+	proxy "github.com/disney/quanta/quanta-proxy-lib"
 	"github.com/disney/quanta/server"
 	"github.com/disney/quanta/shared"
 
@@ -15,31 +16,104 @@ import (
 )
 
 // This requires that consul is running on localhost:8500
-// A cluster should NOT be alread running.
+// A cluster should NOT be already running.
 
-func CountAttrInTable(t *testing.T, state *ClusterLocalState, tableName string) int {
-	count := 0
-	for _, node := range state.nodes {
-		bmi := node.GetNodeService("BitmapIndex")
-		bitmap := bmi.(*server.BitmapIndex)
-		table := bitmap.GetTable(tableName)
-		if count == 0 {
-			count = len(table.Attributes)
-		} else {
-			if count != len(table.Attributes) {
-				fmt.Printf("Table %s has different number of attributes on different nodes\n", tableName)
-			}
-		}
+// TestTableMod_reload_table tries to remove the whole table and then load it again.
+func TestTableMod_reload_table(t *testing.T) {
+
+	AcquirePort4000.Lock()
+	defer AcquirePort4000.Unlock()
+	var err error
+	shared.SetUTCdefault()
+
+	if IsLocalRunning() {
+		assert.Fail(t, "This test should not be run with a cluster running")
 	}
-	// bmi := proxy.Src.GetService("BitmapIndex")
-	// _ = bmi
-	// bitmap := bmi.(*server.BitmapIndex)
-	// //.(*server.BitmapIndex)
-	// table := bmi.GetTable(tableName)
-	// if count != len(table.Attributes) {
-	// 	fmt.Printf("Table %s has different number of attributes on different nodes\n", tableName)
-	// }
-	return count
+
+	// erase the storage
+	if !IsLocalRunning() { // if no cluster is up
+		err = os.RemoveAll("../test/localClusterData/") // start fresh
+		check(err)
+	}
+	// ensure we have a cluster on localhost, start one if necessary
+	state := Ensure_cluster(3)
+
+	// load something
+
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop customers_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create customers_qa"}, true)
+
+	for i := 0; i < 10; i++ {
+		sql := fmt.Sprintf("insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('%d','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home');", i)
+		AnalyzeRow(*state.ProxyConnect, []string{sql}, true)
+	}
+	AnalyzeRow(*state.ProxyConnect, []string{"commit"}, true)
+	time.Sleep(1 * time.Second)
+	// query
+
+	got := AnalyzeRow(*state.ProxyConnect, []string{"select cust_id from customers_qa"}, true)
+	for i := 0; i < len(got.RowDataArray); i++ {
+		json, err := json.Marshal(got.RowDataArray[i])
+		check(err)
+		fmt.Printf("%v\n", string(json))
+	}
+	assert.EqualValues(t, 10, got.ActualRowCount)
+
+	// get the schema from admin
+	// from  shared.GetTables(consulClient)
+	ctx := admin.Context{ConsulAddr: "localhost:8500", Port: 4000}
+	cmd := admin.TablesCmd{}
+	out := captureStdout(func() {
+		cmd.Run(&ctx) // sent to console
+	})
+	fmt.Println("initial tables", out)
+	assert.Contains(t, out, "customers_qa")
+
+	attrCount := CountAttrInTable(t, state, "customers_qa")
+	assert.EqualValues(t, 20, attrCount)
+
+	// delete the table
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop customers_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"commit"}, true)
+
+	// add it back slightly different.
+	createcmd := admin.CreateCmd{Table: "customers_qa-hashed_id", SchemaDir: "../sqlrunner/config", Confirm: false}
+	createerr := createcmd.Run(&ctx)
+	assert.Nil(t, createerr)
+	fmt.Println(createerr)
+
+	attrCount = CountAttrInTable(t, state, "customers_qa")
+	assert.EqualValues(t, 19, attrCount) // we lost a column
+
+	// is the data still there? It should be gone.
+	got = AnalyzeRow(*state.ProxyConnect, []string{"select cust_id from customers_qa"}, true)
+	for i := 0; i < len(got.RowDataArray); i++ {
+		json, err := json.Marshal(got.RowDataArray[i])
+		check(err)
+		fmt.Printf("%v\n", string(json))
+	}
+	assert.EqualValues(t, 0, got.ActualRowCount)
+
+	time.Sleep(10 * time.Second) // FIXME: every sleep is an admission of failure.
+
+	// add more data
+	for i := 0; i < 10; i++ {
+		sql := fmt.Sprintf("insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('%d','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home');", i+100)
+		AnalyzeRow(*state.ProxyConnect, []string{sql}, true)
+	}
+	AnalyzeRow(*state.ProxyConnect, []string{"commit"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"commit"}, true)
+
+	got = AnalyzeRow(*state.ProxyConnect, []string{"select cust_id from customers_qa"}, true)
+	for i := 0; i < len(got.RowDataArray); i++ {
+		json, err := json.Marshal(got.RowDataArray[i])
+		check(err)
+		fmt.Printf("%v\n", string(json))
+	}
+	assert.EqualValues(t, 10, got.ActualRowCount)
+
+	// release as necessary
+	state.Release()
 }
 
 // TestTableMod_change tries to change the default value of a column in a table.
@@ -317,10 +391,11 @@ func TestTableMod_add(t *testing.T) {
 
 	// add more data
 	for i := 0; i < 10; i++ {
-		sql := fmt.Sprintf("insert into customers_qa (cust_id, first_name,middle_name, address, city, state, zip, phone, phoneType) values('%d','Abe','Lou','123 Main','Seattle','WA','98072','425-232-4323','cell;home');", i+100)
+		sql := fmt.Sprintf("insert into customers_qa (cust_id, first_name,middle_name, address, city, state, zip, phone, phoneType) values('%d','Abe','Lou','123 Main','Seattle','WA','98072','425-232-4323','cell;home');", i+500)
 		AnalyzeRow(*state.ProxyConnect, []string{sql}, true)
 	}
 	AnalyzeRow(*state.ProxyConnect, []string{"commit"}, true)
+
 	got = AnalyzeRow(*state.ProxyConnect, []string{"select cust_id,middle_name from customers_qa"}, true)
 	for i := 0; i < len(got.RowDataArray); i++ {
 		json, err := json.Marshal(got.RowDataArray[i])
@@ -331,4 +406,24 @@ func TestTableMod_add(t *testing.T) {
 
 	// release as necessary
 	state.Release()
+}
+
+func CountAttrInTable(t *testing.T, state *ClusterLocalState, tableName string) int {
+	count := 0
+	for _, node := range state.nodes {
+		bmi := node.GetNodeService("BitmapIndex")
+		bitmap := bmi.(*server.BitmapIndex)
+		table := bitmap.GetTable(tableName)
+		if count == 0 {
+			count = len(table.Attributes)
+		} else {
+			if count != len(table.Attributes) {
+				fmt.Printf("Table %s has different number of attributes on different nodes\n", tableName)
+			}
+		}
+	}
+	conn := proxy.Src.GetConnection()
+	bmi := conn.GetService("BitmapIndex")
+	_ = bmi // FIXME: how do I get the tables the proxy uses?
+	return count
 }

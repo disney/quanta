@@ -15,6 +15,10 @@ sleep 5
 echo "starting TestTableMod_change"
 go test -timeout 200s -run ^TestTableMod_change$  github.com/disney/quanta/test
 
+sleep 5
+echo "starting TestTableMod_reload_table"
+go test -timeout 200s -run ^TestTableMod_reload_table$  github.com/disney/quanta/test
+
 
 # from bigDataRetention.go
 sleep 1

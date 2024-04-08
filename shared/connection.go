@@ -34,53 +34,36 @@ import (
 )
 
 // Conn - Client side cluster state and connection abstraction.
-//
-// ServiceName - Name of service i.e. "quanta" for registration with Consul.
-// Replicas - Number of data replicas to support HA in case of node failure.
-// ConsulAgentAddr - Network endpoint for Consul agent.  Defaults to "127.0.0.1:8500".
-// ServicePort - Port number for the service API endpoint.
-// ServerHostOverride - Hack for resolving DNS hosts for TLS implementation.
-// tls - Use TLS if "true".
-// certFile - Certificate file location for TLS.
-// admin - Cluster adminitration API and health checks.
-// ClientConn - GRPC client connection wrapper.
-// Err - Error channel for administration API failures.
-// Stop - Channel for signaling cluster Stop event.
-// consul - Handle to Consul cluster.
-// HashTable - Rendezvous hash table containing cluster members for sharding.
-// pollWait - Wait interval for node membership polling events.
-// nodes - List of nodes as currently registered with Consul.
-// NodeMap - Map cluster node keys to connection/client arrays.
 type Conn struct {
-	ServiceName        string
-	Quorum             int
-	Replicas           int
-	ConsulAgentAddr    string
-	ServicePort        int
-	ServerHostOverride string
-	tls                bool
-	certFile           string
-	grpcOpts           []grpc.DialOption
-	Admin              []pb.ClusterAdminClient
-	clientConn         []*grpc.ClientConn
-	Err                chan error
-	Stop               chan struct{}
-	Consul             *api.Client
-	HashTable          *rendezvous.Table
-	waitIndex          uint64
-	pollWait           time.Duration
-	nodes              []*api.ServiceEntry
-	nodeMap            map[string]int
-	nodeMapLock        sync.RWMutex
-	registeredServices map[string]Service
-	registerLock       sync.RWMutex
-	idMap              map[string]*api.ServiceEntry
-	ids                []string
-	clusterSizeTarget  int
-	nodeStatusMap      map[string]*pb.StatusMessage
-	activeCount        int
-	IsLocalCluster     bool
-	owner              string // for debugging
+	ServiceName        string                       // Name of service i.e. "quanta" for registration with Consul.
+	Quorum             int                          //
+	Replicas           int                          // Number of data replicas to support HA in case of node failure.
+	ConsulAgentAddr    string                       // Network endpoint for Consul agent.  Defaults to "127.0.0.1:8500".
+	ServicePort        int                          // Port number for the service API endpoint.
+	ServerHostOverride string                       // Hack for resolving DNS hosts for TLS implementation.
+	tls                bool                         // Use TLS if "true".
+	certFile           string                       // Certificate file location for TLS.
+	grpcOpts           []grpc.DialOption            // GRPC options.
+	Admin              []pb.ClusterAdminClient      // Cluster adminitration API and health checks.
+	clientConn         []*grpc.ClientConn           // GRPC client connection wrapper. One per node.
+	Err                chan error                   // Error channel for administration API failures.
+	Stop               chan struct{}                // Channel for signaling cluster Stop event.
+	Consul             *api.Client                  // Handle to Consul cluster.
+	HashTable          *rendezvous.Table            // Rendezvous hash table containing cluster members for sharding.
+	waitIndex          uint64                       // Consul wait index. For long polling consul.
+	pollWait           time.Duration                // Wait interval for node membership polling events.
+	nodes              []*api.ServiceEntry          // List of nodes as currently registered with Consul.
+	nodeMap            map[string]int               // Map cluster node keys to connection/client arrays.
+	nodeMapLock        sync.RWMutex                 // Lock for nodeMap.
+	registeredServices map[string]Service           // service name to Service. Aka "BitmapIndex" to *server.BitmapIndex
+	registerLock       sync.RWMutex                 // Lock for registeredServices.
+	idMap              map[string]*api.ServiceEntry // Map of node ID to service entry.
+	ids                []string                     // List of node IDs.
+	clusterSizeTarget  int                          // Target cluster size.
+	nodeStatusMap      map[string]*pb.StatusMessage // Map of node ID to status message.
+	activeCount        int                          // Number of active nodes.
+	IsLocalCluster     bool                         // Is this a local cluster? For debugging.
+	owner              string                       // for debugging
 }
 
 // NewDefaultConnection - Configure a connection with default values.
@@ -142,9 +125,47 @@ func (ot OpType) String() string {
 	return ""
 }
 
+/** We will need to upgrate the state to a more complex state machine.
+Notes:
+
+states:
+	Inital state: nodes are starting up and there are not enough nodes to for clusterSizeTarget.
+				requests are rejected until the cluster is ready.
+
+	Running state: all nodes are active and the cluster is ready to accept requests.
+
+	Node loss: A node is lost. Short of clusterSizeTarget. Requests are still accepted.
+				Transition to loss rebalancing when possible.
+
+		Loss rebalancing: same as node loss 1. Waiting for rebalance to complete. Requests are still accepted.
+
+		Node loss Running: We are short a node but otherwise running. Requests are still accepted.
+
+	Node add: A new node is added. Not at clusterSizeTarget. Requests are still accepted.
+
+		Node add rebalancing: same as node add 1. Waiting for rebalance to complete. Requests are still accepted.
+
+		Node add Running: We are up a node but otherwise running. Requests are still accepted.
+
+Attributes:
+
+	Every state has these attributes.
+
+	Rejecting requests: Requests throw errors.
+
+	Short: We are short a node but still balanced and accepts requests.
+
+	Long: We have an extra node above clusterSizeTarget but still balanced and accepts requests.
+		  We should consider changing the clusterSizeTarget to the new value.
+
+	Orange: Some nodes are rebalancing. Requests are still accepted.
+
+*/
+
 // ClusterState - Overall cluster state indicators.
 type ClusterState int
 
+// TODO: update this to the more complex state machine.
 const (
 	// Red - A quorum is not reached.  Cluster is down or in inactive state.
 	Red = ClusterState(iota)

@@ -199,6 +199,7 @@ func TestTableMod_change(t *testing.T) {
 	}
 	assert.True(t, isAll_hashed)
 	assert.EqualValues(t, 10, got.ActualRowCount)
+	AnalyzeRow(*state.ProxyConnect, []string{"commit"}, true)
 
 	// add more data
 	for i := 0; i < 10; i++ {

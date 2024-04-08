@@ -111,7 +111,7 @@ func LoadTable(tableCache *TableCacheStruct, path string, kvStore *shared.KVStor
 	i := 1
 	for j, v := range table.Attributes {
 
-		if v.SourceName == "" && v.FieldName == "" {
+		if v.SourceName == "" && v.FieldName == "" && v.ChildTable == "" {
 			return nil, fmt.Errorf("a valid attribute must have an input source name or field name.  Neither exists")
 		}
 

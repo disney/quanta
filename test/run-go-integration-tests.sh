@@ -38,10 +38,10 @@ echo "starting TestSQLRunnerSuite"
 sleep 1
 echo "starting TestRetainData"
 go test -timeout 90s -run ^TestRetainData$  github.com/disney/quanta/test
-sleep 30
+sleep 60
 echo "starting TestRetainData_Part2"
 go test -timeout 90s -run ^TestRetainData_Part2$  github.com/disney/quanta/test
-sleep 30
+sleep 60
 echo "starting TestRetainData_Part2 again"
 go test -timeout 90s -run ^TestRetainData_Part2$  github.com/disney/quanta/test
 

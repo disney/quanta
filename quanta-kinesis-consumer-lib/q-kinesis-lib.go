@@ -201,7 +201,8 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 	for _, tableName := range tables {
 		u.Infof("Opening session for table %s", tableName)
 		// what are these orphans sessions for?
-		conn, _ := core.OpenSession(m.tableCache, "", tableName, false, clientConn)
+		//conn, _ := core.OpenSession(m.tableCache, "", tableName, false, clientConn)
+		conn, _ := core.OpenSession(m.tableCache, "", tableName, true, clientConn)
 		if conn != nil {
 			conn.CloseSession()
 		}
@@ -233,7 +234,8 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 				conn, ok := m.shardSessionCache[shardTableKey] // cache lookup
 				m.shardSessionLock.Unlock()
 				if !ok {
-					conn, err = core.OpenSession(m.tableCache, "", rec.TableName, false, clientConn)
+					//conn, err = core.OpenSession(m.tableCache, "", rec.TableName, false, clientConn)
+					conn, err = core.OpenSession(m.tableCache, "", rec.TableName, true, clientConn)
 					if err != nil {
 						return err
 					}
@@ -319,7 +321,7 @@ func (m *Main) scanAndProcess(v *consumer.Record) error {
 	out := make(map[string]interface{})
 	var table *core.Table
 
-	// u.Debugf("Kinesis scanAndProcess top %v\n", v)
+	//u.Debugf("Kinesis scanAndProcess top %v\n", v)
 
 	for _, x := range m.tableCache.TableCache {
 		if x.SelectorNode == nil {

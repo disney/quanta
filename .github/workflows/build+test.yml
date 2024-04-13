@@ -1,7 +1,7 @@
 name: build+test
 on: push
 jobs:
-  example-job:
+  quanta-ci-job:
     runs-on: ubuntu-latest
     steps:
       - name: Start LocalStack
@@ -43,7 +43,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: 1.19
+          go-version: 1.21
 
       - name: Build
         run: |
@@ -55,3 +55,8 @@ jobs:
           ls -lah
           # go test -v ./...
           ./test/run-go-tests.sh 
+      - name: Test-Integration
+        run: | 
+          ls -lah
+          # go test -v ./...
+          ./test/run-go-integration-tests.sh 

@@ -389,6 +389,8 @@ func TestTableMod_add(t *testing.T) {
 		fmt.Printf("%v\n", string(json))
 	}
 	assert.EqualValues(t, 10, got.ActualRowCount)
+	AnalyzeRow(*state.ProxyConnect, []string{"commit"}, true)
+	time.Sleep(10 * time.Second)
 
 	// add more data
 	for i := 0; i < 10; i++ {
@@ -396,6 +398,7 @@ func TestTableMod_add(t *testing.T) {
 		AnalyzeRow(*state.ProxyConnect, []string{sql}, true)
 	}
 	AnalyzeRow(*state.ProxyConnect, []string{"commit"}, true)
+	time.Sleep(10 * time.Second)
 
 	got = AnalyzeRow(*state.ProxyConnect, []string{"select cust_id,middle_name from customers_qa"}, true)
 	for i := 0; i < len(got.RowDataArray); i++ {

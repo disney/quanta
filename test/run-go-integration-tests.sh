@@ -2,6 +2,11 @@
 
 # You can also add the -race flag to different go commands like go test, to help detect where race conditions happen: golang.org/doc/articles/race_detector.html 
 
+# from local_test.go
+sleep 1
+echo "starting TestReplication"
+go test -timeout 200s -run ^TestReplication$  github.com/disney/quanta/test
+
 # from table_mod_test.go
 sleep 5
 echo "starting TestTableMod_remove_column"
@@ -38,10 +43,10 @@ echo "starting TestSQLRunnerSuite"
 sleep 1
 echo "starting TestRetainData"
 go test -timeout 90s -run ^TestRetainData$  github.com/disney/quanta/test
-sleep 60
+sleep 1
 echo "starting TestRetainData_Part2"
 go test -timeout 90s -run ^TestRetainData_Part2$  github.com/disney/quanta/test
-sleep 60
+sleep 1
 echo "starting TestRetainData_Part2 again"
 go test -timeout 90s -run ^TestRetainData_Part2$  github.com/disney/quanta/test
 

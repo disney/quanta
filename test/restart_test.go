@@ -42,19 +42,16 @@ func TestRetainData(t *testing.T) {
 
 	AnalyzeRow(*state.ProxyConnect, []string{"insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('101','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home');"}, true)
 
-	// query
-
 	got := AnalyzeRow(*state.ProxyConnect, []string{"select cust_id from customers_qa where cust_id != NULL ;@1"}, true)
 	assert.EqualValues(t, got.ExpectedRowcount, got.ActualRowCount)
 
 	got = AnalyzeRow(*state.ProxyConnect, []string{"select first_name from customers_qa;@1"}, true)
 	assert.EqualValues(t, got.ExpectedRowcount, got.ActualRowCount)
 
-	// release as necessary
-	fmt.Println("releasing local in memory cluster")
 	state.Release()
 }
 
+// TestRetainData_Part2 will check that the data written by TestRetainData is still there.
 func TestRetainData_Part2(t *testing.T) {
 
 	AcquirePort4000.Lock()

@@ -431,11 +431,38 @@ func (state *ClusterLocalState) StopNodes() {
 	}
 }
 
+// CheckForClosedPort returns true if the port is closed.git
+func CheckForClosedPort(port string) bool {
+	timeout := time.Second
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", port), timeout)
+	if err != nil {
+		// fmt.Println("Port is closed:", err)
+		return true // it's closed
+	}
+	if conn != nil {
+		defer conn.Close()
+		// fmt.Println("Port is open", net.JoinHostPort("127.0.0.1", port))
+	}
+	return false // it's still in use.
+}
+
 func (state *ClusterLocalState) Release() {
 	if state.weStartedTheCluster {
 		state.ProxyControl.Stop <- true
 		time.Sleep(100 * time.Millisecond)
 		state.StopNodes()
+		time.Sleep(100 * time.Millisecond)
+	}
+	// we need to wait for port 4000 to become available again
+	start := time.Now()
+	for {
+		if CheckForClosedPort("4000") {
+			break
+		}
+		if time.Since(start) > time.Minute*2 {
+			fmt.Println("CheckForClosedPort timed out")
+			break
+		}
 		time.Sleep(100 * time.Millisecond)
 	}
 }

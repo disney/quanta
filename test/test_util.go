@@ -240,6 +240,9 @@ func dumpField_(t *testing.T, state *ClusterLocalState, vectors []string, client
 			t.Error("dumpIsActive allIntegers not all 2", k, v)
 		}
 	}
+	if len(allIntegers) == 0 {
+		t.Error("dumpIsActive expected a mapping")
+	}
 	if dirty {
 		fmt.Println("bad mapping") // add breakpoint here
 	}

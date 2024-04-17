@@ -1,6 +1,7 @@
 package test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
@@ -18,6 +19,57 @@ import (
 // This requires that consul is running on localhost:8500
 // If a cluster is running it will use that cluster.
 // If not it will start a cluster.
+
+// TestReplication will check that data is written 2 places.
+func TestReplication(t *testing.T) {
+
+	AcquirePort4000.Lock()
+	defer AcquirePort4000.Unlock()
+	var err error
+	shared.SetUTCdefault()
+
+	// erase the storage
+	if !IsLocalRunning() { // if no cluster is up
+		err = os.RemoveAll("../test/localClusterData/") // start fresh
+		check(err)
+	} else {
+		fmt.Println("FAIL cluster already running")
+		t.FailNow()
+	}
+	// ensure_custer
+	state := Ensure_cluster(3)
+	state.Db, err = state.ProxyConnect.ProxyConnectConnect()
+	_ = err
+
+	// load something
+
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop orders_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop customers_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create customers_qa"}, true)
+
+	AnalyzeRow(*state.ProxyConnect, []string{"insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType,age,rownum) values('101','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home','33','11');"}, true)
+
+	got := AnalyzeRow(*state.ProxyConnect, []string{"select cust_id,first_name,city,age,rownum from customers_qa where cust_id != NULL ;@1"}, true)
+	for i := 0; i < len(got.RowDataArray); i++ {
+		json, err := json.Marshal(got.RowDataArray[i])
+		check(err)
+		fmt.Printf("%v\n", string(json))
+	}
+
+	vectors := []string{"customers_qa/cust_id/1970-01-01T00"}
+	DumpField(t, state, vectors) // see the mapping, check for replication.
+
+	vectors = []string{"customers_qa/first_name/1970-01-01T00"}
+	DumpField(t, state, vectors) // see the mapping, check for replication.
+
+	vectors = []string{"customers_qa/age/1970-01-01T00"}
+	DumpField(t, state, vectors) // see the mapping, check for replication.
+
+	vectors = []string{"customers_qa/rownum/1970-01-01T00"}
+	DumpField(t, state, vectors) // see the mapping, check for replication.
+
+	state.Release()
+}
 
 func TestParseSqlAndChangeWhere(t *testing.T) {
 

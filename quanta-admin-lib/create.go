@@ -37,7 +37,7 @@ func (c *CreateCmd) Run(ctx *Context) error {
 	for i := 0; i < len(table.Attributes); i++ {
 		u.Info(table.Attributes[i].FieldName, " ", table.Attributes[i].Type)
 		typ := shared.TypeFromString(table.Attributes[i].Type)
-		if typ == shared.NotDefined {
+		if typ == shared.NotDefined && table.Attributes[i].MappingStrategy != "ChildRelation" {
 			return fmt.Errorf("unknown type %s for field %s", table.Attributes[i].Type, table.Attributes[i].FieldName)
 		}
 	}
@@ -103,7 +103,7 @@ func (c *CreateCmd) Run(ctx *Context) error {
 
 		err = performCreate(consulClient, table, ctx.Port)
 		if err != nil {
-			return fmt.Errorf("errors during performCreate: %v", err)
+			return fmt.Errorf("errors during performCreate (table exists): %v", err)
 		}
 		u.Infof("Successfully deployed modifications to table %s\n", table.Name)
 	}
@@ -148,11 +148,15 @@ func performCreate(consul *api.Client, table *shared.BasicTable, port int) error
 	if err1 != nil {
 		return fmt.Errorf("Error loading schema from consul %v", err1)
 	}
-	ok, _, err2 := table2.Compare(table)
+	ok, warnings, err2 := table2.Compare(table)
 	if err2 != nil {
 		return fmt.Errorf("error comparing deployed table %v", err2)
 	}
 	if !ok {
+		fmt.Printf("HERE Warnings:\n")
+		for _, warning := range warnings {
+			fmt.Printf("    -> %v\n", warning)
+		}
 		return fmt.Errorf("differences detected with deployed table %v", table.Name)
 	}
 

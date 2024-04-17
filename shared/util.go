@@ -129,7 +129,7 @@ func putRecursive(typ reflect.Type, value reflect.Value, consul *api.Client, roo
 		}
 		fv := value.Field(i).Interface()
 		var kvPair api.KVPair
-		if tagName == "fieldName" || tagName == "value" {
+		if tagName == "childTable" || tagName == "fieldName" || tagName == "value" {
 			root = root + "/" + fv.(string)
 		}
 		if field.Type.Kind() == reflect.Map {
@@ -212,8 +212,16 @@ func getRecursive(typ reflect.Type, value reflect.Value, consul *api.Client, roo
 					getRecursive(field.Type.Elem(), reflect.Indirect(newVal), consul, slicePath)
 					slice = reflect.Append(slice, newVal.Elem())
 				}
-				if strings.HasSuffix(keys[j], "fieldName") {
-					slicePath := keys[j][:len(keys[j])-10] //length of "fieldName" - 1
+				if strings.HasSuffix(keys[j], "fieldName") || strings.HasSuffix(keys[j], "childTable") {
+					leng := 0
+				    if strings.HasSuffix(keys[j], "fieldName") {
+						leng = 10
+					}
+				    if strings.HasSuffix(keys[j], "childTable") {
+						leng = 11
+					}
+
+					slicePath := keys[j][:len(keys[j])-leng] //length of "fieldName/childTable" - 1
 					newVal := reflect.New(field.Type.Elem())
 					getRecursive(field.Type.Elem(), reflect.Indirect(newVal), consul, slicePath)
 					slice = reflect.Append(slice, newVal.Elem())

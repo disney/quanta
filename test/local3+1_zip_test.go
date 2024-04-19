@@ -148,7 +148,8 @@ func TestLocalBasic3then4_continuous(t *testing.T) {
 	time.Sleep(10 * time.Second)
 
 	// release as necessary
-	// or, just abandon it state.Release()
+	// or, just abandon it
+	state.Release()
 }
 
 func TestLocalBasic3then4Zip(t *testing.T) {

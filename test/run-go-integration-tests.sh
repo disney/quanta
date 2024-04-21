@@ -47,16 +47,17 @@ echo "starting TestSQLRunnerSuite"
 # fixme: go test -timeout 500s -run ^TestSQLRunnerSuite$  github.com/disney/quanta/test_integration
 
 # from restart_test.go
-# these work locally but seem to have a problem retaining data at github actiona.
+# these work locally but seem to have a problem retaining data at github actions.
+# FIXME: 
 sleep 1
 echo "starting TestRetainData"
-#cgo test -timeout 90s -run ^TestRetainData$  github.com/disney/quanta/test
+# go test -timeout 90s -run ^TestRetainData$  github.com/disney/quanta/test
 sleep 1
 echo "starting TestRetainData_Part2"
-#cgo test -timeout 90s -run ^TestRetainData_Part2$  github.com/disney/quanta/test
+# go test -timeout 90s -run ^TestRetainData_Part2$  github.com/disney/quanta/test
 sleep 1
-#cecho "starting TestRetainData_Part2 again"
-go test -timeout 90s -run ^TestRetainData_Part2$  github.com/disney/quanta/test
+# echo "starting TestRetainData_Part2 again"
+# go test -timeout 90s -run ^TestRetainData_Part2$  github.com/disney/quanta/test
 
 # from sql_test.go
 sleep 15

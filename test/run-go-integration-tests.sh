@@ -16,7 +16,7 @@ sleep 5
 echo "starting TestTableMod_add"
 go test -timeout 200s -run ^TestTableMod_add$  github.com/disney/quanta/test
 
-sleep 5
+sleep 60
 echo "starting TestTableMod_change"
 go test -timeout 300s -run ^TestTableMod_change$  github.com/disney/quanta/test
 

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -162,10 +163,13 @@ func (m *KVStore) cleanupProcessLoop() {
 func (m *KVStore) cleanup() {
 
 	u.Debug(m.hashKey, " KVStore cleanup")
+	m.storeCacheLock.Lock()
+	cacheCopy := maps.Clone(m.storeCache) // shallow copy
+	m.storeCacheLock.Unlock()
 
 	start := time.Now()
 
-	for k, v := range m.storeCache {
+	for k, v := range cacheCopy {
 		if time.Since(v.accessTime).Hours() >= maxOpenHours {
 			u.Debugf("Closed %v due to inactivity.", k)
 			m.closeStore(k)

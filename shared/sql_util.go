@@ -263,7 +263,8 @@ func GetAllRows(rows *sql.Rows) ([]map[string]interface{}, error) {
 		for i := range columns {
 			columnPointers[i] = &columns[i]
 		}
-		if err := rows.Scan(columnPointers...); err != nil {
+		err := rows.Scan(columnPointers...)
+		if err != nil {
 			return nil, err
 		}
 		row := make(map[string]interface{})
@@ -276,10 +277,15 @@ func GetAllRows(rows *sql.Rows) ([]map[string]interface{}, error) {
 			v := string(x)
 			if v != "NULL" {
 				row[colName] = v
+			} else {
+				row[colName] = "NULL" // add it anyway
 			}
 		}
+		// fmt.Println("GetAllRows found row", row)
 		if len(row) != 0 {
 			ret = append(ret, row)
+		} else {
+			fmt.Println("WARNING had an empty row")
 		}
 	}
 	return ret, nil

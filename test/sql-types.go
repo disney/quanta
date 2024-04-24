@@ -89,7 +89,7 @@ func AnalyzeRow(proxyConfig ProxyConnectStrings, row []string, validate bool) Sq
 	var err error
 	var sqlInfo SqlInfo
 
-	sqlInfo.Statement = strings.TrimLeft(strings.TrimRight(row[0], " "), " ")
+	sqlInfo.Statement = strings.TrimSpace(row[0])
 
 	sqlInfo.ExpectedRowcount = 0
 	sqlInfo.ActualRowCount = 0
@@ -171,7 +171,7 @@ func AnalyzeRow(proxyConfig ProxyConnectStrings, row []string, validate bool) Sq
 	case Update:
 		sqlInfo.ExecuteUpdate(db)
 	case Select:
-		//time.Sleep(500 * time.Millisecond)
+		// time.Sleep(500 * time.Millisecond)
 		sqlInfo.ExecuteQuery(db)
 	case Count:
 		//time.Sleep(500 * time.Millisecond)
@@ -183,23 +183,6 @@ func AnalyzeRow(proxyConfig ProxyConnectStrings, row []string, validate bool) Sq
 
 	}
 	return sqlInfo
-
-	// if statementType == Insert {
-	// 	sqlInfo.ExecuteInsert(db)
-	// } else if statementType == Update {
-	// 	sqlInfo.ExecuteUpdate(db)
-	// } else if statementType == Select {
-	// 	//time.Sleep(500 * time.Millisecond)
-	// 	sqlInfo.ExecuteQuery(db)
-	// } else if statementType == Count {
-	// 	//time.Sleep(500 * time.Millisecond)
-	// 	sqlInfo.ExecuteScalar(db)
-	// } else if statementType == Create {
-	// 	//time.Sleep(500 * time.Millisecond)
-	// 	sqlInfo.ExecuteCreate(db)
-	// } else {
-	// 	log.Fatalf("Unsupported Statement : %v", sqlInfo.Statement)
-	// }
 }
 
 func (s *SqlInfo) ExecuteAdmin() {
@@ -259,7 +242,6 @@ func (s *SqlInfo) ExecuteQuery(db *sql.DB) {
 	rows, s.Err = db.Query(s.Statement)
 	s.Rows = rows
 	if s.Err == nil {
-		//s.ActualRowCount = GetRowCount(rows)
 		rowsArr, err := shared.GetAllRows(rows)
 		s.RowDataArray = rowsArr
 		check(err)

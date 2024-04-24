@@ -59,6 +59,8 @@ func StartNode(nodeStart int) (*server.Node, error) {
 		bindAddr := "127.0.0.1"
 		port := 4010 + index
 
+		WaitForPort(port)
+
 		consul := bindAddr + ":8500"
 
 		memLimit := 0
@@ -144,6 +146,8 @@ type LocalProxyControl struct {
 }
 
 func StartProxy(count int, testConfigPath string) *LocalProxyControl {
+
+	WaitForPort(4000)
 
 	localProxy := &LocalProxyControl{}
 
@@ -236,7 +240,7 @@ func StartProxy(count int, testConfigPath string) *LocalProxyControl {
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
-				u.Errorf(err.Error())
+				// u.Errorf(err.Error())
 				return
 			}
 			go proxy.OnConn(conn)
@@ -446,23 +450,25 @@ func CheckForClosedPort(port string) bool {
 	return false // it's still in use.
 }
 
+func WaitForPort(port int) {
+	start := time.Now()
+	for {
+		if CheckForClosedPort(strconv.Itoa(port)) {
+			break
+		}
+		if time.Since(start) > 2*time.Minute {
+			fmt.Println("ERROR WaitForPort timed out waiting for port to become available.")
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 func (state *ClusterLocalState) Release() {
 	if state.weStartedTheCluster {
 		state.ProxyControl.Stop <- true
 		time.Sleep(100 * time.Millisecond)
 		state.StopNodes()
-		time.Sleep(100 * time.Millisecond)
-	}
-	// we need to wait for port 4000 to become available again
-	start := time.Now()
-	for {
-		if CheckForClosedPort("4000") {
-			break
-		}
-		if time.Since(start) > time.Minute*2 {
-			fmt.Println("CheckForClosedPort timed out")
-			break
-		}
 		time.Sleep(100 * time.Millisecond)
 	}
 }
@@ -581,6 +587,7 @@ func ExecuteSqlFile(state *ClusterLocalState, filename string) SqlInfo {
 	total.Statement = ""
 	hadSelect := false
 	for _, line := range lines {
+		line = strings.TrimSpace(line)
 		if !hadSelect {
 			if strings.HasPrefix(strings.ToLower(line), "select ") {
 				hadSelect = true

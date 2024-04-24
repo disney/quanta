@@ -4,15 +4,19 @@
 
 sleep 1
 echo "starting TestBasic"
-go test -timeout 300s -run ^TestBasic$  github.com/disney/quanta/test-integration
+go test -timeout 120s -run ^TestBasic$  github.com/disney/quanta/test-integration
+
+sleep 1
+echo "starting TestInsert"
+go test -timeout 120s -run ^TestInsert$  github.com/disney/quanta/test-integration
+
+sleep 1
+echo "starting TestJoins"
+go test -timeout 120s -run ^TestJoins$  github.com/disney/quanta/test-integration
 
 
-# TestTableMod_change fails with the following repeating endlessly until timeout:
-# 2024/04/21 02:41:59.440477 bitmap.go:490: [DEBUG] batchProcessLoop shard count quanta-node-0 shard 10 bsi 8 bitmap 2
-# 2024/04/21 02:41:59.440539 bitmap.go:490: [DEBUG] batchProcessLoop shard count quanta-node-2 shard 10 bsi 6 bitmap 4
-# 2024/04/21 02:41:59.440542 bitmap.go:490: [DEBUG] batchProcessLoop shard count quanta-node-1 shard 8 bsi 4 bitmap 4
-# 2024/04/21 02:42:08.954685 kvstore.go:164: [DEBUG] quanta-node-0 KVStore cleanup
-# 2024/04/21 02:42:08.959808 kvstore.go:164: [DEBUG] quanta-node-1 KVStore cleanup
+# TestTableMod_change fails with timeout:
+# FIXME: see DFS-480
 
 sleep 1
 echo "starting TestTableMod_change"

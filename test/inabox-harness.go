@@ -471,18 +471,6 @@ func (state *ClusterLocalState) Release() {
 		state.StopNodes()
 		time.Sleep(100 * time.Millisecond)
 	}
-	// // we need to wait for port 4000 to become available again
-	// start := time.Now()
-	// for {
-	// 	if CheckForClosedPort("4000") {
-	// 		break
-	// 	}
-	// 	if time.Since(start) > time.Minute*2 {
-	// 		fmt.Println("CheckForClosedPort timed out")
-	// 		break
-	// 	}
-	// 	time.Sleep(100 * time.Millisecond)
-	// }
 }
 
 func WaitForLocalActive(state *ClusterLocalState) {

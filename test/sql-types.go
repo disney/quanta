@@ -89,17 +89,11 @@ func AnalyzeRow(proxyConfig ProxyConnectStrings, row []string, validate bool) Sq
 	var err error
 	var sqlInfo SqlInfo
 
-	sqlInfo.Statement = strings.TrimSpace(row[0]) // strings.TrimLeft(strings.TrimRight(row[0], " "), " ")
+	sqlInfo.Statement = strings.TrimSpace(row[0])
 
 	sqlInfo.ExpectedRowcount = 0
 	sqlInfo.ActualRowCount = 0
 	sqlInfo.Validate = validate
-
-	isSelectNames := false
-	if strings.HasPrefix(sqlInfo.Statement, "select first_name from customers_qa;@") {
-		fmt.Println("select first_name from customers_qa")
-		isSelectNames = true
-	}
 
 	if sqlInfo.Statement == "" {
 		return sqlInfo
@@ -178,20 +172,7 @@ func AnalyzeRow(proxyConfig ProxyConnectStrings, row []string, validate bool) Sq
 		sqlInfo.ExecuteUpdate(db)
 	case Select:
 		// time.Sleep(500 * time.Millisecond)
-		if isSelectNames {
-			fmt.Println("select first_name from customers_qa 2")
-			sqlInfo.Statement = sqlInfo.Statement + ";"
-			sqlInfo.ExecuteQuery(db)
-			fmt.Println("select first_name from customers_qa 3", sqlInfo.ActualRowCount)
-
-		} else {
-			sqlInfo.ExecuteQuery(db)
-		}
-
-		if isSelectNames {
-			fmt.Println("select first_name from customers_qa")
-		}
-
+		sqlInfo.ExecuteQuery(db)
 	case Count:
 		//time.Sleep(500 * time.Millisecond)
 		sqlInfo.ExecuteScalar(db)
@@ -202,23 +183,6 @@ func AnalyzeRow(proxyConfig ProxyConnectStrings, row []string, validate bool) Sq
 
 	}
 	return sqlInfo
-
-	// if statementType == Insert {
-	// 	sqlInfo.ExecuteInsert(db)
-	// } else if statementType == Update {
-	// 	sqlInfo.ExecuteUpdate(db)
-	// } else if statementType == Select {
-	// 	//time.Sleep(500 * time.Millisecond)
-	// 	sqlInfo.ExecuteQuery(db)
-	// } else if statementType == Count {
-	// 	//time.Sleep(500 * time.Millisecond)
-	// 	sqlInfo.ExecuteScalar(db)
-	// } else if statementType == Create {
-	// 	//time.Sleep(500 * time.Millisecond)
-	// 	sqlInfo.ExecuteCreate(db)
-	// } else {
-	// 	log.Fatalf("Unsupported Statement : %v", sqlInfo.Statement)
-	// }
 }
 
 func (s *SqlInfo) ExecuteAdmin() {
@@ -276,13 +240,8 @@ func (s *SqlInfo) ExecuteQuery(db *sql.DB) {
 
 	var rows *sql.Rows
 	rows, s.Err = db.Query(s.Statement)
-
-	if strings.HasPrefix(s.Statement, "select * from customers_qa where city = 'Seattle'") {
-		fmt.Println("selkect  statement")
-	}
 	s.Rows = rows
 	if s.Err == nil {
-		//s.ActualRowCount = GetRowCount(rows)
 		rowsArr, err := shared.GetAllRows(rows)
 		s.RowDataArray = rowsArr
 		check(err)

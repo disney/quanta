@@ -36,4 +36,3 @@ insert into customers_qa (cust_id, phoneType) values('370', 'cell;home');
 insert into customers_qa (cust_id, city, birthdate, age) values('380', 'Juneau', '1982-05-12', 41);
 insert into customers_qa (cust_id, last_name, first_name, zip, state, city, address) values('390', 'Morris','Kale','99801','AK','Juneau','2424 Glacier Hwy');
 commit
-

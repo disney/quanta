@@ -89,11 +89,17 @@ func AnalyzeRow(proxyConfig ProxyConnectStrings, row []string, validate bool) Sq
 	var err error
 	var sqlInfo SqlInfo
 
-	sqlInfo.Statement = strings.TrimLeft(strings.TrimRight(row[0], " "), " ")
+	sqlInfo.Statement = strings.TrimSpace(row[0]) // strings.TrimLeft(strings.TrimRight(row[0], " "), " ")
 
 	sqlInfo.ExpectedRowcount = 0
 	sqlInfo.ActualRowCount = 0
 	sqlInfo.Validate = validate
+
+	isSelectNames := false
+	if strings.HasPrefix(sqlInfo.Statement, "select first_name from customers_qa;@") {
+		fmt.Println("select first_name from customers_qa")
+		isSelectNames = true
+	}
 
 	if sqlInfo.Statement == "" {
 		return sqlInfo
@@ -171,8 +177,21 @@ func AnalyzeRow(proxyConfig ProxyConnectStrings, row []string, validate bool) Sq
 	case Update:
 		sqlInfo.ExecuteUpdate(db)
 	case Select:
-		//time.Sleep(500 * time.Millisecond)
-		sqlInfo.ExecuteQuery(db)
+		// time.Sleep(500 * time.Millisecond)
+		if isSelectNames {
+			fmt.Println("select first_name from customers_qa 2")
+			sqlInfo.Statement = sqlInfo.Statement + ";"
+			sqlInfo.ExecuteQuery(db)
+			fmt.Println("select first_name from customers_qa 3", sqlInfo.ActualRowCount)
+
+		} else {
+			sqlInfo.ExecuteQuery(db)
+		}
+
+		if isSelectNames {
+			fmt.Println("select first_name from customers_qa")
+		}
+
 	case Count:
 		//time.Sleep(500 * time.Millisecond)
 		sqlInfo.ExecuteScalar(db)
@@ -257,6 +276,10 @@ func (s *SqlInfo) ExecuteQuery(db *sql.DB) {
 
 	var rows *sql.Rows
 	rows, s.Err = db.Query(s.Statement)
+
+	if strings.HasPrefix(s.Statement, "select * from customers_qa where city = 'Seattle'") {
+		fmt.Println("selkect  statement")
+	}
 	s.Rows = rows
 	if s.Err == nil {
 		//s.ActualRowCount = GetRowCount(rows)

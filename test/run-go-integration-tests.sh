@@ -2,6 +2,11 @@
 
 # You can also add the -race flag to different go commands like go test, to help detect where race conditions happen: golang.org/doc/articles/race_detector.html 
 
+sleep 1
+echo "starting TestBasic"
+go test -timeout 300s -run ^TestBasic$  github.com/disney/quanta/test-integration
+
+
 # TestTableMod_change fails with the following repeating endlessly until timeout:
 # 2024/04/21 02:41:59.440477 bitmap.go:490: [DEBUG] batchProcessLoop shard count quanta-node-0 shard 10 bsi 8 bitmap 2
 # 2024/04/21 02:41:59.440539 bitmap.go:490: [DEBUG] batchProcessLoop shard count quanta-node-2 shard 10 bsi 6 bitmap 4

@@ -240,7 +240,7 @@ func StartProxy(count int, testConfigPath string) *LocalProxyControl {
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
-				u.Errorf(err.Error())
+				// u.Errorf(err.Error())
 				return
 			}
 			go proxy.OnConn(conn)
@@ -599,6 +599,7 @@ func ExecuteSqlFile(state *ClusterLocalState, filename string) SqlInfo {
 	total.Statement = ""
 	hadSelect := false
 	for _, line := range lines {
+		line = strings.TrimSpace(line)
 		if !hadSelect {
 			if strings.HasPrefix(strings.ToLower(line), "select ") {
 				hadSelect = true

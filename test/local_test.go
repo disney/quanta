@@ -40,6 +40,13 @@ func TestFirstName(t *testing.T) {
 	// ensure we have a cluster on localhost, start one if necessary
 	state := Ensure_cluster(3)
 
+	currentDir, err := os.Getwd()
+	fmt.Println("currentDir", currentDir)
+	check(err)
+	err = os.Chdir("../sqlrunner") // these run from the sqlrunner/ directory
+	check(err)
+	defer os.Chdir(currentDir)
+
 	if !isLocalRunning { // if no cluster was up, load some data
 		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries_load.sql")
 	} // else assume it's already loaded
@@ -105,7 +112,7 @@ func TestReplication(t *testing.T) {
 
 	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop orders_qa"}, true)
 	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop customers_qa"}, true)
-	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create customers_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create --schema-dir=../sqlrunner/config customers_qa"}, true)
 
 	AnalyzeRow(*state.ProxyConnect, []string{"insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType,age,rownum) values('101','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home','33','11');"}, true)
 
@@ -197,7 +204,7 @@ func TestLocalQuery(t *testing.T) {
 
 	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop orders_qa"}, true)
 	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop customers_qa"}, true)
-	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create customers_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create --schema-dir=../sqlrunner/config customers_qa"}, true)
 
 	AnalyzeRow(*state.ProxyConnect, []string{"insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('101','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home');"}, true)
 
@@ -230,6 +237,13 @@ func TestIsNull(t *testing.T) {
 	}
 	// ensure we have a cluster on localhost, start one if necessary
 	state := Ensure_cluster(3)
+
+	currentDir, err := os.Getwd()
+	fmt.Println("currentDir", currentDir)
+	check(err)
+	err = os.Chdir("../sqlrunner") // these run from the sqlrunner/ directory
+	check(err)
+	defer os.Chdir(currentDir)
 
 	if !isLocalRunning { // if no cluster was up, load some data
 		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries_load.sql")
@@ -276,6 +290,13 @@ func TestIsNotNull(t *testing.T) {
 	// ensure we have a cluster on localhost, start one if necessary
 	state := Ensure_cluster(3)
 
+	currentDir, err := os.Getwd()
+	fmt.Println("currentDir", currentDir)
+	check(err)
+	err = os.Chdir("../sqlrunner") // these run from the sqlrunner/ directory
+	check(err)
+	defer os.Chdir(currentDir)
+
 	if !isLocalRunning { // if no cluster was up, load some data
 		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries_load.sql")
 	} // else assume it's already loaded
@@ -320,6 +341,13 @@ func TestSpellTypeWrong(t *testing.T) {
 	}
 	// ensure we have a cluster on localhost, start one if necessary
 	state := Ensure_cluster(3)
+
+	currentDir, err := os.Getwd()
+	fmt.Println("currentDir", currentDir)
+	check(err)
+	err = os.Chdir("../sqlrunner") // these run from the sqlrunner/ directory
+	check(err)
+	defer os.Chdir(currentDir)
 
 	if !isLocalRunning { // if no cluster was up, load some data
 		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries_load.sql")
@@ -391,6 +419,13 @@ func TestAvgAge(t *testing.T) {
 	}
 	// ensure we have a cluster on localhost, start one if necessary
 	state := Ensure_cluster(3)
+
+	currentDir, err := os.Getwd()
+	fmt.Println("currentDir", currentDir)
+	check(err)
+	err = os.Chdir("../sqlrunner") // these run from the sqlrunner/ directory
+	check(err)
+	defer os.Chdir(currentDir)
 
 	if !isLocalRunning { // if no cluster was up, load some data
 		ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries_load.sql")

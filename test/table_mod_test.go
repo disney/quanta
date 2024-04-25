@@ -40,8 +40,9 @@ func TestTableMod_reload_table(t *testing.T) {
 
 	// load something
 
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop orders_qa"}, true)
 	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop customers_qa"}, true)
-	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create customers_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create --schema-dir=../sqlrunner/config customers_qa"}, true)
 
 	for i := 0; i < 10; i++ {
 		sql := fmt.Sprintf("insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('%d','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home');", i)
@@ -110,7 +111,7 @@ func TestTableMod_reload_table(t *testing.T) {
 		check(err)
 		fmt.Printf("%v\n", string(json))
 	}
-	assert.EqualValues(t, 10, got.ActualRowCount)
+	assert.EqualValues(t, 10, int(got.ActualRowCount))
 
 	// release as necessary
 	state.Release()
@@ -139,7 +140,7 @@ func TestTableMod_change(t *testing.T) {
 	// load something
 
 	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop customers_qa"}, true)
-	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create customers_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create --schema-dir=../sqlrunner/config customers_qa"}, true)
 
 	for i := 0; i < 10; i++ {
 		sql := fmt.Sprintf("insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('%d','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home');", i)
@@ -252,7 +253,7 @@ func TestTableMod_remove_column(t *testing.T) {
 	// load something
 
 	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop customers_qa"}, true)
-	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create customers_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create --schema-dir=../sqlrunner/config customers_qa"}, true)
 
 	for i := 0; i < 10; i++ {
 		sql := fmt.Sprintf("insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('%d','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home');", i)
@@ -344,7 +345,7 @@ func TestTableMod_add(t *testing.T) {
 	// load something
 
 	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop customers_qa"}, true)
-	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create customers_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create --schema-dir=../sqlrunner/config customers_qa"}, true)
 
 	for i := 0; i < 10; i++ {
 		sql := fmt.Sprintf("insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('%d','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home');", i)

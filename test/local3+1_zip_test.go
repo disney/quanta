@@ -41,7 +41,7 @@ func TestLocalBasic3then4_continuous(t *testing.T) {
 
 	// clear the table
 	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop customers_qa"}, true)
-	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create customers_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create  --schema-dir=../sqlrunner/config customers_qa"}, true)
 	time.Sleep(10 * time.Second)
 
 	// add 10 records
@@ -168,6 +168,13 @@ func TestLocalBasic3then4Zip(t *testing.T) {
 	}
 	// ensure we have a cluster on localhost, start one if necessary
 	state := Ensure_cluster(3)
+
+	currentDir, err := os.Getwd()
+	fmt.Println("currentDir", currentDir)
+	check(err)
+	err = os.Chdir("../sqlrunner") // these run from the sqlrunner/ directory
+	check(err)
+	defer os.Chdir(currentDir)
 
 	TestStatesAllMatch(t, state, "initial")
 

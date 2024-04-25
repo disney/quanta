@@ -22,6 +22,9 @@ func TestShowTables(t *testing.T) {
 	var err error
 	shared.SetUTCdefault()
 
+	currentDir, _ := os.Getwd()
+	fmt.Println("currentDir", currentDir)
+
 	// erase the storage
 	if !IsLocalRunning() { // if no cluster is up
 		err = os.RemoveAll("../test/localClusterData/") // start fresh
@@ -40,13 +43,11 @@ func TestShowTables(t *testing.T) {
 
 	// load something
 
-	// AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop orders_qa"}, true)
-	// AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop customers_qa"}, true)
-	// default dir is ./sqlrunner/config/
-	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create ../../test/testdata/config/cities"}, true)
-	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create ../../test/testdata/config/cityzip"}, true)
-	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create customers_qa"}, true)
-	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create orders_qa"}, true)
+	// default dir is config/
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create --schema-dir=../test/testdata/config cities"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create --schema-dir=../test/testdata/config cityzip"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create --schema-dir=../sqlrunner/config customers_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create --schema-dir=../sqlrunner/config orders_qa"}, true)
 
 	cmd = admin.TablesCmd{}
 	out = captureStdout(func() {

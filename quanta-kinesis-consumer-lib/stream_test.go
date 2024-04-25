@@ -33,7 +33,7 @@ func TestEntrypoint(t *testing.T) {
 func (suite *Kinesis_test_struct) TestOne() {
 
 	test.AnalyzeRow(*suite.state.ProxyConnect, []string{"quanta-admin drop customers_qa"}, true)
-	test.AnalyzeRow(*suite.state.ProxyConnect, []string{"quanta-admin create customers_qa"}, true)
+	test.AnalyzeRow(*suite.state.ProxyConnect, []string{"quanta-admin create  --schema-dir=../sqlrunner/config customers_qa"}, true)
 
 	is_localstack := os.Getenv("LOCALSTACK_ENV") == "true"
 	fmt.Println("is_localstack", is_localstack)

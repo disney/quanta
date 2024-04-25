@@ -5,7 +5,7 @@
 curDir=$(pwd)
 echo "curDir: $curDir"
 # cd to ./test as necessary
-if [[ ! $curDir == */test ]]; then
+if [[ ! $curDir == */test ]]; then 
   echo "cd to ./test"
   cd ./test
 fi

@@ -201,6 +201,7 @@ func TestTableMod_change(t *testing.T) {
 	assert.True(t, isAll_hashed)
 	assert.EqualValues(t, 10, got.ActualRowCount)
 	AnalyzeRow(*state.ProxyConnect, []string{"commit"}, true)
+	time.Sleep(10 * time.Second) // fixme: every sleep is an admission of failure.
 
 	// add more data
 	for i := 0; i < 10; i++ {
@@ -209,6 +210,7 @@ func TestTableMod_change(t *testing.T) {
 		check(got.Err)
 	}
 	AnalyzeRow(*state.ProxyConnect, []string{"commit"}, true)
+	time.Sleep(10 * time.Second) // fixme: every sleep is an admission of failure.
 
 	// now 10 rows are not 'not_hashed' and 10 are long hashes
 	not_hashed_count := 0

@@ -2,6 +2,14 @@
 
 # You can also add the -race flag to different go commands like go test, to help detect where race conditions happen: golang.org/doc/articles/race_detector.html 
 
+curDir=$(pwd)
+echo "curDir: $curDir"
+# cd to ./test as necessary
+if [[ ! $curDir == */test ]]; then 
+  echo "cd to ./test"
+  cd ./test
+fi
+
 sleep 1
 echo "starting TestBasic"
 go test -timeout 120s -run ^TestBasic$  github.com/disney/quanta/test-integration
@@ -20,7 +28,8 @@ go test -timeout 120s -run ^TestJoins$  github.com/disney/quanta/test-integratio
 
 sleep 1
 echo "starting TestTableMod_change"
-# FIXME: go test -timeout 300s -run ^TestTableMod_change$  github.com/disney/quanta/test
+# FIXME: 
+go test -timeout 300s -run ^TestTableMod_change$  github.com/disney/quanta/test
 
 # from local_test.go
 sleep 1
@@ -45,15 +54,11 @@ go test -timeout 200s -run ^TestTableMod_reload_table$  github.com/disney/quanta
 sleep 1
 echo "starting TestBasicLoadBig"
 # this one loads 250k strings into first_name and quits
-go test -timeout 500s -run ^TestBasicLoadBig$  github.com/disney/quanta/test
+# way too slow: go test -timeout 500s -run ^TestBasicLoadBig$  github.com/disney/quanta/test
 sleep 15
 echo "starting TestOpenwStrings"
 # this one starts the cluster and if it takes too long (rebuilding indexes) it will fail
 go test -timeout 90s -run ^TestOpenwStrings$  github.com/disney/quanta/test
-
-sleep 15
-echo "starting TestSQLRunnerSuite"
-# fixme: go test -timeout 500s -run ^TestSQLRunnerSuite$  github.com/disney/quanta/test_integration
 
 # from restart_test.go
 # these work locally but seem to have a problem retaining data at github actions.
@@ -65,7 +70,7 @@ sleep 1
 echo "starting TestRetainData_Part2"
 # go test -timeout 90s -run ^TestRetainData_Part2$  github.com/disney/quanta/test
 sleep 1
-# echo "starting TestRetainData_Part2 again"
+echo "starting TestRetainData_Part2 again"
 # go test -timeout 90s -run ^TestRetainData_Part2$  github.com/disney/quanta/test
 
 # from sql_test.go

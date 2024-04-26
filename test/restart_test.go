@@ -38,7 +38,7 @@ func TestRetainData(t *testing.T) {
 
 	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop orders_qa"}, true)
 	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin drop customers_qa"}, true)
-	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create customers_qa"}, true)
+	AnalyzeRow(*state.ProxyConnect, []string{"quanta-admin create  --schema-dir=../sqlrunner/config customers_qa"}, true)
 
 	AnalyzeRow(*state.ProxyConnect, []string{"insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('101','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home');"}, true)
 

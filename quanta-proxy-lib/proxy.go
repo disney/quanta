@@ -112,7 +112,7 @@ func SchemaChangeListener(e shared.SchemaChangeEvent) {
 			u.Error(err)
 		}
 		schema.RegisterSourceAsSchema("quanta", Src)
-		//schema.DefaultRegistry().SchemaRefresh("quanta")
+		schema.DefaultRegistry().SchemaRefresh("quanta")
 		log.Printf("Created table %s", e.Table)
 	}
 }
@@ -211,9 +211,9 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 
 	// should we just parse the sql instead of this? todo: (atw)
 
-	query = reWhitespace.ReplaceAllString(query, " ")           // scan 1
-	hasInto := strings.Contains(strings.ToLower(query), "into") // scan 2
-	splitQuery := strings.Split(query, " ")                     // scan 3
+	query = reWhitespace.ReplaceAllString(query, " ")             // scan 1
+	hasInto := strings.Contains(strings.ToLower(query), "into")   // scan 2
+	splitQuery := strings.Split(query, " ")                       // scan 3
 	splitQueryLower := strings.Split(strings.ToLower(query), " ") // shoould we parse instead? todo: (atw) scan 4
 	operation := splitQueryLower[0]
 	if strings.ToLower(splitQuery[0]) == "select" && hasInto {

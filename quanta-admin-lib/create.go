@@ -3,6 +3,7 @@ package admin
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	u "github.com/araddon/gou"
 
@@ -105,6 +106,7 @@ func (c *CreateCmd) Run(ctx *Context) error {
 		if err != nil {
 			return fmt.Errorf("errors during performCreate (table exists): %v", err)
 		}
+		time.Sleep(time.Second * 5)
 		u.Infof("Successfully deployed modifications to table %s\n", table.Name)
 	}
 	return nil

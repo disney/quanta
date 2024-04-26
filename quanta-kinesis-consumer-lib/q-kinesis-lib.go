@@ -201,7 +201,6 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 	for _, tableName := range tables {
 		u.Infof("Opening session for table %s", tableName)
 		// what are these orphans sessions for?
-		//conn, _ := core.OpenSession(m.tableCache, "", tableName, false, clientConn)
 		conn, _ := core.OpenSession(m.tableCache, "", tableName, true, clientConn)
 		if conn != nil {
 			conn.CloseSession()
@@ -232,15 +231,14 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 				shardTableKey := fmt.Sprintf("%v+%v", shardId, rec.TableName)
 				m.shardSessionLock.Lock()
 				conn, ok := m.shardSessionCache[shardTableKey] // cache lookup
-				m.shardSessionLock.Unlock()
 				if !ok {
-					//conn, err = core.OpenSession(m.tableCache, "", rec.TableName, false, clientConn)
 					conn, err = core.OpenSession(m.tableCache, "", rec.TableName, true, clientConn)
 					if err != nil {
 						return err
 					}
-					// put conn in cache ??
+					m.shardSessionCache[shardTableKey] = conn
 				}
+				m.shardSessionLock.Unlock()
 				// fmt.Printf("Kinesis PutRow %v %v %v\n", rec.TableName, rec.Data, shardId)
 				err = conn.PutRow(rec.TableName, rec.Data, 0, false, false)
 

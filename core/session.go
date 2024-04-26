@@ -141,20 +141,19 @@ func OpenSession(tableCache *TableCacheStruct, path, name string, nested bool, c
 		if err = recurseAndLoadTable(path, kvStore, tableBuffers, tab); err != nil {
 			return nil, fmt.Errorf("Error loading child tables %v", err)
 		}
-	} else {
-		// Do scan to see if there are parent relations.   If so, open the parent too.
-		for _, v := range tab.Attributes {
-			if v.MappingStrategy == "ParentRelation" && v.ForeignKey != "" {
-				fkTable, _, _ := v.GetFKSpec()
-				parent, err2 := LoadTable(tableCache, path, kvStore, fkTable, consul)
-				if err != nil {
-					return nil, fmt.Errorf("Error loading parent schema - %v", err2)
-				}
-				if tb, err := NewTableBuffer(parent); err == nil {
-					tableBuffers[fkTable] = tb
-				} else {
-					return nil, fmt.Errorf("OpenSession error - %v", err)
-				}
+	}
+	// Do scan to see if there are parent relations.   If so, open the parent too.
+	for _, v := range tab.Attributes {
+		if v.MappingStrategy == "ParentRelation" && v.ForeignKey != "" {
+			fkTable, _, _ := v.GetFKSpec()
+			parent, err2 := LoadTable(tableCache, path, kvStore, fkTable, consul)
+			if err != nil {
+				return nil, fmt.Errorf("Error loading parent schema - %v", err2)
+			}
+			if tb, err := NewTableBuffer(parent); err == nil {
+				tableBuffers[fkTable] = tb
+			} else {
+				return nil, fmt.Errorf("OpenSession error - %v", err)
 			}
 		}
 	}
@@ -193,6 +192,21 @@ func recurseAndLoadTable(basePath string, kvStore *shared.KVStore, tableBuffers 
 				tableBuffers[v.ChildTable] = tb
 			} else {
 				return fmt.Errorf("recurseAndLoadTable error - %v", err)
+			}
+		}
+		if v.ForeignKey != ""  {
+			fkTable, _, _ := v.GetFKSpec()
+			_, ok = tableBuffers[v.ChildTable]
+			if !ok {
+				table, err := LoadTable(tableCache, basePath, kvStore, fkTable, curTable.ConsulClient)
+				if err != nil {
+					return err
+				}
+				if tb, err := NewTableBuffer(table); err == nil {
+					tableBuffers[fkTable] = tb
+				} else {
+					return fmt.Errorf("recurseAndLoadTable error - %v", err)
+				}
 			}
 		}
 	}

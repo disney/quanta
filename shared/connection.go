@@ -17,7 +17,6 @@ import (
 	"fmt"
 
 	"math"
-	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -861,7 +860,8 @@ func (m *Conn) GetAllPeerStatus() {
 			}
 		} else {
 			u.Errorf("GetAllPeerStatus getNodeStatusForIndex in update: k = %s, i = %d - %v", k, v, err)
-			os.Exit(1) // This is fatal
+			// os.Exit(1) // This is fatal -> for the other node.
+			// This is going to happen during shutdown of a cluster after a test is finished.
 		}
 	}
 

@@ -85,7 +85,6 @@ type qlbdriver struct{}
 // @connInfo = driver-connection-info
 // @connInfo = sourceType://source
 func (m *qlbdriver) Open(connInfo string) (driver.Conn, error) {
-u.Errorf("REGISTRY = %s", registry.String());
 	s, ok := registry.Schema(connInfo)
 	if !ok || s == nil {
 		return nil, fmt.Errorf("No schema was found for %q", connInfo)

@@ -861,7 +861,9 @@ func (m *Conn) GetAllPeerStatus() {
 			}
 		} else {
 			u.Errorf("GetAllPeerStatus getNodeStatusForIndex in update: k = %s, i = %d - %v", k, v, err)
-			os.Exit(1) // This is fatal
+			if !m.IsLocalCluster {
+				os.Exit(1) // This is fatal
+			}
 		}
 	}
 

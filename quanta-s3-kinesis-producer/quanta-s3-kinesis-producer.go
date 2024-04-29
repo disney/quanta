@@ -3,20 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/araddon/dateparse"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/kinesis"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/disney/quanta/core"
-	"github.com/disney/quanta/shared"
-	"github.com/hamba/avro"
-	"github.com/hashicorp/consul/api"
-	pqs3 "github.com/xitongsys/parquet-go-source/s3"
-	"github.com/xitongsys/parquet-go/reader"
-	"golang.org/x/sync/errgroup"
-	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
 	"os"
 	"os/signal"
@@ -27,6 +13,21 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/araddon/dateparse"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/kinesis"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/disney/quanta/core"
+	"github.com/disney/quanta/shared"
+	"github.com/hamba/avro/v2"
+	"github.com/hashicorp/consul/api"
+	pqs3 "github.com/xitongsys/parquet-go-source/s3"
+	"github.com/xitongsys/parquet-go/reader"
+	"golang.org/x/sync/errgroup"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 // Variables to identify the build
@@ -191,10 +192,8 @@ func exitErrorf(msg string, args ...interface{}) {
 	os.Exit(1)
 }
 
-//
 // LoadBucketContents - List S3 objects from AWS bucket based on command line argument of the bucket name
 // S3 does not actually support nested buckets, instead they use a file prefix.
-//
 func (m *Main) LoadBucketContents() {
 
 	m.Bucket = path.Dir(m.BucketPath)
@@ -270,11 +269,11 @@ func (m *Main) processRowsForFile(s3object *s3.Object) {
 			log.Println(err)
 			continue
 		}
-if key, ok := outMap["dx"]; ok {
-partitionKey = key.(string)
-} else {
-continue
-}
+		if key, ok := outMap["dx"]; ok {
+			partitionKey = key.(string)
+		} else {
+			continue
+		}
 
 		outData, errx := avro.Marshal(m.Schema, outMap)
 		if errx != nil {
@@ -462,43 +461,43 @@ func (m *Main) GetRow(pr *reader.ParquetReader) (map[string]interface{}, string,
 		} else {
 			outMap[source] = cval
 		}
-/*
-		if v.FieldName != m.partitionCol.FieldName {
-			continue
-		}
-		// Must be partition col
-		var ts time.Time
-		//tFormat := shared.YMDTimeFmt
-		tFormat := time.RFC3339
-		if m.Table.TimeQuantumType == "YMDH" {
-			tFormat = shared.YMDHTimeFmt
-		}
-		switch reflect.ValueOf(cval).Kind() {
-		case reflect.String:
-			strVal := cval.(string)
-			loc, _ := time.LoadLocation("Local")
-			ts, err = dateparse.ParseIn(strVal, loc)
-			if err != nil {
-				return nil, "", fmt.Errorf("Date parse error for PK field %s - value %s - %v",
-					pqColPath, strVal, err)
+		/*
+			if v.FieldName != m.partitionCol.FieldName {
+				continue
 			}
-			outMap[source] = ts.UnixNano() / 1000000 // TODO FIX ME
-		case reflect.Int64:
-			orig := cval.(int64)
-			if v.MappingStrategy == "SysMillisBSI" || v.MappingStrategy == "SysMicroBSI" {
-				ts = time.Unix(0, orig*1000000)
-				if v.MappingStrategy == "SysMicroBSI" {
-					ts = time.Unix(0, orig*1000)
+			// Must be partition col
+			var ts time.Time
+			//tFormat := shared.YMDTimeFmt
+			tFormat := time.RFC3339
+			if m.Table.TimeQuantumType == "YMDH" {
+				tFormat = shared.YMDHTimeFmt
+			}
+			switch reflect.ValueOf(cval).Kind() {
+			case reflect.String:
+				strVal := cval.(string)
+				loc, _ := time.LoadLocation("Local")
+				ts, err = dateparse.ParseIn(strVal, loc)
+				if err != nil {
+					return nil, "", fmt.Errorf("Date parse error for PK field %s - value %s - %v",
+						pqColPath, strVal, err)
+				}
+				outMap[source] = ts.UnixNano() / 1000000 // TODO FIX ME
+			case reflect.Int64:
+				orig := cval.(int64)
+				if v.MappingStrategy == "SysMillisBSI" || v.MappingStrategy == "SysMicroBSI" {
+					ts = time.Unix(0, orig*1000000)
+					if v.MappingStrategy == "SysMicroBSI" {
+						ts = time.Unix(0, orig*1000)
+					}
 				}
 			}
+			partitionKey = ts.UTC().Format(tFormat)
+		*/
+	}
+	/*
+		if partitionKey == "" {
+			return nil, "", fmt.Errorf("no PK timestamp for row")
 		}
-		partitionKey = ts.UTC().Format(tFormat)
-*/
-	}
-/*
-	if partitionKey == "" {
-		return nil, "", fmt.Errorf("no PK timestamp for row")
-	}
-*/
+	*/
 	return outMap, partitionKey, nil
 }

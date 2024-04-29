@@ -35,3 +35,17 @@ func (t *TablesCmd) Run(ctx *Context) error {
 	}
 	return nil
 }
+
+func GetTableNames(ctx *Context) ([]string, error) {
+	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
+	if err != nil {
+		fmt.Println("Is the consul agent running?")
+		return nil, fmt.Errorf("connecting to consul %v", err)
+	}
+
+	tables, errx := shared.GetTables(consulClient)
+	if errx != nil {
+		return nil, errx
+	}
+	return tables, nil
+}

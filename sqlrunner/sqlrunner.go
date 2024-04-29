@@ -1,14 +1,13 @@
 package main
 
 import (
-	csv "encoding/csv"
 	"flag"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"os"
+	"strings"
 	"time"
-	"unicode/utf8"
+
+	u "github.com/araddon/gou"
 
 	runtime "github.com/banzaicloud/logrus-runtime-formatter"
 	"github.com/disney/quanta/rbac"
@@ -27,7 +26,7 @@ func main() {
 	shared.SetUTCdefault()
 
 	scriptFile := flag.String("script_file", "", "Path to the sql file to execute.")
-	scriptDelimiter := flag.String("script_delimiter", "@", "The delimiter to use in the script file.  The default is a colon (:).")
+	// scriptDelimiter := flag.String("script_delimiter", "@", "The delimiter to use in the script file.  The default is a colon (:).")
 	validate := flag.Bool("validate", false, "If not set, the Sql statement will be executed but not validated.")
 	host := flag.String("host", "", "Quanta host to connect to.")
 	user := flag.String("user", "", "The username that will connect to the database.")
@@ -36,13 +35,14 @@ func main() {
 	port := flag.String("port", "4000", "Port to connect to.")
 	consul := flag.String("consul", "127.0.0.1:8500", "Address of consul.")
 	log_level := flag.String("log_level", "", "Set the logging level to DEBUG for additional logging.")
+	repeats := flag.Int("repeats", 1, "to execute the scriptFile more that once. Default is 1")
 	flag.Parse()
 
 	if *scriptFile == "" || *host == "" || *user == "" {
-		log.Println()
-		log.Println("The arguments script_file, host, user and password are required.")
-		log.Println()
-		log.Println("Example: ./sqlrunner -script_file test.sql -validate -host 1.1.1.1 -user username -password whatever -db quanta -port 4000 -log_level DEBUG")
+		u.Warn()
+		u.Warn("The arguments script_file, host, user and password are required.")
+		u.Warn()
+		u.Warn("Example: ./sqlrunner -script_file test.sql -validate -host 1.1.1.1 -user username -password whatever -db quanta -port 4000 -log_level DEBUG")
 		os.Exit(0)
 	}
 
@@ -59,61 +59,52 @@ func main() {
 		}).Info("SqlRunner is running...")
 	}
 
-	log.Debugf("script_file : %s", *scriptFile)
-	log.Debugf("delimiter : %s", *scriptDelimiter)
-	log.Debugf("validate : %t", *validate)
-	log.Debugf("host : %s", *host)
-	log.Debugf("user : %s", *user)
-	log.Debugf("database : %s", *database)
-	log.Debugf("port : %s", *port)
-	log.Debugf("log_level : %s", *log_level)
+	u.Debugf("script_file : %s", *scriptFile)
+	u.Debugf("validate : %t", *validate)
+	u.Debugf("host : %s", *host)
+	u.Debugf("user : %s", *user)
+	u.Debugf("database : %s", *database)
+	u.Debugf("port : %s", *port)
+	u.Debugf("log_level : %s", *log_level)
+	u.Debugf("repeats : %d\n", *repeats)
 
-	var proxyConnect test.ProxyConnect
+	var proxyConnect test.ProxyConnectStrings
 	proxyConnect.Host = *host
 	proxyConnect.User = *user
 	proxyConnect.Password = *password
 	proxyConnect.Port = *port
 	proxyConnect.Database = *database
 
-	consulAddress = *consul
+	test.ConsulAddress = *consul
+	u.Debugf("ConsulAddress : %s", test.ConsulAddress)
 
-	directory := "./"                       // The current directory
-	files, err := ioutil.ReadDir(directory) //read the files from the directory
-	fmt.Println("current files", len(files))
-	if err != nil {
-		fmt.Println("error reading directory:", err) //print error if directory is not read properly
-		return
-	}
-	for _, file := range files {
-		fmt.Println(file.Name()) //print the files from the directory
-	}
-
-	f, err := os.Open(*scriptFile)
-  if err != nil {
-		log.Fatal("Proxy Connection Failed : ", err)
-	}
-	defer f.Close()
-
-	csvReader := csv.NewReader(f)
-	csvReader.FieldsPerRecord = -1
-
-	log.Debugf("Setting the delimiter : %s", *scriptDelimiter)
-	csvReader.Comma, _ = utf8.DecodeRuneInString(*scriptDelimiter)
-
-	consulAddress := *consul
-	consulClient, err := api.NewClient(&api.Config{Address: consulAddress})
+	consulClient, err := api.NewClient(&api.Config{Address: test.ConsulAddress})
 	check(err)
 
-	conn := shared.NewDefaultConnection()
+	conn := shared.NewDefaultConnection("sqlrunner")
 	// conn.ServicePort = main.Port
 	conn.Quorum = 3
 	if err := conn.Connect(consulClient); err != nil {
-		log.Fatal(err)
+		u.Log(u.FATAL, err)
 	}
 
 	sharedKV := shared.NewKVStore(conn)
 
-	time.Sleep(5 * time.Second)
+	// we're in cluster so we can just call admin status directly
+
+	now := time.Now()
+	for {
+		status, active, size := sharedKV.GetClusterState()
+		u.Debugf("consul status sqlrunner clusterState %v count %v size %v\n", status, active, size)
+
+		if status.String() == "GREEN" && active >= 3 && size >= 3 {
+			break
+		}
+		if time.Since(now) > time.Second*30 {
+			u.Log(u.FATAL, "consul timeout driver after NewKVStore")
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 
 	ctx, err := rbac.NewAuthContext(sharedKV, "USER001", true)
 	check(err)
@@ -125,20 +116,27 @@ func main() {
 	err = ctx.GrantRole(rbac.DomainUser, "MOLIG004", "quanta", true)
 	check(err)
 
-	for {
-		row, err := csvReader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Print("If you are using the validate option, be sure and add the expected rowcount after the sql statement.")
-			log.Print("Statement example:  select * from table;@100")
-			log.Fatal(err)
-		}
-
-		test.AnalyzeRow(proxyConnect, row, *validate)
+	for rep := 0; rep < *repeats; rep++ {
+		executeFile(rep, *scriptFile, proxyConnect, *validate)
 	}
 	logFinalResult()
+}
+
+func executeFile(rep int, scriptFile string, proxyConnect test.ProxyConnectStrings, validate bool) {
+
+	// We can afford to read the whole file into memory
+	// If not then use a line reader. Let's not use a csv reader since the file is not csv.
+	bytes, err := os.ReadFile(scriptFile)
+	if err != nil {
+		u.Log(u.FATAL, "scriptFile Open Failed : ", err)
+	}
+	sql := string(bytes)
+	lines := strings.Split(sql, "\n")
+
+	for _, row := range lines {
+		lineLines := strings.Split(row, "\\") // a '\' is a line continuation
+		test.AnalyzeRow(proxyConnect, lineLines, validate)
+	}
 }
 
 func logAdminOutput(command string, output []byte) {

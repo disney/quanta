@@ -112,7 +112,7 @@ func SchemaChangeListener(e shared.SchemaChangeEvent) {
 			u.Error(err)
 		}
 		schema.RegisterSourceAsSchema("quanta", Src)
-		//schema.DefaultRegistry().SchemaRefresh("quanta")
+		schema.DefaultRegistry().SchemaRefresh("quanta")
 		log.Printf("Created table %s", e.Table)
 	}
 }
@@ -158,10 +158,6 @@ type ProxyHandler struct {
 func NewProxyHandler(authProvider *AuthProvider) *ProxyHandler {
 
 	exec.RegisterSqlDriver()
-
-	// var driver driver.Driver
-	// driver = exec.Register()
-	// sql.Register("qlbridge", driver)
 
 	h := &ProxyHandler{authProvider: authProvider, stmts: make(map[interface{}]*sql.Stmt, 0)}
 	var err error
@@ -213,18 +209,21 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 
 	u.Debugf("handleQuery called with [%v], arg count = %d", query, len(args))
 
-	query = reWhitespace.ReplaceAllString(query, " ")
-	hasInto := strings.Contains(strings.ToLower(query), "into")
-	ss := strings.Split(query, " ")
-	if strings.ToLower(ss[0]) == "select" && hasInto {
-		ss[0] = "selectinto"
-	}
+	// should we just parse the sql instead of this? todo: (atw)
 
-	operation := strings.ToLower(ss[0])
+	query = reWhitespace.ReplaceAllString(query, " ")             // scan 1
+	hasInto := strings.Contains(strings.ToLower(query), "into")   // scan 2
+	splitQuery := strings.Split(query, " ")                       // scan 3
+	splitQueryLower := strings.Split(strings.ToLower(query), " ") // shoould we parse instead? todo: (atw) scan 4
+	operation := splitQueryLower[0]
+	if strings.ToLower(splitQuery[0]) == "select" && hasInto {
+		operation = "selectinto"
+	}
 	switch operation {
+
 	case "commit":
 		api := shared.NewBitmapIndex(Src.GetConnection())
-		err :=  api.Commit()
+		err := api.Commit()
 		return nil, err
 
 	case "begin", "rollback":
@@ -237,6 +236,8 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 		var r *mysql.Resultset
 		var err error
 
+		// FIXME: stop scanning the query over and over. (atw) first ToLower and then contains.
+		// use splitQueryLower instead of query.
 		//for handling go mysql driver select @@max_allowed_packet
 		if strings.Contains(strings.ToLower(query), "max_allowed_packet") {
 			r, err = mysql.BuildSimpleResultset([]string{"@@max_allowed_packet"}, [][]interface{}{
@@ -278,7 +279,7 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 			return &mysql.Result{Status: 0, InsertId: 0, AffectedRows: 0, Resultset: r}, nil
 		}
 		if strings.Contains(strings.ToLower(query), "select cast") ||
-					strings.Contains(strings.ToLower(query), "select schema") {
+			strings.Contains(strings.ToLower(query), "select schema") {
 			r, err = mysql.BuildSimpleResultset([]string{""}, [][]interface{}{
 				{""},
 			}, binary)
@@ -298,6 +299,7 @@ func (h *ProxyHandler) handleQuery(query string, args []interface{}, binary bool
 				return nil, err2
 			}
 		} else {
+
 			rows, err2 = h.db.Query(query, args...)
 			if err2 != nil {
 				u.Errorf("could not execute query: %v", err2)

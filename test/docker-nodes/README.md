@@ -1,6 +1,12 @@
 
 ### Docker nodes brings up a test cluster locally using docker for the nodes, proxy, consul, and sqlrunner
 
+#### Note
+
+This version starts a custer with 3 nodes, one front end (proxy), and a test runner using shell script.
+
+start-nodes-docker.go contains a version using go and not shell which is better for tests.
+
 #### Init
 
 Pull the consul image:
@@ -11,7 +17,7 @@ docker pull consul:1.10
 
 #### development loop
 
-Build the image.
+##### Build the image:
 
 CD to the root of the project and then
 
@@ -36,5 +42,5 @@ Note that the sqlrunner test can be re-run by just doing that part of the script
 Examine the logs, edit the code.
 Delete all the containers.
 
-Go to 'development loop' above to build and run again.
+**Repeat**.
 

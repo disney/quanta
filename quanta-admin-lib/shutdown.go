@@ -15,9 +15,11 @@ type ShutdownCmd struct {
 }
 
 // Run - Shutdown command implementation
+// calls the shutdown method on the selected nodes
 func (s *ShutdownCmd) Run(ctx *Context) error {
 
-	conn := GetClientConnection(ctx.ConsulAddr, ctx.Port)
+	conn := shared.GetClientConnection(ctx.ConsulAddr, ctx.Port, "shutdown")
+	defer conn.Disconnect()
 	cx, cancel := context.WithTimeout(context.Background(), shared.Deadline)
 	defer cancel()
 	indices, err := conn.SelectNodes("", shared.Admin)
@@ -29,6 +31,9 @@ func (s *ShutdownCmd) Run(ctx *Context) error {
 	}
 	shutCount := 0
 	for i, v := range conn.Admin {
+		if i >= len(conn.ClientConnections()) {
+			continue
+		}
 		if s.NodeIP != "all" && !strings.HasPrefix(conn.ClientConnections()[i].Target(), s.NodeIP) {
 			continue
 		}

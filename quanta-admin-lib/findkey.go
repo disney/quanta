@@ -21,7 +21,8 @@ type FindKeyCmd struct {
 // Run - FindKey command implementation
 func (f *FindKeyCmd) Run(ctx *Context) error {
 
-	conn := GetClientConnection(ctx.ConsulAddr, ctx.Port)
+	conn := shared.GetClientConnection(ctx.ConsulAddr, ctx.Port, "findKey")
+	defer conn.Disconnect()
 	table, err := shared.LoadSchema("", f.Table, conn.Consul)
 	if err != nil {
 		return fmt.Errorf("Error loading table %s - %v", f.Table, err)

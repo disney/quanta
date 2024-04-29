@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"io"
@@ -28,12 +29,15 @@ import (
 	"github.com/disney/quanta/shared"
 	"github.com/disney/quanta/sink"
 	"github.com/disney/quanta/source"
+	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/hashicorp/consul/api"
 )
 
 // some tests start a cluster and must listen on port 4000
 // this is a mutex to ensure that only one test at a time can listen on port 4000
-var acquirePort4000 sync.Mutex
+var AcquirePort4000 sync.Mutex
+
+var ConsulAddress = "127.0.0.1:8500" // also used by sqlrunner main.
 
 // tests will time out so run like this:
 // go test -timeout 10m
@@ -55,12 +59,14 @@ func StartNode(nodeStart int) (*server.Node, error) {
 		bindAddr := "127.0.0.1"
 		port := 4010 + index
 
+		WaitForPort(port)
+
 		consul := bindAddr + ":8500"
 
 		memLimit := 0
 
 		// Create /bitmap data directory
-		fmt.Printf("Creating bitmap data directory: %s", dataDir+"/bitmap")
+		fmt.Printf("Creating bitmap data directory: %s \n", dataDir+"/bitmap")
 		if _, err := os.Stat(dataDir + "/bitmap"); err != nil {
 			err = os.MkdirAll(dataDir+"/bitmap", 0777)
 			if err != nil {
@@ -96,17 +102,9 @@ func StartNode(nodeStart int) (*server.Node, error) {
 		m.AddNodeService(bitmapIndex)
 
 		// load the table schema from the file system manually here
-
+		//  eg.
 		// table := "cities"
 		// shared.LoadSchema("../test/testdata/config", table, consulClient)
-		// // ? m.TableCache.TableCache[table] = t
-
-		// table = "cityzip"
-		// shared.LoadSchema("../test/testdata/config", table, consulClient)
-
-		// table = "dmltest"
-		// shared.LoadSchema("../test/testdata/config", table, consulClient)
-
 		// Start listening endpoint
 		m.Start()
 
@@ -114,6 +112,7 @@ func StartNode(nodeStart int) (*server.Node, error) {
 		err = m.InitServices()
 		elapsed := time.Since(start)
 		if err != nil {
+			log.Printf("InitServices FAIL ERROR. %v", err)
 			log.Fatal(err)
 		}
 		log.Printf("Node initialized in %v.", elapsed)
@@ -127,6 +126,8 @@ func StartNode(nodeStart int) (*server.Node, error) {
 			fmt.Println("StartNodes returned from join")
 
 			<-m.Stop
+			fmt.Println(hashKey, "harness StartNodes got m.Stop")
+			m.Leave()
 			select {
 			case err = <-m.Err:
 			default:
@@ -141,9 +142,12 @@ func StartNode(nodeStart int) (*server.Node, error) {
 
 type LocalProxyControl struct {
 	Stop chan bool
+	Src  *source.QuantaSource
 }
 
 func StartProxy(count int, testConfigPath string) *LocalProxyControl {
+
+	WaitForPort(4000)
 
 	localProxy := &LocalProxyControl{}
 
@@ -183,7 +187,7 @@ func StartProxy(count int, testConfigPath string) *LocalProxyControl {
 
 	fmt.Println("Proxy RegisterSchemaChangeListener done")
 
-	poolSize := 3
+	poolSize := 4
 
 	// If the pool size is not configured then set it to the number of available CPUs
 	// this is weird atw
@@ -214,13 +218,13 @@ func StartProxy(count int, testConfigPath string) *LocalProxyControl {
 	// configDir := "../test/testdata" // gets: ../test/testdata/config/schema.yaml
 	// FIXME: empty configDir panics
 	configDir := testConfigPath
-	var err error                                                                                                       // this fails when run from test?
-	proxy.Src, err = source.NewQuantaSource(tableCache, configDir, proxy.ConsulAddr, proxy.QuantaPort, sessionPoolSize) // do we really want this here?
+	var err error
+	proxy.Src, err = source.NewQuantaSource(tableCache, configDir, proxy.ConsulAddr, proxy.QuantaPort, sessionPoolSize)
 	if err != nil {
 		u.Error(err)
 	}
 	fmt.Println("Proxy after NewQuantaSource")
-
+	localProxy.Src = proxy.Src
 	schema.RegisterSourceAsSchema("quanta", proxy.Src)
 
 	fmt.Println("Proxy starting to listen. ")
@@ -236,7 +240,7 @@ func StartProxy(count int, testConfigPath string) *LocalProxyControl {
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
-				u.Errorf(err.Error())
+				// u.Errorf(err.Error())
 				return
 			}
 			go proxy.OnConn(conn)
@@ -248,12 +252,18 @@ func StartProxy(count int, testConfigPath string) *LocalProxyControl {
 		for range localProxy.Stop {
 			fmt.Println("Stopping proxy")
 			proxy.Src.Close()
-			listener.Close()
+			err := listener.Close()
+			check(err)
 		}
 
 	}(localProxy)
 
 	return localProxy
+}
+
+func IsConsuleRunning() bool {
+	_, err := http.Get("http://localhost:8500/v1/health/service/quanta") // was quanta-node
+	return err == nil
 }
 
 func IsLocalRunning() bool {
@@ -276,45 +286,187 @@ func IsLocalRunning() bool {
 	return !isNotRunning
 }
 
-type ClusterLocalState struct {
-	m0                  *server.Node
-	m1                  *server.Node
-	m2                  *server.Node
-	proxyControl        *LocalProxyControl
-	weStartedTheCluster bool
-	proxyConnect        *ProxyConnect // for sql runner
-	db                  *sql.DB
+// captureStdout calls a function f and returns its stdout side-effect as string
+func captureStdout(f func()) string {
+	// return to original state afterwards
+	// note: defer evaluates (and saves) function ARGUMENT values at definition
+	// time, so the original value of os.Stdout is preserved before it is changed
+	// further into this function.
+	defer func(orig *os.File) {
+		os.Stdout = orig
+	}(os.Stdout)
+
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	f()
+	w.Close()
+	out, _ := io.ReadAll(r)
+
+	return string(out)
 }
 
-func StartNodes(state *ClusterLocalState) {
-
-	state.m0, _ = StartNode(0)
-	state.m1, _ = StartNode(1)
-	state.m2, _ = StartNode(2)
+// GetStatusLocal calls the admin status command and returns the output
+// It starts a client and then forms the status from maps in the Connection.
+func GetStatusLocal(ctx *admin.Context) string {
+	statusCmd := admin.StatusCmd{}
+	out := captureStdout(func() {
+		statusCmd.Run(ctx)
+	})
+	return out
 }
 
-func (state *ClusterLocalState) StopNodes() {
+// GetStatusViaAdminLocal calls the admin status command and returns the output
+// it makes a new connection and then sends grpc to all the nodes.
+func GetStatusViaAdminLocal() string {
+	consulAddress := "127.0.0.1:8500"
+	ctx := admin.Context{ConsulAddr: consulAddress,
+		Port:  4000,
+		Debug: true}
 
-	cmd := admin.ShutdownCmd{}
-	cmd.NodeIP = "all" // this would probably work
+	out := GetStatusLocal(&ctx)
+
+	// see below for example output
+	state := strings.Split(out, "Cluster State = ")
+	if len(state) == 2 {
+		if strings.HasPrefix(state[1], "GREEN") {
+			return "GREEN"
+		}
+	}
+	return "bad"
+}
+
+// WaitForStatusGreenLocal does an admin status command and waits for the cluster to be green
+// It could just check the proxy status but this is more general.
+func WaitForStatusGreenLocal() {
+
+	consulAddress := "127.0.0.1:8500"
 
 	ctx := admin.Context{ConsulAddr: consulAddress,
 		Port:  4000,
 		Debug: true}
 
-	cmd.NodeIP = "127.0.0.1:4010"
-	cmd.Run(&ctx)
+	now := time.Now()
+	for {
+		if time.Since(now) > time.Second*90 { // syncing could take a while
+			log.Fatal("consul timeout driver after WaitForStatusGreenLocal")
+		}
 
-	cmd.NodeIP = "127.0.0.1:4011"
-	cmd.Run(&ctx)
+		out := GetStatusLocal(&ctx)
 
-	cmd.NodeIP = "127.0.0.1:4012"
-	cmd.Run(&ctx)
+		fmt.Println("status", out)
+		// eg   Connecting to Consul at: [172.20.0.2:8500] ...
+		//  	Connecting to Quanta services at port: [4000] ...
+		//		ADDRESS            STATUS    DATA CENTER                              SHARDS   MEMORY   VERSION
+		//      172.20.0.3         Active    dc1                                           0   0        :
+		//		172.20.0.4         Syncing   dc1                                           0   0        :
+		//		172.20.0.5         Active    dc1                                           0   0        :
+		//		172.20.0.6         Active    dc1                                           0   0        :
+		//
+		//		Cluster State = GREEN, Active nodes = 3, Target Cluster Size = 3
+		//
+		state := strings.Split(out, "Cluster State = ")
+		if len(state) == 2 {
+			if strings.HasPrefix(state[1], "GREEN") {
+				return
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+func WaitForStatusGreen(consulAddress string, nodeName string) {
+
+	// docker exec admin --consul-addr 172.20.0.2:8500  status
+
+	now := time.Now()
+	for {
+		if time.Since(now) > time.Second*90 { // syncing could take a while
+			log.Fatal("consul timeout driver after WaitForStatusGreen")
+		}
+
+		cmd := "docker exec " + nodeName + " admin --consul-addr " + consulAddress + " status"
+		out, err := Shell(cmd, "")
+		_ = err
+		// fmt.Println("status", out, err)
+		// eg   Connecting to Consul at: [172.20.0.2:8500] ...
+		//  	Connecting to Quanta services at port: [4000] ...
+		//		ADDRESS            STATUS    DATA CENTER                              SHARDS   MEMORY   VERSION
+		//      172.20.0.3         Active    dc1                                           0   0        :
+		//		172.20.0.4         Syncing   dc1                                           0   0        :
+		//		172.20.0.5         Active    dc1                                           0   0        :
+		//		172.20.0.6         Active    dc1                                           0   0        :
+		//
+		//		Cluster State = GREEN, Active nodes = 3, Target Cluster Size = 3
+		//
+		state := strings.Split(out, "Cluster State = ")
+		if len(state) == 2 {
+			if strings.HasPrefix(state[1], "GREEN") {
+				return
+			}
+		}
+
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+type ClusterLocalState struct {
+	nodes               []*server.Node
+	ProxyControl        *LocalProxyControl
+	weStartedTheCluster bool
+	ProxyConnect        *ProxyConnectStrings // for sql runner
+	Db                  *sql.DB
+}
+
+func StartNodes(state *ClusterLocalState, count int) {
+
+	state.nodes = make([]*server.Node, 0)
+	for i := 0; i < count; i++ {
+		node, err := StartNode(i)
+		check(err)
+		state.nodes = append(state.nodes, node)
+	}
+}
+
+func (state *ClusterLocalState) StopNodes() {
+
+	for _, node := range state.nodes {
+		cx := context.Background()
+		node.Shutdown(cx, &empty.Empty{})
+	}
+}
+
+// CheckForClosedPort returns true if the port is closed.git
+func CheckForClosedPort(port string) bool {
+	timeout := time.Second
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", port), timeout)
+	if err != nil {
+		// fmt.Println("Port is closed:", err)
+		return true // it's closed
+	}
+	if conn != nil {
+		defer conn.Close()
+		// fmt.Println("Port is open", net.JoinHostPort("127.0.0.1", port))
+	}
+	return false // it's still in use.
+}
+
+func WaitForPort(port int) {
+	start := time.Now()
+	for {
+		if CheckForClosedPort(strconv.Itoa(port)) {
+			break
+		}
+		if time.Since(start) > 2*time.Minute {
+			fmt.Println("ERROR WaitForPort timed out waiting for port to become available.")
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func (state *ClusterLocalState) Release() {
 	if state.weStartedTheCluster {
-		state.proxyControl.Stop <- true
+		state.ProxyControl.Stop <- true
 		time.Sleep(100 * time.Millisecond)
 		state.StopNodes()
 		time.Sleep(100 * time.Millisecond)
@@ -322,71 +474,136 @@ func (state *ClusterLocalState) Release() {
 }
 
 func WaitForLocalActive(state *ClusterLocalState) {
-	for state.m0.State != server.Active || state.m1.State != server.Active || state.m2.State != server.Active {
-		time.Sleep(100 * time.Millisecond)
-		//fmt.Println("Waiting for nodes...", m2.State)
+
+	allActive := true
+	for {
+		allActive = true
+		for _, node := range state.nodes {
+			if node.State != server.Active {
+				fmt.Println("WaitForLocalActive node not active...", node.GetNodeID(), node.State)
+				allActive = false
+			}
+		}
+		if allActive {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
+	fmt.Println("WaitForLocalActive allActive", allActive)
+}
+
+func Ensure_this_cluster(count int, state *ClusterLocalState) {
+	local_Ensure_cluster(count, state)
+}
+
+func Ensure_cluster(count int) *ClusterLocalState {
+	var state = &ClusterLocalState{}
+	local_Ensure_cluster(count, state)
+	return state
 }
 
 // Ensure_cluster checks to see if there already is a cluster and
 // starts a local one as needed.
-// This depends on having consul on port 8500
-func Ensure_cluster() *ClusterLocalState {
-	var state = &ClusterLocalState{}
+// This depends on having consul on port 8500 in a terminal
+func local_Ensure_cluster(count int, state *ClusterLocalState) {
 
-	var proxyConnect ProxyConnect
+	var proxyConnect ProxyConnectStrings
 	proxyConnect.Host = "127.0.0.1"
 	proxyConnect.User = "MOLIG004"
 	proxyConnect.Password = ""
 	proxyConnect.Port = "4000"
 	proxyConnect.Database = "quanta"
 
-	state.proxyConnect = &proxyConnect
+	state.ProxyConnect = &proxyConnect
+
+	// set the quorum size to 3
+	localConsulAddress := "127.0.0.1"
+	consulClient, err := api.NewClient(&api.Config{Address: localConsulAddress + ":8500"})
+	check(err)
+	err = shared.SetClusterSizeTarget(consulClient, count)
+	check(err)
 
 	isNotRunning := !IsLocalRunning()
 	if isNotRunning {
+
+		shared.StartPprofAndPromListener("true")
+
 		// start the cluster
-		StartNodes(state)
+		StartNodes(state, count)
 
 		WaitForLocalActive(state)
 
-		// atw FIXME get rid of this config
-		// configDir := "../test/testdata/config"
 		configDir := ""
-		state.proxyControl = StartProxy(1, configDir)
+		state.ProxyControl = StartProxy(1, configDir)
+
+		sharedKV := shared.NewKVStore(state.ProxyControl.Src.GetConnection())
+
+		// need to sort this out and just have one
+
+		fmt.Println("consul status ", sharedKV.Consul.Status())
+
+		fmt.Println("before rbac.NewAuthContext in inabox-harness driver.go")
+
+		ctx, err := rbac.NewAuthContext(sharedKV, "USER001", true)
+		check(err)
+		err = ctx.GrantRole(rbac.DomainUser, "USER001", "quanta", true)
+		check(err)
+
+		ctx, err = rbac.NewAuthContext(sharedKV, "MOLIG004", true)
+		check(err)
+		err = ctx.GrantRole(rbac.SystemAdmin, "MOLIG004", "quanta", true)
+		check(err)
 
 		state.weStartedTheCluster = true
 	} else {
 		state.weStartedTheCluster = false
 	}
 
-	// need to sort this out and just have one
-
-	conn := shared.NewDefaultConnection()
-	err := conn.Connect(nil)
-	check(err)
-	defer conn.Disconnect()
-
-	sharedKV := shared.NewKVStore(conn)
-
-	ctx, err := rbac.NewAuthContext(sharedKV, "USER001", true)
-	check(err)
-	err = ctx.GrantRole(rbac.DomainUser, "USER001", "quanta", true)
+	state.Db, err = state.ProxyConnect.ProxyConnectConnect()
 	check(err)
 
-	ctx, err = rbac.NewAuthContext(sharedKV, "MOLIG004", true)
-	check(err)
-	err = ctx.GrantRole(rbac.SystemAdmin, "MOLIG004", "quanta", true)
-	check(err)
+	//return state
+}
 
-	state.db, err = state.proxyConnect.ProxyConnectConnect()
+func MergeSqlInfo(total *SqlInfo, got SqlInfo) {
+	total.ExpectedRowcount += got.ExpectedRowcount
+	total.ActualRowCount += got.ActualRowCount
+	total.ExpectError = got.ExpectError
+	if len(got.ErrorText) > 0 && !got.ExpectError {
+		total.ErrorText += "\n" + got.ErrorText
+		fmt.Println("got.ErrorText", got.ErrorText)
+	}
+	if got.ExpectedRowcount != got.ActualRowCount {
+		total.FailedChildren = append(total.FailedChildren, got)
+	}
+}
+
+func ExecuteSqlFile(state *ClusterLocalState, filename string) SqlInfo {
+	bytes, err := os.ReadFile(filename)
 	check(err)
-	return state
+	sql := string(bytes)
+	lines := strings.Split(sql, "\n")
+	var total SqlInfo
+	total.Statement = ""
+	hadSelect := false
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if !hadSelect {
+			if strings.HasPrefix(strings.ToLower(line), "select ") {
+				hadSelect = true
+				// time.Sleep(5 * time.Second) // For experiments only.
+			}
+		}
+		lineLines := strings.Split(line, "\\") // '\' is a line continuation
+		got := AnalyzeRow(*state.ProxyConnect, lineLines, true)
+		MergeSqlInfo(&total, got)
+	}
+	return total
 }
 
 func check(err error) {
 	if err != nil {
-		fmt.Println("check err", err)
-		panic(err.Error())
+		fmt.Println("ERROR ERROR check err", err)
+		// panic(err.Error())
 	}
 }

@@ -19,12 +19,12 @@
             "program": "./start-local/local-cluster-main.go",
         },
         {
-            "name": "Sql basic_queries ",
+            "name": "Sql joins_sql ",
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "./sqlrunner/driver.go",
-            "args": ["-script_file", "./sqlscripts/basic_queries_TMP.sql",
+            "program": "./sqlrunner/sqlrunner.go",
+            "args": ["-script_file", "./sqlscripts/joins_sql.sql",
             "-validate",
             "-host","127.0.0.1",
             "-user", "MOLIG004",
@@ -32,6 +32,33 @@
             "-port","4000", 
             "-log_level", "DEBUG"
         ]
+        },
+        {
+            "name": "Sql basic_queries ",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "./sqlrunner/sqlrunner.go",
+            "args": ["-script_file", "./sqlscripts/basic_queries.sql",
+            "-validate",
+            "-host","127.0.0.1",
+            "-user", "MOLIG004",
+            "-db","quanta", 
+            "-port","4000", 
+            "-log_level", "DEBUG"
+        ]
+        },
+        {
+            "name": "Start 1 node",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "./quanta-node.go",
+            "args": ["ip-10-180-97-111",
+            "./test/localClusterData","0.0.0.0","4000"
+        ]
         }
+
+
     ]
 }

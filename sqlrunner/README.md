@@ -6,7 +6,6 @@ The sql runner is a tool that will execute Sql statements from a file. The tool 
 
 **Parameters**
 - **script_file** - (required) This is a file the sql runner reads and executes.  This file contains a set of Sql statements to execute.
-- **script_delimiter** - (optional) The delimiter to use in the file.  The default is a '@'.  This delimiter separates the Sql statement from the expected row count.
 - **host** - (required) The Quanta host to connect to.
 - **user** - (required) The Quanta user to use to connect.
 - **password** - (required) The Quanta password to use to connect.

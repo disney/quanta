@@ -9,13 +9,15 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
+	"unsafe"
+
 	"math"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Jeffail/tunny"
@@ -24,6 +26,7 @@ import (
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
 	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/hashicorp/consul/api"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -63,6 +66,15 @@ type BitmapIndex struct {
 	bitmapCount     int
 	bsiCount        int
 	workers         []*WorkerThread
+	cleanupLock     sync.RWMutex
+	updBitmapTime   atomic.Uint64
+	updBSITime      atomic.Uint64
+	saveBitmapECnt  atomic.Uint64
+	saveBitmapTCnt  atomic.Uint64
+	saveBitmapTime  atomic.Uint64
+	saveBSIECnt     atomic.Uint64
+	saveBSITCnt     atomic.Uint64
+	saveBSITime     atomic.Uint64
 }
 
 type WorkerThread struct {
@@ -106,6 +118,7 @@ func NewBitmapIndex(node *Node, memoryLimitMb int) *BitmapIndex {
 				return nil
 			})
 	} else { // Normal (from Consul) initialization
+		fmt.Println("Bitmap server Normal (from Consul) initialization", e.hashKey)
 		var tables []string
 		err := shared.Retry(5, 2*time.Second, func() (err error) {
 			tables, err = shared.GetTables(e.consul)
@@ -121,7 +134,7 @@ func NewBitmapIndex(node *Node, memoryLimitMb int) *BitmapIndex {
 				os.Exit(1)
 			} else {
 				e.tableCache[table] = t
-				u.Infof("Table %s initialized.", table)
+				u.Infof("Table initialized. %s", table)
 			}
 		}
 	}
@@ -130,8 +143,25 @@ func NewBitmapIndex(node *Node, memoryLimitMb int) *BitmapIndex {
 	return e
 }
 
+func (m *BitmapIndex) GetBitmapCache() map[string]map[string]map[uint64]map[int64]*StandardBitmap {
+	return m.bitmapCache
+}
+
+func (m *BitmapIndex) GetBsiCache() map[string]map[string]map[int64]*BSIBitmap {
+	return m.bsiCache
+}
+
+// GetTable - Get the table schema for a given key
+// used for testing and debugging.
+func (m *BitmapIndex) GetTable(tableName string) *shared.BasicTable {
+	t := m.tableCache[tableName]
+	return t
+}
+
 // Init - Initialization
 func (m *BitmapIndex) Init() error {
+
+	fmt.Println("BitmapIndex Init", m.hashKey, uintptr(unsafe.Pointer(m)))
 
 	// TODO: Sensible configuration for queue sizes.
 	m.partitionQueue = make(chan *PartitionOperation, 100000)
@@ -167,6 +197,23 @@ func (m *BitmapIndex) Init() error {
 	// Partition operation worker thread
 	go m.partitionProcessLoop()
 
+	go func() { // wait for signal to persist cache
+		for {
+			select {
+			case <-m.Stop:
+				u.Debug("BitmapIndex Init() received stop signal", m.Node.hashKey)
+				return
+			case forceSync := <-m.writeSignal:
+				// fmt.Println(m.Node.hashKey, "had writeSignal, checkPersist*Cache(", forceSync, ")")
+				// go
+				m.checkPersistBitmapCache(forceSync)
+				// go
+				m.checkPersistBSICache(forceSync)
+				// fmt.Println(m.Node.hashKey, "had writeSignal DONE")
+			}
+		}
+	}()
+
 	return nil
 }
 
@@ -181,7 +228,7 @@ func (m *BitmapIndex) JoinCluster() {
 	if m.Conn.ServicePort == 0 {
 		return // Skip this for test harness mode.
 	}
-	u.Infof("Bitmap server is joining the cluster.")
+	u.Infof("Bitmap server is joining the cluster %s.", m.hashKey)
 	m.verifyNode()
 }
 
@@ -238,8 +285,8 @@ func (m *BitmapIndex) BatchMutate(stream pb.BitmapIndex_BatchMutateServer) error
 		}
 		select {
 		case m.fragQueue <- frag:
+			// fmt.Println(m.hashKey, "svr BatchMutate sent to fragQueue", frag.FieldName, frag.RowIDOrBits, frag.Time.Format(timeFmt), uintptr(unsafe.Pointer(m)))
 		default:
-			// Fragment queue is full
 			return fmt.Errorf("BatchMutate: fragment queue is full")
 		}
 	}
@@ -376,12 +423,19 @@ func (m *BitmapIndex) isBSI(index, field string) bool {
 // a frag in fragQueue where any thread can pick it up. It is much smaller.
 func (m *BitmapIndex) batchProcessLoop(worker *WorkerThread) {
 
+	// fmt.Println(m.Node.hashKey, "batchProcessLoop launched", worker.index, uintptr(unsafe.Pointer(m)))
+	// defer fmt.Println(m.Node.hashKey, "batchProcessLoop DONE", worker.index) // should never ever ever ever happen
+
 	for {
-		// fmt.Println("top worker loop", m.Node.hashKey, worker.index)
+		// fmt.Println(m.Node.hashKey, "batchProcessLoop top worker loop", worker.index)
+		// uintptr(unsafe.Pointer(m)
 		// This is a way to make sure that the fraq queue has priority over persistence.
 		select {
 		case nop := <-worker.aux:
-			nop.Done <- true
+			select {
+			case nop.Done <- true:
+			default:
+			}
 			continue
 		case frag := <-m.fragQueue:
 			if frag.IsNop {
@@ -391,15 +445,24 @@ func (m *BitmapIndex) batchProcessLoop(worker *WorkerThread) {
 			} else {
 				m.updateBitmapCache(frag)
 			}
-			frag.Done <- true
+			select {
+			case frag.Done <- true:
+			default:
+			}
 			continue
-		default: // Don't block
-		}
 
-		// this is where is waits for a frag or a write signal
+		default:
+			// Don't block
+		}
+		// fmt.Println(m.Node.hashKey, "batchProcessLoop middle worker loop", worker.index, len(m.setBitThreads.trigger), len(m.writeSignal))
+
+		// this is where it waits for a frag or a write signal
 		select {
 		case nop := <-worker.aux:
-			nop.Done <- true
+			select {
+			case nop.Done <- true:
+			default:
+			}
 			continue
 		case frag := <-m.fragQueue:
 			if frag.IsNop {
@@ -409,16 +472,24 @@ func (m *BitmapIndex) batchProcessLoop(worker *WorkerThread) {
 			} else {
 				m.updateBitmapCache(frag)
 			}
-			frag.Done <- true
-			continue
-		case <-m.writeSignal:
-			go m.checkPersistBitmapCache(false)
-			go m.checkPersistBSICache(false)
+			select {
+			case frag.Done <- true:
+			default:
+			}
 			continue
 		case <-time.After(time.Second * 10):
-			m.checkPersistBitmapCache(true)
-			m.checkPersistBSICache(true)
+
+			forceSync := true
+			select {
+			case m.writeSignal <- forceSync:
+			default:
+				// it's ok to be full.  It's just a signal.
+			}
 			m.shardCount = m.bsiCount + m.bitmapCount
+			if worker.index == 0 {
+				u.Debug("batchProcessLoop shard count ", m.hashKey, " shard ", m.shardCount, " bsi ", m.bsiCount, " bitmap ", m.bitmapCount)
+			}
+			// no default, block
 		}
 	} // back to top, forever
 }
@@ -451,11 +522,9 @@ func (m *BitmapIndex) expireProcessLoop(memoryLimitMb int) {
 	}
 }
 
-/*
- * Partition cleanup/archive/expiration worker thread.
- *
- * Wake up on interval and run partition processing.
- */
+// partitionProcessLoop Partition cleanup/archive/expiration worker thread.
+// Wake up on interval and run partition processing.
+// note that cleanupStrandedShards is also called elesewhere
 func (m *BitmapIndex) partitionProcessLoop() {
 
 	for {
@@ -472,7 +541,7 @@ func (m *BitmapIndex) partitionProcessLoop() {
 			m.executeOperation(p)
 			m.purgePartition(p.Partition)
 			runtime.GC()
-		case <-time.After(time.Second * 10):
+		case <-time.After(time.Hour):
 			state, _, _ := m.GetClusterState()
 			if m.State == Active && state == shared.Green {
 				m.cleanupStrandedShards()
@@ -486,22 +555,31 @@ func (m *BitmapIndex) verifyNode() {
 	peerClient := m.Conn.GetService("BitmapIndex").(*shared.BitmapIndex)
 
 	m.State = Syncing
-	u.Warnf("Setting node state to Syncing")
+	u.Warnf("Setting node state to Syncing %s", m.GetNodeID())
 	tryCount := 1
 	for {
+		u.Debugf("verifyNode peerClient.Synchronize start %v", m.hashKey)
 		diffCount, err := peerClient.Synchronize(m.GetNodeID())
+		u.Debugf("verifyNode peerClient.Synchronize done %v %v %v", m.hashKey, diffCount, err)
+
 		if err != nil {
-			log.Fatal(fmt.Errorf("Node synchronization/verification failed - %v", err))
+			u.Log(u.FATAL, fmt.Errorf("Node synchronization/verification failed - %v", err))
 		}
 		if diffCount == 0 {
 			m.State = Active
-			u.Warnf("Setting node state to Active")
+			u.Debugf("verifyNode Setting node state to Active for %s", m.hashKey)
+			// we need to 'touch' the health so everyone knows we are active atw
+			consul := m.Consul
+			valStr := fmt.Sprintf("%s_%d", m.hashKey, time.Now().UnixMilli())
+			pair := &api.KVPair{Key: "AnyNodeStatusChangeTime", Value: []byte(valStr)}
+			consul.KV().Put(pair, nil)
 			break
 		}
 		time.Sleep(shared.SyncRetryInterval)
 		tryCount++
-		u.Warnf("%d Differences detected, retrying Synchronization (attempt %d)", diffCount, tryCount)
+		u.Warnf("%s %d Differences detected, retrying Synchronization (attempt %d)", m.hashKey, diffCount, tryCount)
 	}
+	u.Debug("verifyNode done ", m.hashKey)
 }
 
 // Updates to the standard bitmap field cache
@@ -567,6 +645,7 @@ func (m *BitmapIndex) updateBitmapCache(f *BitmapFragment) {
 		existBm.Lock.Unlock()
 	}
 	elapsed := time.Since(start)
+	m.updBitmapTime.Store(uint64(elapsed.Milliseconds()))
 	if elapsed.Nanoseconds() > (1000000 * 25) {
 		u.Debugf("updateBitmapCache [%s/%s/%d/%s] done in %v.\n", f.IndexName, f.FieldName,
 			rowID, f.Time.Format(timeFmt), elapsed)
@@ -698,6 +777,7 @@ func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 		existBm.Lock.Unlock()
 	}
 	elapsed := time.Since(start)
+	m.updBSITime.Store(uint64(elapsed.Milliseconds()))
 	if elapsed.Nanoseconds() > (1000000 * 75) {
 		u.Debugf("updateBSICache [%s/%s/%s] done in %v.\n", f.IndexName, f.FieldName,
 			f.Time.Format(timeFmt), elapsed)
@@ -711,7 +791,7 @@ func (m *BitmapIndex) Truncate(index string) {
 	for _, rm := range fm {
 		for _, tm := range rm {
 			for ts := range tm {
-				//m.bitmapCacheLock.Lock()
+				//m.bitmapCacheLock.Lock() atw TODO: can this work or does it deadlock?
 				delete(tm, ts)
 				//m.bitmapCacheLock.Unlock()
 			}
@@ -728,6 +808,9 @@ func (m *BitmapIndex) Truncate(index string) {
 }
 
 func (m *BitmapIndex) cleanupStrandedShards() {
+
+	m.cleanupLock.RLock()
+	defer m.cleanupLock.RUnlock()
 
 	m.iterateBSICache(func(p *Partition) error {
 		return m.cleanupOp(p)
@@ -779,16 +862,44 @@ func (m *BitmapIndex) expireOp(p *Partition, exp time.Time) error {
 // cleanupOp - Remove stranded partitions
 func (m *BitmapIndex) cleanupOp(p *Partition) error {
 
-	hashKey := fmt.Sprintf("%s/%s/%s", p.Index, p.Field, p.Time.Format(timeFmt))
-	if p.RowIDOrBits > 0 {
+	isBool := false
+	m.tableCacheLock.RLock()
+	table := m.tableCache[p.Index]
+	attr, err := table.GetAttribute(p.Field)
+	if err == nil {
+		isBool = attr.Type == "Boolean"
+	}
+	m.tableCacheLock.RUnlock()
+
+	hashKey := ""
+	if p.RowIDOrBits > 0 || isBool { // wrong for bool value 0
+		// is count of bits
 		hashKey = fmt.Sprintf("%s/%s/%d/%s", p.Index, p.Field, p.RowIDOrBits, p.Time.Format(timeFmt))
+	} else {
+		hashKey = fmt.Sprintf("%s/%s/%s", p.Index, p.Field, p.Time.Format(timeFmt))
 	}
+
 	nodeKeys := m.HashTable.GetN(m.Replicas, hashKey)
-	nMap := make(map[string]struct{}, 0)
+
+	// fmt.Println("cleanupOp ", m.hashKey, " hashKey ", hashKey, " nodeKeys ", nodeKeys)
+
+	nMap := make(map[string]int, 0)
 	for _, k := range nodeKeys {
-		nMap[k] = struct{}{}
+		nMap[k] = 1
 	}
-	if _, ok := nMap[m.hashKey]; !ok {
+	_, ok := nMap[m.hashKey]
+	if !ok {
+
+		fmt.Println("cleanupOp key not in HashTable.GetN ", m.hashKey, " key ", hashKey, " nodeKeys ", nodeKeys, "nmap", nMap, "field", p.Field)
+		fmt.Println("cleanupOp will delete ", hashKey, "from node", m.hashKey)
+		if false && p.Field == "isActive" { // atw deleteme:  this is a test
+			// seeking customers_qa/isActive/1/1970-01-01T00
+			fmt.Println("cleanupOp isActive", m.hashKey, " hashKey ", hashKey, " nodeKeys ", nodeKeys, "nmap", nMap, "field", p.Field)
+			nodeKeys2 := m.HashTable.GetN(m.Replicas, "customers_qa/isActive/0/1970-01-01T00")
+			nodeKeys3 := m.HashTable.GetN(m.Replicas, "customers_qa/isActive/1/1970-01-01T00")
+			fmt.Println("cleanupOp nodeKeys2", m.hashKey, nodeKeys2, nodeKeys3)
+		}
+
 		m.partitionQueue <- m.NewPartitionOperation(p, true)
 	}
 	return nil
@@ -904,7 +1015,7 @@ func (m *BitmapIndex) checkPersistBitmapCache(forceSync bool) {
 	defer m.bitmapCacheLock.RUnlock()
 
 	bitmapCount := 0
-	writeCount := 0
+	var writeCount uint64
 	start := time.Now()
 	for indexName, index := range m.bitmapCache {
 		for fieldName, field := range index {
@@ -929,11 +1040,14 @@ func (m *BitmapIndex) checkPersistBitmapCache(forceSync bool) {
 	}
 
 	elapsed := time.Since(start)
+	m.saveBitmapTime.Store(uint64(elapsed.Milliseconds()))
 	m.bitmapCount = bitmapCount
 	if writeCount > 0 {
 		if forceSync {
+			m.saveBitmapTCnt.Store(writeCount)
 			u.Debugf("Persist [timer expired] %d files done in %v", writeCount, elapsed)
 		} else {
+			m.saveBitmapECnt.Store(writeCount)
 			u.Debugf("Persist [edge triggered] %d files done in %v", writeCount, elapsed)
 		}
 	}
@@ -949,7 +1063,7 @@ func (m *BitmapIndex) checkPersistBSICache(forceSync bool) {
 	m.bsiCacheLock.RLock()
 	defer m.bsiCacheLock.RUnlock()
 
-	writeCount := 0
+	var writeCount uint64
 	bsiCount := 0
 	start := time.Now()
 	for indexName, index := range m.bsiCache {
@@ -973,11 +1087,14 @@ func (m *BitmapIndex) checkPersistBSICache(forceSync bool) {
 	}
 
 	elapsed := time.Since(start)
+	m.saveBSITime.Store(uint64(elapsed.Milliseconds()))
 	m.bsiCount = bsiCount
 	if writeCount > 0 {
 		if forceSync {
+			m.saveBSITCnt.Store(writeCount)
 			u.Debugf("Persist BSI [timer expired] %d files done in %v", writeCount, elapsed)
 		} else {
+			m.saveBSIECnt.Store(writeCount)
 			u.Debugf("Persist BSI [edge triggered] %d files done in %v", writeCount, elapsed)
 		}
 	}
@@ -1090,6 +1207,7 @@ func (m *BitmapIndex) flush() error {
 			}
 			return nil
 		})
+
 	}
 
 	// Wait for all goroutines to complete.
@@ -1099,6 +1217,7 @@ func (m *BitmapIndex) flush() error {
 	} else {
 		// fmt.Println("flush all works done successfully", m.Node.hashKey)
 	}
+
 	// done
 	return nil
 }
@@ -1202,16 +1321,21 @@ func (c *CountTrigger) Add(n int) {
 	defer c.lock.Unlock()
 	c.num += n
 	if c.num == 0 {
+		const forceSync = false
 		select {
-		case c.trigger <- true:
+		// the trigger is the BitmapIndex.writeSignal
+		// We don't ask it to force
+		case c.trigger <- forceSync:
 			return
-			//default:
-			//	return
+		default:
+			// it is normal for it to get full.
+			return
 		}
 	}
 }
 
 // TableOperation - Process TableOperations.
+// fill m.tableCache
 func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperationRequest) (*empty.Empty, error) {
 
 	if req.Table == "" {
@@ -1227,7 +1351,7 @@ func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperation
 			m.tableCacheLock.Lock()
 			defer m.tableCacheLock.Unlock()
 			m.tableCache[req.Table] = table
-			u.Infof("schema for %s re-loaded and initialized", req.Table)
+			u.Infof("%s schema for table re-loaded and initialized %s", m.hashKey, req.Table)
 		}
 	case pb.TableOperationRequest_DROP:
 		m.tableCacheLock.Lock()

@@ -4,6 +4,14 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"io"
+	"maps"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/akrylysov/pogreb"
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
@@ -11,12 +19,6 @@ import (
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"golang.org/x/sync/singleflight"
-	"io"
-	"os"
-	"path/filepath"
-	"strings"
-	"sync"
-	"time"
 )
 
 var (
@@ -31,15 +33,16 @@ const (
 // KVStore - Server side state for KVStore service.
 type KVStore struct {
 	*Node
-	storeCache      map[string]*cacheEntry
-	storeCacheLock  sync.RWMutex
-	enumGuard       singleflight.Group
-	exit			chan bool
+	storeCache     map[string]*cacheEntry
+	storeCacheLock sync.RWMutex
+	enumGuard      singleflight.Group
+	exit           chan bool
+	cleanupLatency int64 // current cleanup thread duration (Prometheus)
 }
 
 type cacheEntry struct {
-	db				*pogreb.DB
-	accessTime		time.Time
+	db         *pogreb.DB
+	accessTime time.Time
 }
 
 // NewKVStore - Construct server side state.
@@ -59,52 +62,79 @@ func (m *KVStore) Init() error {
 		return nil
 	}
 
+	start := time.Now()
+
 	tables, err := shared.GetTables(m.Node.consul)
 	if err != nil {
 		return err
 	}
 
-/*
-	lastDay := time.Now().AddDate(0, 0, -1)
-*/
+	/*
+		lastDay := time.Now().AddDate(0, 0, -1)
+	*/
 
-    dbList := make([]string, 0)
+	dbList := make([]string, 0)
 	for _, table := range tables {
-		tPath := m.Node.dataDir+sep+"index"+sep+table
+		tPath := m.Node.dataDir + sep + "index" + sep + table
 		os.MkdirAll(tPath, 0755)
-	    err := filepath.Walk(tPath,
-	        func(path string, info os.FileInfo, err error) error {
-	            if err != nil {
-	                return err
-	            }
-/*
-				if info.ModTime().Before(lastDay) {
-	                return nil
+		err := filepath.Walk(tPath,
+			func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
 				}
-*/
+				/*
+								if info.ModTime().Before(lastDay) {
+					                return nil
+								}
+				*/
 				if strings.HasPrefix(path, ".SK") {
 					return nil
 				}
-	            if !strings.HasSuffix(path, "/00000.psg") {
-	                return nil
-	            }
-				index := table + sep + strings.ReplaceAll(filepath.Dir(path), tPath + "/", "")
+				if !strings.HasSuffix(path, "/00000.psg") {
+					return nil
+				}
+				index := table + sep + strings.ReplaceAll(filepath.Dir(path), tPath+"/", "")
 				dbList = append(dbList, index)
-	            return nil
-	        })
-	    if err != nil {
-	        return fmt.Errorf("cannot initialize kv store service: %v", err)
-	    }
+				return nil
+			})
+		if err != nil {
+			return fmt.Errorf("cannot initialize kv store service: %v", err)
+		}
 	}
 
-    for _, v := range dbList {
-        u.Infof("Opening [%s]", v)
-        if _, err := m.getStore(v); err != nil {
-            return fmt.Errorf("cannot initialize kv store service: %v", err)
-        }   
-    }
+	wg := sync.WaitGroup{}
+	var gotError error
+
+	for _, v := range dbList {
+		wg.Add(1)
+		go func(index string) {
+			defer wg.Done()
+			_, err := m.getStore(index)
+			if err != nil {
+				gotError = fmt.Errorf("cannot initialize kv store service: %v", err)
+			}
+		}(v)
+		// u.Infof("KVStore Init Opening [%s]", v)
+		// _, err := m.getStore(v)
+		// if err != nil {
+		// 	return fmt.Errorf("cannot initialize kv store service: %v", err)
+		// }
+	}
+
+	wg.Wait()
+
+	if gotError != nil {
+		return gotError
+	}
+
+	elapsed1 := time.Since(start)
 
 	go m.cleanupProcessLoop()
+
+	elapsed2 := time.Since(start)
+
+	fmt.Println(m.hashKey, "KVStore Init elapsed1", elapsed1, "elapsed2", elapsed2)
+
 	return nil
 }
 
@@ -113,44 +143,57 @@ func (m *KVStore) cleanupProcessLoop() {
 
 	for {
 		select {
-		case _, open := <- m.exit:
+		case _, open := <-m.exit:
 			if !open {
 				return
 			}
 		default:
 		}
 		select {
-       	case <-time.After(time.Second * 10):
+		case <-time.After(time.Second * 10):
 			clusterState, _, _ := m.GetClusterState()
 			if m.State == Active && clusterState == shared.Green {
 				m.cleanup()
 			}
-       	}
+		}
 	}
 }
 
 // Scan open cache entries and close out indices
 func (m *KVStore) cleanup() {
 
-	for k, v := range m.storeCache {
+	u.Debug(m.hashKey, " KVStore cleanup")
+	m.storeCacheLock.Lock()
+	cacheCopy := maps.Clone(m.storeCache) // shallow copy
+	m.storeCacheLock.Unlock()
+
+	start := time.Now()
+
+	for k, v := range cacheCopy {
 		if time.Since(v.accessTime).Hours() >= maxOpenHours {
 			u.Debugf("Closed %v due to inactivity.", k)
 			m.closeStore(k)
 		}
 	}
-}
 
+	elapsed := time.Since(start)
+	m.cleanupLatency = elapsed.Milliseconds()
+}
 
 // Shutdown service.
 func (m *KVStore) Shutdown() {
+
+	u.Debug(m.hashKey, " KVStore Shutdown")
+
 	m.storeCacheLock.Lock()
 	defer m.storeCacheLock.Unlock()
 	for k, v := range m.storeCache {
-		u.Infof("Sync and close [%s]", k)
-		v.db.Sync()
+		u.Infof("%s Sync and close [%s]", m.hashKey, k)
+		v.db.Sync() // waitGroup?
 		v.db.Close()
 	}
-	close(m.exit)
+	m.exit <- true
+	// ?? close(m.exit)
 }
 
 // JoinCluster - Join the cluster
@@ -171,13 +214,15 @@ func (m *KVStore) getStore(index string) (db *pogreb.DB, err error) {
 		ce.accessTime = time.Now()
 		return
 	}
-/*
+	/* TODO: This is a potential performance optimization, but it's not clear if it's necessary.
 	m.storeCacheLock.RUnlock()
 
 	m.storeCacheLock.Lock()
 	defer m.storeCacheLock.Unlock()
-*/
-	db, err = pogreb.Open(m.Node.dataDir+sep+"index"+sep+index, nil)
+	*/
+	path := m.Node.dataDir + sep + "index" + sep + index
+	// fmt.Println(m.hashKey, "KVStore getStore", path)
+	db, err = pogreb.Open(path, nil)
 	if err == nil {
 		m.storeCache[index] = &cacheEntry{db: db, accessTime: time.Now()}
 	} else {
@@ -341,6 +386,7 @@ func (m *KVStore) BatchLookup(stream pb.KVStore_BatchLookupServer) error {
 }
 
 // Items - Iterate over all items.
+// called by grpc stream
 func (m *KVStore) Items(index *wrappers.StringValue, stream pb.KVStore_ItemsServer) error {
 
 	if index.Value == "" {

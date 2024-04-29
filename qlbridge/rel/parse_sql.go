@@ -570,7 +570,8 @@ func (m *Sqlbridge) parseShow() (*SqlShow, error) {
 	m.Next() // Consume Show
 
 	//u.Infof("cur: %v", m.Cur())
-	switch strings.ToLower(m.Cur().V) {
+	s := strings.ToLower(m.Cur().V)
+	switch s {
 	case "full":
 		req.Full = true
 		m.Next()

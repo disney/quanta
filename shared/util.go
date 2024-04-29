@@ -5,7 +5,8 @@ package shared
 import (
 	"encoding/binary"
 	"fmt"
-	"log"
+	"net/http"
+
 	"net"
 	"os"
 	"os/signal"
@@ -19,8 +20,22 @@ import (
 	u "github.com/araddon/gou"
 	"github.com/disney/quanta/qlbridge/exec"
 	"github.com/hashicorp/consul/api"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/sync/errgroup"
 )
+
+// StartPprofAndPromListener will start the pprof and prometheus listeners
+// if pprof is set to "true".
+func StartPprofAndPromListener(pprof string) {
+
+	if pprof == "true" {
+		go func() {
+			http.ListenAndServe(":6060", http.DefaultServeMux)
+		}()
+	}
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(":2112", promhttp.Handler())
+}
 
 // ToString - Interface type to string
 func ToString(v interface{}) string {
@@ -52,7 +67,7 @@ func ToBytes(v interface{}) []byte {
 		binary.LittleEndian.PutUint64(b, uint64(v.(int)))
 		return b
 	case float64:
-		u.Errorf("Unsupported float64 for %f", v.(float64))
+		u.Errorf("Unsupported float64 for %f", v)
 	}
 	u.Errorf("Unsupported type %T for data %#v", v, v)
 	return []byte{}
@@ -114,7 +129,7 @@ func putRecursive(typ reflect.Type, value reflect.Value, consul *api.Client, roo
 		}
 		fv := value.Field(i).Interface()
 		var kvPair api.KVPair
-		if tagName == "fieldName" || tagName == "value" {
+		if tagName == "childTable" || tagName == "fieldName" || tagName == "value" {
 			root = root + "/" + fv.(string)
 		}
 		if field.Type.Kind() == reflect.Map {
@@ -131,7 +146,7 @@ func putRecursive(typ reflect.Type, value reflect.Value, consul *api.Client, roo
 			continue
 		}
 		if value.Field(i).Kind() == reflect.Bool {
-			if fv.(bool) == true {
+			if fv.(bool) {
 				fv = "true"
 			} else {
 				fv = "false"
@@ -161,7 +176,7 @@ func UnmarshalConsul(consul *api.Client, name string) (BasicTable, error) {
 	table := BasicTable{Name: name}
 	keys, _, _ := consul.KV().Keys("schema/"+name, "", nil)
 	if len(keys) == 0 {
-		return table, fmt.Errorf("Table %s not found.", name)
+		return table, fmt.Errorf("table %s not found", name)
 	}
 	ps := reflect.ValueOf(&table)
 	err := getRecursive(reflect.TypeOf(table), ps.Elem(), consul, "schema/"+name)
@@ -197,8 +212,16 @@ func getRecursive(typ reflect.Type, value reflect.Value, consul *api.Client, roo
 					getRecursive(field.Type.Elem(), reflect.Indirect(newVal), consul, slicePath)
 					slice = reflect.Append(slice, newVal.Elem())
 				}
-				if strings.HasSuffix(keys[j], "fieldName") {
-					slicePath := keys[j][:len(keys[j])-10] //length of "fieldName" - 1
+				if strings.HasSuffix(keys[j], "fieldName") || strings.HasSuffix(keys[j], "childTable") {
+					leng := 0
+				    if strings.HasSuffix(keys[j], "fieldName") {
+						leng = 10
+					}
+				    if strings.HasSuffix(keys[j], "childTable") {
+						leng = 11
+					}
+
+					slicePath := keys[j][:len(keys[j])-leng] //length of "fieldName/childTable" - 1
 					newVal := reflect.New(field.Type.Elem())
 					getRecursive(field.Type.Elem(), reflect.Indirect(newVal), consul, slicePath)
 					slice = reflect.Append(slice, newVal.Elem())
@@ -319,7 +342,7 @@ func CheckParentRelation(consul *api.Client, table *BasicTable) (bool, error) {
 	return ok, err
 }
 
-// GetTables - Return a list of deployed tables.
+// GetTables - Return a list of deployed tables. From Consul.
 func GetTables(consul *api.Client) ([]string, error) {
 
 	results := make([]string, 0)
@@ -631,8 +654,26 @@ func SetUTCdefault() {
 	os.Setenv("TZ", "UTC")
 	loc, err := time.LoadLocation("UTC")
 	if err != nil {
-		log.Fatal(err)
+		u.Log(u.FATAL, err)
 	}
 	time.Local = loc // -> this is setting the global timezone
 
+}
+
+// GetClientConnection - Create a connection to the Quanta service
+// The 'owner' is used for debugging.
+func GetClientConnection(consulAddr string, port int, owner string) *Conn {
+
+	consulClient, err := api.NewClient(&api.Config{Address: consulAddr})
+	if err != nil {
+		fmt.Println("Is the consul agent running?")
+		u.Log(u.FATAL, err)
+	}
+	conn := NewDefaultConnection(owner)
+	conn.ServicePort = port
+	conn.Quorum = 0
+	if err := conn.Connect(consulClient); err != nil {
+		u.Log(u.FATAL, err)
+	}
+	return conn
 }

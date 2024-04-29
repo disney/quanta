@@ -4,7 +4,6 @@ package shared
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 
@@ -32,6 +31,7 @@ type BasicTable struct {
 	Attributes       []BasicAttribute           `yaml:"attributes"`
 	attributeNameMap map[string]*BasicAttribute `yaml:"-"`
 	ConsulClient     *api.Client                `yaml:"-"`
+	IsViewOf         string                     `yaml:"isViewOf,omitempty"` // source table name
 }
 
 type AttributeInterface interface {
@@ -41,10 +41,10 @@ type AttributeInterface interface {
 // BasicAttribute - Field structure.
 type BasicAttribute struct {
 	Parent           *BasicTable       `yaml:"-" json:"-"`
-	FieldName        string            `yaml:"fieldName"`
-	SourceName       string            `yaml:"sourceName"`
+	FieldName        string            `yaml:"fieldName,omitempty"`
 	ChildTable       string            `yaml:"childTable,omitempty"`
-	Type             string            `yaml:"type"`
+	SourceName       string            `yaml:"sourceName,omitempty"`
+	Type             string            `yaml:"type,omitempty"`
 	ForeignKey       string            `yaml:"foreignKey,omitempty"`
 	MappingStrategy  string            `yaml:"mappingStrategy"`
 	Size             int               `yaml:"maxLen,omitempty"`
@@ -103,6 +103,13 @@ const (
 	JSON
 	NotDefined
 )
+
+func NewBasicTable() *BasicTable {
+	r := &BasicTable{}
+	r.attributeNameMap = make(map[string]*BasicAttribute)
+	r.Attributes = make([]BasicAttribute, 0)
+	return r
+}
 
 // String - Return string respresentation of DataType
 func (vt DataType) String() string {
@@ -186,7 +193,8 @@ func LoadSchema(path string, name string, consulClient *api.Client) (*BasicTable
 
 	var table BasicTable
 	if path != "" {
-		b, err := ioutil.ReadFile(path + SEP + name + SEP + "schema.yaml")
+		fname := path + SEP + name + SEP + "schema.yaml"
+		b, err := os.ReadFile(fname)
 		if err != nil {
 			return nil, err
 		}
@@ -211,7 +219,7 @@ func LoadSchema(path string, name string, consulClient *api.Client) (*BasicTable
 		table.Attributes[j].Parent = &table
 		v.Parent = &table
 
-		if v.SourceName == "" && v.FieldName == "" {
+		if v.SourceName == "" && v.FieldName == "" && v.ChildTable == "" {
 			return nil, fmt.Errorf("a valid attribute must have an input source name or field name.  Neither exists")
 		}
 
@@ -380,9 +388,12 @@ func (t *BasicTable) Compare(other *BasicTable) (equal bool, warnings []string, 
 
 	// Compare these attributes against other attributes - drops not allowed.
 	for _, v := range t.Attributes {
+		if v.FieldName == "" && v.MappingStrategy == "ChildRelation" {
+			continue
+		}
 		otherAttr, err := other.GetAttribute(v.FieldName)
 		if err != nil {
-			return false, warnings, fmt.Errorf("attribute %s cannot be dropped", v.FieldName)
+			return false, warnings, fmt.Errorf("attribute cannot be dropped: %s", v.FieldName)
 		}
 		attrEqual, attrWarnings, attrErr := v.Compare(otherAttr)
 		if attrErr != nil {
@@ -396,6 +407,9 @@ func (t *BasicTable) Compare(other *BasicTable) (equal bool, warnings []string, 
 
 	// Compare other attributes against these attributes - new adds allowed.
 	for _, v := range other.Attributes {
+		if v.FieldName == "" && v.MappingStrategy == "ChildRelation" {
+			continue
+		}
 		_, err := t.GetAttribute(v.FieldName)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("new attribute '%s', addition is allowable", v.FieldName))

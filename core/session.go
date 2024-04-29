@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,7 +17,6 @@ import (
 	"github.com/disney/quanta/qlbridge/value"
 	"github.com/disney/quanta/qlbridge/vm"
 	"github.com/disney/quanta/shared"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/xitongsys/parquet-go/reader"
 )
 
@@ -124,6 +122,7 @@ func (t *TableBuffer) HasPrimaryKey() bool {
 // (This is intentionally not thread-safe for maximum throughput.)
 func OpenSession(tableCache *TableCacheStruct, path, name string, nested bool, conn *shared.Conn) (*Session, error) {
 
+// FIXME - is the nested flag necessary?
 	if name == "" {
 		return nil, fmt.Errorf("table name is nil")
 	}
@@ -142,20 +141,19 @@ func OpenSession(tableCache *TableCacheStruct, path, name string, nested bool, c
 		if err = recurseAndLoadTable(path, kvStore, tableBuffers, tab); err != nil {
 			return nil, fmt.Errorf("Error loading child tables %v", err)
 		}
-	} else {
-		// Do scan to see if there are parent relations.   If so, open the parent too.
-		for _, v := range tab.Attributes {
-			if v.MappingStrategy == "ParentRelation" && v.ForeignKey != "" {
-				fkTable, _, _ := v.GetFKSpec()
-				parent, err2 := LoadTable(tableCache, path, kvStore, fkTable, consul)
-				if err != nil {
-					return nil, fmt.Errorf("Error loading parent schema - %v", err2)
-				}
-				if tb, err := NewTableBuffer(parent); err == nil {
-					tableBuffers[fkTable] = tb
-				} else {
-					return nil, fmt.Errorf("OpenSession error - %v", err)
-				}
+	}
+	// Do scan to see if there are parent relations.   If so, open the parent too.
+	for _, v := range tab.Attributes {
+		if v.MappingStrategy == "ParentRelation" && v.ForeignKey != "" {
+			fkTable, _, _ := v.GetFKSpec()
+			parent, err2 := LoadTable(tableCache, path, kvStore, fkTable, consul)
+			if err != nil {
+				return nil, fmt.Errorf("Error loading parent schema - %v", err2)
+			}
+			if tb, err := NewTableBuffer(parent); err == nil {
+				tableBuffers[fkTable] = tb
+			} else {
+				return nil, fmt.Errorf("OpenSession error - %v", err)
 			}
 		}
 	}
@@ -194,6 +192,21 @@ func recurseAndLoadTable(basePath string, kvStore *shared.KVStore, tableBuffers 
 				tableBuffers[v.ChildTable] = tb
 			} else {
 				return fmt.Errorf("recurseAndLoadTable error - %v", err)
+			}
+		}
+		if v.ForeignKey != ""  {
+			fkTable, _, _ := v.GetFKSpec()
+			_, ok = tableBuffers[v.ChildTable]
+			if !ok {
+				table, err := LoadTable(tableCache, basePath, kvStore, fkTable, curTable.ConsulClient)
+				if err != nil {
+					return err
+				}
+				if tb, err := NewTableBuffer(table); err == nil {
+					tableBuffers[fkTable] = tb
+				} else {
+					return fmt.Errorf("recurseAndLoadTable error - %v", err)
+				}
 			}
 		}
 	}
@@ -268,8 +281,9 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 	curTable := tbuf.Table
 
 	// Here we force the primary key to be handled first for table so that columnID is established in tbuf
-	if hasValues, err := s.processPrimaryKey(tbuf, row, pqTablePath, providedColID, isChild,
-		ignoreSourcePath, useNerdCapitalization); err != nil {
+	hasValues, err := s.processPrimaryKey(tbuf, row, pqTablePath, providedColID, isChild,
+		ignoreSourcePath, useNerdCapitalization)
+	if err != nil {
 		return err
 	} else if !hasValues {
 		return nil // nothing to do, no values in child relation
@@ -289,20 +303,27 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 		// Construct parquet column path
 		if recurse && v.MappingStrategy == "ChildRelation" && v.ChildTable != "" {
 			// Should we verify that it is a parquet repetition type if child relation?
-			pqChildPath := fmt.Sprintf("%s.%s", pqTablePath, v.SourceName)
-			root := "/"
-			if r, ok := row.(*reader.ParquetReader); ok {
-				root = r.SchemaHandler.GetRootExName()
+			if val, err := shared.GetPath(v.SourceName, tbuf.rowCache, false, false); err == nil {
+				if vz, ok := val.([]interface{}); ok {
+					childBuf, ok := s.TableBuffers[v.ChildTable]
+					if !ok {
+						return fmt.Errorf("child table %s invalid or not opened. (recursivePutRow) %s", 
+							v.ChildTable, v.SourceName)
+					}
+					for _, z := range vz {
+						// need to populate the rowcache for the child table
+						childBuf.rowCache = row.(map[string]interface{})
+						childBuf.rowCache[v.SourceName] = z
+						if err := s.recursivePutRow(v.ChildTable, childBuf.rowCache, v.SourceName, 
+								providedColID, true, ignoreSourcePath, useNerdCapitalization); err != nil {
+							return err
+						}
+					}
+				}
+			} else {
+				u.Errorf("recursion into child  = %s, %v, %#v", v.SourceName, err, tbuf.rowCache )
 			}
-			if strings.HasPrefix(v.SourceName, "/") {
-				pqChildPath = fmt.Sprintf("%s.%s", root, v.SourceName[1:])
-			} else if strings.HasPrefix(v.SourceName, "^") {
-				pqChildPath = fmt.Sprintf("%s.%s.list.element.%s", root, v.Parent.Name, v.SourceName[1:])
-			}
-			if err := s.recursivePutRow(v.ChildTable, row, pqChildPath, providedColID, true, ignoreSourcePath,
-				useNerdCapitalization); err != nil {
-				return err
-			}
+			return nil
 		} else if v.MappingStrategy == "ParentRelation" && v.ForeignKey != "" {
 			// Foreign key processing
 			fkTable, fkFieldSpec, _ := v.GetFKSpec()
@@ -312,7 +333,8 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 			}
 			var relColumnID uint64
 			okToMap := true
-			if !s.Nested {
+			//if !s.Nested {
+			if !isChild {
 				// Directly provided parent columnID
 				if v.Type == "Integer" && (!relBuf.HasPrimaryKey() || fkFieldSpec == "@rownum") {
 					vals, _, err := s.readColumn(row, pqTablePath, &v, false, ignoreSourcePath, useNerdCapitalization)
@@ -368,7 +390,8 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 				}
 			}
 		} else {
-			vals, pqps, err := s.readColumn(row, pqTablePath, &v, isChild, ignoreSourcePath, useNerdCapitalization)
+			vals, pqps, err := s.readColumn(row, pqTablePath, &v, isChild, ignoreSourcePath, 
+					useNerdCapitalization)
 			if err != nil {
 				return fmt.Errorf("Parquet reader error - %v", err)
 			}
@@ -445,11 +468,20 @@ func (s *Session) readColumn(row interface{}, pqTablePath string, v *Attribute,
 			return nil, nil, fmt.Errorf("readColumn: table not open for %s", v.Parent.Name)
 		}
 		val, found := tbuf.rowCache[pqColPath]
+		if !found && !isParquet && isChild {
+			val, found = tbuf.rowCache[pqTablePath]
+			if found {
+				val, found = val.(map[string]interface{})[v.SourceName]
+			}
+		}
 		if !found && !isParquet {
 			//val, found = tbuf.rowCache[source[1:]]
 			src := v.FieldName
 			if len(source) > 1 {
 				src = source[1:]
+			}
+			if isChild {
+				src = pqColPath
 			}
 			var err error
 			found = true
@@ -970,6 +1002,7 @@ func (s *Session) MapValue(tableName, fieldName string, value interface{}, updat
 	return attr.MapValue(value, nil) // Non load use case pass nil connection context
 }
 
+/*
 func resolveJSColumnPathForField(jsTablePath string, v *Attribute, isChild bool) (jsColPath string) {
 
 	// BEGIN CUSTOM CODE FOR VISION
@@ -990,12 +1023,6 @@ func resolveJSColumnPathForField(jsTablePath string, v *Attribute, isChild bool)
 	}
 	// END CUSTOM CODE FOR VISION
 	jsColPath = fmt.Sprintf("%s.%s", jsTablePath, v.SourceName)
-	/*
-	   if !isChild {
-	       //jsColPath = fmt.Sprintf("%s.%s", jsTablePath, v.SourceName)
-	       jsColPath = fmt.Sprintf("%s.%s", jsTablePath, v.SourceName)
-	   }
-	*/
 	if strings.HasPrefix(v.SourceName, "/") {
 		jsColPath = v.SourceName[1:]
 	} else if strings.HasPrefix(v.SourceName, "^") {
@@ -1036,6 +1063,7 @@ func toJulianDay(t time.Time) (int32, int64) {
 	us := (julianUs % microsPerDay) * 1000
 	return days, us
 }
+*/
 
 func fromJulianDay(days int32, nanos int64) time.Time {
 	nanos = ((int64(days)-julianDayOfEpoch)*microsPerDay + nanos/1000) * 1000

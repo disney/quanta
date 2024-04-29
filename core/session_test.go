@@ -11,7 +11,7 @@ import (
 // FIXME: make this work or delete. It never finishes. (nobody home at port 4000)
 func xTestCreateSession(t *testing.T) {
 
-	conn := shared.NewDefaultConnection()
+	conn := shared.NewDefaultConnection("xTestCreateSession")
 	conn.ServicePort = 0
 	errx := conn.Connect(nil)
 	assert.Nil(t, errx)

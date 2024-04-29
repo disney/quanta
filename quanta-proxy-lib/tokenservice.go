@@ -17,6 +17,7 @@ import (
 
 	u "github.com/araddon/gou"
 	"github.com/lestrrat-go/jwx/jwt"
+	"github.com/disney/quanta/shared"
 )
 
 var (
@@ -42,6 +43,7 @@ func StartTokenService(port int, authProvider *AuthProvider) {
 
 	ts := &TokenExchangeService{port: port, authProvider: authProvider}
 	http.HandleFunc("/", ts.HandleRequest)
+	http.HandleFunc("/status", ts.HandleStatusRequest)
 
 	go func() {
 		var err = http.ListenAndServe(fmt.Sprintf(":%d", ts.port), nil)
@@ -66,6 +68,25 @@ func (s *TokenExchangeService) HandleRequest(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// HandleStatusRequest - Service request handler for cluster status.
+func (s *TokenExchangeService) HandleStatusRequest(w http.ResponseWriter, r *http.Request) {
+	u.Debugf("Incoming cluster status request: %v", r.Method)
+	switch r.Method {
+	case http.MethodPost, http.MethodGet:
+	conn := shared.GetClientConnection(ConsulAddr, QuantaPort, "admin-status")
+	defer conn.Disconnect()
+	status, active, size := conn.GetClusterState()
+	if status != shared.Green {
+		u.Errorf("Cluster is not healthy,  Status = %s, Active Nodes = %d,  Target Cluster Size = %d\n", status.String(), active, size)
+		ErrorResponse(&w, 500, "Failure", "Cluster Failure", nil)
+	} else {
+		u.Debugf("Cluster State = %s, Active nodes = %d, Target Cluster Size = %d\n", status.String(), active, size)
+		SuccessResponse(&w, struct{}{})
+	}
+	default:
+		ErrorResponse(&w, 405, "Method not allowed", "Method not allowed", nil)
+	}
+}
 // CreateAccount - Service request for a new account.
 func (s *TokenExchangeService) CreateAccount(w http.ResponseWriter, r *http.Request) {
 

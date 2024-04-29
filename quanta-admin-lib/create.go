@@ -2,7 +2,10 @@ package admin
 
 import (
 	"fmt"
-	"log"
+	"strings"
+	"time"
+
+	u "github.com/araddon/gou"
 
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
@@ -11,18 +14,20 @@ import (
 // CreateCmd - Create command
 type CreateCmd struct {
 	Table     string `arg:"" name:"table" help:"Table name."`
-	SchemaDir string `help:"Base directory containing schema files." default:"./config"`
+	SchemaDir string `help:"Base directory containing schema files." default:"config"`
 	Confirm   bool   `help:"Confirm deployment."`
 }
+
+const DropAttributesAllowed = false
 
 // Run - Create command implementation
 func (c *CreateCmd) Run(ctx *Context) error {
 
-	fmt.Printf("Configuration directory = %s\n", c.SchemaDir)
-	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
+	u.Infof("Configuration directory = %s\n", c.SchemaDir)
+	u.Infof("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
 	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
 	if err != nil {
-		fmt.Println("Is the consul agent running?")
+		u.Info("Is the consul agent running?")
 		return fmt.Errorf("Error connecting to consul %v", err)
 	}
 	table, err3 := shared.LoadSchema(c.SchemaDir, c.Table, consulClient)
@@ -31,9 +36,9 @@ func (c *CreateCmd) Run(ctx *Context) error {
 	}
 	// let's check the types of the fields
 	for i := 0; i < len(table.Attributes); i++ {
-		fmt.Println(table.Attributes[i].FieldName, table.Attributes[i].Type)
+		u.Info(table.Attributes[i].FieldName, " ", table.Attributes[i].Type)
 		typ := shared.TypeFromString(table.Attributes[i].Type)
-		if typ == shared.NotDefined {
+		if typ == shared.NotDefined && table.Attributes[i].MappingStrategy != "ChildRelation" {
 			return fmt.Errorf("unknown type %s for field %s", table.Attributes[i].Type, table.Attributes[i].FieldName)
 		}
 	}
@@ -55,38 +60,55 @@ func (c *CreateCmd) Run(ctx *Context) error {
 			return fmt.Errorf("errors during performCreate: %v", err)
 		}
 
-		fmt.Printf("Successfully created table %s\n", table.Name)
+		u.Infof("Successfully created table %s\n", table.Name)
 		return nil
-	}
-
-	// If here then table already exists.  Perform compare
-	table2, err5 := shared.LoadSchema("", table.Name, consulClient)
-	if err5 != nil {
-		return fmt.Errorf("Error loading schema from consul %v", err5)
-	}
-	ok2, warnings, err6 := table2.Compare(table)
-	if err6 != nil {
-		return fmt.Errorf("error comparing deployed table %v", err6)
-	}
-	if ok2 {
-		fmt.Printf("Table already exists.  No differences detected.\n")
-		return nil
-	}
-
-	// If --confirm flag not set then print warnings and exit.
-	if !c.Confirm {
-		fmt.Printf("Warnings:\n")
-		for _, warning := range warnings {
-			fmt.Printf("    -> %v\n", warning)
+	} else {
+		u.Debugf("Table already exists. Comparing.\n")
+		// If here then table already exists.  Perform compare
+		table2, err5 := shared.LoadSchema("", table.Name, consulClient)
+		if err5 != nil {
+			return fmt.Errorf("Error loading schema from consul %v", err5)
 		}
-		return fmt.Errorf("if you wish to deploy the changes then re-run with --confirm flag")
-	}
-	err = performCreate(consulClient, table, ctx.Port)
-	if err != nil {
-		return fmt.Errorf("errors during performCreate: %v", err)
-	}
+		ok2, warnings, err6 := table2.Compare(table)
+		if err6 != nil {
+			if DropAttributesAllowed { // if drop attributes is allowed
+				str := fmt.Sprintf("%v", err6)
+				if strings.HasPrefix(str, "attribute cannot be dropped:") {
+					u.Infof("Warnings: %v\n", err6)
+					// do reverse compare to get dropped attributes TODO:
+					ok2, warnings, err6 = table.Compare(table2)
+					if err6 != nil {
+						return fmt.Errorf("error comparing deployed table reverse %v", err6)
+					}
+				} else {
+					return fmt.Errorf("error comparing deployed table %v", err6)
+				}
+			} else {
+				return fmt.Errorf("error comparing deployed table %v", err6)
+			}
+		}
+		if ok2 {
+			u.Infof("Table already exists.  No differences detected.\n")
+			return nil
+		}
 
-	fmt.Printf("Successfully deployed modifications to table %s\n", table.Name)
+		// If --confirm flag not set then print warnings and exit.
+		if !c.Confirm {
+			u.Infof("Warnings:\n")
+			for _, warning := range warnings {
+				u.Infof("    -> %v\n", warning)
+			}
+			return fmt.Errorf("if you wish to deploy the changes then re-run with --confirm flag")
+		}
+		// delete attributes dropped ?
+
+		err = performCreate(consulClient, table, ctx.Port)
+		if err != nil {
+			return fmt.Errorf("errors during performCreate (table exists): %v", err)
+		}
+		time.Sleep(time.Second * 5)
+		u.Infof("Successfully deployed modifications to table %s\n", table.Name)
+	}
 	return nil
 }
 
@@ -98,12 +120,13 @@ func performCreate(consul *api.Client, table *shared.BasicTable, port int) error
 	}
 	defer shared.Unlock(consul, lock)
 
-	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
-	conn := shared.NewDefaultConnection()
+	u.Infof("Connecting to Quanta services at port: [%d] ...\n", port)
+	conn := shared.NewDefaultConnection("performCreate")
+	defer conn.Disconnect()
 	conn.ServicePort = port
 	conn.Quorum = 3
 	if err := conn.Connect(consul); err != nil {
-		log.Fatal(err)
+		u.Log(u.FATAL, err)
 	}
 	services := shared.NewBitmapIndex(conn)
 
@@ -127,11 +150,15 @@ func performCreate(consul *api.Client, table *shared.BasicTable, port int) error
 	if err1 != nil {
 		return fmt.Errorf("Error loading schema from consul %v", err1)
 	}
-	ok, _, err2 := table2.Compare(table)
+	ok, warnings, err2 := table2.Compare(table)
 	if err2 != nil {
 		return fmt.Errorf("error comparing deployed table %v", err2)
 	}
 	if !ok {
+		fmt.Printf("HERE Warnings:\n")
+		for _, warning := range warnings {
+			fmt.Printf("    -> %v\n", warning)
+		}
 		return fmt.Errorf("differences detected with deployed table %v", table.Name)
 	}
 

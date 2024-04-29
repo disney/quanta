@@ -180,6 +180,7 @@ func (c *BitmapIndex) BatchMutateNode(clear bool, client pb.BitmapIndexClient,
 		}
 	}
 	stream, err := client.BatchMutate(ctx)
+
 	if err != nil {
 		u.Errorf("%v.BatchMutate(_) = _, %v: ", c.client, err)
 		return fmt.Errorf("%v.BatchMutate(_) = _, %v: ", c.client, err)
@@ -191,12 +192,14 @@ func (c *BitmapIndex) BatchMutateNode(clear bool, client pb.BitmapIndexClient,
 			return fmt.Errorf("%v.Send(%v) = %v", stream, b[i], err)
 		}
 	}
-	_, err2 := stream.CloseAndRecv()
-	if err2 != nil {
-		u.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err2, nil)
-		return fmt.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err2, nil)
+
+	_, err = stream.CloseAndRecv()
+	if err != nil {
+		u.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err, nil)
+		return fmt.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err, nil)
 	}
-	return nil
+
+	return err
 }
 
 // splitBitmapBatch - For a given batch of standard bitmap mutations, separate them into
@@ -302,10 +305,10 @@ func (c *BitmapIndex) BatchSetValueNode(client pb.BitmapIndexClient,
 			return fmt.Errorf("%v.Send(%v) = %v", stream, b[i], err)
 		}
 	}
-	_, err2 := stream.CloseAndRecv()
-	if err2 != nil {
-		u.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err2, nil)
-		return fmt.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err2, nil)
+	_, err = stream.CloseAndRecv()
+	if err != nil {
+		u.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err, nil)
+		return fmt.Errorf("%v.CloseAndRecv() got error %v, want %v", stream, err, nil)
 	}
 	return nil
 }
@@ -500,7 +503,7 @@ func (c *BitmapIndex) Projection(index string, fields []string, fromTime, toTime
 
 			newBsi := roaring64.NewDefaultBSI()
 			if err := newBsi.UnmarshalBinary(v.Bitmaps); err != nil {
-				return nil, nil, fmt.Errorf("Error unmarshalling BSI projection results - %v", err)
+				return nil, nil, fmt.Errorf("unmarshalling BSI projection results - %v", err)
 			}
 			bsiResults[v.Field] = append(bsi, newBsi)
 		}
@@ -515,7 +518,7 @@ func (c *BitmapIndex) Projection(index string, fields []string, fromTime, toTime
 			}
 			newBm := roaring64.NewBitmap()
 			if err := newBm.UnmarshalBinary(v.Bitmap); err != nil {
-				return nil, nil, fmt.Errorf("Error unmarshalling bitmap projection results - %v", err)
+				return nil, nil, fmt.Errorf("unmarshalling bitmap projection results - %v", err)
 			}
 			field[v.RowId] = append(bm, newBm)
 		}
@@ -598,21 +601,22 @@ func (c *BitmapIndex) TableOperation(table, operation string) error {
 	return nil
 }
 
-// Send a tableOperation request to all nodes.
+// Send a tableOperation request to one node.
 func (c *BitmapIndex) tableOperationClient(client pb.BitmapIndexClient, req *pb.TableOperationRequest,
 	clientIndex int) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), OpDeadline)
 	defer cancel()
 
-	if _, err := client.TableOperation(ctx, req); err != nil {
+	_, err := client.TableOperation(ctx, req)
+	if err != nil {
 		return fmt.Errorf("%v.TableOperation(_) = _, %v, node = %s", client, err,
 			c.ClientConnections()[clientIndex].Target())
 	}
 	return nil
 }
 
-// Commit - Block until persistence queues are synced (empty).
+// Commit - Send commitClient to all nodes. Wait for all to complete.
 func (c *BitmapIndex) Commit() error {
 
 	sop := AllActive
@@ -640,13 +644,13 @@ func (c *BitmapIndex) Commit() error {
 	return nil
 }
 
-
-// Send a Commit request to all nodes.
+// Send a Commit request to a node.
 func (c *BitmapIndex) commitClient(client pb.BitmapIndexClient, clientIndex int) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), OpDeadline)
 	defer cancel()
-	if _, err := client.Commit(ctx, &empty.Empty{}); err != nil {
+	_, err := client.Commit(ctx, &empty.Empty{}) // where does this go, on the nodes?
+	if err != nil {
 		return fmt.Errorf("%v.Commit(_) = _, %v, node = %s", client, err,
 			c.ClientConnections()[clientIndex].Target())
 	}

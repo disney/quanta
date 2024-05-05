@@ -16,7 +16,7 @@ HashiCorp Consul 1.4.x or later.
 
 # Getting Started
 
-[A quick start guide can be found here](https://github.com/disney/quanta/tree/master/test/README.md)
+[A Quick Start Guide can be found here](https://github.com/disney/quanta/tree/master/test/README.md)
 
 # Build and Deployment
 

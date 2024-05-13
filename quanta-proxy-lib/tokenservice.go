@@ -82,6 +82,7 @@ func (s *TokenExchangeService) HandleStatusRequest(w http.ResponseWriter, r *htt
 	} else {
 		u.Debugf("Cluster State = %s, Active nodes = %d, Target Cluster Size = %d\n", status.String(), active, size)
 		SuccessResponse(&w, struct{}{})
+		defer r.Body.Close()
 	}
 	default:
 		ErrorResponse(&w, 405, "Method not allowed", "Method not allowed", nil)

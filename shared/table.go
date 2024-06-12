@@ -65,7 +65,7 @@ type BasicAttribute struct {
 	IsTimeSeries     bool              `yaml:"isTimeSeries,omitempty"`
 	TimeQuantumType  string            `yaml:"timeQuantumType,omitempty"`
 	Exclusive        bool              `yaml:"exclusive,omitempty"`
-	DelegationTarget string            `yaml:"delegationTarget,omitempty"`
+	SourceOrdinal	 int			   `yaml:"sourceOrdinal,omitempty"`
 }
 
 func (a *BasicAttribute) GetParent() TableInterface {

@@ -302,6 +302,7 @@ func ResolveMapper(attr *Attribute) (mapper Mapper, err error) {
 		return nil, fmt.Errorf("MappingStrategy is nil for '%s'", attr.FieldName)
 	}
 
+/*
 	if attr.MappingStrategy == "Delegated" && attr.DelegationTarget == "" {
 		return nil, fmt.Errorf("DelegationTarget is nil for '%s'", attr.FieldName)
 	} else if attr.MappingStrategy == "Delegated" && attr.DelegationTarget != "" {
@@ -312,6 +313,7 @@ func ResolveMapper(attr *Attribute) (mapper Mapper, err error) {
 		}
 		return ResolveMapper(target)
 	}
+*/
 
 	if attr.MappingStrategy == "Custom" || attr.MappingStrategy == "CustomBSI" {
 		if attr.MapperConfig != nil {
@@ -329,9 +331,11 @@ func ResolveMapper(attr *Attribute) (mapper Mapper, err error) {
 
 func lookupMapper(mapperName string, conf map[string]string) (Mapper, error) {
 
+/*
 	if mapperName == "Undefined" || mapperName == "Delegated" {
 		return nil, nil
 	}
+*/
 	mapperFactory, ok := mapperFactories[mapperName]
 	if !ok {
 		// Factory has not been registered.

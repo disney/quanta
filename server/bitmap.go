@@ -565,7 +565,7 @@ func (m *BitmapIndex) verifyNode() {
 		if err != nil {
 			u.Log(u.FATAL, fmt.Errorf("Node synchronization/verification failed - %v", err))
 		}
-		if diffCount == 0 {
+		if diffCount <= 0 {
 			m.State = Active
 			u.Debugf("verifyNode Setting node state to Active for %s", m.hashKey)
 			// we need to 'touch' the health so everyone knows we are active atw

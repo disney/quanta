@@ -142,7 +142,8 @@ func (c *BitmapIndex) Synchronize(nodeKey string) (int, error) {
 		diffCount += int(dr)
 	}
 
-	if diffCount == 0 {
+	//if diffCount == 0 {
+	if diffCount <= 0 {
 		u.Warnf("%s Synchronization complete, no differences detected", nodeKey)
 	} else {
 		u.Warnf("%s Synchronization complete, differences detected %v", nodeKey, diffCount)

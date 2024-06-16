@@ -316,32 +316,34 @@ func (t *BasicTable) GetAttribute(name string) (*BasicAttribute, error) {
 // GetPrimaryKeyInfo - Return attributes for a given PK.
 func (t *BasicTable) GetPrimaryKeyInfo() ([]*BasicAttribute, error) {
 
-	s := strings.Split(t.PrimaryKey, "+")
-	attrs := make([]*BasicAttribute, len(s))
-	var v string
-	i := 0
-	if t.TimeQuantumField != "" {
-		if len(s) > 0 {
-			attrs = make([]*BasicAttribute, len(s)+1)
-		} else {
-			attrs = make([]*BasicAttribute, 1)
-		}
-		if at, err := t.GetAttribute(strings.TrimSpace(t.TimeQuantumField)); err == nil {
-			attrs[0] = at
-			i++
-		} else {
-			return nil, err
-		}
-	}
-	if t.PrimaryKey != "" {
-		for i, v = range s {
-			if attr, err := t.GetAttribute(strings.TrimSpace(v)); err == nil {
-				attrs[i] = attr
-			} else {
-				return nil, err
-			}
-		}
-	}
+    s := strings.Split(t.PrimaryKey, "+")
+    attrs := make([]*BasicAttribute, len(s))
+    i := 0
+    if t.TimeQuantumField != "" {
+        attrs = make([]*BasicAttribute, len(s)+1)
+        i++
+        if t.PrimaryKey != "" {
+            attrs = make([]*BasicAttribute, len(s)+1)
+        } else {
+            attrs = make([]*BasicAttribute, 1)
+        }
+        if at, err := t.GetAttribute(strings.TrimSpace(t.TimeQuantumField)); err == nil {
+            attrs[0] = at
+        } else {
+            return nil, err
+        }
+    }
+
+    if t.PrimaryKey != "" {
+        for _, v := range s {
+            if attr, err := t.GetAttribute(strings.TrimSpace(v)); err == nil {
+                attrs[i] = attr
+                i++
+            } else {
+                return nil, err
+            }
+        }
+    }
 	return attrs, nil
 }
 

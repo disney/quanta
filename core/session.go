@@ -150,18 +150,22 @@ func OpenSession(tableCache *TableCacheStruct, path, name string, nested bool, c
 			if err != nil {
 				return nil, fmt.Errorf("Error loading parent schema - %v", err2)
 			}
-			if tb, err := NewTableBuffer(parent); err == nil {
-				tableBuffers[fkTable] = tb
-			} else {
-				return nil, fmt.Errorf("OpenSession error - %v", err)
+			if tb, ok := tableBuffers[fkTable]; !ok {
+				if tb, err = NewTableBuffer(parent); err == nil {
+					tableBuffers[fkTable] = tb
+				} else {
+					return nil, fmt.Errorf("OpenSession error - %v", err)
+				}
 			}
 		}
 	}
 
-	if tb, err := NewTableBuffer(tab); err == nil {
-		tableBuffers[name] = tb
-	} else {
-		return nil, fmt.Errorf("OpenSession error - %v", err)
+	if tb, ok := tableBuffers[name]; !ok {
+		if tb, err = NewTableBuffer(tab); err == nil {
+			tableBuffers[name] = tb
+		} else {
+			return nil, fmt.Errorf("OpenSession error - %v", err)
+		}
 	}
 	s := &Session{BasePath: path, TableBuffers: tableBuffers, Nested: nested}
 	s.StringIndex = shared.NewStringSearch(conn, 1000)

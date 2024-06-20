@@ -67,7 +67,7 @@ type Main struct {
 	HashTable           *rendezvous.Table
 	shardChannels       map[string]chan DataRecord
 	shardSessionCache   map[string]*core.Session
-	shardSessionLock    sync.Mutex
+	shardSessionLock    sync.RWMutex
 	eg                  errgroup.Group
 	CancelFunc          context.CancelFunc
 	CommitIntervalMs    int
@@ -76,6 +76,8 @@ type Main struct {
 	ScanInterval        int
 	metrics             *cloudwatch.CloudWatch
 	tableCache          *core.TableCacheStruct
+	metricsTicker       *time.Ticker
+	commitTicker        *time.Ticker
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -226,7 +228,6 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 		shardId := k
 		theChan := m.shardChannels[k]
 		m.eg.Go(func() error {
-			nextCommit := time.Now().Add(time.Millisecond * time.Duration(m.CommitIntervalMs))
 			for rec := range theChan {
 				shardTableKey := fmt.Sprintf("%v+%v", shardId, rec.TableName)
 				m.shardSessionLock.Lock()
@@ -248,9 +249,8 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 					return err
 				}
 				m.processedRecs.Add(1)
-				if time.Now().After(nextCommit) {
+				if m.CommitIntervalMs == 0 {
 					conn.Flush()
-					nextCommit = time.Now().Add(time.Millisecond * time.Duration(m.CommitIntervalMs))
 				}
 			}
 			u.Errorf("shard channel closed. %v", shardId)
@@ -265,6 +265,10 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 		})
 	}
 	m.HashTable = rendezvous.New(shardIds)
+	m.metricsTicker = m.PrintStats()
+	if m.CommitIntervalMs > 0 {
+		m.commitTicker = m.CommitTicker()
+	}
 	u.Infof("Created consumer. ")
 
 	return shardCount, nil
@@ -307,6 +311,12 @@ func (m *Main) MainProcessingLoop() error {
 
 func (m *Main) Destroy() {
 
+	if m.CommitTicker != nil {
+		m.commitTicker.Stop()
+	}
+	if m.PrintStats != nil {
+		m.metricsTicker.Stop()
+	}
 	m.CancelFunc = nil
 	for _, v := range m.shardChannels {
 		close(v)
@@ -447,6 +457,23 @@ func (m *Main) PrintStats() *time.Ticker {
 				core.Bytes(bytes), m.TotalRecs.Get(), m.processedRecs.Get(), m.errorCount.Get(), duration,
 				core.Bytes(float64(bytes)/duration.Seconds()))
 			lastTime = m.publishMetrics(duration, lastTime)
+		}
+	}()
+	return t
+}
+
+// CommitTicker - Flush all sessions at a defined interval
+func (m *Main) CommitTicker() *time.Ticker {
+
+	t := time.NewTicker(time.Millisecond * time.Duration(m.CommitIntervalMs))
+
+	go func() {
+		for range t.C {
+			m.shardSessionLock.RLock()
+			for _, v := range m.shardSessionCache {
+				v.Flush()
+			}
+			m.shardSessionLock.RUnlock()
 		}
 	}()
 	return t

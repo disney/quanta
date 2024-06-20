@@ -285,7 +285,8 @@ func (c *BatchBuffer) SetValue(index, field string, columnID uint64, value int64
 		c.batchValues[index][field] = make(map[int64]*roaring64.BSI)
 	}
 	if bmap, ok := c.batchValues[index][field][ts.UnixNano()]; !ok {
-		b := roaring64.NewDefaultBSI()
+		//b := roaring64.NewDefaultBSI()  // FIXME - possible bug in BSI libraries with zero values
+		b := roaring64.NewBSI(roaring64.Min64BitSigned, roaring64.Max64BitSigned)
 		b.SetValue(columnID, value)
 		c.batchValues[index][field][ts.UnixNano()] = b
 		bsize = b.BitCount()

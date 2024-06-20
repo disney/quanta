@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -106,10 +107,17 @@ func (t *TableBuffer) NextColumnID(bi *shared.BitmapIndex) error {
 	return nil
 }
 
-// HasPrimaryKey - Does this table have a primary key
-func (t *TableBuffer) HasPrimaryKey() bool {
+// ShouldLookupPrimaryKey - Does this table have a primary key
+func (t *TableBuffer) ShouldLookupPrimaryKey() bool {
+
+	if t.PKAttributes[0].ColumnID {
+		return false
+	}
 
 	if t.Table.TimeQuantumType != "" && len(t.PKAttributes) > 1 {
+        if t.PKAttributes[1].ColumnID {
+			return false
+		}
 		return true
 	}
 	if t.Table.TimeQuantumType == "" && len(t.PKAttributes) > 0 {
@@ -340,7 +348,7 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 			//if !s.Nested {
 			if !isChild {
 				// Directly provided parent columnID
-				if v.Type == "Integer" && (!relBuf.HasPrimaryKey() || fkFieldSpec == "@rownum") {
+				if v.Type == "Integer" && (!relBuf.ShouldLookupPrimaryKey() || fkFieldSpec == "@rownum") {
 					vals, _, err := s.readColumn(row, pqTablePath, &v, false, ignoreSourcePath, useNerdCapitalization)
 					//vals, _, err := s.readColumn(row, pqTablePath, &v, false, true, false)
 					if err != nil {
@@ -352,11 +360,19 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 					if vals[0] == nil {
 						continue
 					}
-					if colId, ok := vals[0].(int64); !ok {
+					switch reflect.ValueOf(vals[0]).Kind() {
+					case reflect.String:
+						if colId, err := strconv.ParseInt(vals[0].(string), 10, 64); err == nil {
+							relColumnID = uint64(colId)
+						} else {
+							return fmt.Errorf("cannot parse string %v for parent relation %v type is %T",
+								vals[0], v.FieldName, vals[0])
+						}
+					case reflect.Int64:
+						relColumnID = uint64(vals[0].(int64))
+					default:
 						return fmt.Errorf("cannot cast %v to uint64 for parent relation %v type is %T",
 							vals[0], v.FieldName, vals[0])
-					} else {
-						relColumnID = uint64(colId)
 					}
 				} else { // Lookup based
 					//if v.SourceName == "" {
@@ -656,6 +672,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		tbuf.CurrentTimestamp = time.Unix(0, 0)
 	}
 
+	directColumnID := false
 	tbuf.CurrentPKValue = make([]interface{}, len(tbuf.PKAttributes))
 	pqColPaths := make([]string, len(tbuf.PKAttributes))
 	var pkLookupVal strings.Builder
@@ -687,6 +704,12 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 				if pk.MappingStrategy == "SysMillisBSI" || pk.MappingStrategy == "SysMicroBSI" {
 					strVal := cval.(string)
 					tbuf.CurrentTimestamp, _, _ = shared.ToTQTimestamp(tbuf.Table.TimeQuantumType, strVal)
+				}
+			}
+			if pk.ColumnID {
+				if cID, err := strconv.ParseInt(cval.(string), 10, 64); err == nil {
+					tbuf.CurrentColumnID = uint64(cID)
+					directColumnID = true
 				}
 			}
 		case reflect.Int64:
@@ -725,7 +748,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		}
 	}
 
-	if tbuf.HasPrimaryKey() {
+	if tbuf.ShouldLookupPrimaryKey() {
 		// Can't use batch operation here unfortunately, but at least we have local batch cache
 		localKey := indexPath(tbuf, tbuf.PKAttributes[0].FieldName, tbuf.Table.PrimaryKey+".PK")
 		if lColID, ok := s.BatchBuffer.LookupLocalCIDForString(localKey, pkLookupVal.String()); !ok {
@@ -754,14 +777,16 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 			u.Warnf("PK %s found in cache.  PK mapping error?", pkLookupVal.String())
 		}
 	} else {
-		if providedColID == 0 {
-			// Generate new ColumnID.   Lookup the sequencer from the local cache by TQ
-			errx := tbuf.NextColumnID(s.BitIndex)
-			if errx != nil {
-				return false, errx
+		if !directColumnID {
+			if providedColID == 0 {
+				// Generate new ColumnID.   Lookup the sequencer from the local cache by TQ
+				errx := tbuf.NextColumnID(s.BitIndex)
+				if errx != nil {
+					return false, errx
+				}
+			} else {
+				tbuf.CurrentColumnID = providedColID
 			}
-		} else {
-			tbuf.CurrentColumnID = providedColID
 		}
 	}
 
@@ -1005,69 +1030,6 @@ func (s *Session) MapValue(tableName, fieldName string, value interface{}, updat
 	}
 	return attr.MapValue(value, nil) // Non load use case pass nil connection context
 }
-
-/*
-func resolveJSColumnPathForField(jsTablePath string, v *Attribute, isChild bool) (jsColPath string) {
-
-	// BEGIN CUSTOM CODE FOR VISION
-	//if strings.HasSuffix(jsTablePath, "media.0") {
-	if v.Parent.Name == "media" {
-		jsColPath = fmt.Sprintf("events.0.event_tracktype_properties.%s", v.SourceName)
-		return
-	}
-	if v.Parent.Name == "events" {
-		s := strings.Split(v.SourceName, ".")
-		if len(s) > 1 {
-			switch s[0] {
-			case "media", "pzncon", "ad", "prompt", "api":
-				jsColPath = fmt.Sprintf("events.0.event_tracktype_properties.%s", s[1])
-				return
-			}
-		}
-	}
-	// END CUSTOM CODE FOR VISION
-	jsColPath = fmt.Sprintf("%s.%s", jsTablePath, v.SourceName)
-	if strings.HasPrefix(v.SourceName, "/") {
-		jsColPath = v.SourceName[1:]
-	} else if strings.HasPrefix(v.SourceName, "^") {
-		jsColPath = fmt.Sprintf("%s.%s", v.Parent.Name, v.SourceName[1:])
-	}
-	return
-}
-
-func readColumnByPath(path string, line []byte) []interface{} {
-
-	s := strings.Split(path, ".")
-	p := make([]interface{}, len(s))
-	var returnArray bool
-	for i, v := range s {
-		if val, err := strconv.ParseInt(v, 10, 32); err == nil {
-			p[i] = int(val)
-			returnArray = (i == len(s)-1)
-		} else {
-			p[i] = v
-		}
-	}
-
-	val := jsoniter.Get(line, p...)
-	if returnArray {
-		//return val.GetInterface()
-		return []interface{}{val.GetInterface()}
-	}
-	return []interface{}{val.GetInterface()}
-}
-
-func toJulianDay(t time.Time) (int32, int64) {
-	utc := t.UTC()
-	nanos := utc.UnixNano()
-	micros := nanos / time.Microsecond.Nanoseconds()
-
-	julianUs := micros + julianDayOfEpoch*microsPerDay
-	days := int32(julianUs / microsPerDay)
-	us := (julianUs % microsPerDay) * 1000
-	return days, us
-}
-*/
 
 func fromJulianDay(days int32, nanos int64) time.Time {
 	nanos = ((int64(days)-julianDayOfEpoch)*microsPerDay + nanos/1000) * 1000

@@ -502,15 +502,22 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 					//continue
 				}
 				trxColumnIDs = p.transposeFKColumnIDs(bsiResults[p.childTable][key], columnIDs)
-				//if v.MappingStrategy == "ParentRelation" {
 				nochild: if v.MappingStrategy == "ParentRelation" {
 					if strings.HasSuffix(v.ForeignKey, "@rownum") {
 						continue
 					}
-					if len(pka) > 1 {
-						return nil, fmt.Errorf("Projector error - Can only support single PK with link [%s]", key)
+					var pv *Attribute
+/*
+					if len(pka) > 1 && pka.Parent.TimeQuantumType != "" {
+						return nil, fmt.Errorf("fetchStrings error - Can only support single PK with link [%s]", key)
 					}
-					pv := pka[0]
+*/
+					if pka[0].Parent.TimeQuantumType == "" {
+						pv = pka[0]
+					} else {
+						pv = pka[1]
+					}
+					
 					if pv.MappingStrategy != "StringHashBSI" {
 						continue
 					}
@@ -606,11 +613,18 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 				return
 			}
 			if pka := p.getPKAttributes(relation); pka != nil {
+/*
 				if len(pka) > 1 && !strings.HasSuffix(v.ForeignKey, "@rownum") {
-					err = fmt.Errorf("Projector error - Can only support single PK with link [%s]", v.FieldName)
+					err = fmt.Errorf("getRow error - Can only support single PK with link [%s]", v.FieldName)
 					return
 				}
-				pv := pka[0]
+*/
+				var pv *Attribute
+				if pka[0].Parent.TimeQuantumType == "" {
+					pv = pka[0]
+				} else {
+					pv = pka[1]
+				}
 				if pv.MappingStrategy == "StringHashBSI" {
 					cid, err2 := p.checkColumnID(v, colID, child, bsiResults)
 					if err2 != nil {

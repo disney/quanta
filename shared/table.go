@@ -61,7 +61,6 @@ type BasicAttribute struct {
 	Searchable       bool              `yaml:"searchable,omitempty"`
 	DefaultValue     string            `yaml:"defaultValue,omitempty"`
 	ColumnID         bool              `yaml:"columnID,omitempty"`
-	ColumnIDMSV      bool              `yaml:"columnIDMSV,omitempty"`
 	IsTimeSeries     bool              `yaml:"isTimeSeries,omitempty"`
 	TimeQuantumType  string            `yaml:"timeQuantumType,omitempty"`
 	Exclusive        bool              `yaml:"exclusive,omitempty"`

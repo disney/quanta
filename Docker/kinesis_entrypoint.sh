@@ -49,8 +49,4 @@ if [ -n "$SCAN_INTERVAL" ]
 then
     BOOL_FLAGS=${BOOL_FLAGS}" --scan-interval="${SCAN_INTERVAL}""
 fi
-if [ -n "$COMMIT_INTERVAL" ]
-then
-    BOOL_FLAGS=${BOOL_FLAGS}" --commit-interval="${COMMIT_INTERVAL}""
-fi
 exec /usr/bin/quanta-kinesis-consumer ${STREAM} ${SCHEMA} ${SHARD_KEY} ${REGION} ${BOOL_FLAGS}

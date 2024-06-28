@@ -48,7 +48,6 @@ func main() {
 	avroPayload := app.Flag("avro-payload", "Payload is Avro.").Bool()
 	deaggregate := app.Flag("deaggregate", "Incoming payload records are aggregated.").Bool()
 	scanInterval := app.Flag("scan-interval", "Scan interval (milliseconds)").Default("1000").Int()
-	commitInterval := app.Flag("commit-interval", "Commit interval (milliseconds)").Int()
 	logLevel := app.Flag("log-level", "Log Level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
@@ -71,12 +70,6 @@ func main() {
 	log.Printf("Kinesis region %v.", main.Region)
 	log.Printf("Schema name %v.", main.Schema)
 	log.Printf("Scan interval (milliseconds) %d.", main.ScanInterval)
-	if *commitInterval == 0 {
-		log.Printf("Commits will occur after each row.")
-	} else {
-		main.CommitIntervalMs = *commitInterval
-		log.Printf("Commits will occur every %d milliseconds.", main.CommitIntervalMs)
-	}
 	log.Printf("Service port %d.", main.Port)
 	log.Printf("Consul agent at [%s]\n", main.ConsulAddr)
 	if *trimHorizon {

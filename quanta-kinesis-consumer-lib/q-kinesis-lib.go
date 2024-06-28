@@ -66,18 +66,15 @@ type Main struct {
 	ShardKey            string
 	HashTable           *rendezvous.Table
 	shardChannels       map[string]chan DataRecord
-	shardSessionCache   map[string]*core.Session
-	shardSessionLock    sync.RWMutex
+	shardSessionCache   sync.Map
 	eg                  errgroup.Group
 	CancelFunc          context.CancelFunc
-	CommitIntervalMs    int
 	processedRecs       *Counter
 	processedRecL       *Counter
 	ScanInterval        int
 	metrics             *cloudwatch.CloudWatch
 	tableCache          *core.TableCacheStruct
 	metricsTicker       *time.Ticker
-	commitTicker        *time.Ticker
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -188,7 +185,6 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 	// Initialize shard channels
 	u.Warnf("Shard count = %d", shardCount)
 	m.shardChannels = make(map[string]chan DataRecord)
-	m.shardSessionCache = make(map[string]*core.Session)
 	shardIds := make([]string, shardCount)
 	// ClearTableCache
 	for k := range m.tableCache.TableCache {
@@ -228,47 +224,54 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 		shardId := k
 		theChan := m.shardChannels[k]
 		m.eg.Go(func() error {
-			for rec := range theChan {
-				shardTableKey := fmt.Sprintf("%v+%v", shardId, rec.TableName)
-				m.shardSessionLock.Lock()
-				conn, ok := m.shardSessionCache[shardTableKey] // cache lookup
-				if !ok {
-					conn, err = core.OpenSession(m.tableCache, "", rec.TableName, true, clientConn)
+			var shardTableKeys sync.Map
+			for {
+				select {
+					case rec, open := <- theChan:
+					if !open { 
+						goto exitloop
+					} 
+					shardTableKey := fmt.Sprintf("%v+%v", shardId, rec.TableName)
+					conn, ok := m.shardSessionCache.Load(shardTableKey)
+					if !ok {
+						conn, err = core.OpenSession(m.tableCache, "", rec.TableName, true, clientConn)
+						if err != nil {
+							return err
+						}
+						m.shardSessionCache.Store(shardTableKey, conn)
+						shardTableKeys.Store(shardTableKey, conn)
+					}
+					// fmt.Printf("Kinesis PutRow %v %v %v\n", rec.TableName, rec.Data, shardId)
+					err = conn.(*core.Session).PutRow(rec.TableName, rec.Data, 0, false, false)
+	
 					if err != nil {
+						u.Errorf("ERROR in PutRow, shard %s - %v", shardId, err)
+						m.errorCount.Add(1)
 						return err
 					}
-					m.shardSessionCache[shardTableKey] = conn
-				}
-				m.shardSessionLock.Unlock()
-				// fmt.Printf("Kinesis PutRow %v %v %v\n", rec.TableName, rec.Data, shardId)
-				err = conn.PutRow(rec.TableName, rec.Data, 0, false, false)
-
-				if err != nil {
-					u.Errorf("ERROR in PutRow, shard %s - %v", shardId, err)
-					m.errorCount.Add(1)
-					return err
-				}
-				m.processedRecs.Add(1)
-				if m.CommitIntervalMs == 0 {
-					conn.Flush()
+					m.processedRecs.Add(1)
+					default:
+						shardTableKeys.Range(func(k, v interface{}) bool {
+							v.(*core.Session).CloseSession()
+							shardTableKeys.Delete(k)
+							m.shardSessionCache.Delete(k)
+							return true
+						})
 				}
 			}
+			exitloop:
 			u.Errorf("shard channel closed. %v", shardId)
 			// sharedChannels was closed, clean up.
-			m.shardSessionLock.Lock()
-			defer m.shardSessionLock.Unlock()
-			for k, v := range m.shardSessionCache {
-				v.CloseSession()
-				delete(m.shardSessionCache, k)
-			}
+			m.shardSessionCache.Range(func(k, v interface{}) bool {
+				v.(*core.Session).CloseSession()
+				m.shardSessionCache.Delete(k)
+				return true
+			})
 			return nil
 		})
 	}
 	m.HashTable = rendezvous.New(shardIds)
 	m.metricsTicker = m.PrintStats()
-	if m.CommitIntervalMs > 0 {
-		m.commitTicker = m.CommitTicker()
-	}
 	u.Infof("Created consumer. ")
 
 	return shardCount, nil
@@ -311,9 +314,6 @@ func (m *Main) MainProcessingLoop() error {
 
 func (m *Main) Destroy() {
 
-	if m.CommitTicker != nil {
-		m.commitTicker.Stop()
-	}
 	if m.PrintStats != nil {
 		m.metricsTicker.Stop()
 	}
@@ -435,12 +435,11 @@ func (m *Main) schemaChangeListener(e shared.SchemaChangeEvent) {
 		delete(m.tableCache.TableCache, e.Table)
 		u.Warnf("Created table %s", e.Table)
 	}
-	m.shardSessionLock.Lock()
-	defer m.shardSessionLock.Unlock()
-	for k, v := range m.shardSessionCache {
-		v.CloseSession()
-		delete(m.shardSessionCache, k)
-	}
+	m.shardSessionCache.Range(func(k, v interface{}) bool {
+		v.(*core.Session).CloseSession()
+		m.shardSessionCache.Delete(k)
+		return true
+	})
 }
 
 // printStats outputs to Log current status of Kinesis consumer
@@ -455,25 +454,9 @@ func (m *Main) PrintStats() *time.Ticker {
 			bytes := m.TotalBytes.Get()
 			u.Infof("Bytes: %s, Records: %v, Processed: %v, Errors: %v, Duration: %v, Rate: %v/s",
 				core.Bytes(bytes), m.TotalRecs.Get(), m.processedRecs.Get(), m.errorCount.Get(), duration,
-				core.Bytes(float64(bytes)/duration.Seconds()))
+				(float64(m.processedRecs.Get())/duration.Seconds()))
+				//core.Bytes(float64(bytes)/duration.Seconds()))
 			lastTime = m.publishMetrics(duration, lastTime)
-		}
-	}()
-	return t
-}
-
-// CommitTicker - Flush all sessions at a defined interval
-func (m *Main) CommitTicker() *time.Ticker {
-
-	t := time.NewTicker(time.Millisecond * time.Duration(m.CommitIntervalMs))
-
-	go func() {
-		for range t.C {
-			m.shardSessionLock.RLock()
-			for _, v := range m.shardSessionCache {
-				v.Flush()
-			}
-			m.shardSessionLock.RUnlock()
 		}
 	}()
 	return t

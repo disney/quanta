@@ -37,12 +37,15 @@ type BatchBuffer struct {
 	batchValueCount        int
 	batchPartitionStrCount int
 	batchMutex             sync.RWMutex
+	ModifiedAt             time.Time
+	FlushedAt              time.Time
 }
 
 // NewBatchBuffer - Initializer for client side API wrappers.
 func NewBatchBuffer(bi *BitmapIndex, kv *KVStore, batchSize int) *BatchBuffer {
 
-	c := &BatchBuffer{BitmapIndex: bi, KVStore: kv, batchSize: batchSize}
+	c := &BatchBuffer{BitmapIndex: bi, KVStore: kv, batchSize: batchSize, 
+		ModifiedAt: time.Now(), FlushedAt: time.Now()}
 	return c
 }
 
@@ -51,6 +54,8 @@ func (c *BatchBuffer) Flush() error {
 
 	c.batchMutex.Lock()
 	defer c.batchMutex.Unlock()
+
+	c.FlushedAt = time.Now()
 
 	if c.batchPartitionStr != nil {
 		for indexPath, valueMap := range c.batchPartitionStr {
@@ -190,6 +195,8 @@ func (c *BatchBuffer) MergeInto(to *BatchBuffer) {
 			to.batchPartitionStrCount++
 		}
 	}
+
+	to.ModifiedAt = time.Now()
 }
 
 // SetBit - Set a bit in a "standard" bitmap.  Operations are batched.
@@ -197,6 +204,8 @@ func (c *BatchBuffer) SetBit(index, field string, columnID, rowID uint64, ts tim
 
 	c.batchMutex.Lock()
 	defer c.batchMutex.Unlock()
+
+	c.ModifiedAt = time.Now()
 
 	if c.batchSets == nil {
 		c.batchSets = make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap)
@@ -235,6 +244,8 @@ func (c *BatchBuffer) ClearBit(index, field string, columnID, rowID uint64, ts t
 
 	c.batchMutex.Lock()
 	defer c.batchMutex.Unlock()
+
+	c.ModifiedAt = time.Now()
 
 	if c.batchClears == nil {
 		c.batchClears = make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap)
@@ -275,6 +286,8 @@ func (c *BatchBuffer) SetValue(index, field string, columnID uint64, value int64
 	defer c.batchMutex.Unlock()
 	var bsize int
 
+	c.ModifiedAt = time.Now()
+
 	if c.batchValues == nil {
 		c.batchValues = make(map[string]map[string]map[int64]*roaring64.BSI)
 	}
@@ -313,6 +326,8 @@ func (c *BatchBuffer) SetPartitionedString(indexPath string, key, value interfac
 
 	c.batchMutex.Lock()
 	defer c.batchMutex.Unlock()
+
+	c.ModifiedAt = time.Now()
 
 	if c.batchPartitionStr == nil {
 		c.batchPartitionStr = make(map[string]map[interface{}]interface{})

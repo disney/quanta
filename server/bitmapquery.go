@@ -352,7 +352,7 @@ func (m *BitmapIndex) timeRangeBSI(index, field string, fromTime, toTime time.Ti
 						continue
 					}
 					a = append(a, x)
-					u.Debugf("timeRangeBSI %s selecting %s", tq, hashKey)
+					u.Debugf("timeRangeBSI %s selecting %s with foundSet = %d", tq, hashKey, foundSet.GetCardinality())
 				} else {
 					if bsi.BSI.GetCardinality() == 0 {
 						continue

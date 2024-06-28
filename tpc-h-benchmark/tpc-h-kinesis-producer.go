@@ -57,7 +57,7 @@ type Main struct {
 	Table        *shared.BasicTable
 	outClient    *kinesis.Kinesis
 	lock         *api.Lock
-	partitionCol *shared.BasicAttribute
+	shardCols    []*shared.BasicAttribute
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -152,18 +152,17 @@ func (m *Main) processRowsForFile(readFile *os.File) {
 
 	i := 0
     for fileScanner.Scan() {
+
 		// Split the pipe delimited text line
 		s := strings.Split(fileScanner.Text(), "|")
 		i++
 
 		// Marshal to JSON
-		outData, _ := m.generateJSON(s)
+		shardKey, outData,  _ := m.generateJSON(s)
 
-		partitionKey := s[0]
-		
 		putBatch = append(putBatch, &kinesis.PutRecordsRequestEntry{
 			Data:         outData,
-			PartitionKey: aws.String(partitionKey),
+			PartitionKey: aws.String(shardKey),
 		})
 
 		if i%m.BatchSize == 0 {
@@ -197,22 +196,30 @@ func (m *Main) processRowsForFile(readFile *os.File) {
 }
 
 // Generate JSON Payload
-func (m *Main) generateJSON(fields []string) ([]byte, error) {
+func (m *Main) generateJSON(fields []string) (string, []byte, error) {
 
 	env := make(map[string]interface{}, 0)
 	data := make(map[string]interface{}, 0)
 
+    var sb strings.Builder
+
     for _, v := range m.Table.Attributes {
 		if v.SourceOrdinal > 0 {
 			data[v.FieldName] = fields[v.SourceOrdinal - 1]
-			if m.partitionCol.FieldName == v.FieldName {
-				env["shardKey"] = fields[v.SourceOrdinal - 1]
-			}
+		}
+	}
+	for _, v := range m.shardCols {
+		if x, ok := data[v.FieldName]; ok {
+			sb.WriteString(x.(string))
 		}
 	}
 	env["data"] = data
 	env["type"] = m.Index
-	return json.Marshal(env)
+	shardKey := sb.String()
+	env["shardKey"] = shardKey
+	
+    b, err := json.Marshal(env)
+	return shardKey, b, err
 }
 
 // Init function initializes process.
@@ -234,7 +241,7 @@ func (m *Main) Init() error {
 	if errx != nil {
 		return errx
 	}
-	m.partitionCol = pkInfo[0]
+	m.shardCols = pkInfo
 
 	// Initialize AWS client
 	sess, err := session.NewSession(&aws.Config{

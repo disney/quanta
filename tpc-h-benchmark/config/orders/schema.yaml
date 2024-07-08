@@ -1,0 +1,54 @@
+tableName: orders
+primaryKey: o_orderkey
+selector: type="orders"
+timeQuantumType: YMD
+timeQuantumField: o_orderdate
+attributes:
+- fieldName: o_orderkey
+  sourceName: /data/o_orderkey
+  mappingStrategy: IntBSI
+  type: Integer
+  sourceOrdinal: 1
+  columnID: true
+- fieldName: o_custkey
+  sourceName: /data/o_custkey
+  mappingStrategy: ParentRelation
+  type: Integer
+  foreignKey: customer
+  sourceOrdinal: 2
+- fieldName: o_orderstatus
+  sourceName: /data/o_orderstatus
+  mappingStrategy: StringEnum
+  type: String
+  sourceOrdinal: 3
+- fieldName: o_totalprice
+  sourceName: /data/o_totalprice
+  mappingStrategy: FloatScaleBSI
+  type: Float
+  scale: 2
+  sourceOrdinal: 4
+- fieldName: o_orderdate
+  sourceName: /data/o_orderdate
+  mappingStrategy: SysMillisBSI
+  type: DateTime
+  sourceOrdinal: 5
+- fieldName: o_orderpriority
+  sourceName: /data/o_orderpriority
+  mappingStrategy: StringEnum
+  type: String
+  sourceOrdinal: 6
+- fieldName: o_clerk
+  sourceName: /data/o_clerk
+  mappingStrategy: StringEnum
+  type: String
+  sourceOrdinal: 7
+- fieldName: o_shippriority
+  sourceName: /data/o_shippriority
+  mappingStrategy: IntBSI
+  type: Integer
+  sourceOrdinal: 8
+- fieldName: o_comment
+  sourceName: /data/o_comment
+  mappingStrategy: StringHashBSI
+  type: String
+  sourceOrdinal: 9

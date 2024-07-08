@@ -151,7 +151,7 @@ func main() {
 	// ticker = main.PrintStats()
 
 	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		for range c {
 			u.Warnf("Interrupted,  Bytes processed: %s, Records: %v", core.Bytes(main.TotalBytes.Get()),

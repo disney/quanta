@@ -32,6 +32,7 @@ const (
 	secondaryKey           = "S"
 	julianDayOfEpoch int64 = 2440588
 	microsPerDay     int64 = 3600 * 24 * 1000 * 1000
+	batchBufferSize		   = 10000000			// This is a stopgap to prevent overrunning memory
 )
 
 // Session - State for session (non-threadsafe)
@@ -179,7 +180,7 @@ func OpenSession(tableCache *TableCacheStruct, path, name string, nested bool, c
 	s.StringIndex = shared.NewStringSearch(conn, 1000)
 	s.KVStore = kvStore
 	s.BitIndex = shared.NewBitmapIndex(conn)
-	s.BatchBuffer = shared.NewBatchBuffer(s.BitIndex, s.KVStore, 3000000)
+	s.BatchBuffer = shared.NewBatchBuffer(s.BitIndex, s.KVStore, batchBufferSize)
 	s.CreatedAt = time.Now().UTC()
 	s.tableCache = tableCache
 
@@ -957,8 +958,11 @@ func (s *Session) Flush() error {
 
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
-	if s.BatchBuffer != nil {
-		if err := s.BatchBuffer.Flush(); err != nil {
+    if s.BatchBuffer != nil && !s.BatchBuffer.IsEmpty() {
+        fb := shared.NewBatchBuffer(s.BitIndex, s.KVStore, batchBufferSize)
+        s.BatchBuffer.MergeInto(fb)
+        s.BatchBuffer = shared.NewBatchBuffer(s.BitIndex, s.KVStore, batchBufferSize)
+        if err := fb.Flush(); err != nil {
 			u.Error(err)
 			return err
 		}
@@ -968,9 +972,6 @@ func (s *Session) Flush() error {
 			u.Error(err)
 			return err
 		}
-	}
-	if s.BitIndex != nil {
-		s.BitIndex.Commit()
 	}
 	return nil
 }
@@ -995,9 +996,6 @@ func (s *Session) CloseSession() error {
 		if err := s.BatchBuffer.Flush(); err != nil {
 			return err
 		}
-	}
-	if s.BitIndex != nil {
-		s.BitIndex.Commit()
 	}
 	return nil
 }

@@ -52,8 +52,8 @@ func NewBatchBuffer(bi *BitmapIndex, kv *KVStore, batchSize int) *BatchBuffer {
 // Flush outstanding batch before.
 func (c *BatchBuffer) Flush() error {
 
-	c.batchMutex.Lock()
-	defer c.batchMutex.Unlock()
+	//c.batchMutex.Lock()
+	//defer c.batchMutex.Unlock()
 
 	c.FlushedAt = time.Now()
 

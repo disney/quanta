@@ -60,10 +60,12 @@ func (m *BitmapIndex) SyncStatus(ctx context.Context, req *pb.SyncStatusRequest)
 	var skew time.Duration
 	reqTime := time.Unix(0, req.ModTime)
 	if isBSI {
+		m.bsiCacheLock.RLock()
 		v := m.bsiCache[req.Index][req.Field][req.Time]
 		if v == nil {
 			return response, nil
 		}
+		m.bsiCacheLock.RUnlock()
 		v.Lock.RLock()
 		defer v.Lock.RUnlock()
 		sum, card := v.Sum(v.GetExistenceBitmap())
@@ -87,10 +89,12 @@ func (m *BitmapIndex) SyncStatus(ctx context.Context, req *pb.SyncStatusRequest)
 			response.Data = ba
 		}
 	} else {
+		m.bitmapCacheLock.RLock()
 		v := m.bitmapCache[req.Index][req.Field][req.RowId][req.Time]
 		if v == nil {
 			return response, nil
 		}
+		m.bitmapCacheLock.RUnlock()
 		v.Lock.RLock()
 		defer v.Lock.RUnlock()
 		response.Cardinality = v.Bits.GetCardinality()
@@ -489,6 +493,7 @@ func (m *BitmapIndex) syncEnumMetadata(peerKV *shared.KVStore, remoteKV pb.KVSto
 	if err != nil {
 		return fmt.Errorf("syncEnumMetadata:getStore(local) failed for %s.%s - %v", index, field, err)
 	}
+	defer localKV.closeStore(kvPath)
 
 	// Get remote index file counts, size
 	remoteInfo, errx := peerKV.IndexInfoNode(remoteKV, kvPath)
@@ -649,6 +654,7 @@ func (m *BitmapIndex) syncStringBackingStore(peerKV *shared.KVStore, remoteKV pb
 	if err != nil {
 		return fmt.Errorf("syncStringBackingStore:getStore failed for %s.%s.%s - %v", index, field, timeStr, err)
 	}
+	defer localKV.closeStore(kvPath)
 
 	// TODO: Pass this as a parameter
 	verifyOnly := false
@@ -734,6 +740,7 @@ func (m *BitmapIndex) simpleKVPush(peerKV *shared.KVStore, remoteKV pb.KVStoreCl
 	if err != nil {
 		return fmt.Errorf("simpleKVPush:getStore failed for %s - %v", kvPath, err)
 	}
+	defer localKV.closeStore(kvPath)
 
 	pushBatch := make(map[interface{}]interface{}, 0)
 	it := db.Items()
@@ -773,6 +780,7 @@ func (m *BitmapIndex) indexKVPush(peerKV *shared.KVStore, remoteKV pb.KVStoreCli
 	if err != nil {
 		return fmt.Errorf("indexKVPush:getStore failed for %s - %v", kvPath, err)
 	}
+	defer localKV.closeStore(kvPath)
 
 	// Get remote index file counts, size
 	remoteInfo, errx := peerKV.IndexInfoNode(remoteKV, kvPath)

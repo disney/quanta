@@ -49,6 +49,7 @@ type Main struct {
 	TotalRecs   *Counter
 	totalRecsL  *Counter
 	errorCount  *Counter
+	OpenSessions *Counter
 	// poolPercent         *Counter
 	Port       int
 	ConsulAddr string
@@ -66,6 +67,8 @@ type Main struct {
 	ShardKey            string
 	HashTable           *rendezvous.Table
 	shardChannels       map[string]chan DataRecord
+	hwmChannels			map[string]chan bool
+	isFlushing			sync.Map
 	shardSessionCache   sync.Map
 	eg                  errgroup.Group
 	CancelFunc          context.CancelFunc
@@ -87,6 +90,7 @@ func NewMain() *Main {
 		processedRecs: &Counter{},
 		processedRecL: &Counter{},
 		errorCount:    &Counter{},
+		OpenSessions:  &Counter{},
 	}
 	m.tableCache = core.NewTableCacheStruct()
 	return m
@@ -185,6 +189,7 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 	// Initialize shard channels
 	u.Warnf("Shard count = %d", shardCount)
 	m.shardChannels = make(map[string]chan DataRecord)
+	m.hwmChannels = make(map[string]chan bool)
 	shardIds := make([]string, shardCount)
 	// ClearTableCache
 	for k := range m.tableCache.TableCache {
@@ -214,8 +219,12 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 		k := fmt.Sprintf("shard%v", i)
 		shardIds[i] = k
 		m.shardChannels[k] = make(chan DataRecord, ShardChannelSize)
+		m.isFlushing.Store(k, false)
+		m.hwmChannels[k] = make(chan bool, 1)
 	}
 
+	startedShardProcessing := time.Now()
+	printedMessage := false
 	for i := 0; i < shardCount; i++ {
 
 		k := fmt.Sprintf("shard%v", i)
@@ -223,6 +232,7 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 		// m.shardChannels[k] = make(chan DataRecord, ShardChannelSize)
 		shardId := k
 		theChan := m.shardChannels[k]
+		hwmChan := m.hwmChannels[k]
 		m.eg.Go(func() error {
 			var shardTableKeys sync.Map
 			for {
@@ -238,9 +248,11 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 						if err != nil {
 							return err
 						}
+						m.OpenSessions.Add(1)
 						m.shardSessionCache.Store(shardTableKey, conn)
 						shardTableKeys.Store(shardTableKey, conn)
 					}
+
 					// fmt.Printf("Kinesis PutRow %v %v %v\n", rec.TableName, rec.Data, shardId)
 					err = conn.(*core.Session).PutRow(rec.TableName, rec.Data, 0, false, false)
 	
@@ -250,13 +262,29 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 						return err
 					}
 					m.processedRecs.Add(1)
+					case <- hwmChan:
+						shardTableKeys.Range(func(k, v interface{}) bool {
+							if v.(*core.Session).BatchBuffer.IsEmpty() {
+								return true
+							}
+							start := time.Now()
+							v.(*core.Session).Flush()
+							u.Infof("FLUSH DURATION = %v, QUEUE LEN = %d", time.Since(start), len(theChan))
+							return true
+						})
 					default:
 						shardTableKeys.Range(func(k, v interface{}) bool {
 							v.(*core.Session).CloseSession()
 							shardTableKeys.Delete(k)
 							m.shardSessionCache.Delete(k)
+							m.OpenSessions.Add(-1)
 							return true
 						})
+						time.Sleep(100 * time.Millisecond)
+				}
+				if !printedMessage && m.processedRecs.Get() > 0 && m.OpenSessions.Get() == 0 {
+					u.Infof("FINISHED FLUSHING ALL SESSIONS IN %v !!!", time.Since(startedShardProcessing))
+					printedMessage = true
 				}
 			}
 			exitloop:
@@ -265,6 +293,7 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 			m.shardSessionCache.Range(func(k, v interface{}) bool {
 				v.(*core.Session).CloseSession()
 				m.shardSessionCache.Delete(k)
+				m.OpenSessions.Add(-1)
 				return true
 			})
 			return nil
@@ -321,6 +350,9 @@ func (m *Main) Destroy() {
 	for _, v := range m.shardChannels {
 		close(v)
 	}
+	for _, v := range m.hwmChannels {
+		close(v)
+	}
 	time.Sleep(time.Second * 5) // Allow time for completion
 }
 
@@ -370,12 +402,37 @@ func (m *Main) scanAndProcess(v *consumer.Record) error {
 		if !ok {
 			return fmt.Errorf("cannot locate channel for shard key %v", key)
 		}
+		hwm, ok2 := m.hwmChannels[shard[0]]
+		if !ok2 {
+			return fmt.Errorf("cannot locate signal channel for shard key %v", key)
+		}
+		var isFlushing bool
+		isf, ok3 := m.isFlushing.Load(shard[0])
+		if !ok3 {
+			return fmt.Errorf("cannot locate isFlushing flag for shard key %v", key)
+		}
+		isFlushing = isf.(bool)
 		rec := DataRecord{TableName: table.Name, Data: out}
 		// fmt.Println("Pushing record to channel", rec, shard[0])
-		ch <- rec
+		select {
+		case ch <- rec:
+			if !isFlushing && len(ch) > int(ShardChannelSize * .9) {
+				u.Infof("HWM REACHED %s QUEUE LEN = %d", shard[0], len(ch))
+				select {
+					case hwm <- true:
+						m.isFlushing.Store(shard[0], true)
+					default:
+				}
+			}
+			if isFlushing && len(ch) < int(ShardChannelSize * .2) {
+				u.Infof("LWM REACHED %s QUEUE LEN = %d", shard[0], len(ch))
+				m.isFlushing.Store(shard[0], false)
+			}
+		}
 		m.TotalRecs.Add(1)
 		m.TotalBytes.Add(len(v.Data))
 		totalBytes.Add(float64(len(v.Data))) // tell prometheus
+
 	}
 	return nil // continue scanning
 }

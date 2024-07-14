@@ -265,7 +265,6 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 								m.shardSessionCache.Delete(k)
 								m.OpenSessions.Add(-1)
 							} else if time.Since(conn.BatchBuffer.ModifiedAt) > shardPollInterval {
-								m.errorCount.Add(1)
 								conn.Flush()
 							}
 							return true

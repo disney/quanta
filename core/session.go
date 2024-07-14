@@ -32,7 +32,7 @@ const (
 	secondaryKey           = "S"
 	julianDayOfEpoch int64 = 2440588
 	microsPerDay     int64 = 3600 * 24 * 1000 * 1000
-	batchBufferSize		   = 10000000			// This is a stopgap to prevent overrunning memory
+	batchBufferSize		   = 90000000			// This is a stopgap to prevent overrunning memory
 )
 
 // Session - State for session (non-threadsafe)
@@ -48,6 +48,7 @@ type Session struct {
 	BytesRead    int        // Bytes read for a row (record)
 	CreatedAt    time.Time
 	stateLock    sync.Mutex
+	flushing     bool
 
 	tableCache *TableCacheStruct
 }
@@ -775,7 +776,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 			}
 		} else {
 			tbuf.CurrentColumnID = lColID
-			u.Warnf("PK %s found in cache.  PK mapping error?", pkLookupVal.String())
+			u.Warnf("PK %s found in cache.  PK mapping error for %s?", pkLookupVal.String(), tbuf.Table.Name )
 		}
 	} else {
 		if !directColumnID {
@@ -953,18 +954,31 @@ func (s *Session) ResetRowCache() {
 	s.BytesRead = 0
 }
 
-// Flush - Flush data to backend.
-func (s *Session) Flush() error {
 
+// Flushing - Flush in progress
+func (s *Session) IsFlushing() bool {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
+	return s.flushing
+}
+
+func (s *Session) flush() error {
+
     if s.BatchBuffer != nil && !s.BatchBuffer.IsEmpty() {
+		s.flushing = true
+		defer func() {s.flushing = false}()
+		start := time.Now()
         fb := shared.NewBatchBuffer(s.BitIndex, s.KVStore, batchBufferSize)
         s.BatchBuffer.MergeInto(fb)
+		mergeTime := time.Since(start)
         s.BatchBuffer = shared.NewBatchBuffer(s.BitIndex, s.KVStore, batchBufferSize)
         if err := fb.Flush(); err != nil {
 			u.Error(err)
 			return err
+		}
+		duration := time.Since(start)
+		if duration > time.Duration(30 * time.Second) {
+			u.Debugf("FLUSH DURATION %v, MERGE TIME = %v", duration, mergeTime)
 		}
 	}
 	if s.StringIndex != nil {
@@ -976,6 +990,14 @@ func (s *Session) Flush() error {
 	return nil
 }
 
+// Flush - Flush data to backend.
+func (s *Session) Flush() error {
+
+	s.stateLock.Lock()
+	defer s.stateLock.Unlock()
+	return s.flush()
+}
+
 // CloseSession - Close the session, flushing if necessary..
 func (s *Session) CloseSession() error {
 
@@ -985,19 +1007,25 @@ func (s *Session) CloseSession() error {
 	}
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
-	if s.StringIndex != nil {
-		if err := s.StringIndex.Flush(); err != nil {
-			return err
-		}
+	err := s.flush()
+	if err == nil {
 		s.StringIndex = nil
+		s.BitIndex = nil
 	}
+	return err
 
-	if s.BatchBuffer != nil {
-		if err := s.BatchBuffer.Flush(); err != nil {
-			return err
-		}
-	}
+}
+
+// Commit - Block until the server nodes have persisted their work queues to a savepoint.
+func (s *Session) Commit() error {
+
+	if s.BitIndex == nil {
+		return fmt.Errorf("attempting commit of a closed session")
+	} 
+
+	s.BitIndex.Commit()
 	return nil
+
 }
 
 // MapValue - Convenience function for Mapper interface.

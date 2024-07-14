@@ -99,6 +99,14 @@ func (c *BatchBuffer) IsEmpty() bool {
 	return c.batchSetCount == 0 && c.batchClearCount == 0 && c.batchValueCount == 0 && c.batchPartitionStrCount == 0
 }
 
+// BatchSetCount - Return batch set count
+func (c *BatchBuffer) BatchSetCount() int {
+
+	c.batchMutex.RLock()
+	defer c.batchMutex.RUnlock()
+	return c.batchSetCount 
+}
+
 // MergeInto - Merge the contents of this batch into another.
 func (c *BatchBuffer) MergeInto(to *BatchBuffer) {
 

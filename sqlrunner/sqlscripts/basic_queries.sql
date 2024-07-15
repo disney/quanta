@@ -98,7 +98,7 @@ select timestamp_millis from customers_qa where timestamp_millis not between '20
 -- select rownum from customers_qa where cust_id not between '104' and '105';@28
 select age from customers_qa where age between 42 and 43;@1
 select age from customers_qa where age not between 42 and 43;@29
-select age from customers_qa where age not between 42 and 43 and age != null;@11
+select age from customers_qa where age not between 42 and 43 and age != 0;@11
 select height from customers_qa where height = 72.55000;@1
 -- '\' means an additional line and ERR:error text means error expected
 select height from customers_qa where height = 72.55001;@0\ERR:this would result in rounding error for field 'height', value should have 2 decimal places

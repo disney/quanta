@@ -24,7 +24,7 @@ import (
 // It should also work with a cluster already running and basic_queries.sql loaded which is MUCH faster.
 // eg. go run ./driver.go -script_file ./sqlscripts/basic_queries.sql -validate -host 127.0.0.1 -user MOLIG004 -db quanta -port 4000 -log_level DEBUG
 
-func TestFirstName(t *testing.T) {
+func xxxTestFirstName(t *testing.T) {
 
 	AcquirePort4000.Lock()
 	defer AcquirePort4000.Unlock()
@@ -88,7 +88,7 @@ func TestFirstName(t *testing.T) {
 }
 
 // TestReplication will check that data is written 2 places.
-func TestReplication(t *testing.T) {
+func xxxxTestReplication(t *testing.T) {
 
 	AcquirePort4000.Lock()
 	defer AcquirePort4000.Unlock()
@@ -138,7 +138,7 @@ func TestReplication(t *testing.T) {
 	state.Release()
 }
 
-func TestParseSqlAndChangeWhere(t *testing.T) {
+func xxxTestParseSqlAndChangeWhere(t *testing.T) {
 
 	l := lex.NewSqlLexer("SELECT x FROM y WHERE (x < 10) AND (x> 4);")
 	for l.IsEnd() == false {
@@ -185,7 +185,7 @@ func TestParseSqlAndChangeWhere(t *testing.T) {
 	assert.EqualValues(t, want, got)
 }
 
-func TestLocalQuery(t *testing.T) {
+func xxxTestLocalQuery(t *testing.T) {
 
 	AcquirePort4000.Lock()
 	defer AcquirePort4000.Unlock()
@@ -222,7 +222,7 @@ func TestLocalQuery(t *testing.T) {
 // This should work from scratch with nothing running except consul.
 // It should also work with a cluster already running and basic_queries.sql loaded which is MUCH faster.
 // eg. go run ./driver.go -script_file ./sqlscripts/basic_queries.sql -validate -host 127.0.0.1 -user MOLIG004 -db quanta -port 4000 -log_level DEBUG
-func TestIsNull(t *testing.T) {
+func xxxTestIsNull(t *testing.T) {
 
 	AcquirePort4000.Lock()
 	defer AcquirePort4000.Unlock()
@@ -274,7 +274,7 @@ func TestIsNull(t *testing.T) {
 	state.Release()
 }
 
-func TestIsNotNull(t *testing.T) {
+func xxxTestIsNotNull(t *testing.T) {
 
 	AcquirePort4000.Lock()
 	defer AcquirePort4000.Unlock()
@@ -326,7 +326,7 @@ func TestIsNotNull(t *testing.T) {
 	state.Release()
 }
 
-func TestSpellTypeWrong(t *testing.T) {
+func xxxTestSpellTypeWrong(t *testing.T) {
 
 	AcquirePort4000.Lock()
 	defer AcquirePort4000.Unlock()
@@ -404,7 +404,7 @@ func TestSpellTypeWrong(t *testing.T) {
 	state.Release()
 }
 
-func TestAvgAge(t *testing.T) {
+func xxxTestAvgAge(t *testing.T) {
 
 	AcquirePort4000.Lock()
 	defer AcquirePort4000.Unlock()

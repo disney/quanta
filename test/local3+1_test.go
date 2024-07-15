@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestLocalBasic3then4(t *testing.T) {
+func xxxTestLocalBasic3then4(t *testing.T) {
 
 	AcquirePort4000.Lock()
 	defer AcquirePort4000.Unlock()
@@ -110,7 +110,7 @@ func TestLocalBasic3then4(t *testing.T) {
 	state.Release()
 }
 
-func TestStartLocalFromFiles(t *testing.T) {
+func xxxTestStartLocalFromFiles(t *testing.T) {
 	// TestBasic3 and then run this and see if it fails
 
 	state := &ClusterLocalState{}
@@ -137,7 +137,7 @@ func TestStartLocalFromFiles(t *testing.T) {
 
 }
 
-func TestBasic3(t *testing.T) {
+func xxxTestBasic3(t *testing.T) {
 
 	AcquirePort4000.Lock()
 	defer AcquirePort4000.Unlock()

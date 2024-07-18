@@ -17,7 +17,9 @@ type DropCmd struct {
 // Run - Drop command implementation
 func (c *DropCmd) Run(ctx *Context) error {
 
-	fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
+	if ctx.Debug {
+		fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
+	}
 	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
 	if err != nil {
 		fmt.Println("Is the consul agent running?")
@@ -56,7 +58,7 @@ func (c *DropCmd) Run(ctx *Context) error {
 		fmt.Println("Calling nukeData.")
 	}
 
-	err = nukeData(consulClient, ctx.Port, c.Table, "drop", false)
+	err = nukeData(consulClient, ctx, c.Table, "drop", false)
 	if err != nil {
 		return err
 	}
@@ -88,12 +90,14 @@ func checkForChildDependencies(consul *api.Client, tableName, operation string) 
 	return nil
 }
 
-func nukeData(consul *api.Client, port int, tableName, operation string, dropEnums bool) error {
+func nukeData(consul *api.Client, ctx *Context, tableName, operation string, dropEnums bool) error {
 
-	fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", port)
+	if ctx.Debug {
+		fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", ctx.Port)
+	}
 	conn := shared.NewDefaultConnection("drop")
 	defer conn.Disconnect()
-	conn.ServicePort = port
+	conn.ServicePort = ctx.Port
 	conn.Quorum = 3
 	if err := conn.Connect(consul); err != nil {
 		log.Fatal(err)

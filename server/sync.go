@@ -63,6 +63,7 @@ func (m *BitmapIndex) SyncStatus(ctx context.Context, req *pb.SyncStatusRequest)
 		m.bsiCacheLock.RLock()
 		v := m.bsiCache[req.Index][req.Field][req.Time]
 		if v == nil {
+			m.bsiCacheLock.RUnlock()
 			return response, nil
 		}
 		m.bsiCacheLock.RUnlock()
@@ -92,6 +93,7 @@ func (m *BitmapIndex) SyncStatus(ctx context.Context, req *pb.SyncStatusRequest)
 		m.bitmapCacheLock.RLock()
 		v := m.bitmapCache[req.Index][req.Field][req.RowId][req.Time]
 		if v == nil {
+			m.bitmapCacheLock.RUnlock()
 			return response, nil
 		}
 		m.bitmapCacheLock.RUnlock()

@@ -95,7 +95,6 @@ func main() {
 	ticker := metricsTicker(m)
 
 	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		for range c {

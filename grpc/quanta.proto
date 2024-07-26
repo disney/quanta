@@ -42,6 +42,7 @@ service BitmapIndex {
   rpc Synchronize(google.protobuf.StringValue) returns (google.protobuf.Int64Value) {}
   rpc SyncStatus(SyncStatusRequest) returns (SyncStatusResponse) {}
   rpc Commit(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+  rpc PartitionInfo(PartitionInfoRequest) returns (PartitionInfoResponse) {}
 }
 
 message StatusMessage {
@@ -181,6 +182,24 @@ message SyncStatusResponse {
   repeated bytes data = 5;
 }
 
+message PartitionInfoRequest {
+  int64     time = 1;
+  string    index = 2;
+}
+
+message PartitionInfoResponse {
+  repeated PartitionInfoResult partitionInfoResults = 1;
+}
+
+message PartitionInfoResult {
+  int64     time = 1;
+  string    index = 2;
+  string    field = 3;
+  int64     rowIdOrValue = 4;
+  uint32    bytes = 5;
+  int64     modTime = 6;
+  string    tqType = 7;
+}
 
 message IndexInfoRequest {
   string   indexPath = 1;

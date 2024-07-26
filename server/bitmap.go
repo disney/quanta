@@ -1383,3 +1383,59 @@ func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperation
 
 	return &empty.Empty{}, err
 }
+
+
+// PartitionInfo - Returns a report containing information about shards.
+func (m *BitmapIndex) PartitionInfo(ctx context.Context,
+	req *pb.PartitionInfoRequest) (*pb.PartitionInfoResponse, error) {
+
+	if req.Time <= 0 {
+		return nil, fmt.Errorf("Time must be specified.")
+	}
+
+	res := make([]*pb.PartitionInfoResult, 0)
+
+    // Iterate over shard cache and generate report.
+    m.iterateBSICache(func(p *Partition) error {
+
+		if p.Time.UnixNano() > req.Time {
+			return nil
+		}
+		if req.Index != "" && p.Index != req.Index {
+			return nil
+		}
+        bsi := p.Shard.(*BSIBitmap)
+		r := &pb.PartitionInfoResult{Time: p.Time.UnixNano(), Index: p.Index, Field: p.Field,
+			RowIdOrValue: p.RowIDOrBits * -1, ModTime: bsi.ModTime.UnixNano(), TqType: p.TQType}
+        if b, err := bsi.MarshalBinary(); err == nil {
+            for _, x := range b {
+            	r.Bytes += uint32(len(x))
+            }
+        }
+		res = append(res, r)
+		return nil
+
+    })
+
+    m.iterateBitmapCache(func(p *Partition) error {
+
+		if p.Time.UnixNano() > req.Time {
+			return nil
+		}
+		if req.Index != "" && p.Index != req.Index {
+			return nil
+		}
+        bitmap := p.Shard.(*StandardBitmap)
+		r := &pb.PartitionInfoResult{Time: p.Time.UnixNano(), Index: p.Index, Field: p.Field,
+			RowIdOrValue: p.RowIDOrBits, ModTime: bitmap.ModTime.UnixNano(), TqType: p.TQType}
+        if b, err := bitmap.Bits.MarshalBinary(); err == nil {
+            r.Bytes += uint32(len(b))
+        }
+		res = append(res, r)
+		return nil
+
+    })
+
+	resp := &pb.PartitionInfoResponse{PartitionInfoResults: res}
+	return resp, nil
+}

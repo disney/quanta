@@ -8,6 +8,7 @@ package shared
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
@@ -655,4 +656,101 @@ func (c *BitmapIndex) commitClient(client pb.BitmapIndexClient, clientIndex int)
 			c.ClientConnections()[clientIndex].Target())
 	}
 	return nil
+}
+
+
+type PartitionInfoSummary struct {
+	Table				string
+	Quantum				time.Time
+	ModTime				time.Time
+	MemoryUsed			uint32
+	Shards				int
+	TQType				string
+}
+
+
+// Send a shard info request
+func (c *BitmapIndex) shardInfoClient(client pb.BitmapIndexClient, req *pb.PartitionInfoRequest,
+	clientIndex int) (*pb.PartitionInfoResponse, error) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	defer cancel()
+
+	response, err := client.PartitionInfo(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("%v.PartitionInfo(_) = _, %v, node = %s", client, err,
+			c.Conn.ClientConnections()[clientIndex].Target())
+	}
+	return response, nil
+}
+
+
+// PartitionInfo - Given a "ending" timestamp (and optional table filter), show all the shards before that time.
+func (c *BitmapIndex) PartitionInfo(before time.Time, index string) ([]*PartitionInfoSummary, error) {
+
+	shardInfoAgg := make(map[string]map[int64]*PartitionInfoSummary, 0)
+	indexList := make([]string, 0)
+	results := make([]*PartitionInfoSummary, 0)
+
+	req := &pb.PartitionInfoRequest{Index: index, Time: before.UnixNano()}
+	resultChan := make(chan *pb.PartitionInfoResult, 10000000)
+	var eg errgroup.Group
+
+	// Send the same shard info request to each readable node.
+	indices, err2 := c.SelectNodes(index, ReadIntentAll)
+	if err2 != nil {
+		return nil, fmt.Errorf("PartitionInfo: %v", err2)
+	}
+	for _, n := range indices {
+		client := c.client[n]
+		clientIndex := n
+		eg.Go(func() error {
+			pr, err := c.shardInfoClient(client, req, clientIndex)
+			if err != nil {
+				return err
+			}
+			for _, r := range pr.GetPartitionInfoResults() {
+				resultChan <- r
+			}
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return  nil, err
+	}
+	close(resultChan)
+
+
+	// Summarize results
+	for rs := range resultChan {
+		if _, ok := shardInfoAgg[rs.Index]; !ok {
+			shardInfoAgg[rs.Index] = make(map[int64]*PartitionInfoSummary, 0)
+			indexList = append(indexList, rs.Index)
+		}
+		if sim, ok := shardInfoAgg[rs.Index][rs.Time]; !ok {
+			sim = &PartitionInfoSummary{Table: rs.Index, Quantum: time.Unix(0, rs.Time), 
+				ModTime: time.Unix(0, rs.ModTime), MemoryUsed: rs.Bytes, Shards: 1, TQType: rs.TqType}
+			shardInfoAgg[rs.Index][rs.Time] = sim
+		} else {
+			if sim.ModTime.Before(time.Unix(0, rs.ModTime)) {
+				sim.ModTime = time.Unix(0, rs.ModTime)
+			}
+			sim.MemoryUsed += rs.Bytes
+			sim.Shards++
+			shardInfoAgg[rs.Index][rs.Time] = sim
+		}
+	}
+	sort.Strings(indexList)
+	for _, x := range indexList {
+		shardTimes := make([]int64, 0)
+		for k, _ := range shardInfoAgg[x] {
+			shardTimes = append(shardTimes, k)
+		}
+		sort.Slice(shardTimes, func(i, j int) bool { return shardTimes[i] < shardTimes[j] })
+		for _, v := range shardTimes {
+			results = append(results, shardInfoAgg[x][v])
+		}
+	}
+	return results, nil
 }

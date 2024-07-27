@@ -754,3 +754,49 @@ func (c *BitmapIndex) PartitionInfo(before time.Time, index string) ([]*Partitio
 	}
 	return results, nil
 }
+
+// Initiate partition purge
+func (c *BitmapIndex) purgePartitionClient(client pb.BitmapIndexClient, req *pb.PartitionInfoRequest,
+	clientIndex int) error {
+
+	ctx, cancel := context.WithTimeout(context.Background(), Deadline)
+	defer cancel()
+
+	_, err := client.OfflinePartitions(ctx, req)
+	if err != nil {
+		return fmt.Errorf("%v.OfflinePartitions(_) = _, %v, node = %s", client, err,
+			c.Conn.ClientConnections()[clientIndex].Target())
+	}
+	return nil
+}
+
+
+// OfflinePartitions - Given a "ending" timestamp (and optional table filter), offline older partitions.
+func (c *BitmapIndex) OfflinePartitions(before time.Time, index string) error {
+
+	req := &pb.PartitionInfoRequest{Index: index, Time: before.UnixNano()}
+	var eg errgroup.Group
+
+	// Send the same partition purge request to each writable  node.
+	indices, err2 := c.SelectNodes(index, WriteIntentAll)
+	if err2 != nil {
+		return fmt.Errorf("OfflinePartitions: %v", err2)
+	}
+	for _, n := range indices {
+		client := c.client[n]
+		clientIndex := n
+		eg.Go(func() error {
+			err := c.purgePartitionClient(client, req, clientIndex)
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
+	return nil
+}

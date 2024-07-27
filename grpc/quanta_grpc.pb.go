@@ -773,18 +773,19 @@ var StringSearch_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	BitmapIndex_Update_FullMethodName           = "/shared.BitmapIndex/Update"
-	BitmapIndex_BatchMutate_FullMethodName      = "/shared.BitmapIndex/BatchMutate"
-	BitmapIndex_BulkClear_FullMethodName        = "/shared.BitmapIndex/BulkClear"
-	BitmapIndex_Query_FullMethodName            = "/shared.BitmapIndex/Query"
-	BitmapIndex_Join_FullMethodName             = "/shared.BitmapIndex/Join"
-	BitmapIndex_Projection_FullMethodName       = "/shared.BitmapIndex/Projection"
-	BitmapIndex_CheckoutSequence_FullMethodName = "/shared.BitmapIndex/CheckoutSequence"
-	BitmapIndex_TableOperation_FullMethodName   = "/shared.BitmapIndex/TableOperation"
-	BitmapIndex_Synchronize_FullMethodName      = "/shared.BitmapIndex/Synchronize"
-	BitmapIndex_SyncStatus_FullMethodName       = "/shared.BitmapIndex/SyncStatus"
-	BitmapIndex_Commit_FullMethodName           = "/shared.BitmapIndex/Commit"
-	BitmapIndex_PartitionInfo_FullMethodName    = "/shared.BitmapIndex/PartitionInfo"
+	BitmapIndex_Update_FullMethodName            = "/shared.BitmapIndex/Update"
+	BitmapIndex_BatchMutate_FullMethodName       = "/shared.BitmapIndex/BatchMutate"
+	BitmapIndex_BulkClear_FullMethodName         = "/shared.BitmapIndex/BulkClear"
+	BitmapIndex_Query_FullMethodName             = "/shared.BitmapIndex/Query"
+	BitmapIndex_Join_FullMethodName              = "/shared.BitmapIndex/Join"
+	BitmapIndex_Projection_FullMethodName        = "/shared.BitmapIndex/Projection"
+	BitmapIndex_CheckoutSequence_FullMethodName  = "/shared.BitmapIndex/CheckoutSequence"
+	BitmapIndex_TableOperation_FullMethodName    = "/shared.BitmapIndex/TableOperation"
+	BitmapIndex_Synchronize_FullMethodName       = "/shared.BitmapIndex/Synchronize"
+	BitmapIndex_SyncStatus_FullMethodName        = "/shared.BitmapIndex/SyncStatus"
+	BitmapIndex_Commit_FullMethodName            = "/shared.BitmapIndex/Commit"
+	BitmapIndex_PartitionInfo_FullMethodName     = "/shared.BitmapIndex/PartitionInfo"
+	BitmapIndex_OfflinePartitions_FullMethodName = "/shared.BitmapIndex/OfflinePartitions"
 )
 
 // BitmapIndexClient is the client API for BitmapIndex service.
@@ -803,6 +804,7 @@ type BitmapIndexClient interface {
 	SyncStatus(ctx context.Context, in *SyncStatusRequest, opts ...grpc.CallOption) (*SyncStatusResponse, error)
 	Commit(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	PartitionInfo(ctx context.Context, in *PartitionInfoRequest, opts ...grpc.CallOption) (*PartitionInfoResponse, error)
+	OfflinePartitions(ctx context.Context, in *PartitionInfoRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type bitmapIndexClient struct {
@@ -946,6 +948,15 @@ func (c *bitmapIndexClient) PartitionInfo(ctx context.Context, in *PartitionInfo
 	return out, nil
 }
 
+func (c *bitmapIndexClient) OfflinePartitions(ctx context.Context, in *PartitionInfoRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, BitmapIndex_OfflinePartitions_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BitmapIndexServer is the server API for BitmapIndex service.
 // All implementations should embed UnimplementedBitmapIndexServer
 // for forward compatibility
@@ -962,6 +973,7 @@ type BitmapIndexServer interface {
 	SyncStatus(context.Context, *SyncStatusRequest) (*SyncStatusResponse, error)
 	Commit(context.Context, *emptypb.Empty) (*emptypb.Empty, error)
 	PartitionInfo(context.Context, *PartitionInfoRequest) (*PartitionInfoResponse, error)
+	OfflinePartitions(context.Context, *PartitionInfoRequest) (*emptypb.Empty, error)
 }
 
 // UnimplementedBitmapIndexServer should be embedded to have forward compatible implementations.
@@ -1003,6 +1015,9 @@ func (UnimplementedBitmapIndexServer) Commit(context.Context, *emptypb.Empty) (*
 }
 func (UnimplementedBitmapIndexServer) PartitionInfo(context.Context, *PartitionInfoRequest) (*PartitionInfoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PartitionInfo not implemented")
+}
+func (UnimplementedBitmapIndexServer) OfflinePartitions(context.Context, *PartitionInfoRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method OfflinePartitions not implemented")
 }
 
 // UnsafeBitmapIndexServer may be embedded to opt out of forward compatibility for this service.
@@ -1240,6 +1255,24 @@ func _BitmapIndex_PartitionInfo_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BitmapIndex_OfflinePartitions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PartitionInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BitmapIndexServer).OfflinePartitions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BitmapIndex_OfflinePartitions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BitmapIndexServer).OfflinePartitions(ctx, req.(*PartitionInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // BitmapIndex_ServiceDesc is the grpc.ServiceDesc for BitmapIndex service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1290,6 +1323,10 @@ var BitmapIndex_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PartitionInfo",
 			Handler:    _BitmapIndex_PartitionInfo_Handler,
+		},
+		{
+			MethodName: "OfflinePartitions",
+			Handler:    _BitmapIndex_OfflinePartitions_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

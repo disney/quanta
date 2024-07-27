@@ -164,7 +164,7 @@ func (m *BitmapIndex) Init() error {
 	fmt.Println("BitmapIndex Init", m.hashKey, uintptr(unsafe.Pointer(m)))
 
 	// TODO: Sensible configuration for queue sizes.
-	m.partitionQueue = make(chan *PartitionOperation, 100000)
+	m.partitionQueue = make(chan *PartitionOperation, 10000000)
 	//m.fragQueue = make(chan *BitmapFragment, 20000000)
 	m.fragQueue = make(chan *BitmapFragment, 10000000)
 	m.bitmapCache = make(map[string]map[string]map[uint64]map[int64]*StandardBitmap)
@@ -1438,4 +1438,41 @@ func (m *BitmapIndex) PartitionInfo(ctx context.Context,
 
 	resp := &pb.PartitionInfoResponse{PartitionInfoResults: res}
 	return resp, nil
+}
+
+// OfflinePartitions - Purge partitions from memory and move data files to archive directory.
+func (m *BitmapIndex) OfflinePartitions(ctx context.Context, req *pb.PartitionInfoRequest) (*empty.Empty, error) {
+
+	if req.Time <= 0 {
+		return nil, fmt.Errorf("Time must be specified.")
+	}
+
+    // Iterate over shard cache insert into partition operation queue
+    m.iterateBSICache(func(p *Partition) error {
+
+		if p.Time.UnixNano() > req.Time {
+			return nil
+		}
+		if req.Index != "" && p.Index != req.Index {
+			return nil
+		}
+		m.partitionQueue <- m.NewPartitionOperation(p, false)
+		return nil
+
+    })
+
+    m.iterateBitmapCache(func(p *Partition) error {
+
+		if p.Time.UnixNano() > req.Time {
+			return nil
+		}
+		if req.Index != "" && p.Index != req.Index {
+			return nil
+		}
+		m.partitionQueue <- m.NewPartitionOperation(p, false)
+		return nil
+
+    })
+
+	return &empty.Empty{}, nil
 }

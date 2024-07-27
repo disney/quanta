@@ -8,7 +8,7 @@ import (
 	"github.com/disney/quanta/shared"
 )
 
-// PartitionInfoCmd - Find key command
+// PartitionInfoCmd - Partition info command.
 type PartitionInfoCmd struct {
 	Timestamp string `arg:"" name:"time" help:"Ending time quantum value to show (shards before this date/time)."`
 	Table     string `name:"table" help:"Table name (optional)."`

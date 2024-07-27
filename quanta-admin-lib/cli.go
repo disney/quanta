@@ -17,4 +17,5 @@ var Cli struct {
 	VerifyEnum    VerifyEnumCmd  `cmd:"" help:"Verify a string enum for key debug tool."`
 	VerifyIndex   VerifyIndexCmd `cmd:"" help:"Verify indices debug tool."`
 	PartitionInfo PartitionInfoCmd `cmd:"" help:"Partition age report."`
+	OfflinePartitions OfflinePartitionsCmd `cmd:"" help:"Offline partitions."`
 }

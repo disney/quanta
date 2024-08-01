@@ -31,7 +31,6 @@ service StringSearch {
 }
 
 service BitmapIndex {
-  rpc Update(UpdateRequest) returns (google.protobuf.Empty) {}
   rpc BatchMutate(stream IndexKVPair) returns (google.protobuf.Empty) {}
   rpc BulkClear(BulkClearRequest) returns (google.protobuf.Empty) {}
   rpc Query(BitmapQuery) returns (QueryResult) {}
@@ -63,6 +62,7 @@ message IndexKVPair {
   int64 	time = 4;
   bool      isClear = 5;
   bool      sync = 6;
+  bool      isUpdate = 7;
 }
 
 message StringEnum {
@@ -154,14 +154,6 @@ message BulkClearRequest {
   int64    fromTime = 2;
   int64    toTime = 3;
   bytes   foundSet = 4;
-}
-
-message UpdateRequest {
-  string 	index = 1;
-  string 	field = 2;
-  uint64    columnId = 3;
-  int64     rowIdOrValue = 4;
-  int64 	time = 5;
 }
 
 message SyncStatusRequest {

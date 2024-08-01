@@ -773,7 +773,6 @@ var StringSearch_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	BitmapIndex_Update_FullMethodName            = "/shared.BitmapIndex/Update"
 	BitmapIndex_BatchMutate_FullMethodName       = "/shared.BitmapIndex/BatchMutate"
 	BitmapIndex_BulkClear_FullMethodName         = "/shared.BitmapIndex/BulkClear"
 	BitmapIndex_Query_FullMethodName             = "/shared.BitmapIndex/Query"
@@ -792,7 +791,6 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type BitmapIndexClient interface {
-	Update(ctx context.Context, in *UpdateRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	BatchMutate(ctx context.Context, opts ...grpc.CallOption) (BitmapIndex_BatchMutateClient, error)
 	BulkClear(ctx context.Context, in *BulkClearRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	Query(ctx context.Context, in *BitmapQuery, opts ...grpc.CallOption) (*QueryResult, error)
@@ -813,15 +811,6 @@ type bitmapIndexClient struct {
 
 func NewBitmapIndexClient(cc grpc.ClientConnInterface) BitmapIndexClient {
 	return &bitmapIndexClient{cc}
-}
-
-func (c *bitmapIndexClient) Update(ctx context.Context, in *UpdateRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, BitmapIndex_Update_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func (c *bitmapIndexClient) BatchMutate(ctx context.Context, opts ...grpc.CallOption) (BitmapIndex_BatchMutateClient, error) {
@@ -961,7 +950,6 @@ func (c *bitmapIndexClient) OfflinePartitions(ctx context.Context, in *Partition
 // All implementations should embed UnimplementedBitmapIndexServer
 // for forward compatibility
 type BitmapIndexServer interface {
-	Update(context.Context, *UpdateRequest) (*emptypb.Empty, error)
 	BatchMutate(BitmapIndex_BatchMutateServer) error
 	BulkClear(context.Context, *BulkClearRequest) (*emptypb.Empty, error)
 	Query(context.Context, *BitmapQuery) (*QueryResult, error)
@@ -980,9 +968,6 @@ type BitmapIndexServer interface {
 type UnimplementedBitmapIndexServer struct {
 }
 
-func (UnimplementedBitmapIndexServer) Update(context.Context, *UpdateRequest) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Update not implemented")
-}
 func (UnimplementedBitmapIndexServer) BatchMutate(BitmapIndex_BatchMutateServer) error {
 	return status.Errorf(codes.Unimplemented, "method BatchMutate not implemented")
 }
@@ -1029,24 +1014,6 @@ type UnsafeBitmapIndexServer interface {
 
 func RegisterBitmapIndexServer(s grpc.ServiceRegistrar, srv BitmapIndexServer) {
 	s.RegisterService(&BitmapIndex_ServiceDesc, srv)
-}
-
-func _BitmapIndex_Update_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(BitmapIndexServer).Update(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: BitmapIndex_Update_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(BitmapIndexServer).Update(ctx, req.(*UpdateRequest))
-	}
-	return interceptor(ctx, in, info, handler)
 }
 
 func _BitmapIndex_BatchMutate_Handler(srv interface{}, stream grpc.ServerStream) error {
@@ -1280,10 +1247,6 @@ var BitmapIndex_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "shared.BitmapIndex",
 	HandlerType: (*BitmapIndexServer)(nil),
 	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "Update",
-			Handler:    _BitmapIndex_Update_Handler,
-		},
 		{
 			MethodName: "BulkClear",
 			Handler:    _BitmapIndex_BulkClear_Handler,

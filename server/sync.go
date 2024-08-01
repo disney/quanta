@@ -435,12 +435,12 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 func (m *BitmapIndex) pushBitmapDiff(peerClient *shared.BitmapIndex, newNode pb.BitmapIndexClient, index, field string,
 	rowID uint64, ts int64, diff *roaring64.Bitmap) error {
 
-	batch := make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap, 0)
-	tm := make(map[int64]*roaring64.Bitmap, 0)
-	tm[ts] = diff
-	rm := make(map[uint64]map[int64]*roaring64.Bitmap, 0)
+	batch := make(map[string]map[string]map[uint64]map[int64]*shared.Bitmap, 0)
+	tm := make(map[int64]*shared.Bitmap, 0)
+	tm[ts] = shared.NewBitmap(diff, false)   // TODO: Double check if isUpdate should be false
+	rm := make(map[uint64]map[int64]*shared.Bitmap, 0)
 	rm[rowID] = tm
-	fm := make(map[string]map[uint64]map[int64]*roaring64.Bitmap, 0)
+	fm := make(map[string]map[uint64]map[int64]*shared.Bitmap, 0)
 	fm[field] = rm
 	batch[index] = fm
 	// cleanup memory on exit

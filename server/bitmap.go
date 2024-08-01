@@ -273,7 +273,7 @@ func (m *BitmapIndex) BatchMutate(stream pb.BitmapIndex_BatchMutateServer) error
 		ts := time.Unix(0, kv.Time)
 
 		frag := newBitmapFragment(indexName, fieldName, rowIDOrBits, ts, kv.Value,
-			isBSI, kv.IsClear, false)
+			isBSI, kv.IsClear, kv.IsUpdate)
 
 		if kv.Sync {
 			if frag.IsBSI {
@@ -300,21 +300,18 @@ type StandardBitmap struct {
 	AccessTime  time.Time
 	Lock        sync.RWMutex
 	TQType      string
-	Exclusive   bool
 }
 
 func (m *BitmapIndex) newStandardBitmap(index, field string) *StandardBitmap {
 
 	attr, err := m.getFieldConfig(index, field)
 	var timeQuantumType string
-	var exclusive bool
 	if err == nil {
 		timeQuantumType = attr.TimeQuantumType
-		exclusive = attr.Exclusive
 	}
 	ts := time.Now()
 	return &StandardBitmap{Bits: roaring64.NewBitmap(), ModTime: ts, AccessTime: ts,
-		TQType: timeQuantumType, Exclusive: exclusive}
+		TQType: timeQuantumType}
 }
 
 // BSIBitmap represents integer values
@@ -603,7 +600,7 @@ func (m *BitmapIndex) updateBitmapCache(f *BitmapFragment) {
 	}
 	rowID := uint64(f.RowIDOrBits)
 	m.bitmapCacheLock.Lock()
-	if newBm.Exclusive && !f.IsClear && f.IsUpdate {
+	if !f.IsClear && f.IsUpdate {
 		//Handle exclusive "updates"
 		m.clearAllRows(f.IndexName, f.FieldName, f.Time.UnixNano(), newBm.Bits)
 	}
@@ -731,6 +728,33 @@ func (m *BitmapIndex) clearAll(index string, start, end int64, nbm *roaring64.Bi
 func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 
 	start := time.Now()
+
+	// This is a special case handling of a "clear" of an existing value.  Must already exist.
+	if f.IsClear {
+		if len(f.BitData) != 1 {
+			u.Errorf("updateBSICache clear operation EBM - Index out of range %d, Index = %s, Field = %s",
+				len(f.BitData), f.IndexName, f.FieldName)
+		}
+		ebm := roaring64.NewBitmap()
+		if err := ebm.UnmarshalBinary(f.BitData[0]); err != nil {
+			u.Errorf("updateBSICache clear operation EBM - UnmarshalBinary error - %v", err)
+			return
+		}
+		existBm, ok := m.bsiCache[f.IndexName][f.FieldName][f.Time.UnixNano()]
+		if !ok {
+			u.Errorf("updateBSICache clear operation - Value %s/%s/%v not found.", f.IndexName,
+				f.FieldName, f.Time)
+			return
+		}
+		existBm.Lock.Lock()
+		clearSet := roaring64.FastAnd(existBm.GetExistenceBitmap(), ebm)
+		existBm.ClearValues(clearSet)
+		existBm.ModTime = f.ModTime
+		existBm.AccessTime = f.ModTime
+		existBm.Lock.Unlock()
+		return
+	}
+
 	newBSI := m.newBSIBitmap(f.IndexName, f.FieldName)
 	newBSI.ModTime = f.ModTime
 	newBSI.AccessTime = f.ModTime
@@ -1114,58 +1138,6 @@ func (m *BitmapIndex) BulkClear(ctx context.Context, req *pb.BulkClearRequest) (
 	m.clearAll(req.Index, int64(req.FromTime), int64(req.ToTime), foundSet)
 	return &empty.Empty{}, nil
 
-}
-
-// Update - Process Updates.
-func (m *BitmapIndex) Update(ctx context.Context, req *pb.UpdateRequest) (*empty.Empty, error) {
-
-	if req.Index == "" {
-		return &empty.Empty{}, fmt.Errorf("index not specified for update criteria")
-	}
-	if req.Field == "" {
-		return &empty.Empty{}, fmt.Errorf("field not specified for update criteria")
-	}
-	if req.ColumnId == 0 {
-		return &empty.Empty{}, fmt.Errorf("column ID not specified for update criteria")
-	}
-
-	// Silently ignore non-existing fields for now
-	_, err := m.getFieldConfig(req.Index, req.Field)
-	if err != nil {
-		return &empty.Empty{}, err
-	}
-
-	isBSI := m.isBSI(req.Index, req.Field)
-	ts := time.Unix(0, req.Time)
-	var frag *BitmapFragment
-
-	if isBSI {
-		bsi := roaring64.NewDefaultBSI()
-		bsi.SetValue(req.ColumnId, req.RowIdOrValue)
-		ba, err := bsi.MarshalBinary()
-		if err != nil {
-			return &empty.Empty{}, err
-		}
-		frag = newBitmapFragment(req.Index, req.Field, int64(bsi.BitCount()*-1), ts, ba, isBSI,
-			false, true)
-	} else {
-		bm := roaring64.NewBitmap()
-		bm.Add(req.ColumnId)
-		buf, err := bm.ToBytes()
-		if err != nil {
-			return &empty.Empty{}, err
-		}
-		ba := make([][]byte, 1)
-		ba[0] = buf
-		frag = newBitmapFragment(req.Index, req.Field, req.RowIdOrValue, ts, ba, isBSI, false, true)
-	}
-	select {
-	case m.fragQueue <- frag:
-	default:
-		// Fragment queue is full
-		return &empty.Empty{}, fmt.Errorf("Update: fragment queue is full")
-	}
-	return &empty.Empty{}, nil
 }
 
 // Flush will first wait until everything currently in the queue is processed, maybe more.

@@ -61,9 +61,8 @@ type BasicAttribute struct {
 	Searchable       bool              `yaml:"searchable,omitempty"`
 	DefaultValue     string            `yaml:"defaultValue,omitempty"`
 	ColumnID         bool              `yaml:"columnID,omitempty"`
-	IsTimeSeries     bool              `yaml:"isTimeSeries,omitempty"`
 	TimeQuantumType  string            `yaml:"timeQuantumType,omitempty"`
-	Exclusive        bool              `yaml:"exclusive,omitempty"`
+	NonExclusive     bool              `yaml:"nonExclusive,omitempty"`
 	SourceOrdinal	 int			   `yaml:"sourceOrdinal,omitempty"`
 }
 
@@ -466,9 +465,9 @@ func (a *BasicAttribute) Compare(other *BasicAttribute) (equal bool, warnings []
 		return false, warnings, fmt.Errorf("attribute '%s' required differs existing = '%v', new = '%v'",
 			a.FieldName, a.Required, other.Required)
 	}
-	if a.Exclusive != other.Exclusive {
+	if a.NonExclusive != other.NonExclusive {
 		return false, warnings, fmt.Errorf("attribute '%s' exclusivity differs existing = '%v', new = '%v'",
-			a.FieldName, a.Exclusive, other.Exclusive)
+			a.FieldName, a.NonExclusive, other.NonExclusive)
 	}
 
 	// Warning level comparisons for alters that are allowed.

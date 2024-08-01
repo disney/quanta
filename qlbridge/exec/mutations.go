@@ -162,6 +162,9 @@ func (m *Upsert) updateValues() (int64, error) {
 	// if our backend source supports Where-Patches, ie update multiple
 	dbpatch, ok := m.db.(schema.ConnPatchWhere)
 	if ok {
+		if m.update.Where == nil {
+			return 0, fmt.Errorf("Must provide a predicate")
+		}
 		updated, err := dbpatch.PatchWhere(m.Ctx, m.update.Where.Expr, valmap)
 		u.Infof("patch: %v %v", updated, err)
 		if err != nil {

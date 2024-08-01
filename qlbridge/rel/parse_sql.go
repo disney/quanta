@@ -1074,6 +1074,8 @@ func (m *Sqlbridge) parseUpdateList() (map[string]*ValueColumn, error) {
 			}
 			cols[lastColName] = &ValueColumn{Expr: exprNode}
 			m.Backup()
+		case lex.TokenNull:
+			cols[lastColName] = &ValueColumn{Value: value.NewNilValue()}
 		default:
 			u.Warnf("don't know how to handle ?  %v", m.Cur())
 			return nil, m.ErrMsg("expected column")
@@ -1151,6 +1153,8 @@ func (m *Sqlbridge) parseValueList() ([][]*ValueColumn, error) {
 				return nil, err
 			}
 			row = append(row, &ValueColumn{Expr: exprNode})
+		case lex.TokenNull:
+			row = append(row, &ValueColumn{Value: value.NewNilValue()})
 		default:
 			u.Warnf("don't know how to handle ?  %v", m.Cur())
 			return nil, m.ErrMsg("expected column")

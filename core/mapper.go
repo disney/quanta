@@ -19,7 +19,7 @@ type DefaultMapper struct {
 // Mapper - Mapper interface.   MapValue is the only required method.
 type Mapper interface {
 	Transform(attr *Attribute, val interface{}, c *Session) (newVal interface{}, err error)
-	MapValue(attr *Attribute, val interface{}, c *Session) (result uint64, err error)
+	MapValue(attr *Attribute, val interface{}, c *Session, isUpdate bool) (result uint64, err error)
 	MapValueReverse(attr *Attribute, id uint64, c *Session) (result interface{}, err error)
 	GetMultiDelimiter() string
 }
@@ -255,8 +255,8 @@ func MapperTypeFromString(mt string) MapperType {
 }
 
 // MapValue - Map a value to a row id for standard bitmaps or an int64
-func (mt MapperType) MapValue(attr *Attribute, val interface{}, c *Session) (result uint64, err error) {
-	return attr.MapValue(val, c)
+func (mt MapperType) MapValue(attr *Attribute, val interface{}, c *Session, isUpdate bool) (result uint64, err error) {
+	return attr.MapValue(val, c, isUpdate)
 }
 
 // IsBSI - Is this mapper for BSI types?
@@ -269,8 +269,8 @@ func (mt MapperType) IsBSI() bool {
 	}
 }
 
-// UpdateBitmap - Mutate bitmap.
-func (mt MapperType) UpdateBitmap(c *Session, table, field string, mval uint64, isTimeSeries bool) (err error) {
+// MutateBitmap - Mutate bitmap.
+func (mt MapperType) MutateBitmap(c *Session, table, field string, mval interface{}, isUpdate bool) (err error) {
 
 	//TIME_FMT := "2006-01-02T15"
 	tbuf, ok := c.TableBuffers[table]
@@ -278,19 +278,43 @@ func (mt MapperType) UpdateBitmap(c *Session, table, field string, mval uint64, 
 		return fmt.Errorf("table %s invalid or not opened", table)
 	}
 	if !mt.IsBSI() {
+		var val uint64
+		switch mval.(type) {
+		case uint64:
+			val = mval.(uint64)
+		case nil:
+			err = c.BatchBuffer.ClearBit(table, field, tbuf.CurrentColumnID, val, tbuf.CurrentTimestamp)
+			return
+		default:
+			return fmt.Errorf("MutateBitmap unknown type : %T for val %v", mval, mval)
+		}
 		//fmt.Printf("SETBIT %s [%s] COLID =  %d TS = %s\n", table, field, tbuf.CurrentColumnID,
 		//    tbuf.CurrentTimestamp.Format(TIME_FMT))
-		if err := c.BatchBuffer.SetBit(table, field, tbuf.CurrentColumnID, mval,
-			tbuf.CurrentTimestamp); err != nil {
-			return err
+
+
+		if at, err := tbuf.Table.GetAttribute(field); err == nil {
+			if at.NonExclusive {
+				isUpdate = false
+			}
 		}
+		err = c.BatchBuffer.SetBit(table, field, tbuf.CurrentColumnID, val, tbuf.CurrentTimestamp, isUpdate)
 	} else {
+		var val int64
+		switch mval.(type) {
+		case uint64:
+			val = int64(mval.(uint64))
+		case int64:
+			val = mval.(int64)
+		case nil:
+			err = c.BatchBuffer.ClearValue(table, field, tbuf.CurrentColumnID, tbuf.CurrentTimestamp)
+			return
+		default:
+			err = fmt.Errorf("MutateBitmap unknown type : %T for val %v", mval, mval)
+			return
+		}
 		//fmt.Printf("SETVALUE %s [%s] COLID =  %d TS = %s\n", table, field, tbuf.CurrentColumnID,
 		//    tbuf.CurrentTimestamp.Format(TIME_FMT))
-		if err := c.BatchBuffer.SetValue(table, field, tbuf.CurrentColumnID, int64(mval),
-			tbuf.CurrentTimestamp); err != nil {
-			return err
-		}
+		err = c.BatchBuffer.SetValue(table, field, tbuf.CurrentColumnID, val, tbuf.CurrentTimestamp)
 	}
 	return
 }

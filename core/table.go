@@ -491,12 +491,12 @@ func (a *Attribute) Transform(val interface{}, c *Session) (newVal interface{}, 
 }
 
 // MapValue - Return the row ID for a given value (Standard Bitmap)
-func (a *Attribute) MapValue(val interface{}, c *Session) (result uint64, err error) {
+func (a *Attribute) MapValue(val interface{}, c *Session, isUpdate bool) (result uint64, err error) {
 
 	if a.mapperInstance == nil {
 		return 0, fmt.Errorf("attribute '%s' MapperInstance is nil", a.FieldName)
 	}
-	return a.mapperInstance.MapValue(a, val, c)
+	return a.mapperInstance.MapValue(a, val, c, isUpdate)
 }
 
 // MapValueReverse - Re-hydrate the original value for a given row ID.

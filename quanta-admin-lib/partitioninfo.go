@@ -2,6 +2,7 @@ package admin
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/disney/quanta/core"
@@ -16,6 +17,10 @@ type PartitionInfoCmd struct {
 
 // Run - PartitionInfo command implementation
 func (f *PartitionInfoCmd) Run(ctx *Context) error {
+
+	if len(f.Timestamp) == 13 && strings.Contains(f.Timestamp, "T") {
+		f.Timestamp = strings.ReplaceAll(f.Timestamp, "T", " ") + ":00"
+	}
 
 	ts, tf, err := shared.ToTQTimestamp("YMDH", f.Timestamp)
 	if err != nil {

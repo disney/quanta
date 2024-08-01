@@ -15,6 +15,7 @@ import (
 	u "github.com/araddon/gou"
 	"github.com/disney/quanta/qlbridge/datasource"
 	"github.com/disney/quanta/qlbridge/expr"
+	"github.com/disney/quanta/qlbridge/rel"
 	"github.com/disney/quanta/qlbridge/value"
 	"github.com/disney/quanta/qlbridge/vm"
 	"github.com/disney/quanta/shared"
@@ -295,12 +296,10 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 	curTable := tbuf.Table
 
 	// Here we force the primary key to be handled first for table so that columnID is established in tbuf
-	hasValues, err := s.processPrimaryKey(tbuf, row, pqTablePath, providedColID, isChild,
+	isUpdate, err := s.processPrimaryKey(tbuf, row, pqTablePath, providedColID, isChild,
 		ignoreSourcePath, useNerdCapitalization)
 	if err != nil {
 		return err
-	} else if !hasValues {
-		return nil // nothing to do, no values in child relation
 	}
 
 	if curTable.SecondaryKeys != "" {
@@ -407,7 +406,7 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 			}
 			if okToMap {
 				// Store the parent table ColumnID in the IntBSI for join queries
-				if _, err := v.MapValue(relColumnID, s); err != nil {
+				if _, err := v.MapValue(relColumnID, s, false); err != nil {
 					return fmt.Errorf("Error Mapping FK [%s].[%s] - %v", v.Parent.Name, v.FieldName, err)
 				}
 			}
@@ -420,7 +419,7 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 			for _, cval := range vals {
 				if cval != nil {
 					// Map and index the value
-					if _, err := v.MapValue(cval, s); err != nil {
+					if _, err := v.MapValue(cval, s, isUpdate); err != nil {
 						return fmt.Errorf("%s - %v", pqps[0], err)
 					}
 				}
@@ -760,7 +759,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 			}
 			if found {
 				tbuf.CurrentColumnID = colID
-				return false, nil
+				return true, nil
 			} else {
 				if providedColID == 0 {
 					// Generate new ColumnID.   Lookup the sequencer from the local cache by TQ
@@ -797,12 +796,12 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		if v == nil {
 			return false, fmt.Errorf("PK mapping error %s - nil value", pqColPaths[i])
 		}
-		if _, err := tbuf.PKAttributes[i].MapValue(v, s); err != nil {
+		if _, err := tbuf.PKAttributes[i].MapValue(v, s, false); err != nil {
 			return false, fmt.Errorf("PK mapping error %s - %v", pqColPaths[i], err)
 		}
 	}
 
-	return true, nil
+	return false, nil
 }
 
 // Handle Secondary Keys.  Create the index in backing store
@@ -1016,6 +1015,26 @@ func (s *Session) CloseSession() error {
 
 }
 
+
+// UpdateRow - Perform an in-place update of a row.
+func (s *Session) UpdateRow(table string, columnID uint64, updValueMap map[string]*rel.ValueColumn,
+	timePartition time.Time) error {
+
+	tbuf, ok := s.TableBuffers[table]
+	if !ok {
+		return fmt.Errorf("table %s is not open for this session", table)
+	}
+	tbuf.CurrentColumnID = columnID
+	tbuf.CurrentTimestamp = timePartition
+	for k, vc := range updValueMap {
+		_, err := s.MapValue(table, k, vc.Value.Value(), true)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Commit - Block until the server nodes have persisted their work queues to a savepoint.
 func (s *Session) Commit() error {
 
@@ -1052,9 +1071,9 @@ func (s *Session) MapValue(tableName, fieldName string, value interface{}, updat
 		}
 	*/
 	if update {
-		return attr.MapValue(value, s)
+		return attr.MapValue(value, s, update)
 	}
-	return attr.MapValue(value, nil) // Non load use case pass nil connection context
+	return attr.MapValue(value, nil, update) // Non load use case pass nil connection context
 }
 
 func fromJulianDay(days int32, nanos int64) time.Time {

@@ -314,7 +314,7 @@ func (c *BatchBuffer) ClearBit(index, field string, columnID, rowID uint64, ts t
 		c.batchClears[index][field][rowID] = make(map[int64]*Bitmap)
 	}
 	if bmap, ok := c.batchClears[index][field][rowID][ts.UnixNano()]; !ok {
-		b := NewBitmap(roaring64.BitmapOf(columnID), false)
+		b := NewBitmap(roaring64.BitmapOf(columnID), true)
 		c.batchClears[index][field][rowID][ts.UnixNano()] = b
 	} else {
 		bmap.Bits.Add(columnID)

@@ -277,25 +277,24 @@ func (mt MapperType) MutateBitmap(c *Session, table, field string, mval interfac
 	if !ok {
 		return fmt.Errorf("table %s invalid or not opened", table)
 	}
+	at, err := tbuf.Table.GetAttribute(field)
+	if err != nil {
+		return err
+	}
 	if !mt.IsBSI() {
 		var val uint64
 		switch mval.(type) {
 		case uint64:
 			val = mval.(uint64)
 		case nil:
+			// clearing an not exclusive field is a special case.  Need clearAllRows on nodes hence the update.
 			err = c.BatchBuffer.ClearBit(table, field, tbuf.CurrentColumnID, val, tbuf.CurrentTimestamp)
 			return
 		default:
 			return fmt.Errorf("MutateBitmap unknown type : %T for val %v", mval, mval)
 		}
-		//fmt.Printf("SETBIT %s [%s] COLID =  %d TS = %s\n", table, field, tbuf.CurrentColumnID,
-		//    tbuf.CurrentTimestamp.Format(TIME_FMT))
-
-
-		if at, err := tbuf.Table.GetAttribute(field); err == nil {
-			if at.NonExclusive {
-				isUpdate = false
-			}
+		if at.NonExclusive {
+			isUpdate = false
 		}
 		err = c.BatchBuffer.SetBit(table, field, tbuf.CurrentColumnID, val, tbuf.CurrentTimestamp, isUpdate)
 	} else {
@@ -312,8 +311,6 @@ func (mt MapperType) MutateBitmap(c *Session, table, field string, mval interfac
 			err = fmt.Errorf("MutateBitmap unknown type : %T for val %v", mval, mval)
 			return
 		}
-		//fmt.Printf("SETVALUE %s [%s] COLID =  %d TS = %s\n", table, field, tbuf.CurrentColumnID,
-		//    tbuf.CurrentTimestamp.Format(TIME_FMT))
 		err = c.BatchBuffer.SetValue(table, field, tbuf.CurrentColumnID, val, tbuf.CurrentTimestamp)
 	}
 	return

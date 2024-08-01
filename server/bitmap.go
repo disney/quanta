@@ -187,12 +187,14 @@ func (m *BitmapIndex) Init() error {
 		return fmt.Errorf("cannot initialize bitmap server error: %v", err)
 	}
 
+/*
 	if m.memoryLimitMb > 0 {
 		u.Infof("Starting data expiration thread - expiration after %d Mb limit.", m.memoryLimitMb)
 	} else {
 		u.Info("Data expiration disabled.")
 	}
 	go m.expireProcessLoop(m.memoryLimitMb)
+*/
 
 	// Partition operation worker thread
 	go m.partitionProcessLoop()
@@ -496,6 +498,7 @@ func (m *BitmapIndex) batchProcessLoop(worker *WorkerThread) {
  *
  * Wake up on interval and run data expiration process.
  */
+/*
 func (m *BitmapIndex) expireProcessLoop(memoryLimitMb int) {
 
 	for {
@@ -518,6 +521,7 @@ func (m *BitmapIndex) expireProcessLoop(memoryLimitMb int) {
 		}
 	}
 }
+*/
 
 // partitionProcessLoop Partition cleanup/archive/expiration worker thread.
 // Wake up on interval and run partition processing.
@@ -600,9 +604,13 @@ func (m *BitmapIndex) updateBitmapCache(f *BitmapFragment) {
 	}
 	rowID := uint64(f.RowIDOrBits)
 	m.bitmapCacheLock.Lock()
-	if !f.IsClear && f.IsUpdate {
+	if f.IsUpdate {
 		//Handle exclusive "updates"
 		m.clearAllRows(f.IndexName, f.FieldName, f.Time.UnixNano(), newBm.Bits)
+	}
+	if f.IsClear && f.IsUpdate {  // Special case: set a non-exlusive field to null
+		m.bitmapCacheLock.Unlock()
+		return
 	}
 	if _, ok := m.bitmapCache[f.IndexName][f.FieldName][rowID][f.Time.UnixNano()]; !ok && f.IsUpdate {
 		// Silently ignore attempts to update data not in local cache that is not in hashKey
@@ -844,6 +852,7 @@ func (m *BitmapIndex) cleanupStrandedShards() {
 	})
 }
 
+/*
 func (m *BitmapIndex) expire(memoryLimitMb int) {
 
 	if m.memoryUsed <= memoryLimitMb*1024*1024 {
@@ -882,6 +891,7 @@ func (m *BitmapIndex) expireOp(p *Partition, exp time.Time) error {
 	}
 	return nil
 }
+*/
 
 // cleanupOp - Remove stranded partitions
 func (m *BitmapIndex) cleanupOp(p *Partition) error {

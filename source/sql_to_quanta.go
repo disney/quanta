@@ -348,6 +348,7 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	*/
 
 	if m.p.Complete {
+		u.Debugf("DONT NEED POST PREDICATE WHERE PROCESSOR")
 		sessionMap[exec.WHERE_MAKER] = func(ctx *plan.Context, p *plan.Where) exec.TaskRunner {
 			return NewNopTask(ctx)
 		}
@@ -355,6 +356,7 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 		sk := SchemaInfoString{k: exec.WHERE_MAKER}
 		p.Context().Session.Put(sk, nil, value.NewValue(v))
 	} else {
+		u.Debugf("USING A POST PREDICATE WHERE PROCESSOR")
 		dm := make(map[string]value.Value)
 		dm[exec.WHERE_MAKER] = value.NilValueVal
 		p.Context().Session.Delete(dm)
@@ -1828,6 +1830,8 @@ func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, err
 	// Construct query
 	m.q = shared.NewBitmapQuery()
 	frag := m.q.NewQueryFragment()
+	m.startDate = ""
+	m.endDate = ""
 
 	var err error
 	m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
@@ -1849,6 +1853,14 @@ func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, err
 		return 0, fmt.Errorf("query must have a predicate")
 	}
 
+	if m.startDate == "" {
+		m.startDate = "1970-01-01T00"
+	}
+	if m.endDate == "" {
+		end := time.Now().AddDate(0, 0, 1)
+		m.endDate = end.Format(shared.YMDHTimeFmt)
+	}
+
 	m.q.FromTime = m.startDate
 	m.q.ToTime = m.endDate
 
@@ -1858,6 +1870,7 @@ func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, err
 		response = &shared.BitmapQueryResponse{Success: true}
 		response.Results = m.rowNumSet
 		response.Count = m.rowNumSet.GetCardinality()
+		return 0, nil
 	} else {
 		response, err = m.conn.BitIndex.Query(m.q)
 		if err != nil {

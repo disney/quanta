@@ -1027,6 +1027,9 @@ func (s *Session) UpdateRow(table string, columnID uint64, updValueMap map[strin
 	tbuf.CurrentColumnID = columnID
 	tbuf.CurrentTimestamp = timePartition
 	for k, vc := range updValueMap {
+		if _, found := tbuf.PKMap[k]; found {
+			return fmt.Errorf("cannot update PK column %s.%s", table, k)
+		}
 		_, err := s.MapValue(table, k, vc.Value.Value(), true)
 		if err != nil {
 			return err

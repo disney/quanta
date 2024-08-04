@@ -245,6 +245,9 @@ func (m *DeletionTask) Run() error {
 	defer m.Ctx.Recover()
 	defer close(m.msgOutCh)
 
+	if m.sql.Where == nil {
+		return fmt.Errorf("Must provide a predicate")
+	}
 	vals := make([]driver.Value, 2)
 	deletedCt, err := m.db.DeleteExpression(m.p, m.sql.Where.Expr)
 	if err != nil {

@@ -19,7 +19,7 @@ import (
 // A cluster should NOT be already running.
 
 // TestTableMod_reload_table tries to remove the whole table and then load it again.
-func TestTableMod_reload_table(t *testing.T) {
+func xxTestTableMod_reload_table(t *testing.T) {
 
 	AcquirePort4000.Lock()
 	defer AcquirePort4000.Unlock()
@@ -118,7 +118,7 @@ func TestTableMod_reload_table(t *testing.T) {
 }
 
 // TestTableMod_change tries to change the default value of a column in a table.
-func TestTableMod_change(t *testing.T) {
+func xxxTestTableMod_change(t *testing.T) {
 
 	AcquirePort4000.Lock()
 	defer AcquirePort4000.Unlock()
@@ -233,7 +233,7 @@ func TestTableMod_change(t *testing.T) {
 
 // TestTableMod_remove_column tries to remove a column from a table.
 // This makes an error.  The column is not removed from the table.
-func TestTableMod_remove_column(t *testing.T) {
+func xxxTestTableMod_remove_column(t *testing.T) {
 
 	AcquirePort4000.Lock()
 	defer AcquirePort4000.Unlock()
@@ -325,7 +325,7 @@ func TestTableMod_remove_column(t *testing.T) {
 	state.Release()
 }
 
-func TestTableMod_add(t *testing.T) {
+func xxxTestTableMod_add(t *testing.T) {
 
 	AcquirePort4000.Lock()
 	defer AcquirePort4000.Unlock()

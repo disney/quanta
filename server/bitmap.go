@@ -164,7 +164,7 @@ func (m *BitmapIndex) Init() error {
 	fmt.Println("BitmapIndex Init", m.hashKey, uintptr(unsafe.Pointer(m)))
 
 	// TODO: Sensible configuration for queue sizes.
-	m.partitionQueue = make(chan *PartitionOperation, 100000)
+	m.partitionQueue = make(chan *PartitionOperation, 10000000)
 	//m.fragQueue = make(chan *BitmapFragment, 20000000)
 	m.fragQueue = make(chan *BitmapFragment, 10000000)
 	m.bitmapCache = make(map[string]map[string]map[uint64]map[int64]*StandardBitmap)
@@ -187,12 +187,14 @@ func (m *BitmapIndex) Init() error {
 		return fmt.Errorf("cannot initialize bitmap server error: %v", err)
 	}
 
+/*
 	if m.memoryLimitMb > 0 {
 		u.Infof("Starting data expiration thread - expiration after %d Mb limit.", m.memoryLimitMb)
 	} else {
 		u.Info("Data expiration disabled.")
 	}
 	go m.expireProcessLoop(m.memoryLimitMb)
+*/
 
 	// Partition operation worker thread
 	go m.partitionProcessLoop()
@@ -273,7 +275,7 @@ func (m *BitmapIndex) BatchMutate(stream pb.BitmapIndex_BatchMutateServer) error
 		ts := time.Unix(0, kv.Time)
 
 		frag := newBitmapFragment(indexName, fieldName, rowIDOrBits, ts, kv.Value,
-			isBSI, kv.IsClear, false)
+			isBSI, kv.IsClear, kv.IsUpdate)
 
 		if kv.Sync {
 			if frag.IsBSI {
@@ -300,21 +302,18 @@ type StandardBitmap struct {
 	AccessTime  time.Time
 	Lock        sync.RWMutex
 	TQType      string
-	Exclusive   bool
 }
 
 func (m *BitmapIndex) newStandardBitmap(index, field string) *StandardBitmap {
 
 	attr, err := m.getFieldConfig(index, field)
 	var timeQuantumType string
-	var exclusive bool
 	if err == nil {
 		timeQuantumType = attr.TimeQuantumType
-		exclusive = attr.Exclusive
 	}
 	ts := time.Now()
 	return &StandardBitmap{Bits: roaring64.NewBitmap(), ModTime: ts, AccessTime: ts,
-		TQType: timeQuantumType, Exclusive: exclusive}
+		TQType: timeQuantumType}
 }
 
 // BSIBitmap represents integer values
@@ -499,6 +498,7 @@ func (m *BitmapIndex) batchProcessLoop(worker *WorkerThread) {
  *
  * Wake up on interval and run data expiration process.
  */
+/*
 func (m *BitmapIndex) expireProcessLoop(memoryLimitMb int) {
 
 	for {
@@ -521,6 +521,7 @@ func (m *BitmapIndex) expireProcessLoop(memoryLimitMb int) {
 		}
 	}
 }
+*/
 
 // partitionProcessLoop Partition cleanup/archive/expiration worker thread.
 // Wake up on interval and run partition processing.
@@ -565,7 +566,7 @@ func (m *BitmapIndex) verifyNode() {
 		if err != nil {
 			u.Log(u.FATAL, fmt.Errorf("Node synchronization/verification failed - %v", err))
 		}
-		if diffCount == 0 {
+		if diffCount <= 0 {
 			m.State = Active
 			u.Debugf("verifyNode Setting node state to Active for %s", m.hashKey)
 			// we need to 'touch' the health so everyone knows we are active atw
@@ -603,9 +604,13 @@ func (m *BitmapIndex) updateBitmapCache(f *BitmapFragment) {
 	}
 	rowID := uint64(f.RowIDOrBits)
 	m.bitmapCacheLock.Lock()
-	if newBm.Exclusive && !f.IsClear && f.IsUpdate {
+	if f.IsUpdate {
 		//Handle exclusive "updates"
 		m.clearAllRows(f.IndexName, f.FieldName, f.Time.UnixNano(), newBm.Bits)
+	}
+	if f.IsClear && f.IsUpdate {  // Special case: set a non-exlusive field to null
+		m.bitmapCacheLock.Unlock()
+		return
 	}
 	if _, ok := m.bitmapCache[f.IndexName][f.FieldName][rowID][f.Time.UnixNano()]; !ok && f.IsUpdate {
 		// Silently ignore attempts to update data not in local cache that is not in hashKey
@@ -731,6 +736,33 @@ func (m *BitmapIndex) clearAll(index string, start, end int64, nbm *roaring64.Bi
 func (m *BitmapIndex) updateBSICache(f *BitmapFragment) {
 
 	start := time.Now()
+
+	// This is a special case handling of a "clear" of an existing value.  Must already exist.
+	if f.IsClear {
+		if len(f.BitData) != 1 {
+			u.Errorf("updateBSICache clear operation EBM - Index out of range %d, Index = %s, Field = %s",
+				len(f.BitData), f.IndexName, f.FieldName)
+		}
+		ebm := roaring64.NewBitmap()
+		if err := ebm.UnmarshalBinary(f.BitData[0]); err != nil {
+			u.Errorf("updateBSICache clear operation EBM - UnmarshalBinary error - %v", err)
+			return
+		}
+		existBm, ok := m.bsiCache[f.IndexName][f.FieldName][f.Time.UnixNano()]
+		if !ok {
+			u.Errorf("updateBSICache clear operation - Value %s/%s/%v not found.", f.IndexName,
+				f.FieldName, f.Time)
+			return
+		}
+		existBm.Lock.Lock()
+		clearSet := roaring64.FastAnd(existBm.GetExistenceBitmap(), ebm)
+		existBm.ClearValues(clearSet)
+		existBm.ModTime = f.ModTime
+		existBm.AccessTime = f.ModTime
+		existBm.Lock.Unlock()
+		return
+	}
+
 	newBSI := m.newBSIBitmap(f.IndexName, f.FieldName)
 	newBSI.ModTime = f.ModTime
 	newBSI.AccessTime = f.ModTime
@@ -820,6 +852,7 @@ func (m *BitmapIndex) cleanupStrandedShards() {
 	})
 }
 
+/*
 func (m *BitmapIndex) expire(memoryLimitMb int) {
 
 	if m.memoryUsed <= memoryLimitMb*1024*1024 {
@@ -858,6 +891,7 @@ func (m *BitmapIndex) expireOp(p *Partition, exp time.Time) error {
 	}
 	return nil
 }
+*/
 
 // cleanupOp - Remove stranded partitions
 func (m *BitmapIndex) cleanupOp(p *Partition) error {
@@ -1116,58 +1150,6 @@ func (m *BitmapIndex) BulkClear(ctx context.Context, req *pb.BulkClearRequest) (
 
 }
 
-// Update - Process Updates.
-func (m *BitmapIndex) Update(ctx context.Context, req *pb.UpdateRequest) (*empty.Empty, error) {
-
-	if req.Index == "" {
-		return &empty.Empty{}, fmt.Errorf("index not specified for update criteria")
-	}
-	if req.Field == "" {
-		return &empty.Empty{}, fmt.Errorf("field not specified for update criteria")
-	}
-	if req.ColumnId == 0 {
-		return &empty.Empty{}, fmt.Errorf("column ID not specified for update criteria")
-	}
-
-	// Silently ignore non-existing fields for now
-	_, err := m.getFieldConfig(req.Index, req.Field)
-	if err != nil {
-		return &empty.Empty{}, err
-	}
-
-	isBSI := m.isBSI(req.Index, req.Field)
-	ts := time.Unix(0, req.Time)
-	var frag *BitmapFragment
-
-	if isBSI {
-		bsi := roaring64.NewDefaultBSI()
-		bsi.SetValue(req.ColumnId, req.RowIdOrValue)
-		ba, err := bsi.MarshalBinary()
-		if err != nil {
-			return &empty.Empty{}, err
-		}
-		frag = newBitmapFragment(req.Index, req.Field, int64(bsi.BitCount()*-1), ts, ba, isBSI,
-			false, true)
-	} else {
-		bm := roaring64.NewBitmap()
-		bm.Add(req.ColumnId)
-		buf, err := bm.ToBytes()
-		if err != nil {
-			return &empty.Empty{}, err
-		}
-		ba := make([][]byte, 1)
-		ba[0] = buf
-		frag = newBitmapFragment(req.Index, req.Field, req.RowIdOrValue, ts, ba, isBSI, false, true)
-	}
-	select {
-	case m.fragQueue <- frag:
-	default:
-		// Fragment queue is full
-		return &empty.Empty{}, fmt.Errorf("Update: fragment queue is full")
-	}
-	return &empty.Empty{}, nil
-}
-
 // Flush will first wait until everything currently in the queue is processed, maybe more.
 // Then it will wait until every worker comes around to the top of its loop so nothing is still in progress.
 // Then it will return.
@@ -1382,4 +1364,97 @@ func (m *BitmapIndex) TableOperation(ctx context.Context, req *pb.TableOperation
 	err := m.flush()
 
 	return &empty.Empty{}, err
+}
+
+
+// PartitionInfo - Returns a report containing information about shards.
+func (m *BitmapIndex) PartitionInfo(ctx context.Context,
+	req *pb.PartitionInfoRequest) (*pb.PartitionInfoResponse, error) {
+
+	if req.Time <= 0 {
+		return nil, fmt.Errorf("Time must be specified.")
+	}
+
+	res := make([]*pb.PartitionInfoResult, 0)
+
+    // Iterate over shard cache and generate report.
+    m.iterateBSICache(func(p *Partition) error {
+
+		if p.Time.UnixNano() > req.Time {
+			return nil
+		}
+		if req.Index != "" && p.Index != req.Index {
+			return nil
+		}
+        bsi := p.Shard.(*BSIBitmap)
+		r := &pb.PartitionInfoResult{Time: p.Time.UnixNano(), Index: p.Index, Field: p.Field,
+			RowIdOrValue: p.RowIDOrBits * -1, ModTime: bsi.ModTime.UnixNano(), TqType: p.TQType}
+        if b, err := bsi.MarshalBinary(); err == nil {
+            for _, x := range b {
+            	r.Bytes += uint32(len(x))
+            }
+        }
+		res = append(res, r)
+		return nil
+
+    })
+
+    m.iterateBitmapCache(func(p *Partition) error {
+
+		if p.Time.UnixNano() > req.Time {
+			return nil
+		}
+		if req.Index != "" && p.Index != req.Index {
+			return nil
+		}
+        bitmap := p.Shard.(*StandardBitmap)
+		r := &pb.PartitionInfoResult{Time: p.Time.UnixNano(), Index: p.Index, Field: p.Field,
+			RowIdOrValue: p.RowIDOrBits, ModTime: bitmap.ModTime.UnixNano(), TqType: p.TQType}
+        if b, err := bitmap.Bits.MarshalBinary(); err == nil {
+            r.Bytes += uint32(len(b))
+        }
+		res = append(res, r)
+		return nil
+
+    })
+
+	resp := &pb.PartitionInfoResponse{PartitionInfoResults: res}
+	return resp, nil
+}
+
+// OfflinePartitions - Purge partitions from memory and move data files to archive directory.
+func (m *BitmapIndex) OfflinePartitions(ctx context.Context, req *pb.PartitionInfoRequest) (*empty.Empty, error) {
+
+	if req.Time <= 0 {
+		return nil, fmt.Errorf("Time must be specified.")
+	}
+
+    // Iterate over shard cache insert into partition operation queue
+    m.iterateBSICache(func(p *Partition) error {
+
+		if p.Time.UnixNano() > req.Time {
+			return nil
+		}
+		if req.Index != "" && p.Index != req.Index {
+			return nil
+		}
+		m.partitionQueue <- m.NewPartitionOperation(p, false)
+		return nil
+
+    })
+
+    m.iterateBitmapCache(func(p *Partition) error {
+
+		if p.Time.UnixNano() > req.Time {
+			return nil
+		}
+		if req.Index != "" && p.Index != req.Index {
+			return nil
+		}
+		m.partitionQueue <- m.NewPartitionOperation(p, false)
+		return nil
+
+    })
+
+	return &empty.Empty{}, nil
 }

@@ -28,29 +28,48 @@ type BatchBuffer struct {
 	*BitmapIndex
 	KVStore                *KVStore
 	batchSize              int
-	batchSets              map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
-	batchClears            map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap
+	batchSets              map[string]map[string]map[uint64]map[int64]*Bitmap
+	batchClears            map[string]map[string]map[uint64]map[int64]*Bitmap
 	batchValues            map[string]map[string]map[int64]*roaring64.BSI
+	batchClearValues       map[string]map[string]map[int64]*roaring64.Bitmap
 	batchPartitionStr      map[string]map[interface{}]interface{}
 	batchSetCount          int
 	batchClearCount        int
 	batchValueCount        int
+	batchClearValueCount   int
 	batchPartitionStrCount int
 	batchMutex             sync.RWMutex
+	ModifiedAt             time.Time
+	FlushedAt              time.Time
 }
 
 // NewBatchBuffer - Initializer for client side API wrappers.
 func NewBatchBuffer(bi *BitmapIndex, kv *KVStore, batchSize int) *BatchBuffer {
 
-	c := &BatchBuffer{BitmapIndex: bi, KVStore: kv, batchSize: batchSize}
+	c := &BatchBuffer{BitmapIndex: bi, KVStore: kv, batchSize: batchSize, 
+		ModifiedAt: time.Now(), FlushedAt: time.Now()}
 	return c
 }
+
+type Bitmap struct {
+	Bits                   *roaring64.Bitmap
+	IsUpdate               bool
+}
+
+// NewBitmap - Create a new bitmap with update indicator.
+func NewBitmap(bitmap *roaring64.Bitmap, isUpdate bool) *Bitmap {
+
+   return &Bitmap{Bits: bitmap, IsUpdate: isUpdate}
+}
+
 
 // Flush outstanding batch before.
 func (c *BatchBuffer) Flush() error {
 
-	c.batchMutex.Lock()
-	defer c.batchMutex.Unlock()
+	//c.batchMutex.Lock()
+	//defer c.batchMutex.Unlock()
+
+	c.FlushedAt = time.Now()
 
 	if c.batchPartitionStr != nil {
 		for indexPath, valueMap := range c.batchPartitionStr {
@@ -83,6 +102,13 @@ func (c *BatchBuffer) Flush() error {
 		c.batchValues = nil
 		c.batchValueCount = 0
 	}
+	if c.batchClearValues != nil {
+		if err := c.BatchClearValue(c.batchClearValues); err != nil {
+			return err
+		}
+		c.batchClearValues = nil
+		c.batchClearValueCount = 0
+	}
 	return nil
 }
 
@@ -91,7 +117,16 @@ func (c *BatchBuffer) IsEmpty() bool {
 
 	c.batchMutex.RLock()
 	defer c.batchMutex.RUnlock()
-	return c.batchSetCount == 0 && c.batchClearCount == 0 && c.batchValueCount == 0 && c.batchPartitionStrCount == 0
+	return c.batchSetCount == 0 && c.batchClearCount == 0 && c.batchValueCount == 0 && 
+		c.batchPartitionStrCount == 0 && c.batchClearValueCount == 0
+}
+
+// BatchSetCount - Return batch set count
+func (c *BatchBuffer) BatchSetCount() int {
+
+	c.batchMutex.RLock()
+	defer c.batchMutex.RUnlock()
+	return c.batchSetCount 
 }
 
 // MergeInto - Merge the contents of this batch into another.
@@ -107,23 +142,24 @@ func (c *BatchBuffer) MergeInto(to *BatchBuffer) {
             for rowID, ts := range field {
                 for t, bitmap := range ts {
 					if to.batchSets == nil {
-						to.batchSets = make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap)
+						to.batchSets = make(map[string]map[string]map[uint64]map[int64]*Bitmap)
 					}
 					if _, ok := to.batchSets[indexName]; !ok {
-						to.batchSets[indexName] = make(map[string]map[uint64]map[int64]*roaring64.Bitmap)
+						to.batchSets[indexName] = make(map[string]map[uint64]map[int64]*Bitmap)
 					}
 					if _, ok := to.batchSets[indexName][fieldName]; !ok {
-						to.batchSets[indexName][fieldName] = make(map[uint64]map[int64]*roaring64.Bitmap)
+						to.batchSets[indexName][fieldName] = make(map[uint64]map[int64]*Bitmap)
 					}
 					if _, ok := to.batchSets[indexName][fieldName][rowID]; !ok {
-						to.batchSets[indexName][fieldName][rowID] = make(map[int64]*roaring64.Bitmap)
+						to.batchSets[indexName][fieldName][rowID] = make(map[int64]*Bitmap)
 					}
 					if bmap, ok := to.batchSets[indexName][fieldName][rowID][t]; !ok {
 						to.batchSets[indexName][fieldName][rowID][t] = bitmap
 					} else {
-						to.batchSets[indexName][fieldName][rowID][t] = roaring64.ParOr(0, bmap, bitmap)
+						to.batchSets[indexName][fieldName][rowID][t].Bits = 
+							roaring64.ParOr(0, bmap.Bits, bitmap.Bits)
 					}
-					to.batchSetCount += int(bitmap.GetCardinality())
+					to.batchSetCount += int(bitmap.Bits.GetCardinality())
                 }
             }
         }
@@ -134,23 +170,24 @@ func (c *BatchBuffer) MergeInto(to *BatchBuffer) {
             for rowID, ts := range field {
                 for t, bitmap := range ts {
 					if to.batchClears == nil {
-						to.batchClears = make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap)
+						to.batchClears = make(map[string]map[string]map[uint64]map[int64]*Bitmap)
 					}
 					if _, ok := to.batchClears[indexName]; !ok {
-						to.batchClears[indexName] = make(map[string]map[uint64]map[int64]*roaring64.Bitmap)
+						to.batchClears[indexName] = make(map[string]map[uint64]map[int64]*Bitmap)
 					}
 					if _, ok := to.batchClears[indexName][fieldName]; !ok {
-						to.batchClears[indexName][fieldName] = make(map[uint64]map[int64]*roaring64.Bitmap)
+						to.batchClears[indexName][fieldName] = make(map[uint64]map[int64]*Bitmap)
 					}
 					if _, ok := to.batchClears[indexName][fieldName][rowID]; !ok {
-						to.batchClears[indexName][fieldName][rowID] = make(map[int64]*roaring64.Bitmap)
+						to.batchClears[indexName][fieldName][rowID] = make(map[int64]*Bitmap)
 					}
 					if bmap, ok := to.batchClears[indexName][fieldName][rowID][t]; !ok {
 						to.batchClears[indexName][fieldName][rowID][t] = bitmap
 					} else {
-						to.batchClears[indexName][fieldName][rowID][t] = roaring64.ParOr(0, bmap, bitmap)
+						to.batchClears[indexName][fieldName][rowID][t].Bits = 
+							roaring64.ParOr(0, bmap.Bits, bitmap.Bits)
 					}
-					to.batchClearCount += int(bitmap.GetCardinality())
+					to.batchClearCount += int(bitmap.Bits.GetCardinality())
                 }
             }
         }
@@ -178,6 +215,28 @@ func (c *BatchBuffer) MergeInto(to *BatchBuffer) {
 		}
 	}
 
+	for indexName, index := range c.batchClearValues {
+		for fieldName, field := range index {
+			for t, ebm := range field {
+				if to.batchClearValues == nil {
+					to.batchClearValues = make(map[string]map[string]map[int64]*roaring64.Bitmap)
+				}
+				if _, ok := to.batchClearValues[indexName]; !ok {
+					to.batchClearValues[indexName] = make(map[string]map[int64]*roaring64.Bitmap)
+				}
+				if _, ok := to.batchClearValues[indexName][fieldName]; !ok {
+					to.batchClearValues[indexName][fieldName] = make(map[int64]*roaring64.Bitmap)
+				}
+				if toEbm, ok := to.batchClearValues[indexName][fieldName][t]; !ok {
+					to.batchClearValues[indexName][fieldName][t] = ebm
+				} else {
+					roaring64.ParOr(0, toEbm, ebm)
+				}
+				to.batchClearValueCount += int(ebm.GetCardinality())
+			}
+		}
+	}
+
 	for indexPath, valueMap := range c.batchPartitionStr {
 		if to.batchPartitionStr == nil {
 			to.batchPartitionStr = make(map[string]map[interface{}]interface{})
@@ -190,31 +249,35 @@ func (c *BatchBuffer) MergeInto(to *BatchBuffer) {
 			to.batchPartitionStrCount++
 		}
 	}
+
+	to.ModifiedAt = time.Now()
 }
 
 // SetBit - Set a bit in a "standard" bitmap.  Operations are batched.
-func (c *BatchBuffer) SetBit(index, field string, columnID, rowID uint64, ts time.Time) error {
+func (c *BatchBuffer) SetBit(index, field string, columnID, rowID uint64, ts time.Time, isUpdate bool) error {
 
 	c.batchMutex.Lock()
 	defer c.batchMutex.Unlock()
 
+	c.ModifiedAt = time.Now()
+
 	if c.batchSets == nil {
-		c.batchSets = make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap)
+		c.batchSets = make(map[string]map[string]map[uint64]map[int64]*Bitmap)
 	}
 	if _, ok := c.batchSets[index]; !ok {
-		c.batchSets[index] = make(map[string]map[uint64]map[int64]*roaring64.Bitmap)
+		c.batchSets[index] = make(map[string]map[uint64]map[int64]*Bitmap)
 	}
 	if _, ok := c.batchSets[index][field]; !ok {
-		c.batchSets[index][field] = make(map[uint64]map[int64]*roaring64.Bitmap)
+		c.batchSets[index][field] = make(map[uint64]map[int64]*Bitmap)
 	}
 	if _, ok := c.batchSets[index][field][rowID]; !ok {
-		c.batchSets[index][field][rowID] = make(map[int64]*roaring64.Bitmap)
+		c.batchSets[index][field][rowID] = make(map[int64]*Bitmap)
 	}
 	if bmap, ok := c.batchSets[index][field][rowID][ts.UnixNano()]; !ok {
-		b := roaring64.BitmapOf(columnID)
+		b := NewBitmap(roaring64.BitmapOf(columnID), isUpdate)
 		c.batchSets[index][field][rowID][ts.UnixNano()] = b
 	} else {
-		bmap.Add(columnID)
+		bmap.Bits.Add(columnID)
 	}
 
 	c.batchSetCount++
@@ -236,23 +299,25 @@ func (c *BatchBuffer) ClearBit(index, field string, columnID, rowID uint64, ts t
 	c.batchMutex.Lock()
 	defer c.batchMutex.Unlock()
 
+	c.ModifiedAt = time.Now()
+
 	if c.batchClears == nil {
-		c.batchClears = make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap)
+		c.batchClears = make(map[string]map[string]map[uint64]map[int64]*Bitmap)
 	}
 	if _, ok := c.batchClears[index]; !ok {
-		c.batchClears[index] = make(map[string]map[uint64]map[int64]*roaring64.Bitmap)
+		c.batchClears[index] = make(map[string]map[uint64]map[int64]*Bitmap)
 	}
 	if _, ok := c.batchClears[index][field]; !ok {
-		c.batchClears[index][field] = make(map[uint64]map[int64]*roaring64.Bitmap)
+		c.batchClears[index][field] = make(map[uint64]map[int64]*Bitmap)
 	}
 	if _, ok := c.batchClears[index][field][rowID]; !ok {
-		c.batchClears[index][field][rowID] = make(map[int64]*roaring64.Bitmap)
+		c.batchClears[index][field][rowID] = make(map[int64]*Bitmap)
 	}
 	if bmap, ok := c.batchClears[index][field][rowID][ts.UnixNano()]; !ok {
-		b := roaring64.BitmapOf(columnID)
+		b := NewBitmap(roaring64.BitmapOf(columnID), true)
 		c.batchClears[index][field][rowID][ts.UnixNano()] = b
 	} else {
-		bmap.Add(columnID)
+		bmap.Bits.Add(columnID)
 	}
 
 	c.batchClearCount++
@@ -275,6 +340,8 @@ func (c *BatchBuffer) SetValue(index, field string, columnID uint64, value int64
 	defer c.batchMutex.Unlock()
 	var bsize int
 
+	c.ModifiedAt = time.Now()
+
 	if c.batchValues == nil {
 		c.batchValues = make(map[string]map[string]map[int64]*roaring64.BSI)
 	}
@@ -285,7 +352,8 @@ func (c *BatchBuffer) SetValue(index, field string, columnID uint64, value int64
 		c.batchValues[index][field] = make(map[int64]*roaring64.BSI)
 	}
 	if bmap, ok := c.batchValues[index][field][ts.UnixNano()]; !ok {
-		b := roaring64.NewDefaultBSI()
+		//b := roaring64.NewDefaultBSI()  // FIXME - possible bug in BSI libraries with zero values
+		b := roaring64.NewBSI(roaring64.Min64BitSigned, roaring64.Max64BitSigned)
 		b.SetValue(columnID, value)
 		c.batchValues[index][field][ts.UnixNano()] = b
 		bsize = b.BitCount()
@@ -307,11 +375,50 @@ func (c *BatchBuffer) SetValue(index, field string, columnID uint64, value int64
 	return nil
 }
 
+// ClearValue - Clear a value in a BSI  Operations are batched.
+func (c *BatchBuffer) ClearValue(index, field string, columnID uint64, ts time.Time) error {
+
+	c.batchMutex.Lock()
+	defer c.batchMutex.Unlock()
+
+	c.ModifiedAt = time.Now()
+
+	if c.batchClearValues == nil {
+		c.batchClearValues = make(map[string]map[string]map[int64]*roaring64.Bitmap)
+	}
+	if _, ok := c.batchClearValues[index]; !ok {
+		c.batchClearValues[index] = make(map[string]map[int64]*roaring64.Bitmap)
+	}
+	if _, ok := c.batchClearValues[index][field]; !ok {
+		c.batchClearValues[index][field] = make(map[int64]*roaring64.Bitmap)
+	}
+	if bmap, ok := c.batchClearValues[index][field][ts.UnixNano()]; !ok {
+		b := roaring64.BitmapOf(columnID)
+		c.batchClearValues[index][field][ts.UnixNano()] = b
+	} else {
+		bmap.Add(columnID)
+	}
+
+	c.batchClearValueCount++
+
+	if c.batchClearValueCount >= c.batchSize {
+
+		if err := c.BatchClearValue(c.batchClearValues); err != nil {
+			return err
+		}
+		c.batchClearValues = nil
+		c.batchClearValueCount = 0
+	}
+	return nil
+}
+
 // SetPartitionedString - Create column ID to backing string index entry.
 func (c *BatchBuffer) SetPartitionedString(indexPath string, key, value interface{}) error {
 
 	c.batchMutex.Lock()
 	defer c.batchMutex.Unlock()
+
+	c.ModifiedAt = time.Now()
 
 	if c.batchPartitionStr == nil {
 		c.batchPartitionStr = make(map[string]map[interface{}]interface{})

@@ -162,8 +162,10 @@ func (m *Upsert) updateValues() (int64, error) {
 	// if our backend source supports Where-Patches, ie update multiple
 	dbpatch, ok := m.db.(schema.ConnPatchWhere)
 	if ok {
+		if m.update.Where == nil {
+			return 0, fmt.Errorf("Must provide a predicate")
+		}
 		updated, err := dbpatch.PatchWhere(m.Ctx, m.update.Where.Expr, valmap)
-		u.Infof("patch: %v %v", updated, err)
 		if err != nil {
 			return updated, err
 		}
@@ -243,6 +245,9 @@ func (m *DeletionTask) Run() error {
 	defer m.Ctx.Recover()
 	defer close(m.msgOutCh)
 
+	if m.sql.Where == nil {
+		return fmt.Errorf("Must provide a predicate")
+	}
 	vals := make([]driver.Value, 2)
 	deletedCt, err := m.db.DeleteExpression(m.p, m.sql.Where.Expr)
 	if err != nil {

@@ -61,11 +61,9 @@ type BasicAttribute struct {
 	Searchable       bool              `yaml:"searchable,omitempty"`
 	DefaultValue     string            `yaml:"defaultValue,omitempty"`
 	ColumnID         bool              `yaml:"columnID,omitempty"`
-	ColumnIDMSV      bool              `yaml:"columnIDMSV,omitempty"`
-	IsTimeSeries     bool              `yaml:"isTimeSeries,omitempty"`
 	TimeQuantumType  string            `yaml:"timeQuantumType,omitempty"`
-	Exclusive        bool              `yaml:"exclusive,omitempty"`
-	DelegationTarget string            `yaml:"delegationTarget,omitempty"`
+	NonExclusive     bool              `yaml:"nonExclusive,omitempty"`
+	SourceOrdinal	 int			   `yaml:"sourceOrdinal,omitempty"`
 }
 
 func (a *BasicAttribute) GetParent() TableInterface {
@@ -316,32 +314,34 @@ func (t *BasicTable) GetAttribute(name string) (*BasicAttribute, error) {
 // GetPrimaryKeyInfo - Return attributes for a given PK.
 func (t *BasicTable) GetPrimaryKeyInfo() ([]*BasicAttribute, error) {
 
-	s := strings.Split(t.PrimaryKey, "+")
-	attrs := make([]*BasicAttribute, len(s))
-	var v string
-	i := 0
-	if t.TimeQuantumField != "" {
-		if len(s) > 0 {
-			attrs = make([]*BasicAttribute, len(s)+1)
-		} else {
-			attrs = make([]*BasicAttribute, 1)
-		}
-		if at, err := t.GetAttribute(strings.TrimSpace(t.TimeQuantumField)); err == nil {
-			attrs[0] = at
-			i++
-		} else {
-			return nil, err
-		}
-	}
-	if t.PrimaryKey != "" {
-		for i, v = range s {
-			if attr, err := t.GetAttribute(strings.TrimSpace(v)); err == nil {
-				attrs[i] = attr
-			} else {
-				return nil, err
-			}
-		}
-	}
+    s := strings.Split(t.PrimaryKey, "+")
+    attrs := make([]*BasicAttribute, len(s))
+    i := 0
+    if t.TimeQuantumField != "" {
+        attrs = make([]*BasicAttribute, len(s)+1)
+        i++
+        if t.PrimaryKey != "" {
+            attrs = make([]*BasicAttribute, len(s)+1)
+        } else {
+            attrs = make([]*BasicAttribute, 1)
+        }
+        if at, err := t.GetAttribute(strings.TrimSpace(t.TimeQuantumField)); err == nil {
+            attrs[0] = at
+        } else {
+            return nil, err
+        }
+    }
+
+    if t.PrimaryKey != "" {
+        for _, v := range s {
+            if attr, err := t.GetAttribute(strings.TrimSpace(v)); err == nil {
+                attrs[i] = attr
+                i++
+            } else {
+                return nil, err
+            }
+        }
+    }
 	return attrs, nil
 }
 
@@ -465,9 +465,9 @@ func (a *BasicAttribute) Compare(other *BasicAttribute) (equal bool, warnings []
 		return false, warnings, fmt.Errorf("attribute '%s' required differs existing = '%v', new = '%v'",
 			a.FieldName, a.Required, other.Required)
 	}
-	if a.Exclusive != other.Exclusive {
+	if a.NonExclusive != other.NonExclusive {
 		return false, warnings, fmt.Errorf("attribute '%s' exclusivity differs existing = '%v', new = '%v'",
-			a.FieldName, a.Exclusive, other.Exclusive)
+			a.FieldName, a.NonExclusive, other.NonExclusive)
 	}
 
 	// Warning level comparisons for alters that are allowed.

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ import (
 	u "github.com/araddon/gou"
 	"github.com/disney/quanta/qlbridge/datasource"
 	"github.com/disney/quanta/qlbridge/expr"
+	"github.com/disney/quanta/qlbridge/rel"
 	"github.com/disney/quanta/qlbridge/value"
 	"github.com/disney/quanta/qlbridge/vm"
 	"github.com/disney/quanta/shared"
@@ -31,6 +33,7 @@ const (
 	secondaryKey           = "S"
 	julianDayOfEpoch int64 = 2440588
 	microsPerDay     int64 = 3600 * 24 * 1000 * 1000
+	batchBufferSize		   = 90000000			// This is a stopgap to prevent overrunning memory
 )
 
 // Session - State for session (non-threadsafe)
@@ -46,6 +49,7 @@ type Session struct {
 	BytesRead    int        // Bytes read for a row (record)
 	CreatedAt    time.Time
 	stateLock    sync.Mutex
+	flushing     bool
 
 	tableCache *TableCacheStruct
 }
@@ -106,10 +110,17 @@ func (t *TableBuffer) NextColumnID(bi *shared.BitmapIndex) error {
 	return nil
 }
 
-// HasPrimaryKey - Does this table have a primary key
-func (t *TableBuffer) HasPrimaryKey() bool {
+// ShouldLookupPrimaryKey - Does this table have a primary key
+func (t *TableBuffer) ShouldLookupPrimaryKey() bool {
+
+	if t.PKAttributes[0].ColumnID {
+		return false
+	}
 
 	if t.Table.TimeQuantumType != "" && len(t.PKAttributes) > 1 {
+        if t.PKAttributes[1].ColumnID {
+			return false
+		}
 		return true
 	}
 	if t.Table.TimeQuantumType == "" && len(t.PKAttributes) > 0 {
@@ -150,24 +161,28 @@ func OpenSession(tableCache *TableCacheStruct, path, name string, nested bool, c
 			if err != nil {
 				return nil, fmt.Errorf("Error loading parent schema - %v", err2)
 			}
-			if tb, err := NewTableBuffer(parent); err == nil {
-				tableBuffers[fkTable] = tb
-			} else {
-				return nil, fmt.Errorf("OpenSession error - %v", err)
+			if tb, ok := tableBuffers[fkTable]; !ok {
+				if tb, err = NewTableBuffer(parent); err == nil {
+					tableBuffers[fkTable] = tb
+				} else {
+					return nil, fmt.Errorf("OpenSession error - %v", err)
+				}
 			}
 		}
 	}
 
-	if tb, err := NewTableBuffer(tab); err == nil {
-		tableBuffers[name] = tb
-	} else {
-		return nil, fmt.Errorf("OpenSession error - %v", err)
+	if tb, ok := tableBuffers[name]; !ok {
+		if tb, err = NewTableBuffer(tab); err == nil {
+			tableBuffers[name] = tb
+		} else {
+			return nil, fmt.Errorf("OpenSession error - %v", err)
+		}
 	}
 	s := &Session{BasePath: path, TableBuffers: tableBuffers, Nested: nested}
 	s.StringIndex = shared.NewStringSearch(conn, 1000)
 	s.KVStore = kvStore
 	s.BitIndex = shared.NewBitmapIndex(conn)
-	s.BatchBuffer = shared.NewBatchBuffer(s.BitIndex, s.KVStore, 3000000)
+	s.BatchBuffer = shared.NewBatchBuffer(s.BitIndex, s.KVStore, batchBufferSize)
 	s.CreatedAt = time.Now().UTC()
 	s.tableCache = tableCache
 
@@ -281,12 +296,10 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 	curTable := tbuf.Table
 
 	// Here we force the primary key to be handled first for table so that columnID is established in tbuf
-	hasValues, err := s.processPrimaryKey(tbuf, row, pqTablePath, providedColID, isChild,
+	isUpdate, err := s.processPrimaryKey(tbuf, row, pqTablePath, providedColID, isChild,
 		ignoreSourcePath, useNerdCapitalization)
 	if err != nil {
 		return err
-	} else if !hasValues {
-		return nil // nothing to do, no values in child relation
 	}
 
 	if curTable.SecondaryKeys != "" {
@@ -336,7 +349,7 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 			//if !s.Nested {
 			if !isChild {
 				// Directly provided parent columnID
-				if v.Type == "Integer" && (!relBuf.HasPrimaryKey() || fkFieldSpec == "@rownum") {
+				if v.Type == "Integer" && (!relBuf.ShouldLookupPrimaryKey() || fkFieldSpec == "@rownum") {
 					vals, _, err := s.readColumn(row, pqTablePath, &v, false, ignoreSourcePath, useNerdCapitalization)
 					//vals, _, err := s.readColumn(row, pqTablePath, &v, false, true, false)
 					if err != nil {
@@ -348,11 +361,19 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 					if vals[0] == nil {
 						continue
 					}
-					if colId, ok := vals[0].(int64); !ok {
+					switch reflect.ValueOf(vals[0]).Kind() {
+					case reflect.String:
+						if colId, err := strconv.ParseInt(vals[0].(string), 10, 64); err == nil {
+							relColumnID = uint64(colId)
+						} else {
+							return fmt.Errorf("cannot parse string %v for parent relation %v type is %T",
+								vals[0], v.FieldName, vals[0])
+						}
+					case reflect.Int64:
+						relColumnID = uint64(vals[0].(int64))
+					default:
 						return fmt.Errorf("cannot cast %v to uint64 for parent relation %v type is %T",
 							vals[0], v.FieldName, vals[0])
-					} else {
-						relColumnID = uint64(colId)
 					}
 				} else { // Lookup based
 					//if v.SourceName == "" {
@@ -385,7 +406,7 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 			}
 			if okToMap {
 				// Store the parent table ColumnID in the IntBSI for join queries
-				if _, err := v.MapValue(relColumnID, s); err != nil {
+				if _, err := v.MapValue(relColumnID, s, false); err != nil {
 					return fmt.Errorf("Error Mapping FK [%s].[%s] - %v", v.Parent.Name, v.FieldName, err)
 				}
 			}
@@ -398,7 +419,7 @@ func (s *Session) recursivePutRow(name string, row interface{}, pqTablePath stri
 			for _, cval := range vals {
 				if cval != nil {
 					// Map and index the value
-					if _, err := v.MapValue(cval, s); err != nil {
+					if _, err := v.MapValue(cval, s, isUpdate); err != nil {
 						return fmt.Errorf("%s - %v", pqps[0], err)
 					}
 				}
@@ -652,6 +673,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		tbuf.CurrentTimestamp = time.Unix(0, 0)
 	}
 
+	directColumnID := false
 	tbuf.CurrentPKValue = make([]interface{}, len(tbuf.PKAttributes))
 	pqColPaths := make([]string, len(tbuf.PKAttributes))
 	var pkLookupVal strings.Builder
@@ -683,6 +705,12 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 				if pk.MappingStrategy == "SysMillisBSI" || pk.MappingStrategy == "SysMicroBSI" {
 					strVal := cval.(string)
 					tbuf.CurrentTimestamp, _, _ = shared.ToTQTimestamp(tbuf.Table.TimeQuantumType, strVal)
+				}
+			}
+			if pk.ColumnID {
+				if cID, err := strconv.ParseInt(cval.(string), 10, 64); err == nil {
+					tbuf.CurrentColumnID = uint64(cID)
+					directColumnID = true
 				}
 			}
 		case reflect.Int64:
@@ -721,7 +749,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		}
 	}
 
-	if tbuf.HasPrimaryKey() {
+	if tbuf.ShouldLookupPrimaryKey() {
 		// Can't use batch operation here unfortunately, but at least we have local batch cache
 		localKey := indexPath(tbuf, tbuf.PKAttributes[0].FieldName, tbuf.Table.PrimaryKey+".PK")
 		if lColID, ok := s.BatchBuffer.LookupLocalCIDForString(localKey, pkLookupVal.String()); !ok {
@@ -731,7 +759,7 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 			}
 			if found {
 				tbuf.CurrentColumnID = colID
-				return false, nil
+				return true, nil
 			} else {
 				if providedColID == 0 {
 					// Generate new ColumnID.   Lookup the sequencer from the local cache by TQ
@@ -747,17 +775,19 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 			}
 		} else {
 			tbuf.CurrentColumnID = lColID
-			u.Warnf("PK %s found in cache.  PK mapping error?", pkLookupVal.String())
+			u.Warnf("PK %s found in cache.  PK mapping error for %s?", pkLookupVal.String(), tbuf.Table.Name )
 		}
 	} else {
-		if providedColID == 0 {
-			// Generate new ColumnID.   Lookup the sequencer from the local cache by TQ
-			errx := tbuf.NextColumnID(s.BitIndex)
-			if errx != nil {
-				return false, errx
+		if !directColumnID {
+			if providedColID == 0 {
+				// Generate new ColumnID.   Lookup the sequencer from the local cache by TQ
+				errx := tbuf.NextColumnID(s.BitIndex)
+				if errx != nil {
+					return false, errx
+				}
+			} else {
+				tbuf.CurrentColumnID = providedColID
 			}
-		} else {
-			tbuf.CurrentColumnID = providedColID
 		}
 	}
 
@@ -766,12 +796,12 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		if v == nil {
 			return false, fmt.Errorf("PK mapping error %s - nil value", pqColPaths[i])
 		}
-		if _, err := tbuf.PKAttributes[i].MapValue(v, s); err != nil {
+		if _, err := tbuf.PKAttributes[i].MapValue(v, s, false); err != nil {
 			return false, fmt.Errorf("PK mapping error %s - %v", pqColPaths[i], err)
 		}
 	}
 
-	return true, nil
+	return false, nil
 }
 
 // Handle Secondary Keys.  Create the index in backing store
@@ -923,15 +953,31 @@ func (s *Session) ResetRowCache() {
 	s.BytesRead = 0
 }
 
-// Flush - Flush data to backend.
-func (s *Session) Flush() error {
 
+// Flushing - Flush in progress
+func (s *Session) IsFlushing() bool {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
-	if s.BatchBuffer != nil {
-		if err := s.BatchBuffer.Flush(); err != nil {
+	return s.flushing
+}
+
+func (s *Session) flush() error {
+
+    if s.BatchBuffer != nil && !s.BatchBuffer.IsEmpty() {
+		s.flushing = true
+		defer func() {s.flushing = false}()
+		start := time.Now()
+        fb := shared.NewBatchBuffer(s.BitIndex, s.KVStore, batchBufferSize)
+        s.BatchBuffer.MergeInto(fb)
+		mergeTime := time.Since(start)
+        s.BatchBuffer = shared.NewBatchBuffer(s.BitIndex, s.KVStore, batchBufferSize)
+        if err := fb.Flush(); err != nil {
 			u.Error(err)
 			return err
+		}
+		duration := time.Since(start)
+		if duration > time.Duration(30 * time.Second) {
+			u.Debugf("FLUSH DURATION %v, MERGE TIME = %v", duration, mergeTime)
 		}
 	}
 	if s.StringIndex != nil {
@@ -940,10 +986,15 @@ func (s *Session) Flush() error {
 			return err
 		}
 	}
-	if s.BitIndex != nil {
-		s.BitIndex.Commit()
-	}
 	return nil
+}
+
+// Flush - Flush data to backend.
+func (s *Session) Flush() error {
+
+	s.stateLock.Lock()
+	defer s.stateLock.Unlock()
+	return s.flush()
 }
 
 // CloseSession - Close the session, flushing if necessary..
@@ -955,22 +1006,48 @@ func (s *Session) CloseSession() error {
 	}
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
-	if s.StringIndex != nil {
-		if err := s.StringIndex.Flush(); err != nil {
-			return err
-		}
+	err := s.flush()
+	if err == nil {
 		s.StringIndex = nil
+		s.BitIndex = nil
 	}
+	return err
 
-	if s.BatchBuffer != nil {
-		if err := s.BatchBuffer.Flush(); err != nil {
+}
+
+
+// UpdateRow - Perform an in-place update of a row.
+func (s *Session) UpdateRow(table string, columnID uint64, updValueMap map[string]*rel.ValueColumn,
+	timePartition time.Time) error {
+
+	tbuf, ok := s.TableBuffers[table]
+	if !ok {
+		return fmt.Errorf("table %s is not open for this session", table)
+	}
+	tbuf.CurrentColumnID = columnID
+	tbuf.CurrentTimestamp = timePartition
+	for k, vc := range updValueMap {
+		if _, found := tbuf.PKMap[k]; found {
+			return fmt.Errorf("cannot update PK column %s.%s", table, k)
+		}
+		_, err := s.MapValue(table, k, vc.Value.Value(), true)
+		if err != nil {
 			return err
 		}
-	}
-	if s.BitIndex != nil {
-		s.BitIndex.Commit()
 	}
 	return nil
+}
+
+// Commit - Block until the server nodes have persisted their work queues to a savepoint.
+func (s *Session) Commit() error {
+
+	if s.BitIndex == nil {
+		return fmt.Errorf("attempting commit of a closed session")
+	} 
+
+	s.BitIndex.Commit()
+	return nil
+
 }
 
 // MapValue - Convenience function for Mapper interface.
@@ -997,73 +1074,10 @@ func (s *Session) MapValue(tableName, fieldName string, value interface{}, updat
 		}
 	*/
 	if update {
-		return attr.MapValue(value, s)
+		return attr.MapValue(value, s, update)
 	}
-	return attr.MapValue(value, nil) // Non load use case pass nil connection context
+	return attr.MapValue(value, nil, update) // Non load use case pass nil connection context
 }
-
-/*
-func resolveJSColumnPathForField(jsTablePath string, v *Attribute, isChild bool) (jsColPath string) {
-
-	// BEGIN CUSTOM CODE FOR VISION
-	//if strings.HasSuffix(jsTablePath, "media.0") {
-	if v.Parent.Name == "media" {
-		jsColPath = fmt.Sprintf("events.0.event_tracktype_properties.%s", v.SourceName)
-		return
-	}
-	if v.Parent.Name == "events" {
-		s := strings.Split(v.SourceName, ".")
-		if len(s) > 1 {
-			switch s[0] {
-			case "media", "pzncon", "ad", "prompt", "api":
-				jsColPath = fmt.Sprintf("events.0.event_tracktype_properties.%s", s[1])
-				return
-			}
-		}
-	}
-	// END CUSTOM CODE FOR VISION
-	jsColPath = fmt.Sprintf("%s.%s", jsTablePath, v.SourceName)
-	if strings.HasPrefix(v.SourceName, "/") {
-		jsColPath = v.SourceName[1:]
-	} else if strings.HasPrefix(v.SourceName, "^") {
-		jsColPath = fmt.Sprintf("%s.%s", v.Parent.Name, v.SourceName[1:])
-	}
-	return
-}
-
-func readColumnByPath(path string, line []byte) []interface{} {
-
-	s := strings.Split(path, ".")
-	p := make([]interface{}, len(s))
-	var returnArray bool
-	for i, v := range s {
-		if val, err := strconv.ParseInt(v, 10, 32); err == nil {
-			p[i] = int(val)
-			returnArray = (i == len(s)-1)
-		} else {
-			p[i] = v
-		}
-	}
-
-	val := jsoniter.Get(line, p...)
-	if returnArray {
-		//return val.GetInterface()
-		return []interface{}{val.GetInterface()}
-	}
-	return []interface{}{val.GetInterface()}
-}
-
-func toJulianDay(t time.Time) (int32, int64) {
-	utc := t.UTC()
-	nanos := utc.UnixNano()
-	micros := nanos / time.Microsecond.Nanoseconds()
-
-	julianUs := micros + julianDayOfEpoch*microsPerDay
-	days := int32(julianUs / microsPerDay)
-	us := (julianUs % microsPerDay) * 1000
-	return days, us
-}
-*/
 
 func fromJulianDay(days int32, nanos int64) time.Time {
 	nanos = ((int64(days)-julianDayOfEpoch)*microsPerDay + nanos/1000) * 1000

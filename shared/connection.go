@@ -61,7 +61,7 @@ type Conn struct {
 	idMap              map[string]*api.ServiceEntry // Map of node ID to service entry.
 	ids                []string                     // List of node IDs.
 	clusterSizeTarget  int                          // Target cluster size.
-	nodeStatusMap      map[string]*pb.StatusMessage // Map of node ID to status message.
+	nodeStatusMap      sync.Map						// Map of node ID to status message.
 	activeCount        int                          // Number of active nodes.
 	IsLocalCluster     bool                         // Is this a local cluster? For debugging.
 	owner              string                       // for debugging
@@ -79,7 +79,6 @@ func NewDefaultConnection(owner string) *Conn {
 	m.Quorum = 3
 	m.Replicas = 2
 	m.registeredServices = make(map[string]Service)
-	m.nodeStatusMap = make(map[string]*pb.StatusMessage, 0)
 	m.owner = owner // for debugging
 	return m
 }
@@ -241,7 +240,7 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 			status, err := m.getNodeStatusForIndex(i)
 			// u.Info("Conn Connect getNodeStatusForIndex", m.owner, i, status.NodeState, err)
 			if err == nil {
-				m.nodeStatusMap[id] = status
+				m.nodeStatusMap.Store(id, status)
 				if status.NodeState == "Active" {
 					activeCount++
 				}
@@ -373,11 +372,12 @@ func (m *Conn) SelectNodes(key interface{}, op OpType) ([]int, error) {
 	// u.Info("SelectNodes nodeStatusMap", m.owner, m.nodeStatusMap)
 
 	for _, v := range nodeKeys {
-		status, found := m.nodeStatusMap[v]
+		pbStat, found := m.nodeStatusMap.Load(v)
 		if !found {
 			return nil, fmt.Errorf("SelectNodes: assert fail for key [%v], node %v not found in nodeStatusMap",
 				ToString(key), v)
 		}
+		status := pbStat.(*pb.StatusMessage)
 		if status.NodeState != "Active" && status.NodeState != "Syncing" && !all {
 			continue
 		}
@@ -393,8 +393,8 @@ func (m *Conn) SelectNodes(key interface{}, op OpType) ([]int, error) {
 	}
 	// what happens if we don't find any? Happens in test situations and startup
 	if len(indices) == 0 {
-		return nil, fmt.Errorf("SelectNodes assert fail: none selected: nodeKeys [%v], nodeStatusMap [%#v], op [%s]",
-			nodeKeys, m.nodeStatusMap, op)
+		return nil, fmt.Errorf("SelectNodes assert fail: none selected: nodeKeys [%v], op [%s]",
+			nodeKeys, op)
 	}
 	return indices, nil
 }
@@ -423,7 +423,7 @@ func (m *Conn) GetNodeForID(nodeID string) (*api.ServiceEntry, bool) {
 
 func (m *Conn) Quit() {
 	m.registeredServices = make(map[string]Service)
-	m.nodeStatusMap = make(map[string]*pb.StatusMessage, 0)
+	m.nodeStatusMap = sync.Map{}
 }
 
 // Disconnect - Terminate connections to all cluster nodes.
@@ -630,7 +630,7 @@ func (m *Conn) updateHealth(initial bool) (err error) {
 				} else {
 					m.Admin = make([]pb.ClusterAdminClient, 0)
 				}
-				delete(m.nodeStatusMap, id)
+				m.nodeStatusMap.Delete(id)
 				u.Infof("NODE %s left at index %d\n", id, index)
 				m.SendMemberLeft(id, index)
 			}
@@ -697,11 +697,12 @@ func (m *Conn) CheckNodeForKey(key, nodeID string) (bool, int) {
 		if v != nodeID {
 			continue
 		}
-		status, found := m.nodeStatusMap[v]
+		pbStat, found := m.nodeStatusMap.Load(v)
 		if !found {
 			u.Errorf("CheckNodeForKey: assertion fail - for key %s, node %s status unknown", key, nodeID)
 			return false, 0
 		}
+		status := pbStat.(*pb.StatusMessage)
 		if status.NodeState != "Active" && status.NodeState != "Syncing" {
 			u.Errorf("CheckNodeForKey: assertion fail - for key %s, node %s not Active/Syncing", key, nodeID)
 			return false, 0
@@ -745,11 +746,12 @@ func (m *Conn) GetNodeStatusForID(nodeID string) (*pb.StatusMessage, error) {
 
 	m.nodeMapLock.RLock()
 	defer m.nodeMapLock.RUnlock()
-	s, ok := m.nodeStatusMap[nodeID]
+	pbStat, ok := m.nodeStatusMap.Load(nodeID)
 	if !ok {
 		return nil, fmt.Errorf("no node status for %s owner %s", nodeID, m.owner)
 	}
-	return s, nil
+	status := pbStat.(*pb.StatusMessage)
+	return status, nil
 }
 
 func (m *Conn) getNodeStatusForID(nodeID string) (*pb.StatusMessage, error) {
@@ -805,10 +807,11 @@ func (m *Conn) GetCachedNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, 
 		return nil, fmt.Errorf("clientIndex %d is invalid", clientIndex)
 	}
 	id := m.ids[clientIndex]
-	status, found := m.nodeStatusMap[id]
+	pbStat, found := m.nodeStatusMap.Load(id)
 	if !found {
 		return nil, fmt.Errorf("node status not found for id %v at clientIndex %d", id, clientIndex)
 	}
+	status := pbStat.(*pb.StatusMessage)
 	return status, nil
 }
 
@@ -875,7 +878,7 @@ func (m *Conn) GetAllPeerStatus() {
 
 	m.activeCount = activeCount
 	for k, v := range nodeStatusMap {
-		m.nodeStatusMap[k] = v
+		m.nodeStatusMap.Store(k, v)
 	}
 	// u.Debug("GetAllPeerStatus bottom", m.owner, m.nodeMap, m.activeCount)
 }

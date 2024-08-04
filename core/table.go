@@ -307,27 +307,29 @@ func (t *Table) GetRownumAttribute() *Attribute {
 
 // GetPrimaryKeyInfo - Return attributes for a given PK.
 func (t *Table) GetPrimaryKeyInfo() ([]*Attribute, error) {
+
 	s := strings.Split(t.PrimaryKey, "+")
 	attrs := make([]*Attribute, len(s))
-	var v string
 	i := 0
 	if t.TimeQuantumField != "" {
-		if len(s) > 1 {
+		attrs = make([]*Attribute, len(s)+1)
+		i++
+		if t.PrimaryKey != "" {
 			attrs = make([]*Attribute, len(s)+1)
 		} else {
 			attrs = make([]*Attribute, 1)
 		}
 		if at, err := t.GetAttribute(strings.TrimSpace(t.TimeQuantumField)); err == nil {
 			attrs[0] = at
-			i++
 		} else {
 			return nil, err
 		}
 	}
 	if t.PrimaryKey != "" {
-		for i, v = range s {
+		for _, v := range s {
 			if attr, err := t.GetAttribute(strings.TrimSpace(v)); err == nil {
 				attrs[i] = attr
+				i++
 			} else {
 				return nil, err
 			}
@@ -489,12 +491,12 @@ func (a *Attribute) Transform(val interface{}, c *Session) (newVal interface{}, 
 }
 
 // MapValue - Return the row ID for a given value (Standard Bitmap)
-func (a *Attribute) MapValue(val interface{}, c *Session) (result uint64, err error) {
+func (a *Attribute) MapValue(val interface{}, c *Session, isUpdate bool) (result uint64, err error) {
 
 	if a.mapperInstance == nil {
 		return 0, fmt.Errorf("attribute '%s' MapperInstance is nil", a.FieldName)
 	}
-	return a.mapperInstance.MapValue(a, val, c)
+	return a.mapperInstance.MapValue(a, val, c, isUpdate)
 }
 
 // MapValueReverse - Re-hydrate the original value for a given row ID.

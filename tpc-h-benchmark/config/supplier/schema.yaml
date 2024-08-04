@@ -1,0 +1,42 @@
+tableName: supplier
+primaryKey: s_suppkey
+selector: type="supplier"
+attributes:
+- fieldName: s_suppkey
+  sourceName: /data/s_suppkey
+  mappingStrategy: IntBSI
+  type: Integer
+  sourceOrdinal: 1
+  columnID: true
+- fieldName: s_name
+  sourceName: /data/s_name
+  mappingStrategy: StringHashBSI
+  type: String
+  sourceOrdinal: 2
+- fieldName: s_address
+  sourceName: /data/s_address
+  mappingStrategy: StringHashBSI
+  type: String
+  sourceOrdinal: 3
+- fieldName: s_nationkey
+  sourceName: /data/s_nationkey
+  mappingStrategy: ParentRelation
+  type: Integer
+  foreignKey: nation
+  sourceOrdinal: 4
+- fieldName: s_phone
+  sourceName: /data/s_phone
+  mappingStrategy: StringHashBSI
+  type: String
+  sourceOrdinal: 5
+- fieldName: s_acctbal
+  sourceName: /data/s_acctbal
+  mappingStrategy: FloatScaleBSI
+  type: Float
+  scale: 2
+  sourceOrdinal: 6
+- fieldName: s_comment
+  sourceName: /data/s_comment
+  mappingStrategy: StringHashBSI
+  type: String
+  sourceOrdinal: 7

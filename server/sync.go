@@ -60,10 +60,13 @@ func (m *BitmapIndex) SyncStatus(ctx context.Context, req *pb.SyncStatusRequest)
 	var skew time.Duration
 	reqTime := time.Unix(0, req.ModTime)
 	if isBSI {
+		m.bsiCacheLock.RLock()
 		v := m.bsiCache[req.Index][req.Field][req.Time]
 		if v == nil {
+			m.bsiCacheLock.RUnlock()
 			return response, nil
 		}
+		m.bsiCacheLock.RUnlock()
 		v.Lock.RLock()
 		defer v.Lock.RUnlock()
 		sum, card := v.Sum(v.GetExistenceBitmap())
@@ -87,10 +90,13 @@ func (m *BitmapIndex) SyncStatus(ctx context.Context, req *pb.SyncStatusRequest)
 			response.Data = ba
 		}
 	} else {
+		m.bitmapCacheLock.RLock()
 		v := m.bitmapCache[req.Index][req.Field][req.RowId][req.Time]
 		if v == nil {
+			m.bitmapCacheLock.RUnlock()
 			return response, nil
 		}
+		m.bitmapCacheLock.RUnlock()
 		v.Lock.RLock()
 		defer v.Lock.RUnlock()
 		response.Cardinality = v.Bits.GetCardinality()
@@ -429,12 +435,12 @@ func (m *BitmapIndex) Synchronize(ctx context.Context, req *wrappers.StringValue
 func (m *BitmapIndex) pushBitmapDiff(peerClient *shared.BitmapIndex, newNode pb.BitmapIndexClient, index, field string,
 	rowID uint64, ts int64, diff *roaring64.Bitmap) error {
 
-	batch := make(map[string]map[string]map[uint64]map[int64]*roaring64.Bitmap, 0)
-	tm := make(map[int64]*roaring64.Bitmap, 0)
-	tm[ts] = diff
-	rm := make(map[uint64]map[int64]*roaring64.Bitmap, 0)
+	batch := make(map[string]map[string]map[uint64]map[int64]*shared.Bitmap, 0)
+	tm := make(map[int64]*shared.Bitmap, 0)
+	tm[ts] = shared.NewBitmap(diff, false)   // TODO: Double check if isUpdate should be false
+	rm := make(map[uint64]map[int64]*shared.Bitmap, 0)
 	rm[rowID] = tm
-	fm := make(map[string]map[uint64]map[int64]*roaring64.Bitmap, 0)
+	fm := make(map[string]map[uint64]map[int64]*shared.Bitmap, 0)
 	fm[field] = rm
 	batch[index] = fm
 	// cleanup memory on exit
@@ -489,6 +495,7 @@ func (m *BitmapIndex) syncEnumMetadata(peerKV *shared.KVStore, remoteKV pb.KVSto
 	if err != nil {
 		return fmt.Errorf("syncEnumMetadata:getStore(local) failed for %s.%s - %v", index, field, err)
 	}
+	defer localKV.closeStore(kvPath)
 
 	// Get remote index file counts, size
 	remoteInfo, errx := peerKV.IndexInfoNode(remoteKV, kvPath)
@@ -649,6 +656,7 @@ func (m *BitmapIndex) syncStringBackingStore(peerKV *shared.KVStore, remoteKV pb
 	if err != nil {
 		return fmt.Errorf("syncStringBackingStore:getStore failed for %s.%s.%s - %v", index, field, timeStr, err)
 	}
+	defer localKV.closeStore(kvPath)
 
 	// TODO: Pass this as a parameter
 	verifyOnly := false
@@ -734,6 +742,7 @@ func (m *BitmapIndex) simpleKVPush(peerKV *shared.KVStore, remoteKV pb.KVStoreCl
 	if err != nil {
 		return fmt.Errorf("simpleKVPush:getStore failed for %s - %v", kvPath, err)
 	}
+	defer localKV.closeStore(kvPath)
 
 	pushBatch := make(map[interface{}]interface{}, 0)
 	it := db.Items()
@@ -773,6 +782,7 @@ func (m *BitmapIndex) indexKVPush(peerKV *shared.KVStore, remoteKV pb.KVStoreCli
 	if err != nil {
 		return fmt.Errorf("indexKVPush:getStore failed for %s - %v", kvPath, err)
 	}
+	defer localKV.closeStore(kvPath)
 
 	// Get remote index file counts, size
 	remoteInfo, errx := peerKV.IndexInfoNode(remoteKV, kvPath)

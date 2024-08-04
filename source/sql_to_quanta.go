@@ -348,6 +348,7 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 	*/
 
 	if m.p.Complete {
+		u.Debugf("DONT NEED POST PREDICATE WHERE PROCESSOR")
 		sessionMap[exec.WHERE_MAKER] = func(ctx *plan.Context, p *plan.Where) exec.TaskRunner {
 			return NewNopTask(ctx)
 		}
@@ -355,6 +356,7 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 		sk := SchemaInfoString{k: exec.WHERE_MAKER}
 		p.Context().Session.Put(sk, nil, value.NewValue(v))
 	} else {
+		u.Debugf("USING A POST PREDICATE WHERE PROCESSOR")
 		dm := make(map[string]value.Value)
 		dm[exec.WHERE_MAKER] = value.NilValueVal
 		p.Context().Session.Delete(dm)
@@ -1589,27 +1591,29 @@ func (m *SQLToQuanta) PatchWhere(ctx context.Context, where expr.Node, patch int
 		}
 	}
 
-	results := response.Results.ToArray()
-	if len(results) != 1 {
-		return 0, fmt.Errorf("expecting 1 result from update query but got %d", response.Count)
-	}
-
 	valueMap := make(map[string]*rel.ValueColumn)
 	for k, v := range patch.(map[string]driver.Value) {
 		valueMap[k] = &rel.ValueColumn{Value: value.NewValue(v)}
 	}
+	results := response.Results.ToArray()
 
-	var timeFmt = shared.YMDHTimeFmt
-	updColID := results[0]
-	partition := time.Unix(0, int64(updColID))
-	table := m.conn.TableBuffers[m.tbl.Name].Table
-	if table.TimeQuantumType == "YMD" {
-		timeFmt = shared.YMDTimeFmt
+	count := int64(0)
+	for _, updColID := range results {
+		var timeFmt = shared.YMDHTimeFmt
+		partition := time.Unix(0, int64(updColID))
+		table := m.conn.TableBuffers[m.tbl.Name].Table
+		if table.TimeQuantumType == "YMD" {
+			timeFmt = shared.YMDTimeFmt
+		}
+		partStr := partition.Format(timeFmt)
+		partition, _ = time.Parse(timeFmt, partStr)
+		err := m.conn.UpdateRow(m.tbl.Name, updColID, valueMap, partition)
+		if err != nil {
+			return 0, err
+		}
+		count++
 	}
-	partStr := partition.Format(timeFmt)
-	partition, _ = time.Parse(timeFmt, partStr)
-
-	return m.updateRow(m.tbl.Name, updColID, valueMap, partition)
+	return count, nil
 }
 
 // Put Interface for inserts.  Updates are handled by PatchWhere
@@ -1800,31 +1804,6 @@ func (m *SQLToQuanta) Put(ctx context.Context, key schema.Key, val interface{}) 
 	return newKey, nil
 }
 
-// Call Client.Update - TODO, This fuctionality should be merged with PutRow()
-func (m *SQLToQuanta) updateRow(table string, columnID uint64, updValueMap map[string]*rel.ValueColumn,
-	timePartition time.Time) (int64, error) {
-
-	tbuf, ok := m.conn.TableBuffers[table]
-	if !ok {
-		return 0, fmt.Errorf("table %s is not open for this session", table)
-	}
-	for k, vc := range updValueMap {
-		a, err := tbuf.Table.GetAttribute(k)
-		if err != nil {
-			return 0, fmt.Errorf("attribute %s.%s is not defined", table, k)
-		}
-		rowID, err := a.MapValue(vc.Value.Value(), nil)
-		if err != nil {
-			return 0, err
-		}
-		err = m.conn.BitIndex.Update(table, a.FieldName, columnID, int64(rowID), timePartition, a.IsBSI(), a.Exclusive)
-		if err != nil {
-			return 0, err
-		}
-	}
-	return 1, nil
-}
-
 // PutMulti - Multiple put operation handler.
 func (m *SQLToQuanta) PutMulti(ctx context.Context, keys []schema.Key, src interface{}) ([]schema.Key, error) {
 	return nil, schema.ErrNotImplemented
@@ -1851,6 +1830,8 @@ func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, err
 	// Construct query
 	m.q = shared.NewBitmapQuery()
 	frag := m.q.NewQueryFragment()
+	m.startDate = ""
+	m.endDate = ""
 
 	var err error
 	m.conn, err = m.s.sessionPool.Borrow(m.tbl.Name)
@@ -1872,6 +1853,14 @@ func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, err
 		return 0, fmt.Errorf("query must have a predicate")
 	}
 
+	if m.startDate == "" {
+		m.startDate = "1970-01-01T00"
+	}
+	if m.endDate == "" {
+		end := time.Now().AddDate(0, 0, 1)
+		m.endDate = end.Format(shared.YMDHTimeFmt)
+	}
+
 	m.q.FromTime = m.startDate
 	m.q.ToTime = m.endDate
 
@@ -1881,6 +1870,7 @@ func (m *SQLToQuanta) DeleteExpression(p interface{}, where expr.Node) (int, err
 		response = &shared.BitmapQueryResponse{Success: true}
 		response.Results = m.rowNumSet
 		response.Count = m.rowNumSet.GetCardinality()
+		return 0, nil
 	} else {
 		response, err = m.conn.BitIndex.Query(m.q)
 		if err != nil {

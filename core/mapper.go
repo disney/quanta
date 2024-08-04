@@ -19,7 +19,7 @@ type DefaultMapper struct {
 // Mapper - Mapper interface.   MapValue is the only required method.
 type Mapper interface {
 	Transform(attr *Attribute, val interface{}, c *Session) (newVal interface{}, err error)
-	MapValue(attr *Attribute, val interface{}, c *Session) (result uint64, err error)
+	MapValue(attr *Attribute, val interface{}, c *Session, isUpdate bool) (result uint64, err error)
 	MapValueReverse(attr *Attribute, id uint64, c *Session) (result interface{}, err error)
 	GetMultiDelimiter() string
 }
@@ -255,8 +255,8 @@ func MapperTypeFromString(mt string) MapperType {
 }
 
 // MapValue - Map a value to a row id for standard bitmaps or an int64
-func (mt MapperType) MapValue(attr *Attribute, val interface{}, c *Session) (result uint64, err error) {
-	return attr.MapValue(val, c)
+func (mt MapperType) MapValue(attr *Attribute, val interface{}, c *Session, isUpdate bool) (result uint64, err error) {
+	return attr.MapValue(val, c, isUpdate)
 }
 
 // IsBSI - Is this mapper for BSI types?
@@ -269,28 +269,49 @@ func (mt MapperType) IsBSI() bool {
 	}
 }
 
-// UpdateBitmap - Mutate bitmap.
-func (mt MapperType) UpdateBitmap(c *Session, table, field string, mval uint64, isTimeSeries bool) (err error) {
+// MutateBitmap - Mutate bitmap.
+func (mt MapperType) MutateBitmap(c *Session, table, field string, mval interface{}, isUpdate bool) (err error) {
 
 	//TIME_FMT := "2006-01-02T15"
 	tbuf, ok := c.TableBuffers[table]
 	if !ok {
 		return fmt.Errorf("table %s invalid or not opened", table)
 	}
+	at, err := tbuf.Table.GetAttribute(field)
+	if err != nil {
+		return err
+	}
 	if !mt.IsBSI() {
-		//fmt.Printf("SETBIT %s [%s] COLID =  %d TS = %s\n", table, field, tbuf.CurrentColumnID,
-		//    tbuf.CurrentTimestamp.Format(TIME_FMT))
-		if err := c.BatchBuffer.SetBit(table, field, tbuf.CurrentColumnID, mval,
-			tbuf.CurrentTimestamp); err != nil {
-			return err
+		var val uint64
+		switch mval.(type) {
+		case uint64:
+			val = mval.(uint64)
+		case nil:
+			// clearing an not exclusive field is a special case.  Need clearAllRows on nodes hence the update.
+			err = c.BatchBuffer.ClearBit(table, field, tbuf.CurrentColumnID, val, tbuf.CurrentTimestamp)
+			return
+		default:
+			return fmt.Errorf("MutateBitmap unknown type : %T for val %v", mval, mval)
 		}
+		if at.NonExclusive {
+			isUpdate = false
+		}
+		err = c.BatchBuffer.SetBit(table, field, tbuf.CurrentColumnID, val, tbuf.CurrentTimestamp, isUpdate)
 	} else {
-		//fmt.Printf("SETVALUE %s [%s] COLID =  %d TS = %s\n", table, field, tbuf.CurrentColumnID,
-		//    tbuf.CurrentTimestamp.Format(TIME_FMT))
-		if err := c.BatchBuffer.SetValue(table, field, tbuf.CurrentColumnID, int64(mval),
-			tbuf.CurrentTimestamp); err != nil {
-			return err
+		var val int64
+		switch mval.(type) {
+		case uint64:
+			val = int64(mval.(uint64))
+		case int64:
+			val = mval.(int64)
+		case nil:
+			err = c.BatchBuffer.ClearValue(table, field, tbuf.CurrentColumnID, tbuf.CurrentTimestamp)
+			return
+		default:
+			err = fmt.Errorf("MutateBitmap unknown type : %T for val %v", mval, mval)
+			return
 		}
+		err = c.BatchBuffer.SetValue(table, field, tbuf.CurrentColumnID, val, tbuf.CurrentTimestamp)
 	}
 	return
 }
@@ -300,17 +321,6 @@ func ResolveMapper(attr *Attribute) (mapper Mapper, err error) {
 
 	if attr.MappingStrategy == "" {
 		return nil, fmt.Errorf("MappingStrategy is nil for '%s'", attr.FieldName)
-	}
-
-	if attr.MappingStrategy == "Delegated" && attr.DelegationTarget == "" {
-		return nil, fmt.Errorf("DelegationTarget is nil for '%s'", attr.FieldName)
-	} else if attr.MappingStrategy == "Delegated" && attr.DelegationTarget != "" {
-		target, err2 := attr.Parent.GetAttribute(attr.DelegationTarget)
-		if err2 != nil {
-			return nil, fmt.Errorf("DelegationTarget not found/specified for '%s' - %v",
-				attr.FieldName, err2)
-		}
-		return ResolveMapper(target)
 	}
 
 	if attr.MappingStrategy == "Custom" || attr.MappingStrategy == "CustomBSI" {
@@ -329,9 +339,6 @@ func ResolveMapper(attr *Attribute) (mapper Mapper, err error) {
 
 func lookupMapper(mapperName string, conf map[string]string) (Mapper, error) {
 
-	if mapperName == "Undefined" || mapperName == "Delegated" {
-		return nil, nil
-	}
 	mapperFactory, ok := mapperFactories[mapperName]
 	if !ok {
 		// Factory has not been registered.

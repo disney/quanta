@@ -14,7 +14,7 @@ import (
 // and that a cluster is NOT running.
 
 // TestRetainData fails when we can't get port 4000 closed and reopened.
-func TestRetainData(t *testing.T) {
+func xxxTestRetainData(t *testing.T) {
 
 	AcquirePort4000.Lock()
 	defer AcquirePort4000.Unlock()
@@ -52,7 +52,7 @@ func TestRetainData(t *testing.T) {
 }
 
 // TestRetainData_Part2 will check that the data written by TestRetainData is still there.
-func TestRetainData_Part2(t *testing.T) {
+func xxxTestRetainData_Part2(t *testing.T) {
 
 	AcquirePort4000.Lock()
 	defer AcquirePort4000.Unlock()

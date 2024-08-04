@@ -1,0 +1,31 @@
+tableName: nation
+primaryKey: n_nationkey
+selector: type="nation"
+attributes:
+- fieldName: n_nationkey
+  sourceName: /data/n_nationkey
+  mappingStrategy: StringHashBSI
+  #mappingStrategy: IntBSI
+  type: String
+  sourceOrdinal: 1
+- fieldName: n_name
+  sourceName: /data/n_name
+  mappingStrategy: StringEnum
+  type: String
+  sourceOrdinal: 2
+- fieldName: n_regionkey
+  sourceName: /data/n_regionkey
+  mappingStrategy: StringHashBSI
+  type: String
+  sourceOrdinal: 3
+- fieldName: n_comment
+  sourceName: /data/n_comment
+  mappingStrategy: StringHashBSI
+  type: String
+  sourceOrdinal: 4
+- fieldName: n_region_link
+  sourceName: /data/n_regionkey
+  mappingStrategy: ParentRelation
+  type: Integer
+  foreignKey: region
+  sourceOrdinal: 3

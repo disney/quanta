@@ -1386,6 +1386,9 @@ func (m *BitmapIndex) PartitionInfo(ctx context.Context,
 		if req.Index != "" && p.Index != req.Index {
 			return nil
 		}
+		if p.TQType == "" {
+			return nil
+		}
         bsi := p.Shard.(*BSIBitmap)
 		r := &pb.PartitionInfoResult{Time: p.Time.UnixNano(), Index: p.Index, Field: p.Field,
 			RowIdOrValue: p.RowIDOrBits * -1, ModTime: bsi.ModTime.UnixNano(), TqType: p.TQType}
@@ -1405,6 +1408,9 @@ func (m *BitmapIndex) PartitionInfo(ctx context.Context,
 			return nil
 		}
 		if req.Index != "" && p.Index != req.Index {
+			return nil
+		}
+		if p.TQType == "" {
 			return nil
 		}
         bitmap := p.Shard.(*StandardBitmap)

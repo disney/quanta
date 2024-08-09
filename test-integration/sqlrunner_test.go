@@ -88,7 +88,7 @@ func TestMutate(t *testing.T) {
 	// ensure we have a cluster on localhost, start one if necessary
 	state := test.Ensure_cluster(3)
 
-	fmt.Println("TestBasic")
+	fmt.Println("TestMutate")
 	currentDir, err := os.Getwd()
 	check(err)
 	err = os.Chdir("../sqlrunner") // these run from the sqlrunner/ directory

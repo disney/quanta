@@ -505,14 +505,14 @@ func (m *KVStore) DeleteIndicesWithPrefix(ctx context.Context,
 			if err := os.RemoveAll(baseDir); err != nil {
 				return &empty.Empty{}, fmt.Errorf("DeleteIndicesWithPrefix retain is false: error [%v]", err)
 			} else {
-				u.Infof("Deleted [%s]")
+				u.Infof("Deleted [%s]", k)
 			}
 		} else {
 			if !strings.HasSuffix(k, "StringEnum") {
 				if err := os.RemoveAll(k); err != nil {
 					return &empty.Empty{}, fmt.Errorf("DeleteIndicesWithPrefix retain is true:error [%v]", err)
 				} else {
-					u.Infof("Deleted [%s]")
+					u.Infof("Deleted [%s]", k)
 				}
 			}
 		}

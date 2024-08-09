@@ -475,26 +475,46 @@ func (m *KVStore) DeleteIndicesWithPrefix(ctx context.Context,
 	if req.Prefix == "" {
 		return &empty.Empty{}, fmt.Errorf("Index prefix must be specified")
 	}
+
+	u.Infof("Deleting index files for prefix %v, retain enums = %v", req.Prefix, req.RetainEnums)
+
+	// Interate over storeCache and close everything currently open for this prefix
 	m.storeCacheLock.Lock()
-	defer m.storeCacheLock.Unlock()
 	for k, v := range m.storeCache {
-		if strings.HasPrefix(k, req.Prefix) {
+		if strings.HasPrefix(k, req.Prefix + sep) {
 			v.db.Sync()
 			v.db.Close()
 			delete(m.storeCache, k)
-			if req.RetainEnums && strings.HasSuffix(k, "StringEnum") {
-				u.Infof("Sync and close [%s]", k)
-				continue
-			}
-			if err := os.RemoveAll(m.Node.dataDir + sep + "index" + sep + k); err != nil {
-				return &empty.Empty{}, fmt.Errorf("DeleteIndicesWithPrefix error [%v]", err)
-			}
-			u.Infof("Sync, close, and delete [%s]", k)
+			u.Infof("Sync and close [%s]", k)
 		}
 	}
-	if !req.RetainEnums {
-		if err := os.RemoveAll(m.Node.dataDir + sep + "index" + sep + req.Prefix); err != nil {
-			return &empty.Empty{}, fmt.Errorf("DeleteIndicesWithPrefix error [%v]", err)
+	m.storeCacheLock.Unlock()
+
+	// retrieve list of indices matching the prefix from the filesystem
+	baseDir := m.Node.dataDir + sep + "index" + sep + req.Prefix
+	files, err := os.ReadDir(baseDir)
+	if err != nil {
+		return &empty.Empty{}, fmt.Errorf("DeleteIndicesWithPrefix: %v", err)
+	}
+	for _, file := range files {
+		if !file.IsDir() {
+			continue
+		}
+		k := baseDir + sep + file.Name()
+		if !req.RetainEnums {
+			if err := os.RemoveAll(baseDir); err != nil {
+				return &empty.Empty{}, fmt.Errorf("DeleteIndicesWithPrefix retain is false: error [%v]", err)
+			} else {
+				u.Infof("Deleted [%s]")
+			}
+		} else {
+			if !strings.HasSuffix(k, "StringEnum") {
+				if err := os.RemoveAll(k); err != nil {
+					return &empty.Empty{}, fmt.Errorf("DeleteIndicesWithPrefix retain is true:error [%v]", err)
+				} else {
+					u.Infof("Deleted [%s]")
+				}
+			}
 		}
 	}
 	return &empty.Empty{}, nil

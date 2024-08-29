@@ -161,14 +161,17 @@ func (po *PartitionOperation) perform(path string, info os.FileInfo, err error) 
 	}
 
 	if info.IsDir() {
+		//u.Warn("Partition operation not allowed against directory [%v]", path)
 		return nil
 	}
 	if po.RemoveOnly {
+		u.Infof("Partition remove only for [%v]", path)
 		return os.Remove(path)
 	}
 	dest := po.newPath + sep + info.Name()
 	err2 := os.Rename(path, dest)
 	if err2 == nil {
+		u.Infof("Partition rename move [%v] to [%v]", path, dest)
 		return nil
 	}
 	if !strings.HasSuffix(err2.Error(), "invalid cross-device link") {
@@ -182,6 +185,7 @@ func (po *PartitionOperation) perform(path string, info os.FileInfo, err error) 
 	if err4 != nil {
 		return err4
 	}
+	u.Infof("Partition copy move [%v] to [%v]", path, dest)
 	return os.Remove(path)
 }
 
@@ -472,27 +476,23 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 func (m *BitmapIndex) purgePartition(aop *Partition) {
 
 	t := aop.Time.UnixNano()
-	// atw - TODO - understand
-	// The condition is wrong for bools.
-	// Since the keys are unique we can just delete the key.
-	// from both caches.
-	//if aop.RowIDOrBits > 0
-	{
-		// phoneType, city, isActive, rownum, isLegalAge
+	if aop.RowIDOrBits >= 0 {
 		rowID := uint64(aop.RowIDOrBits)
 		m.bitmapCacheLock.Lock()
 		defer m.bitmapCacheLock.Unlock()
 		_, ok := m.bitmapCache[aop.Index][aop.Field][rowID][t]
 		if ok {
 			delete(m.bitmapCache[aop.Index][aop.Field][rowID], t)
+			u.Infof("Purged standard bitmap %s.%s, ts = %v, rowID = %d", aop.Index, aop.Field, 
+				aop.Time.Format(timeFmt), rowID)
 		}
-	} // else
-	{ // numFamilyMembers, first_name, address, hashedCurtid. age, height, last_name
+	} else {
 		m.bsiCacheLock.Lock()
 		defer m.bsiCacheLock.Unlock()
 		_, ok := m.bsiCache[aop.Index][aop.Field][t]
 		if ok {
 			delete(m.bsiCache[aop.Index][aop.Field], t)
+			u.Infof("Purged BSI %s.%s, ts = %v", aop.Index, aop.Field, aop.Time.Format(timeFmt))
 		}
 	}
 }

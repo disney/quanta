@@ -1435,6 +1435,14 @@ func (m *BitmapIndex) OfflinePartitions(ctx context.Context, req *pb.PartitionIn
 		return nil, fmt.Errorf("Time must be specified.")
 	}
 
+	ts := time.Unix(0, req.Time)
+
+	if req.Index != "" {
+		u.Info("Offline partition request for %v,  table = %s", ts.Format(timeFmt), req.Index)
+	} else {
+		u.Info("Offline partition request for %v, all partitioned tables", ts.Format(timeFmt))
+	}
+
     // Iterate over shard cache insert into partition operation queue
     m.iterateBSICache(func(p *Partition) error {
 

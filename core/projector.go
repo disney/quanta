@@ -499,7 +499,6 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 				// use FK IntBSI to transpose to parent columnID set
 				if _, ok := bsiResults[p.childTable][key]; !ok {
 					goto nochild
-					//continue
 				}
 				trxColumnIDs = p.transposeFKColumnIDs(bsiResults[p.childTable][key], columnIDs)
 				nochild: if v.MappingStrategy == "ParentRelation" {
@@ -530,11 +529,11 @@ func (p *Projector) fetchStrings(columnIDs []uint64, bsiResults map[string]map[s
 		if v.MappingStrategy == "ParentRelation" || 
 				(v.Parent.Name != p.childTable && p.childTable != "" && !p.negate && p.innerJoin) {
 			lBatch, err = p.getPartitionedStrings(lookupAttribute, trxColumnIDs)
-			//u.Debugf("TRANSLATING PROJ %v, LEFT = %v, CHILD = %v, INNER = %v", v.Parent.Name, p.leftTable, 
+			//u.Errorf("TRANSLATING PROJ %v, LEFT = %v, CHILD = %v, INNER = %v", v.Parent.Name, p.leftTable, 
 			//	p.childTable, p.innerJoin)
 		} else {
 			lBatch, err = p.getPartitionedStrings(lookupAttribute, columnIDs)
-			//u.Debugf("NOT TRANSLATING PROJ %v, LEFT = %v, CHILD = %v, INNER = %v", v.Parent.Name, p.leftTable, 
+			//u.Errorf("NOT TRANSLATING PROJ %v, LEFT = %v, CHILD = %v, INNER = %v", v.Parent.Name, p.leftTable, 
 			//	p.childTable, p.innerJoin)
 		}
 		if err != nil {
@@ -619,6 +618,20 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 					return
 				}
 */
+				// Foreign key is @rownum
+				if strings.HasSuffix(v.ForeignKey, "@rownum") {
+					rs, ok := bsiResults[v.Parent.Name][v.FieldName]
+					if !ok {
+						row[i] = "NULL"
+					} else {
+						if val, ok := rs.GetValue(colID); !ok {
+							row[i] = "NULL"
+						} else {
+							row[i] = fmt.Sprintf("%10d", val)
+						}
+					}
+					continue
+				}
 				var pv *Attribute
 				if pka[0].Parent.TimeQuantumType == "" {
 					pv = pka[0]
@@ -751,9 +764,14 @@ func (p *Projector) checkColumnID(v *Attribute, cID, child uint64,
 			}
 		}
 	}
-	if (p.innerJoin || child > 0) && p.childTable != "" && v.Parent.Name != p.childTable {
+	if (p.innerJoin || child > 0) && p.childTable != "" && v.Parent.Name != p.childTable && !p.negate {
+	//if (p.innerJoin || child > 0) && p.childTable != "" && v.Parent.Name != p.leftTable {
 		if child == 0 && !p.innerJoin {
 			colID = 0
+			return
+		}
+		if v.Parent.Name == p.childTable {
+			colID = cID
 			return
 		}
 		if r, ok := p.findRelationLink(v.Parent.Name); !ok {
@@ -767,10 +785,10 @@ func (p *Projector) checkColumnID(v *Attribute, cID, child uint64,
 				val, found := b.GetValue(cID)
 				if found {
 					colID = uint64(val)
-					//u.Debugf("FOUND %s.%s - COLID = %d, CHILD = %d", v.Parent.Name, v.FieldName, colID, child)
+					//u.Errorf("CHECK COLID FOUND %s.%s - COLID = %d, CHILD = %d", v.Parent.Name, v.FieldName, colID, child)
 				} else {
 					colID = cID
-					//u.Debugf("NOT FOUND %s.%s - COLID = %d", v.Parent.Name, v.FieldName, colID)
+					//u.Errorf("CHECK NOT FOUND %s.%s - COLID = %d", v.Parent.Name, v.FieldName, colID)
 				}
 			}
 		}
@@ -779,7 +797,7 @@ func (p *Projector) checkColumnID(v *Attribute, cID, child uint64,
 		if child == 0 && v.Parent.Name == p.childTable && !p.innerJoin {
 			colID = 0
 		}
-		//u.Debugf("SKIPPING %s.%s - COLID = %d, CHILD = %d", v.Parent.Name, v.FieldName, colID, child)
+		//u.Errorf("SKIPPING %s.%s - COLID = %d, CHILD = %d", v.Parent.Name, v.FieldName, colID, child)
 	}
 	return
 }

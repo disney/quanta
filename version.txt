@@ -1,2 +1,2 @@
-quanta 0.9.14-rc-5
+quanta 0.9.14
 

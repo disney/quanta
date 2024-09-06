@@ -36,7 +36,7 @@ import (
 const (
 	Success          = 0 // Exit code for success
 	AppName          = "Kinesis-Consumer"
-	ShardChannelSize = 10000
+	ShardChannelSize = 100000
 )
 
 // Main struct defines command line arguments variables and various global meta-data associated with record loads.
@@ -49,11 +49,10 @@ type Main struct {
 	TotalRecs   *Counter
 	totalRecsL  *Counter
 	errorCount  *Counter
-	// poolPercent         *Counter
+	OpenSessions *Counter
 	Port       int
 	ConsulAddr string
 	ShardCount int
-	// lock                *api.Lock
 	Consumer            *consumer.Consumer
 	InitialPos          string
 	IsAvro              bool
@@ -66,16 +65,15 @@ type Main struct {
 	ShardKey            string
 	HashTable           *rendezvous.Table
 	shardChannels       map[string]chan DataRecord
-	shardSessionCache   map[string]*core.Session
-	shardSessionLock    sync.Mutex
+	shardSessionCache   sync.Map
 	eg                  errgroup.Group
 	CancelFunc          context.CancelFunc
-	CommitIntervalMs    int
 	processedRecs       *Counter
 	processedRecL       *Counter
 	ScanInterval        int
 	metrics             *cloudwatch.CloudWatch
 	tableCache          *core.TableCacheStruct
+	metricsTicker       *time.Ticker
 }
 
 // NewMain allocates a new pointer to Main struct with empty record counter
@@ -88,6 +86,7 @@ func NewMain() *Main {
 		processedRecs: &Counter{},
 		processedRecL: &Counter{},
 		errorCount:    &Counter{},
+		OpenSessions:  &Counter{},
 	}
 	m.tableCache = core.NewTableCacheStruct()
 	return m
@@ -186,7 +185,6 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 	// Initialize shard channels
 	u.Warnf("Shard count = %d", shardCount)
 	m.shardChannels = make(map[string]chan DataRecord)
-	m.shardSessionCache = make(map[string]*core.Session)
 	shardIds := make([]string, shardCount)
 	// ClearTableCache
 	for k := range m.tableCache.TableCache {
@@ -225,46 +223,69 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 		// m.shardChannels[k] = make(chan DataRecord, ShardChannelSize)
 		shardId := k
 		theChan := m.shardChannels[k]
+		shardPollInterval := time.Duration(m.ScanInterval) * time.Millisecond
 		m.eg.Go(func() error {
-			nextCommit := time.Now().Add(time.Millisecond * time.Duration(m.CommitIntervalMs))
-			for rec := range theChan {
-				shardTableKey := fmt.Sprintf("%v+%v", shardId, rec.TableName)
-				m.shardSessionLock.Lock()
-				conn, ok := m.shardSessionCache[shardTableKey] // cache lookup
-				if !ok {
-					conn, err = core.OpenSession(m.tableCache, "", rec.TableName, true, clientConn)
+			var shardTableKeys sync.Map
+			for {
+				select {
+					case rec, open := <- theChan:
+					if !open { 
+						goto exitloop
+					} 
+					shardTableKey := fmt.Sprintf("%v+%v", shardId, rec.TableName)
+					conn, ok := m.shardSessionCache.Load(shardTableKey)
+					if !ok {
+						conn, err = core.OpenSession(m.tableCache, "", rec.TableName, true, clientConn)
+						if err != nil {
+							return err
+						}
+						m.OpenSessions.Add(1)
+						m.shardSessionCache.Store(shardTableKey, conn)
+						shardTableKeys.Store(shardTableKey, conn)
+					}
+
+					// fmt.Printf("Kinesis PutRow %v %v %v\n", rec.TableName, rec.Data, shardId)
+					err = conn.(*core.Session).PutRow(rec.TableName, rec.Data, 0, false, false)
+	
 					if err != nil {
+						u.Errorf("ERROR in PutRow, shard %s - %v", shardId, err)
+						m.errorCount.Add(1)
 						return err
 					}
-					m.shardSessionCache[shardTableKey] = conn
-				}
-				m.shardSessionLock.Unlock()
-				// fmt.Printf("Kinesis PutRow %v %v %v\n", rec.TableName, rec.Data, shardId)
-				err = conn.PutRow(rec.TableName, rec.Data, 0, false, false)
-
-				if err != nil {
-					u.Errorf("ERROR in PutRow, shard %s - %v", shardId, err)
-					m.errorCount.Add(1)
-					return err
-				}
-				m.processedRecs.Add(1)
-				if time.Now().After(nextCommit) {
-					conn.Flush()
-					nextCommit = time.Now().Add(time.Millisecond * time.Duration(m.CommitIntervalMs))
+					m.processedRecs.Add(1)
+					default:
+						shardTableKeys.Range(func(k, v interface{}) bool {
+							conn := v.(*core.Session)
+							if conn.IsFlushing() {
+								return true
+							}
+							if time.Since(conn.BatchBuffer.FlushedAt) > time.Duration(2 * shardPollInterval) {
+								conn.CloseSession()
+								shardTableKeys.Delete(k)
+								m.shardSessionCache.Delete(k)
+								m.OpenSessions.Add(-1)
+							} else if time.Since(conn.BatchBuffer.ModifiedAt) > shardPollInterval {
+								conn.Flush()
+							}
+							return true
+						})
+					time.Sleep(shardPollInterval)
 				}
 			}
+			exitloop:
 			u.Errorf("shard channel closed. %v", shardId)
 			// sharedChannels was closed, clean up.
-			m.shardSessionLock.Lock()
-			defer m.shardSessionLock.Unlock()
-			for k, v := range m.shardSessionCache {
-				v.CloseSession()
-				delete(m.shardSessionCache, k)
-			}
+			m.shardSessionCache.Range(func(k, v interface{}) bool {
+				v.(*core.Session).CloseSession()
+				m.shardSessionCache.Delete(k)
+				m.OpenSessions.Add(-1)
+				return true
+			})
 			return nil
 		})
 	}
 	m.HashTable = rendezvous.New(shardIds)
+	m.metricsTicker = m.PrintStats()
 	u.Infof("Created consumer. ")
 
 	return shardCount, nil
@@ -307,6 +328,9 @@ func (m *Main) MainProcessingLoop() error {
 
 func (m *Main) Destroy() {
 
+	if m.PrintStats != nil {
+		m.metricsTicker.Stop()
+	}
 	m.CancelFunc = nil
 	for _, v := range m.shardChannels {
 		close(v)
@@ -362,10 +386,13 @@ func (m *Main) scanAndProcess(v *consumer.Record) error {
 		}
 		rec := DataRecord{TableName: table.Name, Data: out}
 		// fmt.Println("Pushing record to channel", rec, shard[0])
-		ch <- rec
+		select {
+		case ch <- rec:
+		}
 		m.TotalRecs.Add(1)
 		m.TotalBytes.Add(len(v.Data))
 		totalBytes.Add(float64(len(v.Data))) // tell prometheus
+
 	}
 	return nil // continue scanning
 }
@@ -425,12 +452,11 @@ func (m *Main) schemaChangeListener(e shared.SchemaChangeEvent) {
 		delete(m.tableCache.TableCache, e.Table)
 		u.Warnf("Created table %s", e.Table)
 	}
-	m.shardSessionLock.Lock()
-	defer m.shardSessionLock.Unlock()
-	for k, v := range m.shardSessionCache {
-		v.CloseSession()
-		delete(m.shardSessionCache, k)
-	}
+	m.shardSessionCache.Range(func(k, v interface{}) bool {
+		v.(*core.Session).CloseSession()
+		m.shardSessionCache.Delete(k)
+		return true
+	})
 }
 
 // printStats outputs to Log current status of Kinesis consumer
@@ -443,9 +469,9 @@ func (m *Main) PrintStats() *time.Ticker {
 		for range t.C {
 			duration := time.Since(start)
 			bytes := m.TotalBytes.Get()
-			u.Infof("Bytes: %s, Records: %v, Processed: %v, Errors: %v, Duration: %v, Rate: %v/s",
+			u.Infof("Bytes: %s, Records: %v, Processed: %v, Errors: %v, Duration: %v, Rate: %v/s, Sessions: %v",
 				core.Bytes(bytes), m.TotalRecs.Get(), m.processedRecs.Get(), m.errorCount.Get(), duration,
-				core.Bytes(float64(bytes)/duration.Seconds()))
+				core.Bytes(float64(bytes)/duration.Seconds()), m.OpenSessions.Get())
 			lastTime = m.publishMetrics(duration, lastTime)
 		}
 	}()

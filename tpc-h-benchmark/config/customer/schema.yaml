@@ -1,0 +1,47 @@
+tableName: customer
+primaryKey: c_custkey
+selector: type="customer"
+attributes:
+- fieldName: c_custkey
+  sourceName: /data/c_custkey
+  mappingStrategy: IntBSI
+  type: Integer
+  sourceOrdinal: 1
+  columnID: true
+- fieldName: c_name
+  sourceName: /data/c_name
+  mappingStrategy: StringHashBSI
+  type: String
+  sourceOrdinal: 2
+- fieldName: c_address
+  sourceName: /data/c_address
+  mappingStrategy: StringHashBSI
+  type: String
+  sourceOrdinal: 3
+- fieldName: c_nationkey
+  sourceName: /data/c_nationkey
+  mappingStrategy: ParentRelation
+  type: Integer
+  foreignKey: nation
+  sourceOrdinal: 4
+- fieldName: c_phone
+  sourceName: /data/c_phone
+  mappingStrategy: StringHashBSI
+  type: String
+  sourceOrdinal: 5
+- fieldName: c_acctbal
+  sourceName: /data/c_acctbal
+  mappingStrategy: FloatScaleBSI
+  type: Float
+  scale: 2
+  sourceOrdinal: 6
+- fieldName: c_mktsegment
+  sourceName: /data/c_mktsegment
+  mappingStrategy: StringEnum
+  type: String
+  sourceOrdinal: 7
+- fieldName: c_comment
+  sourceName: /data/c_comment
+  mappingStrategy: StringHashBSI
+  type: String
+  sourceOrdinal: 8

@@ -46,10 +46,11 @@ type StatementType int64
 const (
 	Insert StatementType = 0
 	Update StatementType = 1
-	Select StatementType = 2
-	Count  StatementType = 3
-	Admin  StatementType = 4
-	Create StatementType = 5
+	Delete StatementType = 2
+	Select StatementType = 3
+	Count  StatementType = 4
+	Admin  StatementType = 5
+	Create StatementType = 6
 )
 
 var PassCount int64
@@ -117,6 +118,8 @@ func AnalyzeRow(proxyConfig ProxyConnectStrings, row []string, validate bool) Sq
 		statementType = Insert
 	} else if strings.HasPrefix(lowerStmt, "update") {
 		statementType = Update
+	} else if strings.HasPrefix(lowerStmt, "delete") {
+		statementType = Delete
 	} else if strings.HasPrefix(lowerStmt, "select") {
 		statementType = Select
 		if strings.Contains(sqlInfo.Statement, "count(*)") {
@@ -166,15 +169,11 @@ func AnalyzeRow(proxyConfig ProxyConnectStrings, row []string, validate bool) Sq
 	}
 
 	switch statementType {
-	case Insert:
-		sqlInfo.ExecuteInsert(db)
-	case Update:
-		sqlInfo.ExecuteUpdate(db)
+	case Insert, Update, Delete:
+		sqlInfo.ExecuteStatement(db)
 	case Select:
-		// time.Sleep(500 * time.Millisecond)
 		sqlInfo.ExecuteQuery(db)
 	case Count:
-		//time.Sleep(500 * time.Millisecond)
 		sqlInfo.ExecuteScalar(db)
 	case Create:
 		sqlInfo.ExecuteCreate(db)
@@ -215,20 +214,10 @@ func (s *SqlInfo) ExecuteAdmin() {
 	}
 }
 
-func (s *SqlInfo) ExecuteInsert(db *sql.DB) {
+func (s *SqlInfo) ExecuteStatement(db *sql.DB) {
 
 	var res sql.Result
 	log.Printf("Insert Statement : %s", s.Statement)
-	res, s.Err = db.Exec(s.Statement)
-	if res != nil {
-		s.ActualRowCount, _ = res.RowsAffected()
-	}
-	s.logResult()
-}
-
-func (s *SqlInfo) ExecuteUpdate(db *sql.DB) {
-
-	var res sql.Result
 	res, s.Err = db.Exec(s.Statement)
 	if res != nil {
 		s.ActualRowCount, _ = res.RowsAffected()

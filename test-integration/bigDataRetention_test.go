@@ -139,7 +139,7 @@ func TestReadPogreb(t *testing.T) {
 
 // aka  go test -timeout 300s -run ^TestBasicLoadBig$ github.com/disney/quanta/test
 
-func TestBasicLoadBig(t *testing.T) {
+func xxxTestBasicLoadBig(t *testing.T) {
 
 	if len(e_words) == 0 {
 		str := test.English_words

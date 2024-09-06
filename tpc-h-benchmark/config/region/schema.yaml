@@ -1,0 +1,21 @@
+tableName: region
+primaryKey: r_regionkey
+selector: type="region"
+attributes:
+- fieldName: r_regionkey
+  sourceName: /data/r_regionkey
+  #mappingStrategy: StringHashBSI
+  mappingStrategy: IntBSI
+  type: Integer
+  sourceOrdinal: 1
+  columnID: true
+- fieldName: r_name
+  sourceName: /data/r_name
+  mappingStrategy: StringEnum
+  type: String
+  sourceOrdinal: 2
+- fieldName: r_comment
+  sourceName: /data/r_comment
+  mappingStrategy: StringHashBSI
+  type: String
+  sourceOrdinal: 3

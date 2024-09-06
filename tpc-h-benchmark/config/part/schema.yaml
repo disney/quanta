@@ -1,0 +1,51 @@
+tableName: part
+primaryKey: p_partkey
+selector: type="part"
+attributes:
+- fieldName: p_partkey
+  sourceName: /data/p_partkey
+  mappingStrategy: IntBSI
+  type: Integer
+  sourceOrdinal: 1
+  columnID: true
+- fieldName: p_name
+  sourceName: /data/p_name
+  mappingStrategy: StringHashBSI
+  type: String
+  sourceOrdinal: 2
+- fieldName: p_mfgr
+  sourceName: /data/p_mfgr
+  mappingStrategy: StringHashBSI
+  type: String
+  sourceOrdinal: 3
+- fieldName: p_brand
+  sourceName: /data/p_brand
+  mappingStrategy: StringHashBSI
+  type: String
+  sourceOrdinal: 4
+- fieldName: p_type
+  sourceName: /data/p_type
+  mappingStrategy: StringEnum
+  type: String
+  sourceOrdinal: 5
+- fieldName: p_size
+  sourceName: /data/p_size
+  mappingStrategy: IntBSI
+  type: Integer
+  sourceOrdinal: 6
+- fieldName: p_container
+  sourceName: /data/p_container
+  mappingStrategy: StringEnum
+  type: String
+  sourceOrdinal: 7
+- fieldName: p_retailprice
+  sourceName: /data/p_retailprice
+  mappingStrategy: FloatScaleBSI
+  type: Float
+  scale: 2
+  sourceOrdinal: 8
+- fieldName: p_comment
+  sourceName: /data/p_comment
+  mappingStrategy: StringHashBSI
+  type: String
+  sourceOrdinal: 9

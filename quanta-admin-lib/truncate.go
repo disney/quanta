@@ -43,7 +43,7 @@ func (c *TruncateCmd) Run(ctx *Context) error {
 	// Give consumers time to flush and restart.
 	time.Sleep(time.Second * 5)
 
-	err = nukeData(consulClient, ctx.Port, c.Table, "truncate", c.DropEnums)
+	err = nukeData(consulClient, ctx, c.Table, "truncate", c.DropEnums)
 	if err != nil {
 		return err
 	}

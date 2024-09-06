@@ -43,7 +43,7 @@ func TestMapperFactory(t *testing.T) {
 	assert.Nil(t, err1)
 	mapper, err := ResolveMapper(attr)
 	assert.Nil(t, err)
-	value, err2 := mapper.MapValue(attr, true, nil)
+	value, err2 := mapper.MapValue(attr, true, nil, false)
 	assert.Nil(t, err2)
 	assert.Equal(t, uint64(1), value)
 }
@@ -75,7 +75,7 @@ func TestBuiltinMappers(t *testing.T) {
 			}
 			a, err := table.GetAttribute(k)
 			if assert.Nil(t, err) {
-				value, err := a.MapValue(v, nil)
+				value, err := a.MapValue(v, nil, false)
 				if assert.Nil(t, err) {
 					values[k] = value
 				}

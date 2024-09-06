@@ -5,8 +5,6 @@ import (
 	"strings"
 	"time"
 
-	u "github.com/araddon/gou"
-
 	"github.com/disney/quanta/shared"
 	"github.com/hashicorp/consul/api"
 )
@@ -23,11 +21,13 @@ const DropAttributesAllowed = false
 // Run - Create command implementation
 func (c *CreateCmd) Run(ctx *Context) error {
 
-	u.Infof("Configuration directory = %s\n", c.SchemaDir)
-	u.Infof("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
+	if ctx.Debug {
+		fmt.Printf("Configuration directory = %s\n", c.SchemaDir)
+		fmt.Printf("Connecting to Consul at: [%s] ...\n", ctx.ConsulAddr)
+	}
 	consulClient, err := api.NewClient(&api.Config{Address: ctx.ConsulAddr})
 	if err != nil {
-		u.Info("Is the consul agent running?")
+		fmt.Printf("Is the consul agent running?\n")
 		return fmt.Errorf("Error connecting to consul %v", err)
 	}
 	table, err3 := shared.LoadSchema(c.SchemaDir, c.Table, consulClient)
@@ -36,7 +36,9 @@ func (c *CreateCmd) Run(ctx *Context) error {
 	}
 	// let's check the types of the fields
 	for i := 0; i < len(table.Attributes); i++ {
-		u.Info(table.Attributes[i].FieldName, " ", table.Attributes[i].Type)
+		if ctx.Debug {
+			fmt.Println(table.Attributes[i].FieldName, " ", table.Attributes[i].Type)
+		}
 		typ := shared.TypeFromString(table.Attributes[i].Type)
 		if typ == shared.NotDefined && table.Attributes[i].MappingStrategy != "ChildRelation" {
 			return fmt.Errorf("unknown type %s for field %s", table.Attributes[i].Type, table.Attributes[i].FieldName)
@@ -55,15 +57,19 @@ func (c *CreateCmd) Run(ctx *Context) error {
 			return fmt.Errorf("cannot create table due to missing parent FK constraint dependency")
 		}
 
-		err = performCreate(consulClient, table, ctx.Port) // this is the create
+		err = performCreate(consulClient, table, ctx) // this is the create
 		if err != nil {
 			return fmt.Errorf("errors during performCreate: %v", err)
 		}
 
-		u.Infof("Successfully created table %s\n", table.Name)
+		if ctx.Debug {
+			fmt.Printf("Successfully created table %s\n", table.Name)
+		}
 		return nil
 	} else {
-		u.Debugf("Table already exists. Comparing.\n")
+		if ctx.Debug {
+			fmt.Printf("Table already exists. Comparing.\n")
+		}
 		// If here then table already exists.  Perform compare
 		table2, err5 := shared.LoadSchema("", table.Name, consulClient)
 		if err5 != nil {
@@ -74,7 +80,7 @@ func (c *CreateCmd) Run(ctx *Context) error {
 			if DropAttributesAllowed { // if drop attributes is allowed
 				str := fmt.Sprintf("%v", err6)
 				if strings.HasPrefix(str, "attribute cannot be dropped:") {
-					u.Infof("Warnings: %v\n", err6)
+					fmt.Printf("Warnings: %v\n", err6)
 					// do reverse compare to get dropped attributes TODO:
 					ok2, warnings, err6 = table.Compare(table2)
 					if err6 != nil {
@@ -88,31 +94,31 @@ func (c *CreateCmd) Run(ctx *Context) error {
 			}
 		}
 		if ok2 {
-			u.Infof("Table already exists.  No differences detected.\n")
+			fmt.Printf("Table already exists.  No differences detected.\n")
 			return nil
 		}
 
 		// If --confirm flag not set then print warnings and exit.
 		if !c.Confirm {
-			u.Infof("Warnings:\n")
+			fmt.Printf("Warnings:\n")
 			for _, warning := range warnings {
-				u.Infof("    -> %v\n", warning)
+				fmt.Printf("    -> %v\n", warning)
 			}
 			return fmt.Errorf("if you wish to deploy the changes then re-run with --confirm flag")
 		}
 		// delete attributes dropped ?
 
-		err = performCreate(consulClient, table, ctx.Port)
+		err = performCreate(consulClient, table, ctx)
 		if err != nil {
 			return fmt.Errorf("errors during performCreate (table exists): %v", err)
 		}
 		time.Sleep(time.Second * 5)
-		u.Infof("Successfully deployed modifications to table %s\n", table.Name)
+		fmt.Printf("Successfully deployed modifications to table %s\n", table.Name)
 	}
 	return nil
 }
 
-func performCreate(consul *api.Client, table *shared.BasicTable, port int) error {
+func performCreate(consul *api.Client, table *shared.BasicTable, ctx *Context) error {
 
 	lock, errx := shared.Lock(consul, "admin-tool", "admin-tool")
 	if errx != nil {
@@ -120,13 +126,16 @@ func performCreate(consul *api.Client, table *shared.BasicTable, port int) error
 	}
 	defer shared.Unlock(consul, lock)
 
-	u.Infof("Connecting to Quanta services at port: [%d] ...\n", port)
+	if ctx.Debug {
+		fmt.Printf("Connecting to Quanta services at port: [%d] ...\n", ctx.Port)
+	}
 	conn := shared.NewDefaultConnection("performCreate")
 	defer conn.Disconnect()
-	conn.ServicePort = port
+	conn.ServicePort = ctx.Port
 	conn.Quorum = 3
 	if err := conn.Connect(consul); err != nil {
-		u.Log(u.FATAL, err)
+		fmt.Printf("%v\n", err)
+		return err
 	}
 	services := shared.NewBitmapIndex(conn)
 

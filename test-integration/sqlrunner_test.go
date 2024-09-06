@@ -45,7 +45,6 @@ func TestBasic(t *testing.T) {
 	assert.Equal(t, 0, len(got.FailedChildren))
 
 	state.Release()
-	// FIXME: see: select avg(age) as avg_age from customers_qa where age > 55 and avg_age = 70 limit 1; in the file
 }
 
 func TestInsert(t *testing.T) {
@@ -74,6 +73,37 @@ func TestInsert(t *testing.T) {
 
 	assert.Equal(t, got.ExpectedRowcount, got.ActualRowCount)
 	assert.Equal(t, 0, len(got.FailedChildren))
+	state.Release()
+}
+
+func TestMutate(t *testing.T) {
+	shared.SetUTCdefault()
+
+	isLocalRunning := test.IsLocalRunning()
+	// erase the storage
+	if !isLocalRunning { // if no cluster is up
+		err := os.RemoveAll("../test/localClusterData/") // start fresh
+		check(err)
+	}
+	// ensure we have a cluster on localhost, start one if necessary
+	state := test.Ensure_cluster(3)
+
+	fmt.Println("TestMutate")
+	currentDir, err := os.Getwd()
+	check(err)
+	err = os.Chdir("../sqlrunner") // these run from the sqlrunner/ directory
+	check(err)
+	defer os.Chdir(currentDir)
+
+	got := test.ExecuteSqlFile(state, "../sqlrunner/sqlscripts/mutate_tests_body.sql")
+
+	for _, child := range got.FailedChildren {
+		fmt.Println("child failed", child.Statement)
+	}
+
+	assert.Equal(t, got.ExpectedRowcount, got.ActualRowCount)
+	assert.Equal(t, 0, len(got.FailedChildren))
+
 	state.Release()
 }
 

@@ -51,6 +51,7 @@ attributes:
   configuration:
     delim: ";"
   type: String
+  nonExclusive: true
 - fieldName: isActive
   mappingStrategy: BoolDirect
   defaultValue: 1

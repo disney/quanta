@@ -71,8 +71,13 @@ func decorateRow(row []driver.Value, proj *rel.Projection, rowCols map[string]in
 	}
 	ctx := datasource.NewSqlDriverMessageMap(columnID, cpyRow, rowCols)
 	for i, v := range proj.Columns {
-		ri, rok := rowCols[v.As]
-		if rok {
+		ri1, aok := rowCols[v.As]
+		ri2, fok := rowCols[v.Name]
+		if fok || aok {
+			ri := ri1
+			if fok {
+				ri = ri2
+			}
 			if ri < len(row) {
 				newRow[i] = fmt.Sprintf("%s", row[ri])
 			} else {
@@ -377,7 +382,8 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 		for _, v := range orig.Columns {
 			_, isFunc := v.Expr.(*expr.FuncNode)
 			var table *schema.Table
-			l, r, isAliased := v.LeftRight()
+			//l, r, isAliased := v.LeftRight()
+			l, _, isAliased := expr.LeftRight(v.SourceOriginal)
 			if isAliased && !isFunc {
 				table = tableMap[aliasMap[l].Source.From[0].Name]
 			} else {
@@ -385,11 +391,7 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 			}
 			_, isIdent := v.Expr.(*expr.IdentityNode)
 			if vt, ok := table.Column(v.SourceField); ok && isIdent {
-				if isAliased {
-					ret.AddColumn(rel.NewColumn(fmt.Sprintf("%s.%s", l, r)), vt)
-				} else {
-					ret.AddColumn(v, vt)
-				}
+				ret.AddColumn(v, vt)
 				p := fmt.Sprintf("%s.%s", table.Name, v.SourceField)
 				if _, ok := projColsMap[p]; !ok {
 					projCols = append(projCols, p)
@@ -418,7 +420,8 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 		i := 0
 		for _, z := range ret.Columns {
 			v := z.Col
-			l, r, isAliased := v.LeftRight()
+			//l, r, isAliased := v.LeftRight()
+			l, r, isAliased := expr.LeftRight(v.SourceOriginal)
 			var table *schema.Table
 			_, isFunc := v.Expr.(*expr.FuncNode)
 			if isAliased && !isFunc {
@@ -446,11 +449,7 @@ func createProjection(orig *rel.SqlSelect, sch *schema.Schema, driverTable strin
 				}
 			} else {
 				v := z.Col
-				l, r, isAliased := v.LeftRight()
-				colName := r
-				if isAliased {
-					colName = fmt.Sprintf("%s.%s", l, r)
-				}
+				colName := v.As
 				colNames[colName] = i + rownumOffset
 				if colName == "@rownum" {
 					rownumOffset++

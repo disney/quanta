@@ -1,0 +1,32 @@
+tableName: partsupp
+primaryKey: ps_partkey+ps_suppkey
+selector: type="partsupp"
+attributes:
+- fieldName: ps_partkey
+  sourceName: /data/ps_partkey
+  mappingStrategy: ParentRelation
+  type: Integer
+  foreignKey: part
+  sourceOrdinal: 1
+- fieldName: ps_suppkey
+  sourceName: /data/ps_suppkey
+  mappingStrategy: ParentRelation
+  type: Integer
+  foreignKey: supplier
+  sourceOrdinal: 2
+- fieldName: ps_availqty
+  sourceName: /data/ps_availqty
+  mappingStrategy: IntBSI
+  type: Integer
+  sourceOrdinal: 3
+- fieldName: ps_supplycost
+  sourceName: /data/ps_supplycost
+  mappingStrategy: FloatScaleBSI
+  type: Float
+  scale: 2
+  sourceOrdinal: 4
+- fieldName: ps_comment
+  sourceName: /data/ps_comment
+  mappingStrategy: StringHashBSI
+  type: String
+  sourceOrdinal: 5

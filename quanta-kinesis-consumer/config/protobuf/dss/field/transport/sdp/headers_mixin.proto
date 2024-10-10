@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+option java_package = "dss.field.transport.sdp";
+option java_outer_classname = "HeadersMixinOuterClass";
+
+package dss.field.transport.sdp;
+

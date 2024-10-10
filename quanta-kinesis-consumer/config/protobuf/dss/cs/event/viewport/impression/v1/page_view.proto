@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.event.viewport.impression.v1";
+option java_outer_classname = "PageViewOuterClass";
+
+package dss.cs.event.viewport.impression.v1;
+
+import "dss/cs/field/viewport/v1/experiments_details.proto";
+import "dss/cs/field/viewport/v1/time_zone.proto";
+import "dss/cs/field/viewport/v1/device_profile.proto";
+import "dss/cs/field/viewport/v1/play_mode.proto";
+import "dss/cs/field/viewport/v1/consent_state.proto";
+import "dss/cs/field/viewport/v1/partner_enum.proto";
+import "dss/cs/field/viewport/v1/background_asset_type.proto";
+import "dss/cs/field/viewport/v1/session_type.proto";
+import "dss/cs/field/viewport/v1/group_id_type.proto";
+import "dss/cs/field/viewport/v1/platform.proto";
+import "dss/cs/field/viewport/v1/compliance.proto";
+import "dss/predef/predef.proto";
+import "dss/cs/field/viewport/v1/source_stream.proto";
+import "dss/cs/field/viewport/v1/environment_data.proto";
+
+message PageView {
+  .dss.cs.field.viewport.v1.EnvironmentData environmentData = 1;
+  dss.predef.StringValue userAgent = 2;
+  string deviceId = 43;
+  dss.predef.StringValue profileId = 4;
+  dss.predef.StringValue accountId = 44;
+  string ipAddress = 6;
+  dss.predef.StringValue sessionId = 45;
+  dss.predef.StringValue locationCountryCode = 8;
+  dss.predef.StringValue locationZipCode = 9;
+  dss.predef.Instant acceptedAtTimestamp = 10;
+  bool kidsModeEnabled = 11;
+  .dss.cs.field.viewport.v1.SessionTypeWrapper.SessionType sessionType = 12;
+  dss.predef.Instant correctedClientTimestamp = 13;
+  .dss.cs.field.viewport.v1.DeviceProfileWrapper deviceProfile = 15;
+  dss.predef.Instant timestamp = 16;
+  .dss.cs.field.viewport.v1.PlatformWrapper.Platform platform = 17;
+  string pageId = 18;
+  .dss.cs.field.viewport.v1.BackgroundAssetTypeWrapper backgroundAssetType = 19;
+  string appVersion = 20;
+  dss.predef.StringValue backgroundAsset = 21;
+  bool isAuthenticated = 22;
+  string pageKey = 23;
+  .dss.cs.field.viewport.v1.PlayModeWrapper playMode = 24;
+  message ConsentStatesType {
+    repeated .dss.cs.field.viewport.v1.ConsentStateWrapper.ConsentState value = 1;
+  }
+  ConsentStatesType consentStates = 26;
+  dss.predef.StringValue referrer = 27;
+  dss.predef.UUID groupId = 28;
+  dss.predef.UUID activitySessionId = 29;
+  .dss.cs.field.viewport.v1.GroupIdTypeWrapper groupIdType = 31;
+  .dss.cs.field.viewport.v1.PartnerEnumWrapper.PartnerEnum partner = 32;
+  string appName = 33;
+  dss.predef.StringValue deviceLanguage = 34;
+  message ExperimentKeysType {
+    repeated string value = 1;
+  }
+  ExperimentKeysType experimentKeys = 35;
+  dss.predef.StringValue appLanguage = 36;
+  dss.predef.StringValue destination = 38;
+  dss.predef.UUID pageViewId = 39;
+  message ExperimentsType {
+    repeated .dss.cs.field.viewport.v1.ExperimentsDetails value = 1;
+  }
+  ExperimentsType experiments = 40;
+  string pageName = 51;
+  dss.predef.StringValue playbackSessionId = 42;
+  dss.predef.StringValue browseType = 46;
+  dss.predef.StringValue browseStyle = 47;
+  dss.predef.StringValue browseBackingId = 48;
+  dss.predef.StringValue browseSlug = 49;
+  .dss.cs.field.viewport.v1.SourceStreamWrapper sourceStream = 50;
+  dss.predef.StringValue dataVersion = 52;
+  dss.predef.StringValue eventId = 53;
+  dss.predef.StringValue viewingEnvironment = 54;
+  .dss.cs.field.viewport.v1.Compliance compliance = 55;
+  dss.predef.StringValue paymentType = 56;
+  .dss.cs.field.viewport.v1.TimeZone timeZone = 57;
+  dss.predef.StringValue commerceConditions = 58;
+}

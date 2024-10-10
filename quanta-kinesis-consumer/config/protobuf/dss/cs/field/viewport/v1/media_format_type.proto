@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "MediaFormatTypeOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message MediaFormatTypeWrapper {
+  MediaFormatType value = 1;
+  enum MediaFormatType {
+    AIRING = 0;
+    DMCVIDEO = 1;
+    DMCSERIES = 2;
+    STANDARDCOLLECTION = 3;
+    AVATAR = 4;
+    NOT_APPLICABLE = 5;
+  }
+}

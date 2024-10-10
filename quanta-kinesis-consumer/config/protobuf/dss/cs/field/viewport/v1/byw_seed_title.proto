@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "BywSeedTitleOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message BywSeedTitle {
+  string contentTitle = 1;
+  string language = 2;
+}

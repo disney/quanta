@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "SourceStreamOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message SourceStreamWrapper {
+  SourceStream value = 1;
+  enum SourceStream {
+    GLIMPSE_V2 = 0;
+    VIEWPORT = 1;
+  }
+}

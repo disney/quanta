@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "SessionTypeOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message SessionTypeWrapper {
+  SessionType value = 1;
+  enum SessionType {
+    UNKNOWN = 0;
+    ANONYMOUS = 1;
+    REGISTERED = 2;
+  }
+}

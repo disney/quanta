@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.event.viewport";
+option java_outer_classname = "ViewportEventOuterClass";
+
+package dss.cs.event.viewport;
+
+import "dss/cs/event/viewport/engagement/engagement_event.proto";
+import "dss/cs/event/viewport/impression/impression_event.proto";
+
+message ViewportEvent {
+  oneof ViewportEventUnion {
+    EngagementEventValue engagementEventValueValue = 1;
+    ImpressionEventValue impressionEventValueValue = 2;
+  }
+  message EngagementEventValue {
+    .dss.cs.event.viewport.engagement.EngagementEvent value = 1;
+  }
+  message ImpressionEventValue {
+    .dss.cs.event.viewport.impression.ImpressionEvent value = 1;
+  }
+}

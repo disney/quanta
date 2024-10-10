@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "PlatformOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message PlatformWrapper {
+  Platform value = 1;
+  enum Platform {
+    WEB = 0;
+    APPLE_MOBILE = 1;
+    APPLE_TVOS = 2;
+    ANDROID_MOBILE = 3;
+    ANDROID_TV = 4;
+    ANDROID_CANAL = 5;
+    ADK = 6;
+    CANALPLUS_GSERIES = 7;
+    CABLEVISION = 8;
+    CHROMECAST = 9;
+    COMCASTX1 = 10;
+    FIRE_TV = 11;
+    FIRE_TABLET = 12;
+    LG_TV_WEBOS = 13;
+    PS4 = 14;
+    PS5 = 15;
+    ROKU = 16;
+    SKY_Q = 17;
+    SAMSUNG_TIZEN = 18;
+    TELECENTRO = 19;
+    VIZIO = 20;
+    WINDOWS_DESKTOP = 21;
+    XBOX_ONE = 22;
+    XBOX_SERIES_S = 23;
+    XBOX_SERIES_X = 24;
+    PANASONIC = 25;
+    TOSHIBA = 26;
+    HISENSE = 27;
+    ROGERS = 28;
+    COX = 29;
+    XGLOBAL = 30;
+    NINTENDO_SWITCH = 31;
+    BBD_WEB = 32;
+    DITV = 33;
+    SHAW = 34;
+    APPLE_VISION = 35;
+    CHARTER = 36;
+    FOXTEL = 37;
+    LG_AUTO = 38;
+  }
+}

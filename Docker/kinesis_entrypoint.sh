@@ -49,4 +49,8 @@ if [ -n "$SCAN_INTERVAL" ]
 then
     BOOL_FLAGS=${BOOL_FLAGS}" --scan-interval="${SCAN_INTERVAL}""
 fi
+if [ -n "$PROTO_PATH" ]
+then
+    BOOL_FLAGS=${BOOL_FLAGS}" --proto-path=${PROTO_PATH}"
+fi
 exec /usr/bin/quanta-kinesis-consumer ${STREAM} ${SCHEMA} ${SHARD_KEY} ${REGION} ${BOOL_FLAGS}

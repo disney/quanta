@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "ComplianceOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+import "dss/cs/field/viewport/v1/personal_info.proto";
+import "dss/predef/predef.proto";
+
+message Compliance {
+  .dss.cs.field.viewport.v1.PersonalInfo personalInfo = 1;
+  dss.predef.BoolValue isAdult = 2;
+  dss.predef.BoolValue allowPersonalization = 3;
+}

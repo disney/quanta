@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.event.viewport.engagement.v1";
+option java_outer_classname = "V1EventOuterClass";
+
+package dss.cs.event.viewport.engagement.v1;
+
+import "dss/cs/event/viewport/engagement/v1/input.proto";
+import "dss/cs/event/viewport/engagement/v1/interaction.proto";
+
+message V1Event {
+  oneof V1EventUnion {
+    InputValue inputValueValue = 1;
+    InteractionValue interactionValueValue = 2;
+  }
+  message InputValue {
+    .dss.cs.event.viewport.engagement.v1.Input value = 1;
+  }
+  message InteractionValue {
+    .dss.cs.event.viewport.engagement.v1.Interaction value = 1;
+  }
+}

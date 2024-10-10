@@ -12,6 +12,8 @@ LABEL version="1.0.0" \
   repository="https://github.com/disney/quanta"
 
 
+COPY ../quanta-kinesis-consumer/config/protobuf /config/protobuf
+COPY ../quanta-kinesis-consumer/config/envelope.yaml /config
 COPY ./bin/quanta-kinesis-consumer-"$platform"-"$arch" /usr/bin/quanta-kinesis-consumer
 COPY ./Docker/kinesis_entrypoint.sh /usr/bin/entrypoint.sh
 RUN chmod 755 /usr/bin/quanta-kinesis-consumer

@@ -697,6 +697,7 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 					} else {
 						switch v.MappingStrategy {
 						case "SysSecBSI":
+							t := time.Unix(val,0).UTC()
 							row[i] = t.Format(time.RFC3339)
 						case "SysMillisBSI":
 							row[i] = t.Format("2006-01-02T15:04:05.000Z")

@@ -2,9 +2,11 @@ module github.com/disney/quanta
 
 go 1.21
 
+toolchain go1.23.2
+
 require (
 	github.com/Jeffail/tunny v0.0.0-20190930221602-f13eb662a36a
-	github.com/RoaringBitmap/roaring v1.9.0
+	github.com/RoaringBitmap/roaring/v2 v2.4.0
 	github.com/akrylysov/pogreb v0.9.1
 	github.com/alecthomas/kong v0.2.17
 	github.com/araddon/dateparse v0.0.0-20210207001429-0eec95c9db7e
@@ -24,7 +26,7 @@ require (
 	github.com/gogo/protobuf v1.3.1
 	github.com/golang/protobuf v1.5.3
 	github.com/google/btree v1.0.0
-	github.com/google/uuid v1.3.0
+	github.com/google/uuid v1.6.0
 	github.com/hamba/avro/v2 v2.15.0
 	github.com/harlow/kinesis-consumer v0.3.5
 	github.com/hashicorp/consul/api v1.10.1
@@ -91,6 +93,7 @@ require (
 	github.com/confluentinc/confluent-kafka-go v1.4.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0 // indirect
+	github.com/dnaeon/go-uuid-endianness v0.0.0-20180112091600-de1a6da5f8b7 // indirect
 	github.com/fatih/color v1.9.0 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect

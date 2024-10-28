@@ -6,7 +6,8 @@ package shared
 //
 
 import (
-	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/RoaringBitmap/roaring/v2/roaring64"
+	"math/big"
 	"sync"
 	"time"
 )
@@ -334,7 +335,7 @@ func (c *BatchBuffer) ClearBit(index, field string, columnID, rowID uint64, ts t
 }
 
 // SetValue - Set a value in a BSI  Operations are batched.
-func (c *BatchBuffer) SetValue(index, field string, columnID uint64, value int64, ts time.Time) error {
+func (c *BatchBuffer) SetValue(index, field string, columnID uint64, value *big.Int, ts time.Time) error {
 
 	c.batchMutex.Lock()
 	defer c.batchMutex.Unlock()
@@ -352,13 +353,12 @@ func (c *BatchBuffer) SetValue(index, field string, columnID uint64, value int64
 		c.batchValues[index][field] = make(map[int64]*roaring64.BSI)
 	}
 	if bmap, ok := c.batchValues[index][field][ts.UnixNano()]; !ok {
-		//b := roaring64.NewDefaultBSI()  // FIXME - possible bug in BSI libraries with zero values
-		b := roaring64.NewBSI(roaring64.Min64BitSigned, roaring64.Max64BitSigned)
-		b.SetValue(columnID, value)
+		b := roaring64.NewDefaultBSI()
+		b.SetBigValue(columnID, value)
 		c.batchValues[index][field][ts.UnixNano()] = b
 		bsize = b.BitCount()
 	} else {
-		bmap.SetValue(columnID, value)
+		bmap.SetBigValue(columnID, value)
 		bsize = bmap.BitCount()
 	}
 

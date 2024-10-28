@@ -6,6 +6,7 @@ import (
 	"fmt"
 	hash "github.com/aviddiviner/go-murmur"
 	"strings"
+	"math/big"
 )
 
 // MapperType - Mapper typedef
@@ -19,8 +20,9 @@ type DefaultMapper struct {
 // Mapper - Mapper interface.   MapValue is the only required method.
 type Mapper interface {
 	Transform(attr *Attribute, val interface{}, c *Session) (newVal interface{}, err error)
-	MapValue(attr *Attribute, val interface{}, c *Session, isUpdate bool) (result uint64, err error)
-	MapValueReverse(attr *Attribute, id uint64, c *Session) (result interface{}, err error)
+	MapValue(attr *Attribute, val interface{}, c *Session, isUpdate bool) (result *big.Int, err error)
+	MapValueReverse(attr *Attribute, colID uint64, c *Session) (result interface{}, err error)
+	Render(attr *Attribute, value interface{}) string
 	GetMultiDelimiter() string
 }
 
@@ -113,6 +115,15 @@ const (
 
 	// CustomBSI - Custom mapper plugin for BSI fields
 	CustomBSI
+
+	// UUIDBSI - UUID values stored as a 128 bit BSI.
+	UUIDBSI
+
+	// TimestampBSI - 96 bit timestamps stored as BSI with nanosecond granularity
+	TimestampBSI
+
+	// StringBSI - Arbitrarily large length ASCII strings stored in a BSI
+	StringBSI
 )
 
 // Transform - Default transformer just passes the input value as return argument
@@ -125,6 +136,11 @@ func (dm DefaultMapper) Transform(attr *Attribute, val interface{}, c *Session) 
 func (dm DefaultMapper) MapValueReverse(attr *Attribute, id uint64, c *Session) (result interface{}, err error) {
 	err = fmt.Errorf("MapValueReverse - Not implemented for this mapper [%s]", dm.String())
 	return
+}
+
+// Render - Default Render function returns N/A for implementer visibility
+func (dm DefaultMapper) Render(attr *Attribute, value interface{}) string {
+	return "N/A"
 }
 
 // GetMultiDelimiter - Default delimiter is an empty string
@@ -186,6 +202,8 @@ func (mt MapperType) String() string {
 		return "BoolRegex"
 	case Contains:
 		return "Contains"
+	case UUIDBSI:
+		return "UUIDBSI"
 	case Custom:
 		return "Custom"
 	case CustomBSI:
@@ -247,6 +265,8 @@ func MapperTypeFromString(mt string) MapperType {
 		return BoolRegex
 	case "Contains":
 		return Contains
+	case "UUIDBSI":
+		return UUIDBSI
 	case "CustomBSI":
 		return CustomBSI
 	default:
@@ -255,14 +275,14 @@ func MapperTypeFromString(mt string) MapperType {
 }
 
 // MapValue - Map a value to a row id for standard bitmaps or an int64
-func (mt MapperType) MapValue(attr *Attribute, val interface{}, c *Session, isUpdate bool) (result uint64, err error) {
+func (mt MapperType) MapValue(attr *Attribute, val interface{}, c *Session, isUpdate bool) (result *big.Int, err error) {
 	return attr.MapValue(val, c, isUpdate)
 }
 
 // IsBSI - Is this mapper for BSI types?
 func (mt MapperType) IsBSI() bool {
 	switch mt {
-	case IntBSI, FloatScaleBSI, SysMillisBSI, SysMicroBSI, SysSecBSI, StringHashBSI, CustomBSI:
+	case IntBSI, FloatScaleBSI, SysMillisBSI, SysMicroBSI, SysSecBSI, StringHashBSI, UUIDBSI, CustomBSI:
 		return true
 	default:
 		return false
@@ -282,28 +302,36 @@ func (mt MapperType) MutateBitmap(c *Session, table, field string, mval interfac
 		return err
 	}
 	if !mt.IsBSI() {
-		var val uint64
+		var val *big.Int
 		switch mval.(type) {
+		case *big.Int:
+			val = mval.(*big.Int)
 		case uint64:
-			val = mval.(uint64)
+			val = big.NewInt(int64(mval.(uint64)))
 		case nil:
 			// clearing an not exclusive field is a special case.  Need clearAllRows on nodes hence the update.
-			err = c.BatchBuffer.ClearBit(table, field, tbuf.CurrentColumnID, val, tbuf.CurrentTimestamp)
-			return
+			//err = c.BatchBuffer.ClearBit(table, field, tbuf.CurrentColumnID, val, tbuf.CurrentTimestamp)
+			return fmt.Errorf("MutateBitmap: cant call ClearBit for nil rowID value")
 		default:
 			return fmt.Errorf("MutateBitmap unknown type : %T for val %v", mval, mval)
 		}
 		if at.NonExclusive {
 			isUpdate = false
 		}
-		err = c.BatchBuffer.SetBit(table, field, tbuf.CurrentColumnID, val, tbuf.CurrentTimestamp, isUpdate)
+		err = c.BatchBuffer.SetBit(table, field, tbuf.CurrentColumnID, val.Uint64(), tbuf.CurrentTimestamp, isUpdate)
 	} else {
-		var val int64
+		var val *big.Int
 		switch mval.(type) {
+		case *big.Int:
+			val = mval.(*big.Int)
+			if val == nil {
+				err = c.BatchBuffer.ClearValue(table, field, tbuf.CurrentColumnID, tbuf.CurrentTimestamp)
+				return
+			}
 		case uint64:
-			val = int64(mval.(uint64))
+			val = big.NewInt(int64(mval.(uint64)))
 		case int64:
-			val = mval.(int64)
+			val = big.NewInt(mval.(int64))
 		case nil:
 			err = c.BatchBuffer.ClearValue(table, field, tbuf.CurrentColumnID, tbuf.CurrentTimestamp)
 			return
@@ -387,10 +415,11 @@ func init() {
 	Register(SysMillisBSI.String(), NewSysMillisBSIMapper)
 	Register(SysMicroBSI.String(), NewSysMicroBSIMapper)
 	Register(SysSecBSI.String(), NewSysSecBSIMapper)
+	Register(UUIDBSI.String(), NewUUIDBSIMapper)
 }
 
 // Get64BitHash - Hash a string.
-func Get64BitHash(s string) uint64 {
+func Get64BitHash(s string) *big.Int {
 	//return hash.MurmurHash64A([]byte(s), 0)
-	return uint64(hash.MurmurHash2([]byte(s), 0))
+	return big.NewInt(int64(hash.MurmurHash2([]byte(s), 0)))
 }

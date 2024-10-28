@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/RoaringBitmap/roaring/v2/roaring64"
 	"github.com/akrylysov/pogreb"
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"

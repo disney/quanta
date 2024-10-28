@@ -11,9 +11,11 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math/big"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/RoaringBitmap/roaring/v2/roaring64"
 	u "github.com/araddon/gou"
 
 	"runtime/debug"
@@ -37,12 +39,12 @@ func (m *BitmapIndex) Query(ctx context.Context, query *pb.BitmapQuery) (*pb.Que
 		return nil, fmt.Errorf("query must not be nil")
 	}
 
-	// d, errx := json.Marshal(&query)
-	// if errx != nil {
-	// 	u.Errorf("error: %v", errx)
-	// 	return nil, errx
-	// }
-	// u.Debugf("Query dump:\n%s\n\n", string(d))
+	d, errx := json.Marshal(&query)
+	if errx != nil {
+	 	u.Errorf("error: %v", errx)
+	 	return nil, errx
+	}
+	u.Debugf("Query dump:\n%s\n\n", string(d))
 
 	if query.Query == nil {
 		return nil, fmt.Errorf("query fragment array must not be nil")
@@ -117,6 +119,14 @@ func (m *BitmapIndex) Query(ctx context.Context, query *pb.BitmapQuery) (*pb.Que
 			}
 		} else if v.BsiOp > 0 {
 			start := time.Now()
+			values := make([]*big.Int, len(v.Values))
+			for i, v := range v.Values {
+				values[i] = new(big.Int).SetBytes(v)
+			}
+			value := new(big.Int).SetBytes(v.Value)
+			begin := new(big.Int).SetBytes(v.Begin)
+			end := new(big.Int).SetBytes(v.End)
+
 			bsi, err := m.timeRangeBSI(v.Index, v.Field, fromTime, toTime, nil, false)
 			if err != nil {
 				return nil, err
@@ -127,19 +137,19 @@ func (m *BitmapIndex) Query(ctx context.Context, query *pb.BitmapQuery) (*pb.Que
 			start = time.Now()
 			switch v.BsiOp {
 			case pb.QueryFragment_LT:
-				bm = bsi.CompareValue(0, roaring64.LT, v.Value, 0, nil)
+				bm = bsi.CompareBigValue(0, roaring64.LT, value, big.NewInt(0), nil)
 			case pb.QueryFragment_LE:
-				bm = bsi.CompareValue(0, roaring64.LE, v.Value, 0, nil)
+				bm = bsi.CompareBigValue(0, roaring64.LE, value, big.NewInt(0), nil)
 			case pb.QueryFragment_EQ:
-				bm = bsi.CompareValue(0, roaring64.EQ, v.Value, 0, nil)
+				bm = bsi.CompareBigValue(0, roaring64.EQ, value, big.NewInt(0), nil)
 			case pb.QueryFragment_GE:
-				bm = bsi.CompareValue(0, roaring64.GE, v.Value, 0, nil)
+				bm = bsi.CompareBigValue(0, roaring64.GE, value, big.NewInt(0), nil)
 			case pb.QueryFragment_GT:
-				bm = bsi.CompareValue(0, roaring64.GT, v.Value, 0, nil)
+				bm = bsi.CompareBigValue(0, roaring64.GT, value, big.NewInt(0), nil)
 			case pb.QueryFragment_RANGE:
-				bm = bsi.CompareValue(0, roaring64.RANGE, v.Begin, v.End, nil)
+				bm = bsi.CompareBigValue(0, roaring64.RANGE, begin, end, nil)
 			case pb.QueryFragment_BATCH_EQ:
-				bm = bsi.BatchEqual(0, v.Values)
+				bm = bsi.BatchEqualBig(0, values)
 			}
 			elapsed = time.Since(start)
 			u.Debugf("BSI Compare (%d) elapsed time %v", v.BsiOp, elapsed)

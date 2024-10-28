@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"os"
 	"plugin"
 	"reflect"
@@ -491,10 +492,10 @@ func (a *Attribute) Transform(val interface{}, c *Session) (newVal interface{}, 
 }
 
 // MapValue - Return the row ID for a given value (Standard Bitmap)
-func (a *Attribute) MapValue(val interface{}, c *Session, isUpdate bool) (result uint64, err error) {
+func (a *Attribute) MapValue(val interface{}, c *Session, isUpdate bool) (result *big.Int, err error) {
 
 	if a.mapperInstance == nil {
-		return 0, fmt.Errorf("attribute '%s' MapperInstance is nil", a.FieldName)
+		return nil, fmt.Errorf("attribute '%s' MapperInstance is nil", a.FieldName)
 	}
 	return a.mapperInstance.MapValue(a, val, c, isUpdate)
 }
@@ -524,11 +525,22 @@ func (a *Attribute) ToBackingValue(rowIDs []uint64, c *Session) (result string, 
 			s[i] = fmt.Sprintf("%v", v)
 		case int, int32, int64:
 			s[i] = fmt.Sprintf("%d", v)
+		case *big.Int:
+			s[i] = v.(*big.Int).Text(10)
 		default:
 			return "", fmt.Errorf("ToBackingValue: Unsupported type %T", t)
 		}
 	}
 	return strings.Join(s, a.mapperInstance.GetMultiDelimiter()), nil
+}
+
+// Render - Return a string value to be rendered
+func (a *Attribute) Render(value interface{}) string  {
+
+	if a.mapperInstance == nil {
+		return fmt.Sprintf("attribute '%s' MapperInstance is nil", a.FieldName)
+	}
+	return a.mapperInstance.Render(a, value)
 }
 
 // Field Metadata struct

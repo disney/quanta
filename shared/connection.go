@@ -582,7 +582,7 @@ func (m *Conn) updateHealth(initial bool) (err error) {
 		m.nodeMap[id] = i
 	}
 
-	u.Info("Conn update nodeMap", m.owner, "old", oldNodeMap, "new", m.nodeMap, uintptr(unsafe.Pointer(m)))
+	u.Debug("Conn update nodeMap", m.owner, "old", oldNodeMap, "new", m.nodeMap, uintptr(unsafe.Pointer(m)))
 
 	// Identify new member joins, if is an update and not first scan.
 	if !initial {

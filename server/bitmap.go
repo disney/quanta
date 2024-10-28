@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/Jeffail/tunny"
-	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/RoaringBitmap/roaring/v2/roaring64"
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
@@ -486,7 +486,7 @@ func (m *BitmapIndex) batchProcessLoop(worker *WorkerThread) {
 			}
 			m.shardCount = m.bsiCount + m.bitmapCount
 			if worker.index == 0 {
-				u.Debug("batchProcessLoop shard count ", m.hashKey, " shard ", m.shardCount, " bsi ", m.bsiCount, " bitmap ", m.bitmapCount)
+				//u.Debug("batchProcessLoop shard count ", m.hashKey, " shard ", m.shardCount, " bsi ", m.bsiCount, " bitmap ", m.bitmapCount)
 			}
 			// no default, block
 		}
@@ -1079,10 +1079,10 @@ func (m *BitmapIndex) checkPersistBitmapCache(forceSync bool) {
 	if writeCount > 0 {
 		if forceSync {
 			m.saveBitmapTCnt.Store(writeCount)
-			u.Debugf("Persist [timer expired] %d files done in %v", writeCount, elapsed)
+			//u.Debugf("Persist [timer expired] %d files done in %v", writeCount, elapsed)
 		} else {
 			m.saveBitmapECnt.Store(writeCount)
-			u.Debugf("Persist [edge triggered] %d files done in %v", writeCount, elapsed)
+			//u.Debugf("Persist [edge triggered] %d files done in %v", writeCount, elapsed)
 		}
 	}
 }
@@ -1126,10 +1126,10 @@ func (m *BitmapIndex) checkPersistBSICache(forceSync bool) {
 	if writeCount > 0 {
 		if forceSync {
 			m.saveBSITCnt.Store(writeCount)
-			u.Debugf("Persist BSI [timer expired] %d files done in %v", writeCount, elapsed)
+			//u.Debugf("Persist BSI [timer expired] %d files done in %v", writeCount, elapsed)
 		} else {
 			m.saveBSIECnt.Store(writeCount)
-			u.Debugf("Persist BSI [edge triggered] %d files done in %v", writeCount, elapsed)
+			//u.Debugf("Persist BSI [edge triggered] %d files done in %v", writeCount, elapsed)
 		}
 	}
 }

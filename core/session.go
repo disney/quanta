@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/binary"
 	"fmt"
+	"math/big"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -698,6 +699,34 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		cval = vals[0]
 		tbuf.CurrentPKValue[i] = cval
 
+// NEW IMPLEMENTATION STARTS
+		mval, err := pk.MapValue(cval, nil, false)
+		if err != nil {
+			return false, fmt.Errorf("error mapping PK field %s [%v], Schema mapping issue?",
+				pqColPaths[0], err)
+		}
+		strVal := pk.Render(mval)
+		switch shared.TypeFromString(pk.Type) {
+		case shared.Date, shared.DateTime:
+			if i == 0 { // First field in PK is TQ (if TQ != "")
+				tbuf.CurrentTimestamp, _, _ = shared.ToTQTimestamp(tbuf.Table.TimeQuantumType, strVal)
+			}
+			if pk.ColumnID {
+				if cID, err := strconv.ParseInt(cval.(string), 10, 64); err == nil {
+					tbuf.CurrentColumnID = uint64(cID)
+					directColumnID = true
+				}
+			}
+		case shared.Integer:
+			if pk.ColumnID {
+				if cID, err := strconv.ParseInt(strVal, 10, 64); err == nil {
+					tbuf.CurrentColumnID = uint64(cID)
+					directColumnID = true
+				}
+			}
+		}
+
+/*  REFACTOR THIS
 		switch reflect.ValueOf(cval).Kind() {
 		case reflect.String:
 			// Do nothing already a string
@@ -742,10 +771,11 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 			return false, fmt.Errorf("PK Lookup value [%v] unknown type, it is [%v]", cval,
 				reflect.ValueOf(cval).Kind())
 		}
+*/
 		if pkLookupVal.Len() == 0 {
-			pkLookupVal.WriteString(cval.(string))
+			pkLookupVal.WriteString(strVal)
 		} else {
-			pkLookupVal.WriteString(fmt.Sprintf("+%s", cval.(string)))
+			pkLookupVal.WriteString(fmt.Sprintf("+%s", strVal))
 		}
 	}
 
@@ -1051,7 +1081,7 @@ func (s *Session) Commit() error {
 }
 
 // MapValue - Convenience function for Mapper interface.
-func (s *Session) MapValue(tableName, fieldName string, value interface{}, update bool) (val uint64, err error) {
+func (s *Session) MapValue(tableName, fieldName string, value interface{}, update bool) (val *big.Int, err error) {
 
 	var table *Table
 	var attr *Attribute
@@ -1061,7 +1091,7 @@ func (s *Session) MapValue(tableName, fieldName string, value interface{}, updat
 	}
 	attr, err = table.GetAttribute(fieldName)
 	if err != nil {
-		return 0, fmt.Errorf("attribute '%s' not found", fieldName)
+		return nil, fmt.Errorf("attribute '%s' not found", fieldName)
 	}
 
 	/*

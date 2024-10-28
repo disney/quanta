@@ -5,13 +5,14 @@ package source
 import (
 	"database/sql/driver"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
 	u "github.com/araddon/gou"
 	"golang.org/x/net/context"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/RoaringBitmap/roaring/v2/roaring64"
 	"github.com/araddon/dateparse"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/qlbridge/datasource"
@@ -558,7 +559,7 @@ func (m *SQLToQuanta) walkFilterTri(node *expr.TriNode, q *shared.QueryFragment)
 		leftval, err1 := m.conn.MapValue(fr.Parent.Name, nm, arg2val.Value(), false)
 		rightval, err2 := m.conn.MapValue(fr.Parent.Name, nm, arg3val.Value(), false)
 		if err1 == nil && err2 == nil {
-			q.SetBSIRangePredicate(fr.Parent.Name, fr.FieldName, int64(leftval), int64(rightval))
+			q.SetBSIRangePredicate(fr.Parent.Name, fr.FieldName, leftval, rightval)
 		} else if err1 != nil {
 			err := fmt.Errorf("BETWEEN cannot map left value %v in field '%s' - %v", arg2val.Value(), nm, err1)
 			u.Errorf(err.Error())
@@ -748,13 +749,13 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 					q.Operation = "DIFFERENCE" // Avoid conversion to UNION, corrected server side.
 					q.SetNullPredicate(f.Parent.Name, f.FieldName)
 				} else {
-					rowID, err := m.conn.MapValue(f.Parent.Name, lhval.ToString(), rhval.Value(), false)
+					value, err := m.conn.MapValue(f.Parent.Name, lhval.ToString(), rhval.Value(), false)
 					if err != nil {
 						u.Warnf("not ok: %v  l:%v  r:%v", node, lhval, rhval)
 						return nil, err
 					}
 					if isBSI {
-						q.SetBSIPredicate(f.Parent.Name, f.FieldName, "EQ", int64(rowID))
+						q.SetBSIPredicate(f.Parent.Name, f.FieldName, "EQ", value)
 						pka, _ := f.Parent.GetPrimaryKeyInfo()
 						if pka[0].FieldName == f.FieldName {
 							loc, _ := time.LoadLocation("Local")
@@ -775,7 +776,7 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 							}
 						}
 					} else {
-						q.SetBitmapPredicate(f.Parent.Name, f.FieldName, rowID)
+						q.SetBitmapPredicate(f.Parent.Name, f.FieldName, value.Uint64())
 					}
 				}
 			} else {
@@ -834,7 +835,7 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 					}
 					if firstTime {
 						firstTime = false
-						q.SetBitmapPredicate(fr.Parent.Name, fr.FieldName, rowID)
+						q.SetBitmapPredicate(fr.Parent.Name, fr.FieldName, rowID.Uint64())
 						if isNegate {
 							q.Operation = "DIFFERENCE"
 						} else {
@@ -844,7 +845,7 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 					} else {
 						f := q.Query.NewQueryFragment()
 						f.Negate = isNegate
-						f.SetBitmapPredicate(fr.Parent.Name, fr.FieldName, rowID)
+						f.SetBitmapPredicate(fr.Parent.Name, fr.FieldName, rowID.Uint64())
 						if isNegate {
 							f.Operation = "DIFFERENCE"
 						} else {
@@ -854,7 +855,7 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 					}
 				}
 			} else {
-				values := make([]int64, 0)
+				values := make([]*big.Int, 0)
 				tableName := m.ResolveTable(node)
 				for _, v := range vt.Values() {
 					rowID, err := m.conn.MapValue(tableName, nm, v, false)
@@ -862,7 +863,7 @@ func (m *SQLToQuanta) walkFilterBinary(node *expr.BinaryNode, q *shared.QueryFra
 						u.Warnf("not ok: %v  l:%v  r:%v", node, nm, v)
 						return nil, err
 					}
-					values = append(values, int64(rowID))
+					values = append(values, rowID)
 				}
 				if isNegate {
 					q.Operation = "DIFFERENCE"
@@ -930,7 +931,7 @@ func (m *SQLToQuanta) handleBSI(op string, lhval, rhval value.Value, q *shared.Q
 		}
 	}
 	if mv, err := m.conn.MapValue(tableName, nm, rhval.Value(), false); err == nil {
-		q.SetBSIPredicate(fr.Parent.Name, fr.FieldName, op, int64(mv))
+		q.SetBSIPredicate(fr.Parent.Name, fr.FieldName, op, mv)
 		pka, _ := fr.Parent.GetPrimaryKeyInfo()
 		if pka[0].FieldName == fr.FieldName {
 			loc, _ := time.LoadLocation("Local")
@@ -1451,10 +1452,10 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 			u.Infof("LIKE '%s' matches %d items.\n", f.Search, len(results))
 			elapsed := time.Since(start)
 			u.Infof("Text search done in %v. Passing hashcodes to query.\n", elapsed)
-			values := make([]int64, len(results))
+			values := make([]*big.Int, len(results))
 			j := 0
 			for result := range results {
-				values[j] = int64(result)
+				values[j] = big.NewInt(int64(result))
 				j++
 			}
 			if f.Operation == "LIKE_UNION" {

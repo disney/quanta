@@ -552,9 +552,6 @@ func extractSecondsAndNanosToBigInt(mapv map[string]interface{}, secsSource,
 	if !sok {
 		return nil, fmt.Errorf("'seconds' is missing from source")
 	}
-	if !nok {
-		return nil, fmt.Errorf("'nanos' is missing from source")
-	}
 	var seconds, nanos int64
 	var err error
 	if v, ok := secsVal.(float64); ok {
@@ -565,10 +562,12 @@ func extractSecondsAndNanosToBigInt(mapv map[string]interface{}, secsSource,
 			return nil, fmt.Errorf("extractSecondsAndNanos parsing 'seconds' - %v", err)
 		}
 	}
-	if v, ok := nanoVal.(float64); ok {
-		nanos = int64(v)
-	} else { // String
-		nanos, _ = strconv.ParseInt(nanoVal.(string), 10, 64)
+	if nok {
+		if v, ok := nanoVal.(float64); ok {
+			nanos = int64(v)
+		} else { // String
+			nanos, _ = strconv.ParseInt(nanoVal.(string), 10, 64)
+		}
 	}
 	bigTime := big.NewInt(int64(seconds*1000000000 + nanos))
 	return bigTime, nil
@@ -977,20 +976,30 @@ func (m UUIDBSIMapper) MapValue(attr *Attribute, val interface{},
 		mapv := val.(map[string]interface{})
 		result = extractUpperAndLowerBitsToBigInt(mapv, m.upperSrc, m.lowerSrc)
 	case string:
+
+/*
 			if uuidVal, errx := endian.FromBytes([]byte(val.(string))); errx == nil {
-				b, _ := uuidVal.MiddleEndianBytes()
+				b, _ := uuidVal.BigEndianBytes()
 				result = new(big.Int).SetBytes(b)
 			} else {
 				err = errx
 			}
+*?
 /*
-			if uuidVal, errx := uuid.Parse(val.(string)); errx == nil {
-				b, _ := uuidVal.MarshalBinary()
-				result = new(big.Int).SetBytes(b)
-			} else {
-				err = errx
+			nuuid, _ := endian.FromBytes(val.Bytes())
+			middleEndian, _ :=  nuuid.MiddleEndianBytes()
+			if newUUID, err := uuid.FromBytes(middleEndian); err == nil {
+				return newUUID.String()
 			}
 */
+			if uuidVal, errx := uuid.Parse(val.(string)); errx == nil {
+				b, _ := uuidVal.MarshalBinary()
+				nuuid, _ := endian.FromBytes(b)
+				middleEndian, _ :=  nuuid.MiddleEndianBytes()
+				result = new(big.Int).SetBytes(middleEndian)
+			} else {
+				err = errx
+			}
 	case nil:
 		if c != nil {
 			err = m.MutateBitmap(c, attr.Parent.Name, attr.FieldName, nil, false)
@@ -1009,11 +1018,18 @@ func (m UUIDBSIMapper) Render(attr *Attribute, value interface{}) string {
 	if val, ok := value.(*big.Int); ok {
 		switch shared.TypeFromString(attr.Type) {
 		case shared.String:
+			nuuid, _ := endian.FromBytes(val.Bytes())
+			middleEndian, _ :=  nuuid.MiddleEndianBytes()
+			if newUUID, err := uuid.FromBytes(middleEndian); err == nil {
+				return newUUID.String()
+			}
+/*
 			if newUUID, err := uuid.FromBytes(val.Bytes()); err == nil {
 				return newUUID.String()
 			} else {
 				return fmt.Sprintf("%v", err)
 			}
+*/
 		}
 	}
 	return "???"

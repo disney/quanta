@@ -310,8 +310,8 @@ func (mt MapperType) MutateBitmap(c *Session, table, field string, mval interfac
 			val = big.NewInt(int64(mval.(uint64)))
 		case nil:
 			// clearing an not exclusive field is a special case.  Need clearAllRows on nodes hence the update.
-			//err = c.BatchBuffer.ClearBit(table, field, tbuf.CurrentColumnID, val, tbuf.CurrentTimestamp)
-			return fmt.Errorf("MutateBitmap: cant call ClearBit for nil rowID value")
+			err = c.BatchBuffer.ClearBit(table, field, tbuf.CurrentColumnID, 0, tbuf.CurrentTimestamp)
+			return
 		default:
 			return fmt.Errorf("MutateBitmap unknown type : %T for val %v", mval, mval)
 		}

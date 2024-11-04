@@ -523,7 +523,7 @@ func (a *Attribute) ToBackingValue(rowIDs []uint64, c *Session) (result string, 
 			s[i] = v.(string)
 		case bool:
 			s[i] = fmt.Sprintf("%v", v)
-		case int, int32, int64:
+		case int, int32, int64, uint64:
 			s[i] = fmt.Sprintf("%d", v)
 		case *big.Int:
 			s[i] = v.(*big.Int).Text(10)

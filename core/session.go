@@ -700,14 +700,17 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		tbuf.CurrentPKValue[i] = cval
 
 // NEW IMPLEMENTATION STARTS
+		var strVal string
 		mval, err := pk.MapValue(cval, nil, false)
 		if err != nil {
 			return false, fmt.Errorf("error mapping PK field %s [%v], Schema mapping issue?",
 				pqColPaths[0], err)
 		}
-		strVal := pk.Render(mval)
 		switch shared.TypeFromString(pk.Type) {
+		case shared.String:
+			strVal = cval.(string)
 		case shared.Date, shared.DateTime:
+			strVal = pk.Render(mval)
 			if i == 0 { // First field in PK is TQ (if TQ != "")
 				tbuf.CurrentTimestamp, _, _ = shared.ToTQTimestamp(tbuf.Table.TimeQuantumType, strVal)
 			}
@@ -718,12 +721,15 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 				}
 			}
 		case shared.Integer:
+			strVal = pk.Render(mval)
 			if pk.ColumnID {
 				if cID, err := strconv.ParseInt(strVal, 10, 64); err == nil {
 					tbuf.CurrentColumnID = uint64(cID)
 					directColumnID = true
 				}
 			}
+		default:
+			strVal = pk.Render(mval)
 		}
 
 /*  REFACTOR THIS

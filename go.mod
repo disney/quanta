@@ -6,7 +6,7 @@ toolchain go1.23.2
 
 require (
 	github.com/Jeffail/tunny v0.0.0-20190930221602-f13eb662a36a
-	github.com/RoaringBitmap/roaring/v2 v2.4.0
+	github.com/RoaringBitmap/roaring/v2 v2.4.1
 	github.com/akrylysov/pogreb v0.9.1
 	github.com/alecthomas/kong v0.2.17
 	github.com/araddon/dateparse v0.0.0-20210207001429-0eec95c9db7e
@@ -22,6 +22,7 @@ require (
 	github.com/banzaicloud/logrus-runtime-formatter v0.0.0-20190729070250-5ae5475bae5e
 	github.com/bbalet/stopwords v1.0.0
 	github.com/bufbuild/protocompile v0.14.1
+	github.com/dnaeon/go-uuid-endianness v0.0.0-20180112091600-de1a6da5f8b7
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/gogo/protobuf v1.3.1
 	github.com/golang/protobuf v1.5.3
@@ -93,7 +94,6 @@ require (
 	github.com/confluentinc/confluent-kafka-go v1.4.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0 // indirect
-	github.com/dnaeon/go-uuid-endianness v0.0.0-20180112091600-de1a6da5f8b7 // indirect
 	github.com/fatih/color v1.9.0 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
@@ -144,5 +144,3 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/RoaringBitmap/roaring/v2 => /home/ec2-user/roaring

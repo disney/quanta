@@ -11,7 +11,7 @@ import (
 	"io"
 	"unsafe"
 
-	"math"
+	//"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -330,12 +330,12 @@ type BSIBitmap struct {
 func (m *BitmapIndex) newBSIBitmap(index, field string) *BSIBitmap {
 
 	attr, err := m.getFieldConfig(index, field)
-	var minValue, maxValue int64
+//	var minValue, maxValue int64
 	var timeQuantumType string
 	if err == nil {
 		timeQuantumType = attr.TimeQuantumType
-		minValue = int64(attr.MinValue)
-		maxValue = int64(attr.MaxValue)
+//		minValue = int64(attr.MinValue)
+//		maxValue = int64(attr.MaxValue)
 	}
 	var seq *SequencerQueue
 	if attr.Parent.PrimaryKey != "" || attr.Parent.TimeQuantumField != "" {
@@ -343,13 +343,15 @@ func (m *BitmapIndex) newBSIBitmap(index, field string) *BSIBitmap {
 		if attr.FieldName == pkInfo[0].FieldName {
 			// If compound key, sequencer installed on first key attr
 			seq = NewSequencerQueue()
-			if maxValue == 0 {
-				maxValue = math.MaxInt64
-			}
+//			if maxValue == 0 {
+//				maxValue = math.MaxInt64
+//			}
 		}
 	}
 	ts := time.Now()
-	return &BSIBitmap{BSI: roaring64.NewBSI(maxValue, minValue),
+//	return &BSIBitmap{BSI: roaring64.NewBSI(maxValue, minValue),
+//		TQType: timeQuantumType, ModTime: ts, AccessTime: ts, sequencerQueue: seq}
+	return &BSIBitmap{BSI: roaring64.NewDefaultBSI(),
 		TQType: timeQuantumType, ModTime: ts, AccessTime: ts, sequencerQueue: seq}
 }
 
@@ -1438,9 +1440,9 @@ func (m *BitmapIndex) OfflinePartitions(ctx context.Context, req *pb.PartitionIn
 	ts := time.Unix(0, req.Time)
 
 	if req.Index != "" {
-		u.Info("Offline partition request for %v,  table = %s", ts.Format(timeFmt), req.Index)
+		u.Infof("Offline partition request for %v,  table = %s", ts.Format(timeFmt), req.Index)
 	} else {
-		u.Info("Offline partition request for %v, all partitioned tables", ts.Format(timeFmt))
+		u.Infof("Offline partition request for %v, all partitioned tables", ts.Format(timeFmt))
 	}
 
     // Iterate over shard cache insert into partition operation queue

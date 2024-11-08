@@ -699,7 +699,6 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		cval = vals[0]
 		tbuf.CurrentPKValue[i] = cval
 
-// NEW IMPLEMENTATION STARTS
 		var strVal string
 		mval, err := pk.MapValue(cval, nil, false)
 		if err != nil {
@@ -708,7 +707,10 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		}
 		switch shared.TypeFromString(pk.Type) {
 		case shared.String:
-			strVal = cval.(string)
+			var ok bool
+			if strVal, ok = cval.(string); !ok {
+				strVal = pk.Render(mval)
+			}
 		case shared.Date, shared.DateTime:
 			strVal = pk.Render(mval)
 			if i == 0 { // First field in PK is TQ (if TQ != "")
@@ -732,52 +734,6 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 			strVal = pk.Render(mval)
 		}
 
-/*  REFACTOR THIS
-		switch reflect.ValueOf(cval).Kind() {
-		case reflect.String:
-			// Do nothing already a string
-			if i == 0 { // First field in PK is TQ (if TQ != "")
-				if pk.MappingStrategy == "SysMillisBSI" || pk.MappingStrategy == "SysMicroBSI" {
-					strVal := cval.(string)
-					tbuf.CurrentTimestamp, _, _ = shared.ToTQTimestamp(tbuf.Table.TimeQuantumType, strVal)
-				}
-			}
-			if pk.ColumnID {
-				if cID, err := strconv.ParseInt(cval.(string), 10, 64); err == nil {
-					tbuf.CurrentColumnID = uint64(cID)
-					directColumnID = true
-				}
-			}
-		case reflect.Int64:
-			orig := cval.(int64)
-			cval = fmt.Sprintf("%d", orig)
-
-			if i == 0 {
-				tFormat := shared.YMDTimeFmt
-				if tbuf.Table.TimeQuantumType == "YMDH" {
-					tFormat = shared.YMDHTimeFmt
-				}
-				if pk.MappingStrategy == "SysMillisBSI" || pk.MappingStrategy == "SysMicroBSI" {
-					ts := time.Unix(0, orig*1000000)
-					if pk.MappingStrategy == "SysMicroBSI" {
-						ts = time.Unix(0, orig*1000)
-					}
-					tbuf.CurrentTimestamp, _, _ = shared.ToTQTimestamp(tbuf.Table.TimeQuantumType, ts.Format(tFormat))
-				}
-			}
-		case reflect.Float64:
-			orig := cval.(float64)
-			f := fmt.Sprintf("%%10.%df", pk.Scale)
-			cval = fmt.Sprintf(f, orig)
-		case reflect.Float32:
-			orig := cval.(float32)
-			f := fmt.Sprintf("%%10.%df", pk.Scale)
-			cval = fmt.Sprintf(f, orig)
-		default:
-			return false, fmt.Errorf("PK Lookup value [%v] unknown type, it is [%v]", cval,
-				reflect.ValueOf(cval).Kind())
-		}
-*/
 		if pkLookupVal.Len() == 0 {
 			pkLookupVal.WriteString(strVal)
 		} else {

@@ -137,15 +137,15 @@ func (m *BitmapIndex) Query(ctx context.Context, query *pb.BitmapQuery) (*pb.Que
 			start = time.Now()
 			switch v.BsiOp {
 			case pb.QueryFragment_LT:
-				bm = bsi.CompareBigValue(0, roaring64.LT, value, big.NewInt(0), nil)
+				bm = bsi.CompareBigValue(0, roaring64.LT, value, nil, nil)
 			case pb.QueryFragment_LE:
-				bm = bsi.CompareBigValue(0, roaring64.LE, value, big.NewInt(0), nil)
+				bm = bsi.CompareBigValue(0, roaring64.LE, value, nil, nil)
 			case pb.QueryFragment_EQ:
-				bm = bsi.CompareBigValue(0, roaring64.EQ, value, big.NewInt(0), nil)
+				bm = bsi.CompareBigValue(0, roaring64.EQ, value, nil, nil)
 			case pb.QueryFragment_GE:
-				bm = bsi.CompareBigValue(0, roaring64.GE, value, big.NewInt(0), nil)
+				bm = bsi.CompareBigValue(0, roaring64.GE, value, nil, nil)
 			case pb.QueryFragment_GT:
-				bm = bsi.CompareBigValue(0, roaring64.GT, value, big.NewInt(0), nil)
+				bm = bsi.CompareBigValue(0, roaring64.GT, value, nil, nil)
 			case pb.QueryFragment_RANGE:
 				bm = bsi.CompareBigValue(0, roaring64.RANGE, begin, end, nil)
 			case pb.QueryFragment_BATCH_EQ:

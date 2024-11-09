@@ -6,7 +6,7 @@ toolchain go1.23.2
 
 require (
 	github.com/Jeffail/tunny v0.0.0-20190930221602-f13eb662a36a
-	github.com/RoaringBitmap/roaring/v2 v2.4.1
+	github.com/RoaringBitmap/roaring/v2 v2.4.2
 	github.com/akrylysov/pogreb v0.9.1
 	github.com/alecthomas/kong v0.2.17
 	github.com/araddon/dateparse v0.0.0-20210207001429-0eec95c9db7e
@@ -144,5 +144,3 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/RoaringBitmap/roaring/v2 => /home/ec2-user/roaring

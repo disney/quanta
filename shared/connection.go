@@ -590,9 +590,6 @@ func (m *Conn) updateHealth(initial bool) (err error) {
 			_, ok := oldNodeMap[id]
 			if !ok {
 				entry := idMap[id]
-				if entry.Service.Address == "127.0.0.1" {
-					continue
-				}
 				// insert new connection and admin stub
 				m.clientConn = append(m.clientConn, nil)
 				copy(m.clientConn[index+1:], m.clientConn[index:])

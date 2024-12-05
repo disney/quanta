@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "DirectionOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message DirectionWrapper {
+  Direction value = 1;
+  enum Direction {
+    UP = 0;
+    DOWN = 1;
+    LEFT = 2;
+    RIGHT = 3;
+  }
+}

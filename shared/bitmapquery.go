@@ -8,9 +8,10 @@ package shared
 
 import (
 	"fmt"
+	"math/big"
 	"time"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/RoaringBitmap/roaring/v2/roaring64"
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/pborman/uuid"
@@ -25,21 +26,21 @@ const (
 
 // QueryFragment - Atomic query predicate elements
 type QueryFragment struct {
-	Index     string  `yaml:"index"`
-	Field     string  `yaml:"field"`
-	RowID     uint64  `yaml:"rowID,omitempty"`
-	Value     int64   `yaml:"value,omitempty"`
-	Values    []int64 `yaml:"values,omitempty"`
-	Operation string  `yaml:"op,omitempty"`
-	BSIOp     string  `yaml:"bsiOp,omitempty"`
-	Begin     int64   `yaml:"begin,omitempty"`
-	End       int64   `yaml:"end,omitempty"`
-	Fk        string  `yaml:"fk,omitempty"`
-	Search    string  `yaml:"search,omitempty"`
-	SamplePct float32 `yaml:"samplePct,omitempty"`
-	NullCheck bool    `yaml:"nullCheck,omitempty"`
-	Negate    bool    `yaml:"negate,omitempty"`
-	ORContext bool    `yaml:"OrContext,omitempty"`
+	Index     string     `yaml:"index"`
+	Field     string     `yaml:"field"`
+	RowID     uint64     `yaml:"rowID,omitempty"`
+	Value     *big.Int   `yaml:"value,omitempty"`
+	Values    []*big.Int `yaml:"values,omitempty"`
+	Operation string     `yaml:"op,omitempty"`
+	BSIOp     string     `yaml:"bsiOp,omitempty"`
+	Begin     *big.Int   `yaml:"begin,omitempty"`
+	End       *big.Int   `yaml:"end,omitempty"`
+	Fk        string     `yaml:"fk,omitempty"`
+	Search    string     `yaml:"search,omitempty"`
+	SamplePct float32    `yaml:"samplePct,omitempty"`
+	NullCheck bool       `yaml:"nullCheck,omitempty"`
+	Negate    bool       `yaml:"negate,omitempty"`
+	ORContext bool       `yaml:"OrContext,omitempty"`
 	children  []*QueryFragment
 	parent    *QueryFragment
 	Query     *BitmapQuery
@@ -465,7 +466,7 @@ func (f *QueryFragment) SetBitmapPredicate(index, field string, rowID uint64) {
 }
 
 // SetBSIPredicate attribute on the fragment (bsi).
-func (f *QueryFragment) SetBSIPredicate(index, field, bsiOp string, value int64) {
+func (f *QueryFragment) SetBSIPredicate(index, field, bsiOp string, value *big.Int) {
 	f.Index = index
 	f.Field = field
 	f.BSIOp = bsiOp
@@ -478,7 +479,7 @@ func (f *QueryFragment) SetParent(p *QueryFragment) {
 }
 
 // SetBSIRangePredicate - Set parameters for BSI range queries.
-func (f *QueryFragment) SetBSIRangePredicate(index, field string, begin, end int64) {
+func (f *QueryFragment) SetBSIRangePredicate(index, field string, begin, end *big.Int) {
 	f.Index = index
 	f.Field = field
 	f.BSIOp = "RANGE"
@@ -487,7 +488,7 @@ func (f *QueryFragment) SetBSIRangePredicate(index, field string, begin, end int
 }
 
 // SetBSIBatchEQPredicate - Set value for BSI equals batch.
-func (f *QueryFragment) SetBSIBatchEQPredicate(index, field string, values []int64) {
+func (f *QueryFragment) SetBSIBatchEQPredicate(index, field string, values []*big.Int) {
 	f.Index = index
 	f.Field = field
 	f.BSIOp = "BATCH_EQ"
@@ -588,8 +589,28 @@ func (q *BitmapQuery) toProtoFrag(n *QueryFragment, fa *[]*pb.QueryFragment) str
 
 	id := uuid.New()
 
+	values := make([][]byte, len(n.Values))
+	for _, v := range n.Values {
+		values = append(values, v.Bytes())
+	}
+
+	valueBytes := make([]byte, 0)
+	beginBytes := make([]byte, 0)
+	endBytes := make([]byte, 0)
+	if n.Value != nil {
+		valueBytes = n.Value.Bytes()
+	}
+	if n.Begin != nil {
+		beginBytes = n.Begin.Bytes()
+	}
+	if n.End != nil {
+		endBytes = n.End.Bytes()
+	}
+	
+
 	f := &pb.QueryFragment{Index: n.Index, Field: n.Field, RowID: n.RowID, Id: id, ChildrenIds: childIds,
-		Operation: op, BsiOp: bsiOp, Value: n.Value, Begin: n.Begin, End: n.End, Fk: n.Fk, Values: n.Values,
+		Operation: op, BsiOp: bsiOp, Value: valueBytes, Begin: beginBytes, End: endBytes, 
+		Fk: n.Fk, Values: values,
 		SamplePct: n.SamplePct, NullCheck: n.NullCheck, Negate: n.Negate, OrContext: n.ORContext}
 
 	*fa = append(*fa, f)
@@ -704,8 +725,16 @@ func FromProto(q *pb.BitmapQuery, dataMap map[string]*roaring64.Bitmap) *BitmapQ
 		case pb.QueryFragment_OUTER_JOIN:
 			op = "OUTER_JOIN"
 		}
-		f := &QueryFragment{Index: v.Index, Field: v.Field, RowID: v.RowID, Value: v.Value, End: v.End,
-			Begin: v.Begin, Fk: v.Fk, Values: v.Values, Operation: op, SamplePct: v.SamplePct, Negate: v.Negate,
+
+		values := make([]*big.Int, len(v.Values))
+		for i, v := range v.Values {
+			values[i] = new(big.Int).SetBytes(v)
+		}
+		value := new(big.Int).SetBytes(v.Value)
+		begin := new(big.Int).SetBytes(v.Begin)
+		end := new(big.Int).SetBytes(v.End)
+		f := &QueryFragment{Index: v.Index, Field: v.Field, RowID: v.RowID, Value: value, End: end,
+			Begin: begin, Fk: v.Fk, Values: values, Operation: op, SamplePct: v.SamplePct, Negate: v.Negate,
 			ORContext: v.OrContext, NullCheck: v.NullCheck}
 		if dataMap != nil {
 			if bm, ok := dataMap[v.Id]; ok {

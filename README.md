@@ -1,11 +1,38 @@
-# Quanta
+# Quanta Overview
 
-Quanta - Generalized roaring bitmap based HTAP database engine.
+*Quanta* is an open-source, generalized HTAP (Hybrid Transactional/Analytical Processing) database engine built on the Roaring Bitmap libraries. Designed as a highly performant alternative to traditional databases, *Quanta* emulates a subset of the MySQL networking protocol, providing compatibility with many MySQL drivers and tools. While it doesn’t support transactions or stored procedures, *Quanta* enables access to a wide ecosystem of MySQL-compatible resources and does support user-defined functions (UDFs).
 
-It is built around the [Roaring Bitmap Libraries](http://RoaringBitmap.org) and emulates a subset of the MySQL networking protocol.  In many ways it can be used as a drop in replacement for the MySQL engine.  It does not currently implement transactions and stored procedure (although user defined functions (UDF) is supported.).  This approach enables access to a large ecosystem of database drivers and tools.
+The primary advantage of *Quanta* is its ability to provide subsecond access to large datasets with real-time updates. Data is compressed upon import and accessed directly in this format, allowing for high-performance querying on highly compressed data. Additionally, *Quanta* manages high cardinality strings by storing them in a distributed, persistent hashtable across Data Nodes. The architecture is similar to Apache Cassandra, allowing for both scalability and fault tolerance, with a future roadmap goal to enable active/active high availability and disaster recovery across multiple data centers.
 
-It's primary advantage over other database platforms is that it supports subsecond access to large data sets and supports updates in real time.  The secret sauce is in that data is compressed as it is imported into the platform and can
-be directly accessed in this format.  High cardinality strings are stored in a persistent hashtable that is distributed accross multiple data server nodes.   The architecuture is similar to Apache Cassandra and is scalable and fault tolarant.  Longer term goals of the platform roadmap include active/active HA/DR across multiple data centers.
+## Architecture
+
+The architecture of *Quanta* supports horizontal scalability, low-latency access, and efficient data ingestion and querying. Here are the core components:
+
+- **Client Applications**: Applications connect to *Quanta* using industry-standard MySQL drivers, which communicate with the Query Processor via a Network Load Balancer.
+
+- **Query Processor (Proxy)**: This component handles SQL queries from client applications. Multiple instances of the Query Processor are deployed for scalability, and a load balancer distributes MySQL connections across all instances. Each Query Processor can connect to all active Data Nodes, where data is transmitted as serialized byte arrays representing compressed bitmaps. The Query Processor re-hydrates these bitmaps and performs bitmap operations (e.g., AND, OR, difference) to deliver the final query response.
+
+- **Data Nodes**: These nodes form the primary storage and processing layer, organized as a cluster to handle data ingestion and retrieval tasks. Data Nodes communicate with the Query Processor via gRPC, sending compact byte arrays to optimize network load. *Quanta* also stores high cardinality strings in a distributed hashtable across Data Nodes for efficient retrieval.
+
+- **Kinesis Consumers**: The Kinesis Consumers ingest data streams from Amazon Kinesis, communicating with the Data Nodes via gRPC. They transform incoming data into bitmaps, buffer and aggregate them with OR operations, and then send the results to the appropriate Data Nodes for storage. This approach allows *Quanta* to pre-aggregate data efficiently before it reaches the Data Nodes.
+
+- **Consul (Service Discovery and Metadata Storage)**: Consul enables service discovery by identifying the network endpoints of active Data Nodes, which are then accessible to upstream components like the Query Processors and Kinesis Consumers. Consul also leverages a key/value store to manage schema metadata for tables and fields, enabling consistent access to schema information across the system.
+
+## Roadmap
+
+*Quanta*'s roadmap focuses on expanding SQL capabilities, scalability, and performance optimization. Key goals include:
+
+1. **Enhanced SQL Support**: Adding support for SQL features like GROUP BY, HAVING clauses, and multiple aggregations in the SELECT list to enable complex analytical queries, particularly for TPC-H benchmarking.
+   
+2. **Autoscaling and Resource Optimization**: Developing an autoscaler to dynamically add or remove Data Nodes based on workload, with metrics-driven scaling to manage resource use efficiently.
+
+3. **Optimized Data Distribution and Load Balancing**: Improving the data distribution strategy based on resource utilization. Dynamic data distribution will help balance load across nodes more effectively.
+
+4. **Active/Active HA/DR**: Implementing active/active high availability and disaster recovery across multiple data centers for improved resilience.
+
+5. **Conflict Resolution and Time Synchronization**: Adding conflict resolution strategies using vector clocks or version vectors. With AWS’s Time Sync service, *Quanta* aims to eventually support microsecond-level time synchronization for conflict management.
+
+6. **GPU-Accelerated Bitmap Processing**: Exploring GPU acceleration for core bitmap operations to improve performance on large-scale data processing tasks.
 
 
 # Requirements 

@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+option java_package = "dss.field.transport.sdp";
+option java_outer_classname = "HeadersOuterClass";
+
+package dss.field.transport.sdp;
+
+import "dss/predef/predef.proto";
+import "dss/field/transport/sdp/aws_region.proto";
+import "dss/field/transport/sdp/sequence_type.proto";
+import "dss/field/transport/sdp/compression_type.proto";
+
+message Headers {
+  string type = 2;
+  string source = 3;
+  dss.predef.StringValue subject = 5;
+  string id = 4;
+  dss.predef.StringValue time = 6;
+  dss.predef.StringValue schemaurl = 7;
+  dss.predef.StringValue datacontenttype = 8;
+  dss.predef.StringValue datacontentencoding = 9;
+  dss.predef.StringValue partner = 10;
+  dss.predef.StringValue trace = 12;
+  .dss.field.transport.sdp.AwsRegionWrapper sourceRegion = 13;
+  dss.predef.StringValue sequence = 14;
+  .dss.field.transport.sdp.SequenceTypeWrapper sequenceType = 15;
+  dss.predef.StringValue partitionkey = 16;
+  .dss.field.transport.sdp.CompressionTypeWrapper compressiontype = 17;
+  dss.predef.StringValue avroschemaurl = 18;
+}

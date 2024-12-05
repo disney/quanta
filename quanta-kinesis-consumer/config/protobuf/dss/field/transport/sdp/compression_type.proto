@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+option java_package = "dss.field.transport.sdp";
+option java_outer_classname = "CompressionTypeOuterClass";
+
+package dss.field.transport.sdp;
+
+
+message CompressionTypeWrapper {
+  CompressionType value = 1;
+  enum CompressionType {
+    APPLICATION_GZIP = 0;
+    APPLICATION_X_GZIP = 1;
+  }
+}

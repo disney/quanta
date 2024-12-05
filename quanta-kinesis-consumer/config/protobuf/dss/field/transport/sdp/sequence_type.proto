@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+option java_package = "dss.field.transport.sdp";
+option java_outer_classname = "SequenceTypeOuterClass";
+
+package dss.field.transport.sdp;
+
+
+message SequenceTypeWrapper {
+  SequenceType value = 1;
+  enum SequenceType {
+    INTEGER = 0;
+    LONG = 1;
+  }
+}

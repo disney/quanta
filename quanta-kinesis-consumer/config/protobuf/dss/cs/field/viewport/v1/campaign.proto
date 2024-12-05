@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "CampaignOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message Campaign {
+  string assetId = 1;
+  string flightId = 2;
+}

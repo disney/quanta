@@ -398,11 +398,17 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 						return err
 					}
 					// first bitslice start at bf.BitData[1].  bf.BitData[0] = EBM
-					bf.BitData = make([][]byte, 65)
+					bf.BitData = make([][]byte, 2)
+					for ; bitSliceIndex >= len(bf.BitData); {
+						bf.BitData = append(bf.BitData, make([]byte, 0))
+					}
 					bf.BitData[bitSliceIndex] = data
 					fragMap[bf.IndexName][bf.FieldName][int64(-1)][bf.Time.UnixNano()] = bf
 				} else {
 					// merge in new bits
+					for ; bitSliceIndex >= len(existFrag.BitData); {
+						existFrag.BitData = append(existFrag.BitData, make([]byte, 0))
+					}
 					existFrag.BitData[bitSliceIndex] = data
 					existFrag.ModTime = info.ModTime().Add(time.Second * -10)
 				}

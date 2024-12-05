@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "TimeZoneOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+import "dss/predef/predef.proto";
+
+message TimeZone {
+  dss.predef.StringValue timeZoneId = 1;
+  dss.predef.BoolValue inDst = 2;
+  dss.predef.StringValue utcOffset = 3;
+  dss.predef.StringValue utcOffsetWithDst = 4;
+}

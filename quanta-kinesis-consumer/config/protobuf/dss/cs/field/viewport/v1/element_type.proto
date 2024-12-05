@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "ElementTypeOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message ElementTypeWrapper {
+  ElementType value = 1;
+  enum ElementType {
+    BUTTON = 0;
+    TILE = 1;
+    MENU_ITEM = 2;
+    BACKGROUND_VIDEO = 3;
+    TEXT_DETAIL = 4;
+    ARROW_PREV = 5;
+    ARROW_NEXT = 6;
+    ARROW_DOWN = 7;
+    ARROW_UP = 8;
+    INPUT_FORM = 9;
+    INVISIBLE = 10;
+  }
+}

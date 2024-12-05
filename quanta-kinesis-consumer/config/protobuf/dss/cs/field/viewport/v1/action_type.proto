@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "ActionTypeOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message ActionTypeWrapper {
+  ActionType value = 1;
+  enum ActionType {
+    PLAY = 0;
+    BROWSE = 1;
+    ADD_TO_WATCHLIST = 2;
+    DOWNLOAD = 3;
+    REMOVE_FROM_WATCHLIST = 4;
+    FROM_BEGINNING = 5;
+    RESUME = 6;
+    UNKNOWN = 7;
+    FROM_LIVE = 8;
+    TRAILER = 9;
+    LEGACYBROWSE = 10;
+    SHARE = 11;
+    UPSELL = 12;
+    DOWNLOADALL = 13;
+    MODAL = 14;
+  }
+}

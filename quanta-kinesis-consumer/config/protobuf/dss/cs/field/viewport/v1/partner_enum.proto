@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "PartnerEnumOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message PartnerEnumWrapper {
+  PartnerEnum value = 1;
+  enum PartnerEnum {
+    DISNEY = 0;
+    ESPN = 1;
+    LAUNCHPAD = 2;
+    STAR = 3;
+  }
+}

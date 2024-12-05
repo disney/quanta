@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "ConsentStateOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message ConsentStateWrapper {
+  ConsentState value = 1;
+  enum ConsentState {
+    ESSENTIAL = 0;
+    PERFORMANCE_AND_ANALYTICS = 1;
+    FUNCTIONAL = 2;
+    TARGETING_AND_ADVERTISING = 3;
+    SELL_SHARE_PERSONAL_DATA = 4;
+  }
+}

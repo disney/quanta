@@ -73,3 +73,48 @@ func GetBasePath(source string, useNerdCapitalization bool) string {
 	}
 	return source
 }
+
+func CreateNestedMapFromPath(mapPath string, value interface{}) map[string]interface{} {
+
+	leaf := make(map[string]interface{})
+	s := strings.Split(mapPath, "/")
+	if s[0] == "" && len(s) > 1 {  // Path started with a "/" so adjust
+		s = append(s[:0], s[1:]...)
+	}
+
+	leaf[s[len(s)-1]] = value
+
+	for i := len(s) - 2; i >= 0; i-- {
+		v := s[i]
+		m := make(map[string]interface{})
+		m[v] = leaf
+		leaf = m
+	}
+	return leaf
+}
+
+func MergeMaps(m1, m2 map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+
+	for k, v := range m1 {
+		result[k] = v
+	}
+
+	for k, v2 := range m2 {
+		v1, ok := result[k]
+		if !ok {
+			result[k] = v2
+		} else if m1, ok1 := v1.(map[string]interface{}); ok1 {
+			if m2, ok2 := v2.(map[string]interface{}); ok2 {
+				result[k] = MergeMaps(m1, m2)
+			} else {
+				result[k] = v2
+			}
+		} else {
+			result[k] = v2
+		}
+	}
+
+	return result
+}
+

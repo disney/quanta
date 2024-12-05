@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/RoaringBitmap/roaring/v2/roaring64"
 	u "github.com/araddon/gou"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/qlbridge/datasource"

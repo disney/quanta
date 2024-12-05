@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.event.viewport.engagement";
+option java_outer_classname = "EngagementEventOuterClass";
+
+package dss.cs.event.viewport.engagement;
+
+import "dss/cs/event/viewport/engagement/v1/v1event.proto";
+
+message EngagementEvent {
+  oneof EngagementEventUnion {
+    V1EventValue v1EventValueValue = 1;
+  }
+  message V1EventValue {
+    .dss.cs.event.viewport.engagement.v1.V1Event value = 1;
+  }
+}

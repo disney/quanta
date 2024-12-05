@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+option java_package = "dss.field.transport.sdp";
+option java_outer_classname = "DatacontentencodingOuterClass";
+
+package dss.field.transport.sdp;
+
+
+message DatacontentencodingWrapper {
+  Datacontentencoding value = 1;
+  enum Datacontentencoding {
+    M_7BIT = 0;
+    M_8BIT = 1;
+    BINARY = 2;
+    QUOTED_PRINTABLE = 3;
+    BASE64 = 4;
+    IETF_TOKEN = 5;
+    X_TOKEN = 6;
+  }
+}

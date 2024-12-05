@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+option java_package = "dss.field.transport.sdp";
+option java_outer_classname = "SdpEventOuterClass";
+
+package dss.field.transport.sdp;
+
+import "dss/field/transport/sdp/envelope.proto";
+
+message SdpEvent {
+  oneof SdpEventUnion {
+    EnvelopeValue envelopeValueValue = 1;
+  }
+  message EnvelopeValue {
+    .dss.field.transport.sdp.Envelope value = 1;
+  }
+}

@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "PersonalInfoOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+import "dss/predef/predef.proto";
+
+message PersonalInfo {
+  dss.predef.StringValue eligibility = 1;
+  repeated string requiresCollection = 2;
+}

@@ -162,7 +162,7 @@ func (m *KVStore) cleanupProcessLoop() {
 // Scan open cache entries and close out indices
 func (m *KVStore) cleanup() {
 
-	u.Debug(m.hashKey, " KVStore cleanup")
+	//u.Debug(m.hashKey, " KVStore cleanup")
 	m.storeCacheLock.Lock()
 	cacheCopy := maps.Clone(m.storeCache) // shallow copy
 	m.storeCacheLock.Unlock()

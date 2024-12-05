@@ -2,9 +2,11 @@ module github.com/disney/quanta
 
 go 1.21
 
+toolchain go1.23.2
+
 require (
 	github.com/Jeffail/tunny v0.0.0-20190930221602-f13eb662a36a
-	github.com/RoaringBitmap/roaring v1.9.0
+	github.com/RoaringBitmap/roaring/v2 v2.4.2
 	github.com/akrylysov/pogreb v0.9.1
 	github.com/alecthomas/kong v0.2.17
 	github.com/araddon/dateparse v0.0.0-20210207001429-0eec95c9db7e
@@ -19,12 +21,13 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.16.6
 	github.com/banzaicloud/logrus-runtime-formatter v0.0.0-20190729070250-5ae5475bae5e
 	github.com/bbalet/stopwords v1.0.0
+	github.com/bufbuild/protocompile v0.14.1
+	github.com/dnaeon/go-uuid-endianness v0.0.0-20180112091600-de1a6da5f8b7
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/gogo/protobuf v1.3.1
 	github.com/golang/protobuf v1.5.3
 	github.com/google/btree v1.0.0
-	github.com/google/uuid v1.3.0
-	github.com/hamba/avro v1.8.0
+	github.com/google/uuid v1.6.0
 	github.com/hamba/avro/v2 v2.15.0
 	github.com/harlow/kinesis-consumer v0.3.5
 	github.com/hashicorp/consul/api v1.10.1
@@ -32,7 +35,6 @@ require (
 	github.com/hashicorp/go-memdb v1.3.1
 	github.com/jmespath/go-jmespath v0.4.0
 	github.com/jmoiron/sqlx v1.3.1
-	github.com/json-iterator/go v1.1.12
 	github.com/leekchan/timeutil v0.0.0-20150802142658-28917288c48d
 	github.com/lestrrat-go/jwx v1.2.26
 	github.com/lytics/cloudstorage v0.2.13
@@ -46,17 +48,17 @@ require (
 	github.com/siddontang/go-mysql v1.1.0
 	github.com/sirupsen/logrus v1.8.1
 	github.com/steakknife/bloomfilter v0.0.0-20180922174646-6819c0d2a570
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	github.com/stvp/rendezvous v0.0.0-20151118195501-67b5f26b3e18
 	github.com/vmware/vmware-go-kcl v1.5.0
 	github.com/xitongsys/parquet-go v1.5.5-0.20201031234703-4d9f11317375
 	github.com/xitongsys/parquet-go-source v0.0.0-20220527110425-ba4adb87a31b
 	golang.org/x/net v0.10.0
-	golang.org/x/sync v0.1.0
+	golang.org/x/sync v0.8.0
 	golang.org/x/text v0.9.0
 	google.golang.org/api v0.103.0
 	google.golang.org/grpc v1.53.0
-	google.golang.org/protobuf v1.31.0
+	google.golang.org/protobuf v1.34.2
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/confluentinc/confluent-kafka-go.v1 v1.4.2
 	gopkg.in/yaml.v2 v2.4.0
@@ -91,13 +93,12 @@ require (
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/confluentinc/confluent-kafka-go v1.4.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dchest/siphash v1.2.1 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0 // indirect
 	github.com/fatih/color v1.9.0 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/golang/snappy v0.0.4 // indirect
-	github.com/google/go-cmp v0.5.9 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.2.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.7.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.1 // indirect
@@ -107,6 +108,7 @@ require (
 	github.com/hashicorp/go-uuid v1.0.1 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/hashicorp/serf v0.9.5 // indirect
+	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.15.2 // indirect
 	github.com/lestrrat-go/backoff/v2 v2.0.8 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.1 // indirect

@@ -48,6 +48,7 @@ func main() {
 	avroPayload := app.Flag("avro-payload", "Payload is Avro.").Bool()
 	deaggregate := app.Flag("deaggregate", "Incoming payload records are aggregated.").Bool()
 	scanInterval := app.Flag("scan-interval", "Scan interval (milliseconds)").Default("1000").Int()
+	protoPath := app.Flag("proto-path", "Path to protobuf descriptor files root directory.").String()
 	logLevel := app.Flag("log-level", "Log Level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
@@ -132,6 +133,10 @@ func main() {
 		log.Printf("Payload is aggregated, de-aggregation is enabled in consumer.")
 	} else {
 		main.Deaggregate = false
+	}
+	if *protoPath != "" {
+		main.ProtoConfig = *protoPath
+		log.Printf("Path to protobuf descriptor files directory is %v", main.ProtoConfig)
 	}
 
 	var err error

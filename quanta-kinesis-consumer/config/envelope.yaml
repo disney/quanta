@@ -1,0 +1,8 @@
+envelopeProtoPath: dss/field/transport/sdp/envelope.proto
+envelopeMessage: Envelope
+envelopeTypeField: type
+envelopeDataField: /data/value
+typeMappings:
+- type: urn:cs:event:viewport:impression:v1:pageView
+  protoPath: dss/cs/event/viewport/impression/v1/page_view.proto
+  messageName: PageView

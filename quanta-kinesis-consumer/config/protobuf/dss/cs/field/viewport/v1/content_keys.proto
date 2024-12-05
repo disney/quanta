@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "ContentKeysOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+import "dss/predef/predef.proto";
+
+message ContentKeys {
+  dss.predef.StringValue collectionId = 1;
+  dss.predef.StringValue programId = 2;
+  dss.predef.StringValue encodedFamilyId = 3;
+  dss.predef.StringValue contentId = 4;
+  dss.predef.StringValue encodedSeriesId = 5;
+  dss.predef.StringValue mediaId = 6;
+  dss.predef.StringValue eventId = 7;
+  dss.predef.StringValue superEventId = 8;
+  dss.predef.StringValue sportId = 9;
+  dss.predef.StringValue leagueId = 10;
+  dss.predef.StringValue teamId = 11;
+  dss.predef.StringValue channelId = 12;
+  dss.predef.StringValue entityId = 13;
+  dss.predef.StringValue entityType = 14;
+  dss.predef.StringValue alidId = 15;
+  dss.predef.StringValue availId = 16;
+}

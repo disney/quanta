@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "PlayModeOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message PlayModeWrapper {
+  PlayMode value = 1;
+  enum PlayMode {
+    TV = 0;
+    TABLETOP = 1;
+    HANDHELD = 2;
+  }
+}

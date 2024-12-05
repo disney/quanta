@@ -62,13 +62,11 @@ type SQLToQuanta struct {
 	offset         int
 	hasMultiValue  bool // Multi-Value vs Single-Value aggs
 	hasSingleValue bool // single value agg
-	isSum          bool
-	isAvg          bool
-	isMin          bool
-	isMax          bool
 	isTopn         bool
 	topn           int
-	aggField       string
+	topnField      string
+	aggFields      map[string]expr.Node
+	groupByFields  []*core.Attribute
 	startDate      string
 	endDate        string
 	s              *QuantaSource
@@ -97,6 +95,8 @@ func NewSQLToQuanta(tableCache *core.TableCacheStruct, s *QuantaSource, t *schem
 	m.whereProj = make(map[string]*core.Attribute)
 	m.rowNumSet = roaring64.NewBitmap()
 	m.tableCache = tableCache
+	m.aggFields = make(map[string]expr.Node)
+	m.groupByFields = make([]*core.Attribute, 0)
 	return m
 }
 
@@ -321,14 +321,15 @@ func (m *SQLToQuanta) WalkSourceSelect(planner plan.Planner, p *plan.Source) (pl
 		}
 	}
 
+   	if len(req.GroupBy) > 0 {
+		err = m.walkGroupBy()
+		if err != nil {
+			u.Warnf("Could Not evaluate GroupBys %s %v", req.GroupBy.String(), err)
+			return nil, err
+		}
+	}
+
 	/*
-	   if len(req.GroupBy) > 0 {
-	       err = m.walkGroupBy()
-	       if err != nil {
-	           u.Warnf("Could Not evaluate GroupBys %s %v", req.GroupBy.String(), err)
-	           return nil, err
-	       }
-	   }
 
 	   u.Debugf("OrderBy? %v", len(m.sel.OrderBy))
 	   if len(m.sel.OrderBy) > 0 {
@@ -1204,64 +1205,26 @@ func (m *SQLToQuanta) walkAggFunc(node *expr.FuncNode, q *shared.QueryFragment) 
 			// "min_price" : { "min" : { "field" : "price" } }
 			//q = M{funcName: M{"field": val.ToString()}}
 		}
-		m.aggField = val.ToString()
-		if funcName == "sum" {
-			m.isSum = true
-			m.needsPolyFill = false
-		}
-		if funcName == "avg" {
-			m.isAvg = true
-			m.needsPolyFill = false
-		}
-		if funcName == "min" {
-			m.isMin = true
-			m.needsPolyFill = false
-		}
-		if funcName == "max" {
-			m.isMax = true
-			m.needsPolyFill = false
-		}
-		_, bsi, err := m.ResolveField(m.ResolveTable(node), m.aggField)
+		_, bsi, err := m.ResolveField(m.ResolveTable(node), val.ToString())
 		if err != nil {
 			return err
 		}
-		if !bsi && m.isSum {
-			return fmt.Errorf("can't sum a non-bsi field %s", m.aggField)
+		aggField := fmt.Sprintf("%s+%s", val.ToString(), funcName)
+		m.aggFields[aggField] = node
+
+		if !bsi && funcName == "sum" {
+			return fmt.Errorf("can't sum a non-bsi field %s", aggField)
 		}
-		if !bsi && m.isAvg {
-			return fmt.Errorf("can't average a non-bsi field %s", m.aggField)
+		if !bsi && funcName == "avg" {
+			return fmt.Errorf("can't average a non-bsi field %s", aggField)
 		}
-		if !bsi && m.isMin {
-			return fmt.Errorf("can't find the minimum of a non-bsi field %s", m.aggField)
+		if !bsi && funcName == "min" {
+			return fmt.Errorf("can't find the minimum of a non-bsi field %s", aggField)
 		}
-		if !bsi && m.isMax {
-			return fmt.Errorf("can't find the maximum of a non-bsi field %s", m.aggField)
+		if !bsi && funcName == "max" {
+			return fmt.Errorf("can't find the maximum of a non-bsi field %s", aggField)
 		}
 		return nil
-		/*
-		   case "terms":
-		       m.hasMultiValue = true
-		       // "products" : { "terms" : {"field" : "product", "size" : 5 }}
-
-		       if len(node.Args) == 0 || len(node.Args) > 2 {
-		           return nil, fmt.Errorf("invalid terms function terms(field,10) OR terms(field)")
-		       }
-		       val, ok := eval(node.Args[0])
-		       if !ok {
-		           u.Errorf("must be valid: %v", node.String())
-		       }
-		       if len(node.Args) >= 2 {
-		           size, ok := vm.Eval(nil, node.Args[1])
-		           if !ok {
-		               u.Errorf("must be valid size: %v", node.Args[1].String())
-		           }
-		           // "products" : { "terms" : {"field" : "product", "size" : 5 }}
-		           //q = M{funcName: M{"field": val.ToString(), "size": size.Value()}}
-		       } else {
-
-		           //q = M{funcName: M{"field": val.ToString()}}
-		       }
-		*/
 
 	case "topn":
 		m.hasSingleValue = true
@@ -1272,7 +1235,7 @@ func (m *SQLToQuanta) walkAggFunc(node *expr.FuncNode, q *shared.QueryFragment) 
 		if !ok {
 			u.Warnf("Could not run node in backend: %v", node.String())
 		}
-		m.aggField = val.ToString()
+		m.topnField = val.ToString()
 		m.isTopn = true
 		m.needsPolyFill = false
 		m.topn = 0
@@ -1284,7 +1247,7 @@ func (m *SQLToQuanta) walkAggFunc(node *expr.FuncNode, q *shared.QueryFragment) 
 			}
 		}
 		// rewrite select to include projection
-		c1n := "topn_" + m.aggField
+		c1n := "topn_" + m.topnField
 		c2n := "topn_count"
 		c3n := "topn_percent"
 		m.sel.Columns = []*rel.Column{rel.NewColumn(c1n), rel.NewColumn(c2n), rel.NewColumn(c3n)}
@@ -1297,12 +1260,12 @@ func (m *SQLToQuanta) walkAggFunc(node *expr.FuncNode, q *shared.QueryFragment) 
 		m.p.Proj = rel.NewProjection()
 		m.p.Proj.Columns = []*rel.ResultColumn{c1, c2, c3}
 		m.p.Proj.Final = true
-		_, bsi, err := m.ResolveField(m.ResolveTable(node.Args[0]), m.aggField)
+		_, bsi, err := m.ResolveField(m.ResolveTable(node.Args[0]), m.topnField)
 		if err != nil {
 			return err
 		}
 		if bsi {
-			return fmt.Errorf("can't rank BSI field %s", m.aggField)
+			return fmt.Errorf("can't rank BSI field %s", m.topnField)
 		}
 	case "count":
 		m.hasSingleValue = true
@@ -1318,6 +1281,8 @@ func (m *SQLToQuanta) walkAggFunc(node *expr.FuncNode, q *shared.QueryFragment) 
 		} else {
 			//return M{"exists": M{"field": val.ToString()}}, nil
 		}
+		//m.aggFields[val.ToString()] = node
+		m.aggFields["count"] = node
 
 		//default:
 		//	u.Warnf("not implemented ")
@@ -1420,6 +1385,7 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 			return nil, err
 		}
 	}
+/*
 	orig := ctx.Stmt.(*rel.SqlSelect)
 	if orig.IsAggQuery() {
 		ctx.Projection.Proj = rel.NewProjection()
@@ -1428,6 +1394,7 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 		c1 := rel.NewResultColumn(nm, 0, rel.NewColumn(nm), value.IntType)
 		ctx.Projection.Proj.Columns = []*rel.ResultColumn{c1}
 	}
+*/
 	m.TaskBase = exec.NewTaskBase(ctx)
 	m.sel = p.Stmt.Source
 	//u.Debugf("sqltopql plan sql?  %#v", p.Stmt)
@@ -1530,6 +1497,64 @@ func (m *SQLToQuanta) WalkExecSource(p *plan.Source) (exec.Task, error) {
 
 	return resultReader, err
 }
+
+
+func (m *SQLToQuanta) walkGroupBy() error {
+
+	orig, ok := m.p.Context().Stmt.(*rel.SqlSelect)
+	if !ok {
+		return fmt.Errorf("cannot get original select from context")
+	}
+
+//colLoop:
+	for _, gb := range orig.GroupBy {
+/*
+		for _, col := range orig.Columns {
+			if gb.As == col.As || (col.Expr != nil && col.Expr.Equal(gb.Expr)) {
+				// simple Non Aggregate Value  gb.As == col.AS
+				//   SELECT domain, count(*) FROM users GROUP BY domain;
+
+				// aliased column
+				// SELECT `users`.`name` AS usernames FROM `users` GROUP BY `users`.`name`
+				//   gb.String() == "`users`.`name`"  && col.Expr.String() == "`users`.`name`"
+				//aggs[colIdx] = NewGroupByValue(col)
+				continue colLoop
+			}
+		}
+*/
+
+		// Since we made it here, it is an aggregate func
+		//  move to a registry of some kind to allow extension
+		switch n := gb.Expr.(type) {
+		case *expr.IdentityNode:
+/*
+			val, ok := eval(n.Args[0])
+			if !ok {
+				u.Errorf("must be valid: %v", n.String())
+				return fmt.Errorf("invalid argument: %v", n.String())
+			}
+*/
+			attr, bsi, err := m.ResolveField(m.ResolveTable(n), n.String())
+			if err != nil {
+				return err
+			}
+			if bsi {
+				return fmt.Errorf("field for grouping must be a standard bitmap %s", gb.Expr)
+			}
+			m.groupByFields = append(m.groupByFields, attr)
+		case *expr.BinaryNode:
+			// expression logic?
+			return fmt.Errorf("Not implemented groupby for expression column: %s", gb.Expr)
+		case *expr.FuncNode:
+			// We can have a naked group by which basically means distinct? should have been caught above
+			return fmt.Errorf("Not implemented groupby for identity column %s", gb.Expr)
+		default:
+			return fmt.Errorf("Not implemented groupby for %T column: %s", gb.Expr, gb.Expr)
+		}
+	}
+	return nil
+}
+
 
 // CreateMutator part of Mutator interface to allow data sources create a stateful
 //

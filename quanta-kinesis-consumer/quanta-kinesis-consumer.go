@@ -126,7 +126,11 @@ func main() {
 		log.Printf("Payload is Avro.")
 	} else {
 		main.IsAvro = false
-		log.Printf("Payload is JSON.")
+		if *protoPath != "" {
+			log.Printf("Payload is ProtoBuf.")
+		} else {
+			log.Printf("Payload is JSON.")
+		}
 	}
 	if *deaggregate {
 		main.Deaggregate = true

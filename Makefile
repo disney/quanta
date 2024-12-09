@@ -14,7 +14,6 @@ K := $(foreach exec,$(EXECUTABLES),\
 ROOT_DIR:=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 BIN_DIR=bin
 BIN_NODE=quanta-node
-BIN_LOADER=quanta-loader
 BIN_PROXY=quanta-proxy
 BIN_KINESIS=quanta-kinesis-consumer
 BIN_PRODUCER=quanta-s3-kinesis-producer
@@ -123,12 +122,6 @@ push_proxy_docker: build_all
 	docker buildx build --push --platform linux/${GOARCH} -t containerregistry.disney.com/digital/$(BIN_PROXY):${VERSION}-$(GOARCH) --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployProxyDockerfile . \
 	))
 
-push_loader_docker: build_all
-	$(foreach GOARCH, $(ARCHITECTURES),\
-	$(shell export GOARCH=$(GOARCH);\
-	docker buildx build --push --platform linux/${GOARCH} -t containerregistry.disney.com/digital/$(BIN_LOADER):${VERSION}-$(GOARCH) --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployLoaderDockerfile . \
-	))
-
 build_proxy_docker: build_all
 	$(foreach GOARCH, $(ARCHITECTURES),\
 	$(shell export GOARCH=$(GOARCH);\
@@ -162,17 +155,6 @@ kcl:
 
 admin:
 	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_ADMIN} ${LDFLAGS} ${PKG_ADMIN}
-
-loader:
-	$(foreach GOARCH, $(ARCHITECTURES),\
-	$(shell export GOARCH=$(GOARCH);\
-	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_LOADER)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_LOADER} \
-	))
-	$(foreach GOARCH, $(ARCHITECTURES),\
-	$(shell export GOARCH=$(GOARCH);\
-	docker buildx build --push --platform linux/${GOARCH} -t containerregistry.disney.com/digital/$(BIN_LOADER):${VERSION}-$(GOARCH) --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployLoaderDockerfile . \
-	))
-
 
 producer:
 	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_PRODUCER} ${LDFLAGS} ${PKG_PRODUCER}

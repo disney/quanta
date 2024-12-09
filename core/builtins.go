@@ -1005,6 +1005,9 @@ func (m UUIDBSIMapper) MapValue(attr *Attribute, val interface{},
 			err = m.MutateBitmap(c, attr.Parent.Name, attr.FieldName, nil, false)
 		}
 		return
+	case int64:
+		v, _ := val.(int64)
+		result = big.NewInt(v)
 	default:
 		err = fmt.Errorf("%s: No handling for type '%T'", m.String(), val)
 	}
@@ -1018,9 +1021,15 @@ func (m UUIDBSIMapper) Render(attr *Attribute, value interface{}) string {
 	if val, ok := value.(*big.Int); ok {
 		switch shared.TypeFromString(attr.Type) {
 		case shared.String:
-			nuuid, _ := endian.FromBytes(val.Bytes())
+			b := val.Bytes()
+			if len(b) == 15 {  // Must be a 16 byte buffer
+				b = append([]byte{0}, b...)
+			}
+			nuuid, _ := endian.FromBytes(b)
 			middleEndian, _ :=  nuuid.MiddleEndianBytes()
-			if newUUID, err := uuid.FromBytes(middleEndian); err == nil {
+			if newUUID, err := uuid.FromBytes(middleEndian); err != nil {
+				return fmt.Sprintf("ERR = %v", err)
+			} else {
 				return newUUID.String()
 			}
 /*

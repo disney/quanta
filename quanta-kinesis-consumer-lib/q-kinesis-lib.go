@@ -11,12 +11,14 @@ import (
 	u "github.com/araddon/gou"
 
 	"github.com/aws/aws-sdk-go-v2/service/kinesis/types"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/cloudwatch"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/kinesis"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+    "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/kinesis"
+    "github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/qlbridge/datasource"
 	"github.com/disney/quanta/qlbridge/expr"
@@ -72,7 +74,7 @@ type Main struct {
 	processedRecs       *Counter
 	processedRecL       *Counter
 	ScanInterval        int
-	metrics             *cloudwatch.CloudWatch
+	metrics             *cloudwatch.Client
 	tableCache          *core.TableCacheStruct
 	metricsTicker       *time.Ticker
 }
@@ -124,33 +126,25 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 
 	// Register member leave/join
 	//clientConn.RegisterService(m)
-	sess, errx := session.NewSession(&aws.Config{
-		Region:   aws.String(m.Region),
-		Endpoint: aws.String(customEndpoint),
-	})
+
+	cfg, errx := config.LoadDefaultConfig(context.TODO(), config.WithRegion(m.Region))
 	if errx != nil {
 		return 0, errx
 	}
 
-	var kc *kinesis.Kinesis
+	var kc *kinesis.Client
 	if m.AssumeRoleArn != "" {
-		creds := stscreds.NewCredentials(sess, m.AssumeRoleArn)
-		config := aws.NewConfig().
-			WithCredentials(creds).
-			WithRegion(m.AssumeRoleArnRegion).
-			WithMaxRetries(10)
-		kc = kinesis.New(sess, config)
+		stsc := sts.NewFromConfig(cfg)
+		assumeRoleProvider := stscreds.NewAssumeRoleProvider(stsc, m.AssumeRoleArn)
+		creds := aws.NewCredentialsCache(assumeRoleProvider)
+		svcCfg := cfg.Copy()
+		svcCfg.Credentials = creds
+		kc = kinesis.NewFromConfig(svcCfg)
 	} else {
-		kc = kinesis.New(sess)
+		kc = kinesis.NewFromConfig(cfg)
 	}
 
-	streamName := aws.String(m.Stream)
-	shout, err := kc.ListShards(&kinesis.ListShardsInput{StreamName: streamName})
-	if err != nil {
-		return 0, err
-	}
-	shardCount := len(shout.Shards)
-	dynamoDbClient := dynamodb.New(sess)
+	dynamoDbClient := dynamodb.NewFromConfig(cfg)
 
 	db, err := store.New(AppName, m.CheckpointTable, store.WithDynamoClient(dynamoDbClient), store.WithRetryer(&QuantaRetryer{}))
 	if err != nil {
@@ -181,7 +175,52 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	m.metrics = cloudwatch.New(sess)
+
+	streamName := aws.String(m.Stream)
+	var shards []types.Shard
+	input := &kinesis.ListShardsInput{
+    	StreamName: streamName,
+	}
+	for {
+		resp, err := kc.ListShards(context.TODO(), input)
+        if err != nil {
+			return 0, fmt.Errorf("failed to list shards, %v", err)
+        }
+
+		shards = append(shards, resp.Shards...)
+		if resp.NextToken == nil {
+			break
+		}
+
+		input.NextToken = resp.NextToken
+	}
+
+	// Iterate shards and initialize store with latestt sequence numbers
+	if db != nil {
+		for _, v := range shards {
+			seq, _ := db.GetCheckpoint(*streamName, *v.ShardId)
+			if seq != "" && seq != "0" {
+				continue
+			}
+			sequenceRange := *v.SequenceNumberRange
+			sequenceNumber := *sequenceRange.StartingSequenceNumber
+			if sequenceRange.EndingSequenceNumber != nil {
+				sequenceNumber = *sequenceRange.EndingSequenceNumber
+			}
+			if sequenceNumber == "" {
+				sequenceNumber = *sequenceRange.StartingSequenceNumber
+			}
+			err := db.SetCheckpoint(*streamName, *v.ShardId, sequenceNumber)
+			//u.Debugf("Initializing checkpoint for shard %s.%s, SEQ = %s", *streamName, *v.ShardId,
+			//	 sequenceNumber)
+        	if err != nil {
+				return 0, fmt.Errorf("failed to set inital checkpoint, %v", err)
+        	}
+		}
+	}
+	shardCount := len(shards)
+
+	m.metrics = cloudwatch.NewFromConfig(cfg)
 
 	// Initialize shard channels
 	u.Warnf("Shard count = %d", shardCount)
@@ -296,7 +335,7 @@ table.BasicTable.ProtoPath = "dss/field/transport/sdp/envelope.proto"
 				}
 			}
 			exitloop:
-			u.Errorf("shard channel closed. %v", shardId)
+			u.Debugf("shard channel closed. %v", shardId)
 			// sharedChannels was closed, clean up.
 			m.shardSessionCache.Range(func(k, v interface{}) bool {
 				v.(*core.Session).CloseSession()
@@ -334,7 +373,6 @@ func (m *Main) MainProcessingLoop() error {
 		}
 		if m.InitialPos == "TRIM_HORIZON" {
 			u.Error("can't re-initialize 'in-place' if set to TRIM_HORIZON, exiting")
-			// os.Exit(1)
 			return fmt.Errorf("can't re-initialize 'in-place' if set to TRIM_HORIZON")
 		}
 		u.Warnf("Re-initializing.")
@@ -342,7 +380,6 @@ func (m *Main) MainProcessingLoop() error {
 		if m.ShardCount, err = m.Init(""); err != nil {
 			u.Errorf("initialization error: %v", err)
 			u.Errorf("Exiting process.")
-			// os.Exit(1)
 			return fmt.Errorf("initialization error: %v", err)
 		}
 	}
@@ -515,14 +552,14 @@ func (m *Main) PrintStats() *time.Ticker {
 func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) time.Time {
 
 	interval := time.Since(lastPublishedAt).Seconds()
-	_, err := m.metrics.PutMetricData(&cloudwatch.PutMetricDataInput{
+	_, err := m.metrics.PutMetricData(context.TODO(), &cloudwatch.PutMetricDataInput{
 		Namespace: aws.String("Quanta-Consumer/Records"),
-		MetricData: []*cloudwatch.MetricDatum{
+		MetricData: []cwtypes.MetricDatum{
 			{
 				MetricName: aws.String("Arrived"),
-				Unit:       aws.String("Count"),
+				Unit:       cwtypes.StandardUnitCount,
 				Value:      aws.Float64(float64(m.TotalRecs.Get())),
-				Dimensions: []*cloudwatch.Dimension{
+				Dimensions: []cwtypes.Dimension{
 					{
 						Name:  aws.String("Stream"),
 						Value: aws.String(m.Stream),
@@ -531,9 +568,9 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("RecordsPerSec"),
-				Unit:       aws.String("Count/Second"),
+				Unit:       cwtypes.StandardUnitCountSecond,
 				Value:      aws.Float64(float64(m.TotalRecs.Get()-m.totalRecsL.Get()) / interval),
-				Dimensions: []*cloudwatch.Dimension{
+				Dimensions: []cwtypes.Dimension{
 					{
 						Name:  aws.String("Stream"),
 						Value: aws.String(m.Stream),
@@ -542,7 +579,7 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("Processed"),
-				Unit:       aws.String("Count"),
+				Unit:       cwtypes.StandardUnitCount,
 				Value:      aws.Float64(float64(m.processedRecs.Get())),
 				/*
 					Dimensions: []*cloudwatch.Dimension{
@@ -555,7 +592,7 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("ProcessedPerSecond"),
-				Unit:       aws.String("Count/Second"),
+				Unit:       cwtypes.StandardUnitCountSecond,
 				Value:      aws.Float64(float64(m.processedRecs.Get()-m.processedRecL.Get()) / interval),
 				/*
 					Dimensions: []*cloudwatch.Dimension{
@@ -568,7 +605,7 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("Errors"),
-				Unit:       aws.String("Count"),
+				Unit:       cwtypes.StandardUnitCount,
 				Value:      aws.Float64(float64(m.errorCount.Get())),
 				/*
 					Dimensions: []*cloudwatch.Dimension{
@@ -581,7 +618,7 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("ProcessedBytes"),
-				Unit:       aws.String("Bytes"),
+				Unit:       cwtypes.StandardUnitBytes,
 				Value:      aws.Float64(float64(m.TotalBytes.Get())),
 				/*
 					Dimensions: []*cloudwatch.Dimension{
@@ -594,7 +631,7 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("BytesPerSec"),
-				Unit:       aws.String("Bytes/Second"),
+				Unit:       cwtypes.StandardUnitBytesSecond,
 				Value:      aws.Float64(float64(m.TotalBytes.Get()-m.totalBytesL.Get()) / interval),
 				/*
 					Dimensions: []*cloudwatch.Dimension{
@@ -607,7 +644,7 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("UpTimeHours"),
-				Unit:       aws.String("Count"),
+				Unit:       cwtypes.StandardUnitCount,
 				Value:      aws.Float64(float64(upTime) / float64(1000000000*3600)),
 				/*
 					Dimensions: []*cloudwatch.Dimension{

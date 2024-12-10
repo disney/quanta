@@ -31,7 +31,7 @@ require (
 	github.com/google/btree v1.0.0
 	github.com/google/uuid v1.6.0
 	github.com/hamba/avro/v2 v2.15.0
-	github.com/harlow/kinesis-consumer v0.3.6
+	github.com/harlow/kinesis-consumer v0.3.5
 	github.com/hashicorp/consul/api v1.10.1
 	github.com/hashicorp/consul/sdk v0.8.0
 	github.com/hashicorp/go-memdb v1.3.1
@@ -151,4 +151,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/harlow/kinesis-consumer => github.com/guymolinari/kinesis-consumer v0.0.0-20241208210820-a50a0f6e2b44
+//replace github.com/harlow/kinesis-consumer => github.com/guymolinari/kinesis-consumer v0.0.0-20241208210820-a50a0f6e2b44

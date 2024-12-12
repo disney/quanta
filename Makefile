@@ -75,10 +75,10 @@ build_admin: format vet
 	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_ADMIN} ${LDFLAGS} ${PKG_ADMIN}
 
 build_proxy: format vet
-        $(foreach GOARCH, $(ARCHITECTURES),\
-        $(shell export GOARCH=$(GOARCH);\
-        CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_PROXY} \
-        ))
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_PROXY} \
+	))
 
 build_all: format vet
 	$(foreach GOARCH, $(ARCHITECTURES),\
@@ -104,10 +104,6 @@ build_all: format vet
 	$(foreach GOARCH, $(ARCHITECTURES),\
 	$(shell export GOARCH=$(GOARCH);\
 	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_RUN)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_RUN} \
-	))
-	$(foreach GOARCH, $(ARCHITECTURES),\
-	$(shell export GOARCH=$(GOARCH);\
-	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_LOADER)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_LOADER} \
 	))
 
 push_kinesis_docker: build_all

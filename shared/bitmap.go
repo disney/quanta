@@ -695,7 +695,7 @@ func (c *BitmapIndex) PartitionInfo(before time.Time, index string) ([]*Partitio
 		for k, _ := range shardInfoAgg[x] {
 			shardTimes = append(shardTimes, k)
 		}
-		sort.Slice(shardTimes, func(i, j int) bool { return shardTimes[i] < shardTimes[j] })
+		sort.Slice(shardTimes, func(i, j int) bool { return shardTimes[i] > shardTimes[j] })
 		for _, v := range shardTimes {
 			results = append(results, shardInfoAgg[x][v])
 		}

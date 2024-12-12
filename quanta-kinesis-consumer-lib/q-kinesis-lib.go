@@ -61,6 +61,7 @@ type Main struct {
 	AssumeRoleArn       string
 	AssumeRoleArnRegion string
 	Deaggregate         bool
+	PostCheckpointInitDelay int
 	Collate             bool
 	ShardKey            string
 	ProtoConfig			string
@@ -144,12 +145,6 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 		kc = kinesis.New(sess)
 	}
 
-	streamName := aws.String(m.Stream)
-	shout, err := kc.ListShards(&kinesis.ListShardsInput{StreamName: streamName})
-	if err != nil {
-		return 0, err
-	}
-	shardCount := len(shout.Shards)
 	dynamoDbClient := dynamodb.New(sess)
 
 	db, err := store.New(AppName, m.CheckpointTable, store.WithDynamoClient(dynamoDbClient), store.WithRetryer(&QuantaRetryer{}))
@@ -178,9 +173,41 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 			//consumer.WithCounter(counter),
 		)
 	}
+
+	streamName := aws.String(m.Stream)
+	shout, err := kc.ListShards(&kinesis.ListShardsInput{StreamName: streamName})
 	if err != nil {
 		return 0, err
 	}
+	shardCount := len(shout.Shards)
+	initializedShardsInDB := false
+	if db != nil && m.InitialPos != "TRIM_HORIZON"  {
+		for _, v := range shout.Shards {
+			seq, _ := db.GetCheckpoint(*streamName, *v.ShardId)
+			if seq != "" && seq != "0" {
+				continue
+			}
+			sequenceRange := *v.SequenceNumberRange
+			sequenceNumber := *sequenceRange.StartingSequenceNumber
+			if sequenceRange.EndingSequenceNumber != nil {
+				sequenceNumber = *sequenceRange.EndingSequenceNumber
+			}
+			if sequenceNumber == "" {
+				sequenceNumber = *sequenceRange.StartingSequenceNumber
+			}
+			err := db.SetCheckpoint(*streamName, *v.ShardId, sequenceNumber)
+			//u.Debugf("Initializing checkpoint for shard %s.%s, SEQ = %s", *streamName, *v.ShardId,
+			//	 sequenceNumber)
+        	if err != nil {
+				return 0, fmt.Errorf("failed to set inital checkpoint, %v", err)
+        	}
+			initializedShardsInDB = true
+		}
+	}
+	if initializedShardsInDB {
+		time.Sleep(time.Duration(m.PostCheckpointInitDelay) * time.Second)
+	}
+
 	m.metrics = cloudwatch.New(sess)
 
 	// Initialize shard channels
@@ -296,7 +323,7 @@ table.BasicTable.ProtoPath = "dss/field/transport/sdp/envelope.proto"
 				}
 			}
 			exitloop:
-			u.Errorf("shard channel closed. %v", shardId)
+			u.Debugf("shard channel closed. %v", shardId)
 			// sharedChannels was closed, clean up.
 			m.shardSessionCache.Range(func(k, v interface{}) bool {
 				v.(*core.Session).CloseSession()

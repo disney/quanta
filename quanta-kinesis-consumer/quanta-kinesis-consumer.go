@@ -49,6 +49,7 @@ func main() {
 	deaggregate := app.Flag("deaggregate", "Incoming payload records are aggregated.").Bool()
 	scanInterval := app.Flag("scan-interval", "Scan interval (milliseconds)").Default("1000").Int()
 	protoPath := app.Flag("proto-path", "Path to protobuf descriptor files root directory.").String()
+	postCheckpointInitDelay := app.Flag("post-checkpoint-init-delay", "Delay seconds after checkpoint table init.").Default("30").Int()
 	logLevel := app.Flag("log-level", "Log Level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
@@ -65,6 +66,7 @@ func main() {
 	main.ScanInterval = *scanInterval
 	main.Port = int(*port)
 	main.ConsulAddr = *consul
+	main.PostCheckpointInitDelay = *postCheckpointInitDelay
 
 	log.Printf("Set Logging level to %v.", *logLevel)
 	log.Printf("Kinesis stream %v.", main.Stream)
@@ -126,7 +128,11 @@ func main() {
 		log.Printf("Payload is Avro.")
 	} else {
 		main.IsAvro = false
-		log.Printf("Payload is JSON.")
+		if *protoPath != "" {
+			log.Printf("Payload is ProtoBuf.")
+		} else {
+			log.Printf("Payload is JSON.")
+		}
 	}
 	if *deaggregate {
 		main.Deaggregate = true

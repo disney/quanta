@@ -61,7 +61,6 @@ type Main struct {
 	AssumeRoleArn       string
 	AssumeRoleArnRegion string
 	Deaggregate         bool
-	PostCheckpointInitDelay int
 	Collate             bool
 	ShardKey            string
 	ProtoConfig			string
@@ -180,32 +179,19 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 		return 0, err
 	}
 	shardCount := len(shout.Shards)
-	initializedShardsInDB := false
+	foundCheckpointRecords := false
 	if db != nil && m.InitialPos != "TRIM_HORIZON"  {
 		for _, v := range shout.Shards {
 			seq, _ := db.GetCheckpoint(*streamName, *v.ShardId)
 			if seq != "" && seq != "0" {
+				foundCheckpointRecords = true
 				continue
 			}
-			sequenceRange := *v.SequenceNumberRange
-			sequenceNumber := *sequenceRange.StartingSequenceNumber
-			if sequenceRange.EndingSequenceNumber != nil {
-				sequenceNumber = *sequenceRange.EndingSequenceNumber
-			}
-			if sequenceNumber == "" {
-				sequenceNumber = *sequenceRange.StartingSequenceNumber
-			}
-			err := db.SetCheckpoint(*streamName, *v.ShardId, sequenceNumber)
-			//u.Debugf("Initializing checkpoint for shard %s.%s, SEQ = %s", *streamName, *v.ShardId,
-			//	 sequenceNumber)
-        	if err != nil {
-				return 0, fmt.Errorf("failed to set inital checkpoint, %v", err)
-        	}
-			initializedShardsInDB = true
 		}
 	}
-	if initializedShardsInDB {
-		time.Sleep(time.Duration(m.PostCheckpointInitDelay) * time.Second)
+	if m.InitialPos == "LATEST" && foundCheckpointRecords {
+		u.Errorf("Checkpoint enabled and records exist.  Shard iterator is 'LATEST' setting it to 'AFTER_SEQUENCE_NUMBER'.")
+		m.InitialPos = "AFTER_SEQUENCE_NUMBER"
 	}
 
 	m.metrics = cloudwatch.New(sess)
@@ -360,9 +346,8 @@ func (m *Main) MainProcessingLoop() error {
 			u.Warnf("Received Cancellation.")
 		}
 		if m.InitialPos == "TRIM_HORIZON" {
-			u.Error("can't re-initialize 'in-place' if set to TRIM_HORIZON, exiting")
-			// os.Exit(1)
-			return fmt.Errorf("can't re-initialize 'in-place' if set to TRIM_HORIZON")
+			u.Error("initial position was TRIM_HORIZON, re-initializing with set to LATEST ")
+			m.InitialPos = "LATEST"
 		}
 		u.Warnf("Re-initializing.")
 		var err error

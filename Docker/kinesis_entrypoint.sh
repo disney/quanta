@@ -20,10 +20,6 @@ fi
 if [ -n "$CHECKPOINT_TABLE" ]
 then
     BOOL_FLAGS=${BOOL_FLAGS}" --checkpoint-table=${CHECKPOINT_TABLE}"
-	if [ -n "$POST_CHECKPOINT_INIT_DELAY" ]
-	then
-    	BOOL_FLAGS=${BOOL_FLAGS}" --post-checkpoint-init-delay=${POST_CHECKPOINT_INIT_DELAY}"
-	fi
 fi
 if [ -n "$LOG_LEVEL" ]
 then

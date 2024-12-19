@@ -532,3 +532,40 @@ func createRowCols(ret *rel.Projection, tableMap map[string]*schema.Table, alias
 
 	return ret, rowCols
 }
+
+func outputRank(tableName, fieldName string, conn *core.Session, outCh exec.MessageChan, 
+		sigChan exec.SigChan, results *roaring64.Bitmap, fromTime, toTime time.Time, topn int) error {
+
+	c1n := "topn_" + fieldName
+	c2n := "topn_count"
+	c3n := "topn_percent"
+	cn := make(map[string]int, 3)
+	cn[c1n] = 0
+	cn[c2n] = 1
+	cn[c3n] = 2
+	projFields := []string{fmt.Sprintf("%s.%s", tableName, fieldName)}
+	foundSet := make(map[string]*roaring64.Bitmap)
+	foundSet[tableName] = results
+	proj, err3 := core.NewProjection(conn, foundSet, nil, projFields, "", "",
+		fromTime.UnixNano(), toTime.UnixNano(), nil, false)
+	if err3 != nil {
+		return err3
+	}
+	rows, err4 := proj.Rank(tableName, fieldName, topn)
+	if err4 != nil {
+		return err4
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	for i, v := range rows {
+		msg := datasource.NewSqlDriverMessageMap(uint64(i), v, cn)
+		select {
+		case <-sigChan:
+			return nil
+		case outCh <- msg:
+			// continue
+		}
+	}
+	return nil
+}

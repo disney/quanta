@@ -289,7 +289,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 		case value.BoolType:
 			s.md[i] = fmt.Sprintf("name=%s, type=BOOLEAN", v.As)
 		default:
-			s.md[i] = fmt.Sprintf("name=%s, type=UTF8, encoding=PLAIN_DICTIONARY", v.As)
+			s.md[i] = fmt.Sprintf("name=%s, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY", v.As)
 		}
 	}
 

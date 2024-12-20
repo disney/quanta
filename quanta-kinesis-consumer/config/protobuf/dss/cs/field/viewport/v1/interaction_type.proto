@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "InteractionTypeOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message InteractionTypeWrapper {
+  InteractionType value = 1;
+  enum InteractionType {
+    SELECT = 0;
+    FOCUS = 1;
+    SCROLL = 2;
+    DEEPLINK = 3;
+    AUTOPLAY = 4;
+    PLAY_BUTTON = 5;
+    LONG_PRESS = 6;
+    TWO_FINGER_TAP = 7;
+    GUEST_AUTOPLAY = 8;
+    LONG_PRESS_PLAY_BUTTON = 9;
+    INVISIBLE = 10;
+  }
+}

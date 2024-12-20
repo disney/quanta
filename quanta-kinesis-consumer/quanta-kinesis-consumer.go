@@ -48,6 +48,7 @@ func main() {
 	avroPayload := app.Flag("avro-payload", "Payload is Avro.").Bool()
 	deaggregate := app.Flag("deaggregate", "Incoming payload records are aggregated.").Bool()
 	scanInterval := app.Flag("scan-interval", "Scan interval (milliseconds)").Default("1000").Int()
+	protoPath := app.Flag("proto-path", "Path to protobuf descriptor files root directory.").String()
 	logLevel := app.Flag("log-level", "Log Level [ERROR, WARN, INFO, DEBUG]").Default("WARN").String()
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
@@ -92,10 +93,6 @@ func main() {
 			os.Exit(1)
 		}
 		log.Printf("DynamoDB checkpoint table name [%s]", main.CheckpointTable)
-		if main.InitialPos == "LATEST" {
-			u.Errorf("Checkpoint enabled.  Shard iterator is 'LATEST' setting it to 'AFTER_SEQUENCE_NUMBER'.")
-			main.InitialPos = "AFTER_SEQUENCE_NUMBER"
-		}
 	}
 
 	if shardKey != nil {
@@ -125,13 +122,21 @@ func main() {
 		log.Printf("Payload is Avro.")
 	} else {
 		main.IsAvro = false
-		log.Printf("Payload is JSON.")
+		if *protoPath != "" {
+			log.Printf("Payload is ProtoBuf.")
+		} else {
+			log.Printf("Payload is JSON.")
+		}
 	}
 	if *deaggregate {
 		main.Deaggregate = true
 		log.Printf("Payload is aggregated, de-aggregation is enabled in consumer.")
 	} else {
 		main.Deaggregate = false
+	}
+	if *protoPath != "" {
+		main.ProtoConfig = *protoPath
+		log.Printf("Path to protobuf descriptor files directory is %v", main.ProtoConfig)
 	}
 
 	var err error

@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "ContainerTypeOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message ContainerTypeWrapper {
+  ContainerType value = 1;
+  enum ContainerType {
+    SHELF = 0;
+    CAROUSEL = 1;
+    GRID = 2;
+    MENU_LIST = 3;
+    VIDEO_PLAYER = 4;
+    FORM = 5;
+    CTA_BUTTON = 6;
+    FOOTER = 7;
+    OVERLAY = 8;
+    NAV_BUTTON = 9;
+    MLP_LOG_IN = 10;
+    MLP_BODY = 11;
+    ONBOARDING_PAYMENT_INFO = 12;
+    ONBOARDING_PAYWALL = 13;
+    PLAN_PICKER = 14;
+    LICENSE_PLATE_CODE = 15;
+    TEXT = 16;
+    SCA_MODAL = 17;
+    SPLASH_LOG_IN = 18;
+    SPLASH_BODY = 19;
+    HERO = 20;
+    LEDGER = 21;
+    TOAST_MESSAGE = 22;
+    SETTINGS_CTA = 23;
+  }
+}

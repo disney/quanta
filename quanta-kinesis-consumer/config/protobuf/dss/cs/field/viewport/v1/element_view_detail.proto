@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "ElementViewDetailOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+import "dss/predef/predef.proto";
+import "dss/cs/field/viewport/v1/action_type.proto";
+import "dss/cs/field/viewport/v1/campaign.proto";
+
+message ElementViewDetail {
+  string elementId = 1;
+  string elementIdType = 9;
+  int32 elementIndex = 3;
+  dss.predef.StringValue browseItemId = 5;
+  dss.predef.StringValue browseEntityId = 6;
+  .dss.cs.field.viewport.v1.ActionTypeWrapper browsePrimaryActionType = 7;
+  dss.predef.StringValue browsePrimaryActionTargetId = 8;
+  .dss.cs.field.viewport.v1.Campaign campaign = 10;
+  dss.predef.StringValue missingEntitlement = 11;
+  dss.predef.StringValue browseAvailId = 12;
+}

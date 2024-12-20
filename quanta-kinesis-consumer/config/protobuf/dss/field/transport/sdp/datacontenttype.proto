@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+option java_package = "dss.field.transport.sdp";
+option java_outer_classname = "DatacontenttypeOuterClass";
+
+package dss.field.transport.sdp;
+
+
+message DatacontenttypeWrapper {
+  Datacontenttype value = 1;
+  enum Datacontenttype {
+    APPLICATION_JSON = 0;
+    APPLICATION_PROTOBUF = 3;
+    APPLICATION_FLATBUFFER = 4;
+    APPLICATION_AVRO = 5;
+  }
+}

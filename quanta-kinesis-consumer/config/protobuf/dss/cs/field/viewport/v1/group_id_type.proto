@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "GroupIdTypeOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message GroupIdTypeWrapper {
+  GroupIdType value = 1;
+  enum GroupIdType {
+    SHAREPLAY = 0;
+    GROUPWATCH = 1;
+  }
+}

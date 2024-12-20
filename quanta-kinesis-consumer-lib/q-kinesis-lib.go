@@ -63,6 +63,7 @@ type Main struct {
 	Deaggregate         bool
 	Collate             bool
 	ShardKey            string
+	ProtoConfig			string
 	HashTable           *rendezvous.Table
 	shardChannels       map[string]chan DataRecord
 	shardSessionCache   sync.Map
@@ -143,12 +144,6 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 		kc = kinesis.New(sess)
 	}
 
-	streamName := aws.String(m.Stream)
-	shout, err := kc.ListShards(&kinesis.ListShardsInput{StreamName: streamName})
-	if err != nil {
-		return 0, err
-	}
-	shardCount := len(shout.Shards)
 	dynamoDbClient := dynamodb.New(sess)
 
 	db, err := store.New(AppName, m.CheckpointTable, store.WithDynamoClient(dynamoDbClient), store.WithRetryer(&QuantaRetryer{}))
@@ -177,15 +172,42 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 			//consumer.WithCounter(counter),
 		)
 	}
+
+	streamName := aws.String(m.Stream)
+	shout, err := kc.ListShards(&kinesis.ListShardsInput{StreamName: streamName})
 	if err != nil {
 		return 0, err
 	}
+	shardCount := len(shout.Shards)
+	foundCheckpointRecords := false
+	if db != nil && m.InitialPos != "TRIM_HORIZON"  {
+		for _, v := range shout.Shards {
+			seq, _ := db.GetCheckpoint(*streamName, *v.ShardId)
+			if seq != "" && seq != "0" {
+				foundCheckpointRecords = true
+				continue
+			}
+		}
+	}
+	if m.InitialPos == "LATEST" && foundCheckpointRecords {
+		u.Errorf("Checkpoint enabled and records exist.  Shard iterator is 'LATEST' setting it to 'AFTER_SEQUENCE_NUMBER'.")
+		m.InitialPos = "AFTER_SEQUENCE_NUMBER"
+	}
+
 	m.metrics = cloudwatch.New(sess)
 
 	// Initialize shard channels
 	u.Warnf("Shard count = %d", shardCount)
 	m.shardChannels = make(map[string]chan DataRecord)
 	shardIds := make([]string, shardCount)
+
+	// Envelope registry is used to parse protobuf envelopes
+	if m.ProtoConfig != "" {
+		if err := shared.InitEnvelopeRegistry(m.ProtoConfig); err != nil {
+			return 0, err
+		}
+	}
+
 	// ClearTableCache
 	for k := range m.tableCache.TableCache {
 		delete(m.tableCache.TableCache, k)
@@ -198,11 +220,25 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 	}
 	for _, tableName := range tables {
 		u.Infof("Opening session for table %s", tableName)
-		// what are these orphans sessions for?
 		conn, _ := core.OpenSession(m.tableCache, "", tableName, true, clientConn)
 		if conn != nil {
 			conn.CloseSession()
 		}
+/*
+		if m.ProtoConfig == "" {
+			continue
+		}
+		table := m.tableCache.TableCache[tableName]
+		if table.BasicTable.ProtoPath != "" && table.ProtoDescriptor == nil {
+table.BasicTable.ProtoPath = "dss/field/transport/sdp/envelope.proto"
+			if pd, err := shared.GetDescriptor(m.ProtoConfig + "/protobuf", table.BasicTable.ProtoPath); err != nil {
+				u.Errorf("Error getting proto descriptor - %v", err)
+				return 0, err
+			} else {
+				table.ProtoDescriptor = pd
+			}
+		}
+*/
 	}
 
 	// we have to do this in two passes
@@ -273,7 +309,7 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 				}
 			}
 			exitloop:
-			u.Errorf("shard channel closed. %v", shardId)
+			u.Debugf("shard channel closed. %v", shardId)
 			// sharedChannels was closed, clean up.
 			m.shardSessionCache.Range(func(k, v interface{}) bool {
 				v.(*core.Session).CloseSession()
@@ -310,9 +346,8 @@ func (m *Main) MainProcessingLoop() error {
 			u.Warnf("Received Cancellation.")
 		}
 		if m.InitialPos == "TRIM_HORIZON" {
-			u.Error("can't re-initialize 'in-place' if set to TRIM_HORIZON, exiting")
-			// os.Exit(1)
-			return fmt.Errorf("can't re-initialize 'in-place' if set to TRIM_HORIZON")
+			u.Error("initial position was TRIM_HORIZON, re-initializing with set to LATEST ")
+			m.InitialPos = "LATEST"
 		}
 		u.Warnf("Re-initializing.")
 		var err error
@@ -356,7 +391,13 @@ func (m *Main) scanAndProcess(v *consumer.Record) error {
 				// Ideally we would grok the schema from the partition key somehow
 				continue
 			}
-
+		} else if m.ProtoConfig != "" {
+			errx := shared.Unmarshal(v.Data, &out)
+			if errx != nil {
+				m.errorCount.Add(1)
+				u.Errorf("Unmarshal protobuf ERROR %v", errx)
+				return nil
+			}
 		} else { // Default is JSON
 			err := json.Unmarshal(v.Data, &out)
 			if err != nil {
@@ -379,7 +420,12 @@ func (m *Main) scanAndProcess(v *consumer.Record) error {
 	if key, err := shared.GetPath(m.ShardKey, out, false, false); err != nil {
 		return err
 	} else {
-		shard := m.HashTable.GetN(1, key.(string))
+		skey, ok := key.(string)
+		if !ok {
+			return fmt.Errorf("configuration for shardKey [%s] does not map to a string value it is a [%T]",
+				m.ShardKey, key)
+		}
+		shard := m.HashTable.GetN(1, skey)
 		ch, ok := m.shardChannels[shard[0]]
 		if !ok {
 			return fmt.Errorf("cannot locate channel for shard key %v", key)

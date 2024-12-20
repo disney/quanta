@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "ExperimentsDetailsOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+import "dss/cs/field/viewport/v1/experiment_platform.proto";
+
+message ExperimentsDetails {
+  .dss.cs.field.viewport.v1.ExperimentPlatformWrapper.ExperimentPlatform experimentPlatform = 1;
+  string experimentFeatureId = 2;
+  string experimentId = 3;
+  string variantId = 4;
+}

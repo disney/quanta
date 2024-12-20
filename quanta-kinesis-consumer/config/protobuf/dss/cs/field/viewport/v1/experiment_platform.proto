@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "ExperimentPlatformOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message ExperimentPlatformWrapper {
+  ExperimentPlatform value = 1;
+  enum ExperimentPlatform {
+    OPTIMIZELY = 0;
+    WEAPON_X = 1;
+  }
+}

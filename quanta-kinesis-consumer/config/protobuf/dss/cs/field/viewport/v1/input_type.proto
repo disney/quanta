@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "InputTypeOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message InputTypeWrapper {
+  InputType value = 1;
+  enum InputType {
+    CHECKBOX = 0;
+    TOGGLE = 1;
+    INPUT_FORM = 2;
+    RADIO_BUTTON = 3;
+    SELECT = 4;
+  }
+}

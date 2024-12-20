@@ -14,7 +14,6 @@ K := $(foreach exec,$(EXECUTABLES),\
 ROOT_DIR:=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 BIN_DIR=bin
 BIN_NODE=quanta-node
-BIN_LOADER=quanta-loader
 BIN_PROXY=quanta-proxy
 BIN_KINESIS=quanta-kinesis-consumer
 BIN_PRODUCER=quanta-s3-kinesis-producer
@@ -76,10 +75,10 @@ build_admin: format vet
 	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_ADMIN} ${LDFLAGS} ${PKG_ADMIN}
 
 build_proxy: format vet
-        $(foreach GOARCH, $(ARCHITECTURES),\
-        $(shell export GOARCH=$(GOARCH);\
-        CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_PROXY} \
-        ))
+	$(foreach GOARCH, $(ARCHITECTURES),\
+	$(shell export GOARCH=$(GOARCH);\
+	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_PROXY)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_PROXY} \
+	))
 
 build_all: format vet
 	$(foreach GOARCH, $(ARCHITECTURES),\
@@ -106,10 +105,6 @@ build_all: format vet
 	$(shell export GOARCH=$(GOARCH);\
 	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_RUN)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_RUN} \
 	))
-	$(foreach GOARCH, $(ARCHITECTURES),\
-	$(shell export GOARCH=$(GOARCH);\
-	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_LOADER)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_LOADER} \
-	))
 
 push_kinesis_docker: build_all
 	$(foreach GOARCH, $(ARCHITECTURES),\
@@ -121,12 +116,6 @@ push_proxy_docker: build_all
 	$(foreach GOARCH, $(ARCHITECTURES),\
 	$(shell export GOARCH=$(GOARCH);\
 	docker buildx build --push --platform linux/${GOARCH} -t containerregistry.disney.com/digital/$(BIN_PROXY):${VERSION}-$(GOARCH) --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployProxyDockerfile . \
-	))
-
-push_loader_docker: build_all
-	$(foreach GOARCH, $(ARCHITECTURES),\
-	$(shell export GOARCH=$(GOARCH);\
-	docker buildx build --push --platform linux/${GOARCH} -t containerregistry.disney.com/digital/$(BIN_LOADER):${VERSION}-$(GOARCH) --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployLoaderDockerfile . \
 	))
 
 build_proxy_docker: build_all
@@ -147,7 +136,7 @@ test: build_all
 	# mkdir -p $(COVERAGE_DIR)
 	# export TZ=UTC; go test ${GOLIST} -short -v ${LDFLAGS_TEST} -coverprofile ${COV_PROFILE}
 	# go tool cover -html=${COV_PROFILE} -o ${COV_HTML}
-	./test/run-go-tests.sh.
+	./test/run-go-tests.sh
 ifeq ($(UNAME), Darwin)
 	# open ${COV_HTML}
 endif
@@ -162,17 +151,6 @@ kcl:
 
 admin:
 	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_ADMIN} ${LDFLAGS} ${PKG_ADMIN}
-
-loader:
-	$(foreach GOARCH, $(ARCHITECTURES),\
-	$(shell export GOARCH=$(GOARCH);\
-	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(BIN_LOADER)-$(PLATFORM)-$(GOARCH) ${LDFLAGS} ${PKG_LOADER} \
-	))
-	$(foreach GOARCH, $(ARCHITECTURES),\
-	$(shell export GOARCH=$(GOARCH);\
-	docker buildx build --push --platform linux/${GOARCH} -t containerregistry.disney.com/digital/$(BIN_LOADER):${VERSION}-$(GOARCH) --build-arg arch="${GOARCH}" --build-arg platform="${PLATFORM}" -f Docker/DeployLoaderDockerfile . \
-	))
-
 
 producer:
 	CGO_ENABLED=0 go build -o ${BIN_DIR}/${BIN_PRODUCER} ${LDFLAGS} ${PKG_PRODUCER}

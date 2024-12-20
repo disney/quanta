@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "DeviceProfileOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message DeviceProfileWrapper {
+  DeviceProfile value = 1;
+  enum DeviceProfile {
+    XBOX = 0;
+    PS4 = 1;
+    VIZIO = 2;
+    SAMSUNG = 3;
+    LG = 4;
+    PS5 = 5;
+    PS = 6;
+    ROKU = 7;
+    WINDOWS_DESKTOP = 8;
+    BROWSER = 9;
+  }
+}

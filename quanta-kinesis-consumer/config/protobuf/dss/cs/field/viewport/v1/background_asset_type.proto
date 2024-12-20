@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "BackgroundAssetTypeOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+
+message BackgroundAssetTypeWrapper {
+  BackgroundAssetType value = 1;
+  enum BackgroundAssetType {
+    VIDEO = 0;
+    IMAGE = 1;
+  }
+}

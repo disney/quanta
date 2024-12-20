@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.event.viewport.impression.v1";
+option java_outer_classname = "V1EventOuterClass";
+
+package dss.cs.event.viewport.impression.v1;
+
+import "dss/cs/event/viewport/impression/v1/container_view.proto";
+import "dss/cs/event/viewport/impression/v1/page_view.proto";
+
+message V1Event {
+  oneof V1EventUnion {
+    ContainerViewValue containerViewValueValue = 1;
+    PageViewValue pageViewValueValue = 2;
+  }
+  message ContainerViewValue {
+    .dss.cs.event.viewport.impression.v1.ContainerView value = 1;
+  }
+  message PageViewValue {
+    .dss.cs.event.viewport.impression.v1.PageView value = 1;
+  }
+}

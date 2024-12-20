@@ -11,7 +11,7 @@ import (
 	"io"
 	"unsafe"
 
-	"math"
+	//"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/Jeffail/tunny"
-	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/RoaringBitmap/roaring/v2/roaring64"
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"github.com/disney/quanta/shared"
@@ -330,12 +330,12 @@ type BSIBitmap struct {
 func (m *BitmapIndex) newBSIBitmap(index, field string) *BSIBitmap {
 
 	attr, err := m.getFieldConfig(index, field)
-	var minValue, maxValue int64
+//	var minValue, maxValue int64
 	var timeQuantumType string
 	if err == nil {
 		timeQuantumType = attr.TimeQuantumType
-		minValue = int64(attr.MinValue)
-		maxValue = int64(attr.MaxValue)
+//		minValue = int64(attr.MinValue)
+//		maxValue = int64(attr.MaxValue)
 	}
 	var seq *SequencerQueue
 	if attr.Parent.PrimaryKey != "" || attr.Parent.TimeQuantumField != "" {
@@ -343,13 +343,15 @@ func (m *BitmapIndex) newBSIBitmap(index, field string) *BSIBitmap {
 		if attr.FieldName == pkInfo[0].FieldName {
 			// If compound key, sequencer installed on first key attr
 			seq = NewSequencerQueue()
-			if maxValue == 0 {
-				maxValue = math.MaxInt64
-			}
+//			if maxValue == 0 {
+//				maxValue = math.MaxInt64
+//			}
 		}
 	}
 	ts := time.Now()
-	return &BSIBitmap{BSI: roaring64.NewBSI(maxValue, minValue),
+//	return &BSIBitmap{BSI: roaring64.NewBSI(maxValue, minValue),
+//		TQType: timeQuantumType, ModTime: ts, AccessTime: ts, sequencerQueue: seq}
+	return &BSIBitmap{BSI: roaring64.NewDefaultBSI(),
 		TQType: timeQuantumType, ModTime: ts, AccessTime: ts, sequencerQueue: seq}
 }
 
@@ -486,7 +488,7 @@ func (m *BitmapIndex) batchProcessLoop(worker *WorkerThread) {
 			}
 			m.shardCount = m.bsiCount + m.bitmapCount
 			if worker.index == 0 {
-				u.Debug("batchProcessLoop shard count ", m.hashKey, " shard ", m.shardCount, " bsi ", m.bsiCount, " bitmap ", m.bitmapCount)
+				//u.Debug("batchProcessLoop shard count ", m.hashKey, " shard ", m.shardCount, " bsi ", m.bsiCount, " bitmap ", m.bitmapCount)
 			}
 			// no default, block
 		}
@@ -1079,10 +1081,10 @@ func (m *BitmapIndex) checkPersistBitmapCache(forceSync bool) {
 	if writeCount > 0 {
 		if forceSync {
 			m.saveBitmapTCnt.Store(writeCount)
-			u.Debugf("Persist [timer expired] %d files done in %v", writeCount, elapsed)
+			//u.Debugf("Persist [timer expired] %d files done in %v", writeCount, elapsed)
 		} else {
 			m.saveBitmapECnt.Store(writeCount)
-			u.Debugf("Persist [edge triggered] %d files done in %v", writeCount, elapsed)
+			//u.Debugf("Persist [edge triggered] %d files done in %v", writeCount, elapsed)
 		}
 	}
 }
@@ -1126,10 +1128,10 @@ func (m *BitmapIndex) checkPersistBSICache(forceSync bool) {
 	if writeCount > 0 {
 		if forceSync {
 			m.saveBSITCnt.Store(writeCount)
-			u.Debugf("Persist BSI [timer expired] %d files done in %v", writeCount, elapsed)
+			//u.Debugf("Persist BSI [timer expired] %d files done in %v", writeCount, elapsed)
 		} else {
 			m.saveBSIECnt.Store(writeCount)
-			u.Debugf("Persist BSI [edge triggered] %d files done in %v", writeCount, elapsed)
+			//u.Debugf("Persist BSI [edge triggered] %d files done in %v", writeCount, elapsed)
 		}
 	}
 }
@@ -1438,9 +1440,9 @@ func (m *BitmapIndex) OfflinePartitions(ctx context.Context, req *pb.PartitionIn
 	ts := time.Unix(0, req.Time)
 
 	if req.Index != "" {
-		u.Info("Offline partition request for %v,  table = %s", ts.Format(timeFmt), req.Index)
+		u.Infof("Offline partition request for %v,  table = %s", ts.Format(timeFmt), req.Index)
 	} else {
-		u.Info("Offline partition request for %v, all partitioned tables", ts.Format(timeFmt))
+		u.Infof("Offline partition request for %v, all partitioned tables", ts.Format(timeFmt))
 	}
 
     // Iterate over shard cache insert into partition operation queue

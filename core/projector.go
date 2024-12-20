@@ -5,16 +5,14 @@ package core
 import (
 	"database/sql/driver"
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 	"unsafe"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/RoaringBitmap/roaring/v2/roaring64"
 	u "github.com/araddon/gou"
-	"github.com/disney/quanta/shared"
 )
 
 const (
@@ -678,35 +676,10 @@ func (p *Projector) getRow(colID uint64, strMap map[string]map[interface{}]inter
 				err = err2
 				return
 			}
-			if val, ok := rs.GetValue(cid); !ok {
+			if val, ok := rs.GetBigValue(cid); !ok {
 				row[i] = "NULL"
 			} else {
-				switch shared.TypeFromString(v.Type) {
-				case shared.Integer:
-					row[i] = fmt.Sprintf("%10d", val)
-				case shared.Float:
-					f := fmt.Sprintf("%%10.%df", v.Scale)
-					row[i] = fmt.Sprintf(f, float64(val)/math.Pow10(v.Scale))
-				case shared.Date, shared.DateTime:
-					t := time.Unix(0, val*1000000).UTC()
-					if v.MappingStrategy == "SysMicroBSI" {
-						t = time.Unix(0, val*1000).UTC()
-					}
-					if shared.TypeFromString(v.Type) == shared.Date {
-						row[i] = t.Format("2006-01-02")
-					} else {
-						switch v.MappingStrategy {
-						case "SysSecBSI":
-							row[i] = t.Format(time.RFC3339)
-						case "SysMillisBSI":
-							row[i] = t.Format("2006-01-02T15:04:05.000Z")
-						default:
-							row[i] = t.Format(time.RFC3339Nano)
-						}
-					}
-				default:
-					row[i] = val
-				}
+				row[i] = v.Render(val)
 			}
 			continue
 		}

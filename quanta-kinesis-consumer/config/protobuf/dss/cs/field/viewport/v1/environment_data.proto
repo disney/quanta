@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+option java_package = "dss.cs.field.viewport.v1";
+option java_outer_classname = "EnvironmentDataOuterClass";
+
+package dss.cs.field.viewport.v1;
+
+import "dss/predef/predef.proto";
+
+message EnvironmentData {
+  dss.predef.StringValue sdkVersion = 1;
+  dss.predef.StringValue sdkPlatform = 2;
+  dss.predef.StringValue sdkDevicePlatform = 3;
+  dss.predef.StringValue deviceOSVersion = 4;
+  dss.predef.StringValue deviceModel = 5;
+  dss.predef.StringValue deviceModelFamily = 6;
+  dss.predef.StringValue devicePlatformId = 7;
+  dss.predef.StringValue deviceBrand = 8;
+  dss.predef.StringValue applicationId = 9;
+  dss.predef.StringValue applicationName = 10;
+  dss.predef.StringValue applicationVersion = 11;
+  dss.predef.StringValue browser = 12;
+  dss.predef.StringValue browserVersion = 13;
+  dss.predef.StringValue applicationAdkVersion = 14;
+  dss.predef.StringValue adkDeviceId = 15;
+}

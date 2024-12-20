@@ -80,7 +80,7 @@ message QueryFragment {
   string index = 1;
   string field = 2;
   uint64 rowID = 3;
-  int64 value = 4;
+  bytes value = 4;
   string id = 11;
   repeated string childrenIds = 12;
 
@@ -104,10 +104,10 @@ message QueryFragment {
     BATCH_EQ = 7;
   }
   BSIOp bsiOp = 6;
-  int64 begin = 7;
-  int64 end = 8;
+  bytes begin = 7;
+  bytes end = 8;
   string fk = 9;
-  repeated int64 values = 10;
+  repeated bytes values = 10;
   float  samplePct = 13;
   bool  nullCheck = 14;
   bool  negate = 15;

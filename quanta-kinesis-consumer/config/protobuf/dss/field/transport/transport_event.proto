@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+option java_package = "dss.field.transport";
+option java_outer_classname = "TransportEventOuterClass";
+
+package dss.field.transport;
+
+import "dss/field/transport/sdp/sdp_event.proto";
+
+message TransportEvent {
+  oneof TransportEventUnion {
+    SdpEventValue sdpEventValueValue = 1;
+  }
+  message SdpEventValue {
+    .dss.field.transport.sdp.SdpEvent value = 1;
+  }
+}

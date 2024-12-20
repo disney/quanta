@@ -56,3 +56,8 @@ func TestPath(t *testing.T) {
 	_, err = GetPath("/badpath/testname2", dat, true, false)
 	assert.Error(t, err, "Key not present. [Key:testname2]")
 }
+
+func TestCreate(t *testing.T) {
+	nm := CreateNestedMapFromPath("data/value", "XXXX")
+	assert.NotNil(t, nm)
+}

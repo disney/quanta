@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/RoaringBitmap/roaring/v2/roaring64"
 	u "github.com/araddon/gou"
 	pb "github.com/disney/quanta/grpc"
 	"golang.org/x/sync/errgroup"

@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/binary"
 	"fmt"
+	"math/big"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -698,14 +699,22 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 		cval = vals[0]
 		tbuf.CurrentPKValue[i] = cval
 
-		switch reflect.ValueOf(cval).Kind() {
-		case reflect.String:
-			// Do nothing already a string
+		var strVal string
+		mval, err := pk.MapValue(cval, nil, false)
+		if err != nil {
+			return false, fmt.Errorf("error mapping PK field %s [%v], Schema mapping issue?",
+				pqColPaths[0], err)
+		}
+		switch shared.TypeFromString(pk.Type) {
+		case shared.String:
+			var ok bool
+			if strVal, ok = cval.(string); !ok {
+				strVal = pk.Render(mval)
+			}
+		case shared.Date, shared.DateTime:
+			strVal = pk.Render(mval)
 			if i == 0 { // First field in PK is TQ (if TQ != "")
-				if pk.MappingStrategy == "SysMillisBSI" || pk.MappingStrategy == "SysMicroBSI" {
-					strVal := cval.(string)
-					tbuf.CurrentTimestamp, _, _ = shared.ToTQTimestamp(tbuf.Table.TimeQuantumType, strVal)
-				}
+				tbuf.CurrentTimestamp, _, _ = shared.ToTQTimestamp(tbuf.Table.TimeQuantumType, strVal)
 			}
 			if pk.ColumnID {
 				if cID, err := strconv.ParseInt(cval.(string), 10, 64); err == nil {
@@ -713,39 +722,22 @@ func (s *Session) processPrimaryKey(tbuf *TableBuffer, row interface{}, pqTableP
 					directColumnID = true
 				}
 			}
-		case reflect.Int64:
-			orig := cval.(int64)
-			cval = fmt.Sprintf("%d", orig)
-
-			if i == 0 {
-				tFormat := shared.YMDTimeFmt
-				if tbuf.Table.TimeQuantumType == "YMDH" {
-					tFormat = shared.YMDHTimeFmt
-				}
-				if pk.MappingStrategy == "SysMillisBSI" || pk.MappingStrategy == "SysMicroBSI" {
-					ts := time.Unix(0, orig*1000000)
-					if pk.MappingStrategy == "SysMicroBSI" {
-						ts = time.Unix(0, orig*1000)
-					}
-					tbuf.CurrentTimestamp, _, _ = shared.ToTQTimestamp(tbuf.Table.TimeQuantumType, ts.Format(tFormat))
+		case shared.Integer:
+			strVal = pk.Render(mval)
+			if pk.ColumnID {
+				if cID, err := strconv.ParseInt(strVal, 10, 64); err == nil {
+					tbuf.CurrentColumnID = uint64(cID)
+					directColumnID = true
 				}
 			}
-		case reflect.Float64:
-			orig := cval.(float64)
-			f := fmt.Sprintf("%%10.%df", pk.Scale)
-			cval = fmt.Sprintf(f, orig)
-		case reflect.Float32:
-			orig := cval.(float32)
-			f := fmt.Sprintf("%%10.%df", pk.Scale)
-			cval = fmt.Sprintf(f, orig)
 		default:
-			return false, fmt.Errorf("PK Lookup value [%v] unknown type, it is [%v]", cval,
-				reflect.ValueOf(cval).Kind())
+			strVal = pk.Render(mval)
 		}
+
 		if pkLookupVal.Len() == 0 {
-			pkLookupVal.WriteString(cval.(string))
+			pkLookupVal.WriteString(strVal)
 		} else {
-			pkLookupVal.WriteString(fmt.Sprintf("+%s", cval.(string)))
+			pkLookupVal.WriteString(fmt.Sprintf("+%s", strVal))
 		}
 	}
 
@@ -1051,7 +1043,7 @@ func (s *Session) Commit() error {
 }
 
 // MapValue - Convenience function for Mapper interface.
-func (s *Session) MapValue(tableName, fieldName string, value interface{}, update bool) (val uint64, err error) {
+func (s *Session) MapValue(tableName, fieldName string, value interface{}, update bool) (val *big.Int, err error) {
 
 	var table *Table
 	var attr *Attribute
@@ -1061,7 +1053,7 @@ func (s *Session) MapValue(tableName, fieldName string, value interface{}, updat
 	}
 	attr, err = table.GetAttribute(fieldName)
 	if err != nil {
-		return 0, fmt.Errorf("attribute '%s' not found", fieldName)
+		return nil, fmt.Errorf("attribute '%s' not found", fieldName)
 	}
 
 	/*

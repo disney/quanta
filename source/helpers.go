@@ -69,6 +69,7 @@ func decorateRow(row []driver.Value, proj *rel.Projection, rowCols map[string]in
 			cpyRow[i] = nil
 		}
 	}
+u.Errorf("ROWCOLS = %#v", rowCols)
 	ctx := datasource.NewSqlDriverMessageMap(columnID, cpyRow, rowCols)
 	for i, v := range proj.Columns {
 		ri1, aok := rowCols[v.As]
@@ -87,6 +88,9 @@ func decorateRow(row []driver.Value, proj *rel.Projection, rowCols map[string]in
 			}
 		} else if strings.HasSuffix(v.As, "@rownum") {
 			newRow[i] = fmt.Sprintf("%d", columnID)
+		} else {
+			newRow[i] = cpyRow[i]
+			continue
 		}
 		if v.Col.Expr.NodeType() != "Func" {
 			continue
@@ -197,6 +201,33 @@ func outputProjection(outCh exec.MessageChan, sigChan exec.SigChan, proj *core.P
 	}
 	return nil
 }
+
+
+func outputAggregateProjection(outCh exec.MessageChan, sigChan exec.SigChan, rows [][]driver.Value,
+		colNames, rowCols map[string]int, pro *rel.Projection) error {
+
+	if len(rows) == 0 {
+		return nil
+	}
+	for i, r := range rows {
+		r = decorateRow(r, pro, rowCols, uint64(i))
+		msg := datasource.NewSqlDriverMessageMap(uint64(i), r, colNames)
+		select {
+		case _, closed := <-sigChan:
+			if closed {
+				return fmt.Errorf("timed out.")
+			}
+			return nil
+		default:
+		}
+		select {
+		case outCh <- msg:
+			// continue
+		}
+	}
+	return nil
+}
+
 
 func createFinalProjectionFromMaps(orig *rel.SqlSelect, aliasMap map[string]*rel.SqlSource, allTables []string,
 	sch *schema.Schema, driverTable string) (*rel.Projection, map[string]int, map[string]int, []string,

@@ -988,10 +988,16 @@ func (p *Projector) getAggregateResult(table, field string) (result *roaring64.B
 // AggregateAndGroup - Return aggregated results with optional grouping
 func (p *Projector) AggregateAndGroup(aggregates []*Aggregate, groups []*Attribute) (rows [][]driver.Value, 
 		err error) {
+
+	p.bsiResults, p.bitmapResults, err = p.retrieveBitmapResults(p.foundSets, p.projAttributes, false)
+	if err != nil {
+		return
+	}
+
 	rows = make([][]driver.Value, 0)
 	row := make([]driver.Value, len(aggregates) + len(groups))
 	if len(groups) == 0 {
-		err = p.aggregateRow(aggregates, nil, row)
+		err = p.aggregateRow(aggregates, nil, row, 0)
 		rows = append(rows, row)
 		return 
 	}
@@ -1003,7 +1009,7 @@ func (p *Projector) nestedLoops(cgrp int, aggs []*Aggregate, groups []*Attribute
 		foundSet *roaring64.Bitmap, rows [][]driver.Value) (err error) {
 
     if cgrp == len(groups) {
-		return p.aggregateRow(aggs, foundSet, rows[len(rows) - 1])
+		return p.aggregateRow(aggs, foundSet, rows[len(rows) - 1], len(groups))
     }
 
 	grAttr := groups[cgrp]
@@ -1012,6 +1018,7 @@ func (p *Projector) nestedLoops(cgrp int, aggs []*Aggregate, groups []*Attribute
 		return fmt.Errorf("cant find group result for %s.%s", grAttr.Parent.Name, grAttr.FieldName)
 	}
 
+u.Errorf("COUNT = %d, GRP = %d, GRATTR = %v", len(groups), cgrp, grAttr.FieldName)
 	for _, br := range r.fieldRows {
 		var row []driver.Value
 		if cgrp == 0 {
@@ -1035,10 +1042,12 @@ func (p *Projector) nestedLoops(cgrp int, aggs []*Aggregate, groups []*Attribute
 }
 
 // generate an aggregate row.  Assumes that row was initialized.
-func (p *Projector) aggregateRow(aggs []*Aggregate, foundSet *roaring64.Bitmap, row []driver.Value) error {
+func (p *Projector) aggregateRow(aggs []*Aggregate, foundSet *roaring64.Bitmap, 
+		row []driver.Value, startPos int) error {
 
 	// Iterate aggregate operations and generate row(s)
-	i := len(row) - len(aggs) - 1
+	i := startPos - 1
+u.Errorf("STARTPOS = %d, LEN(ROW) = %d, LEN(AGGS) = %d", startPos, len(row), len(aggs))
 	for _, v := range aggs {
 		i++
 		if foundSet == nil {
@@ -1079,6 +1088,7 @@ func (p *Projector) aggregateRow(aggs []*Aggregate, foundSet *roaring64.Bitmap, 
 			val.Quo(val, new(big.Float).SetFloat64(math.Pow10(v.Scale)))
 		}
 		row[i] = val.Text('f', v.Scale)
+u.Errorf("VAL = %v", row[i])
 	}
 	return nil
 }

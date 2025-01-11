@@ -69,7 +69,6 @@ func decorateRow(row []driver.Value, proj *rel.Projection, rowCols map[string]in
 			cpyRow[i] = nil
 		}
 	}
-u.Errorf("ROWCOLS = %#v", rowCols)
 	ctx := datasource.NewSqlDriverMessageMap(columnID, cpyRow, rowCols)
 	for i, v := range proj.Columns {
 		ri1, aok := rowCols[v.As]

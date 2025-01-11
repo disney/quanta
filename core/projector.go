@@ -1001,15 +1001,15 @@ func (p *Projector) AggregateAndGroup(aggregates []*Aggregate, groups []*Attribu
 		rows = append(rows, row)
 		return 
 	}
-    err = p.nestedLoops(0, aggregates, groups, nil, rows)
+    err = p.nestedLoops(0, aggregates, groups, nil, &rows)
 	return
 }
 
 func (p *Projector) nestedLoops(cgrp int, aggs []*Aggregate, groups []*Attribute, 
-		foundSet *roaring64.Bitmap, rows [][]driver.Value) (err error) {
+		foundSet *roaring64.Bitmap, rows *[][]driver.Value) (err error) {
 
     if cgrp == len(groups) {
-		return p.aggregateRow(aggs, foundSet, rows[len(rows) - 1], len(groups))
+		return p.aggregateRow(aggs, foundSet, (*rows)[len(*rows) - 1], len(groups))
     }
 
 	grAttr := groups[cgrp]
@@ -1018,25 +1018,39 @@ func (p *Projector) nestedLoops(cgrp int, aggs []*Aggregate, groups []*Attribute
 		return fmt.Errorf("cant find group result for %s.%s", grAttr.Parent.Name, grAttr.FieldName)
 	}
 
-u.Errorf("COUNT = %d, GRP = %d, GRATTR = %v", len(groups), cgrp, grAttr.FieldName)
 	for _, br := range r.fieldRows {
+
+		var rs *roaring64.Bitmap
+		if foundSet == nil {
+			r, ok := p.foundSets[grAttr.Parent.Name]
+			if !ok {
+				return fmt.Errorf("cant locate foundSet for %s", grAttr.Parent.Name)
+			}
+			foundSet = r
+		} 
+		rs = roaring64.And(foundSet, br.bm)
+		if rs.GetCardinality() == 0 {
+			continue
+		}
+
 		var row []driver.Value
 		if cgrp == 0 {
 			row = make([]driver.Value, len(aggs) + len(groups))
-			rows = append(rows, row)
+			*rows = append(*rows, row)
 		} else {
-			row = rows[len(rows) - 1]
+			row = (*rows)[len(*rows) - 1]
+			if row[cgrp] != nil {
+				newRow := make([]driver.Value, len(aggs) + len(groups))
+				copy(newRow, row)
+				*rows = append(*rows, newRow)
+				row = newRow
+			}
 		}
 		row[cgrp], err = grAttr.MapValueReverse(br.rowID, p.connection)
 		if err != nil {
 			return fmt.Errorf("nestedLoops.MapValueReverse error for field '%s' - %v", grAttr.FieldName, err)
 		}
-		if foundSet == nil {
-			foundSet = br.bm
-		} else {
-			foundSet.And(br.bm)
-		}
-		err = p.nestedLoops(cgrp + 1, aggs, groups, foundSet, rows)
+		err = p.nestedLoops(cgrp + 1, aggs, groups, rs, rows)
 	}
 	return
 }
@@ -1047,7 +1061,6 @@ func (p *Projector) aggregateRow(aggs []*Aggregate, foundSet *roaring64.Bitmap,
 
 	// Iterate aggregate operations and generate row(s)
 	i := startPos - 1
-u.Errorf("STARTPOS = %d, LEN(ROW) = %d, LEN(AGGS) = %d", startPos, len(row), len(aggs))
 	for _, v := range aggs {
 		i++
 		if foundSet == nil {
@@ -1088,7 +1101,6 @@ u.Errorf("STARTPOS = %d, LEN(ROW) = %d, LEN(AGGS) = %d", startPos, len(row), len
 			val.Quo(val, new(big.Float).SetFloat64(math.Pow10(v.Scale)))
 		}
 		row[i] = val.Text('f', v.Scale)
-u.Errorf("VAL = %v", row[i])
 	}
 	return nil
 }

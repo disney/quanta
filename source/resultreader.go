@@ -381,7 +381,6 @@ func (m *ResultReader) Run() error {
 			}
 		}
 		rows, _ := proj.AggregateAndGroup(aggregates, m.sql.groupByFields)
-u.Errorf("ROWS = %#v", rows)
 		err := outputAggregateProjection(outCh, sigChan, rows, colNames, rowCols, m.sql.p.Proj)
 		if err != nil {
 			return err

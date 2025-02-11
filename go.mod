@@ -151,4 +151,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/harlow/kinesis-consumer => github.com/rampagedev2/kinesis-consumer v0.0.0-202502
+replace github.com/harlow/kinesis-consumer => github.com/rampagedev2/kinesis-consumer v0.0.0-EFO

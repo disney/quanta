@@ -17,7 +17,6 @@ import (
 	"github.com/disney/quanta/test"
 	consumer "github.com/harlow/kinesis-consumer"
 	"github.com/stretchr/testify/suite"
-	"golang.org/x/sync/errgroup"
 )
 
 // Consul in a terminal window must be ON.
@@ -126,8 +125,6 @@ func (suite *Kinesis_test_struct) TestOne() {
 	)
 	check(err)
 
-	// Initialize additional required fields
-	main.eg = errgroup.Group{}
 	main.ScanInterval = DefaultScanInterval
 
 	// push some records to k while the consumer starts

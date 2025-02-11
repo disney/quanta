@@ -72,7 +72,7 @@ type Main struct {
 	HashTable           *rendezvous.Table
 	shardChannels       map[string]chan DataRecord
 	shardSessionCache   sync.Map
-	eg                  errgroup.Group
+	eg                  *errgroup.Group
 	CancelFunc          context.CancelFunc
 	processedRecs       *Counter
 	processedRecL       *Counter
@@ -93,6 +93,7 @@ func NewMain() *Main {
 		processedRecL: &Counter{},
 		errorCount:    &Counter{},
 		OpenSessions:  &Counter{},
+		eg:            &errgroup.Group{},
 	}
 	m.tableCache = core.NewTableCacheStruct()
 	return m
@@ -401,15 +402,18 @@ func (m *Main) MainProcessingLoop() error {
 }
 
 func (m *Main) Destroy() {
-	m.metricsTicker.Stop()
-	// if m.PrintStats != nil {
-	// 	m.metricsTicker.Stop()
-	// }
-	m.CancelFunc = nil
-	for _, v := range m.shardChannels {
-		close(v)
+	if m.metricsTicker != nil {
+		m.metricsTicker.Stop()
 	}
-	time.Sleep(time.Second * 5) // Allow time for completion
+	for k, ch := range m.shardChannels {
+		close(ch)
+		delete(m.shardChannels, k)
+	}
+	m.shardSessionCache.Range(func(k, v interface{}) bool {
+		v.(*core.Session).CloseSession()
+		m.shardSessionCache.Delete(k)
+		return true
+	})
 }
 
 func (m *Main) scanAndProcess(v *consumer.Record) error {

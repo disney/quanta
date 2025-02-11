@@ -4,19 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"sync"
 	"time"
 
 	u "github.com/araddon/gou"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	cloudwatchtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis/types"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/cloudwatch"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/kinesis"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/qlbridge/datasource"
 	"github.com/disney/quanta/qlbridge/expr"
@@ -41,18 +45,18 @@ const (
 
 // Main struct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
-	Stream      string
-	Region      string
-	Schema      string
-	TotalBytes  *Counter
-	totalBytesL *Counter
-	TotalRecs   *Counter
-	totalRecsL  *Counter
-	errorCount  *Counter
-	OpenSessions *Counter
-	Port       int
-	ConsulAddr string
-	ShardCount int
+	Stream              string
+	Region              string
+	Schema              string
+	TotalBytes          *Counter
+	totalBytesL         *Counter
+	TotalRecs           *Counter
+	totalRecsL          *Counter
+	errorCount          *Counter
+	OpenSessions        *Counter
+	Port                int
+	ConsulAddr          string
+	ShardCount          int
 	Consumer            *consumer.Consumer
 	InitialPos          string
 	IsAvro              bool
@@ -63,7 +67,7 @@ type Main struct {
 	Deaggregate         bool
 	Collate             bool
 	ShardKey            string
-	ProtoConfig			string
+	ProtoConfig         string
 	HashTable           *rendezvous.Table
 	shardChannels       map[string]chan DataRecord
 	shardSessionCache   sync.Map
@@ -72,7 +76,7 @@ type Main struct {
 	processedRecs       *Counter
 	processedRecL       *Counter
 	ScanInterval        int
-	metrics             *cloudwatch.CloudWatch
+	metrics             *cloudwatch.Client
 	tableCache          *core.TableCacheStruct
 	metricsTicker       *time.Ticker
 }
@@ -96,6 +100,23 @@ func NewMain() *Main {
 type DataRecord struct {
 	TableName string
 	Data      map[string]interface{}
+}
+
+func newConfig(url, region string) (aws.Config, error) {
+	resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+		return aws.Endpoint{
+			PartitionID:   "aws",
+			URL:           url,
+			SigningRegion: region,
+		}, nil
+	})
+
+	return config.LoadDefaultConfig(
+		context.TODO(),
+		config.WithRegion(region),
+		config.WithEndpointResolver(resolver),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("user", "pass", "token")),
+	)
 }
 
 // Init function initilizations loader.
@@ -122,29 +143,26 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 		os.Exit(1)
 	}
 
-	// Register member leave/join
-	//clientConn.RegisterService(m)
-	sess, errx := session.NewSession(&aws.Config{
-		Region:   aws.String(m.Region),
-		Endpoint: aws.String(customEndpoint),
-	})
-	if errx != nil {
-		return 0, errx
+	// set up clients
+	cfg, err := newConfig(customEndpoint, m.Region)
+	if err != nil {
+		log.Fatalf("new kinesis config error: %v", err)
 	}
+	myKsis := kinesis.NewFromConfig(cfg)
 
-	var kc *kinesis.Kinesis
+	var kinesisClient *kinesis.Client
 	if m.AssumeRoleArn != "" {
-		creds := stscreds.NewCredentials(sess, m.AssumeRoleArn)
-		config := aws.NewConfig().
-			WithCredentials(creds).
-			WithRegion(m.AssumeRoleArnRegion).
-			WithMaxRetries(10)
-		kc = kinesis.New(sess, config)
+		// Create custom credentials using STS assume role
+		cfg.Credentials = aws.NewCredentialsCache(stscreds.NewAssumeRoleProvider(sts.NewFromConfig(cfg), m.AssumeRoleArn))
+		if m.AssumeRoleArnRegion != "" {
+			cfg.Region = m.AssumeRoleArnRegion
+		}
+		kinesisClient = kinesis.NewFromConfig(cfg)
 	} else {
-		kc = kinesis.New(sess)
+		kinesisClient = myKsis
 	}
 
-	dynamoDbClient := dynamodb.New(sess)
+	dynamoDbClient := dynamodb.NewFromConfig(cfg)
 
 	db, err := store.New(AppName, m.CheckpointTable, store.WithDynamoClient(dynamoDbClient), store.WithRetryer(&QuantaRetryer{}))
 	if err != nil {
@@ -155,32 +173,40 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 	if m.CheckpointDB {
 		m.Consumer, err = consumer.New(
 			m.Stream,
-			consumer.WithClient(kc),
+			consumer.WithClient(kinesisClient),
 			consumer.WithShardIteratorType(m.InitialPos),
 			consumer.WithStore(db),
 			consumer.WithAggregation(m.Deaggregate),
 			consumer.WithScanInterval(time.Duration(m.ScanInterval)*time.Millisecond),
 			//consumer.WithCounter(counter),
 		)
+		if err != nil {
+			u.Errorf("consumer initialization with db error: %v", err)
+			os.Exit(1)
+		}
 	} else {
 		m.Consumer, err = consumer.New(
 			m.Stream,
-			consumer.WithClient(kc),
+			consumer.WithClient(kinesisClient),
 			consumer.WithShardIteratorType(m.InitialPos),
 			consumer.WithAggregation(m.Deaggregate),
 			consumer.WithScanInterval(time.Duration(m.ScanInterval)*time.Millisecond),
 			//consumer.WithCounter(counter),
 		)
+		if err != nil {
+			u.Errorf("consumer initialization error: %v", err)
+			os.Exit(1)
+		}
 	}
 
 	streamName := aws.String(m.Stream)
-	shout, err := kc.ListShards(&kinesis.ListShardsInput{StreamName: streamName})
+	shout, err := kinesisClient.ListShards(context.Background(), &kinesis.ListShardsInput{StreamName: streamName})
 	if err != nil {
 		return 0, err
 	}
 	shardCount := len(shout.Shards)
 	foundCheckpointRecords := false
-	if db != nil && m.InitialPos != "TRIM_HORIZON"  {
+	if db != nil && m.InitialPos != "TRIM_HORIZON" {
 		for _, v := range shout.Shards {
 			seq, _ := db.GetCheckpoint(*streamName, *v.ShardId)
 			if seq != "" && seq != "0" {
@@ -194,7 +220,7 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 		m.InitialPos = "AFTER_SEQUENCE_NUMBER"
 	}
 
-	m.metrics = cloudwatch.New(sess)
+	m.metrics = cloudwatch.NewFromConfig(cfg)
 
 	// Initialize shard channels
 	u.Warnf("Shard count = %d", shardCount)
@@ -224,21 +250,21 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 		if conn != nil {
 			conn.CloseSession()
 		}
-/*
-		if m.ProtoConfig == "" {
-			continue
-		}
-		table := m.tableCache.TableCache[tableName]
-		if table.BasicTable.ProtoPath != "" && table.ProtoDescriptor == nil {
-table.BasicTable.ProtoPath = "dss/field/transport/sdp/envelope.proto"
-			if pd, err := shared.GetDescriptor(m.ProtoConfig + "/protobuf", table.BasicTable.ProtoPath); err != nil {
-				u.Errorf("Error getting proto descriptor - %v", err)
-				return 0, err
-			} else {
-				table.ProtoDescriptor = pd
-			}
-		}
-*/
+		/*
+		   		if m.ProtoConfig == "" {
+		   			continue
+		   		}
+		   		table := m.tableCache.TableCache[tableName]
+		   		if table.BasicTable.ProtoPath != "" && table.ProtoDescriptor == nil {
+		   table.BasicTable.ProtoPath = "dss/field/transport/sdp/envelope.proto"
+		   			if pd, err := shared.GetDescriptor(m.ProtoConfig + "/protobuf", table.BasicTable.ProtoPath); err != nil {
+		   				u.Errorf("Error getting proto descriptor - %v", err)
+		   				return 0, err
+		   			} else {
+		   				table.ProtoDescriptor = pd
+		   			}
+		   		}
+		*/
 	}
 
 	// we have to do this in two passes
@@ -264,10 +290,10 @@ table.BasicTable.ProtoPath = "dss/field/transport/sdp/envelope.proto"
 			var shardTableKeys sync.Map
 			for {
 				select {
-					case rec, open := <- theChan:
-					if !open { 
+				case rec, open := <-theChan:
+					if !open {
 						goto exitloop
-					} 
+					}
 					shardTableKey := fmt.Sprintf("%v+%v", shardId, rec.TableName)
 					conn, ok := m.shardSessionCache.Load(shardTableKey)
 					if !ok {
@@ -282,33 +308,33 @@ table.BasicTable.ProtoPath = "dss/field/transport/sdp/envelope.proto"
 
 					// fmt.Printf("Kinesis PutRow %v %v %v\n", rec.TableName, rec.Data, shardId)
 					err = conn.(*core.Session).PutRow(rec.TableName, rec.Data, 0, false, false)
-	
+
 					if err != nil {
 						u.Errorf("ERROR in PutRow, shard %s - %v", shardId, err)
 						m.errorCount.Add(1)
 						return err
 					}
 					m.processedRecs.Add(1)
-					default:
-						shardTableKeys.Range(func(k, v interface{}) bool {
-							conn := v.(*core.Session)
-							if conn.IsFlushing() {
-								return true
-							}
-							if time.Since(conn.BatchBuffer.FlushedAt) > time.Duration(2 * shardPollInterval) {
-								conn.CloseSession()
-								shardTableKeys.Delete(k)
-								m.shardSessionCache.Delete(k)
-								m.OpenSessions.Add(-1)
-							} else if time.Since(conn.BatchBuffer.ModifiedAt) > shardPollInterval {
-								conn.Flush()
-							}
+				default:
+					shardTableKeys.Range(func(k, v interface{}) bool {
+						conn := v.(*core.Session)
+						if conn.IsFlushing() {
 							return true
-						})
+						}
+						if time.Since(conn.BatchBuffer.FlushedAt) > time.Duration(2*shardPollInterval) {
+							conn.CloseSession()
+							shardTableKeys.Delete(k)
+							m.shardSessionCache.Delete(k)
+							m.OpenSessions.Add(-1)
+						} else if time.Since(conn.BatchBuffer.ModifiedAt) > shardPollInterval {
+							conn.Flush()
+						}
+						return true
+					})
 					time.Sleep(shardPollInterval)
 				}
 			}
-			exitloop:
+		exitloop:
 			u.Debugf("shard channel closed. %v", shardId)
 			// sharedChannels was closed, clean up.
 			m.shardSessionCache.Range(func(k, v interface{}) bool {
@@ -362,10 +388,10 @@ func (m *Main) MainProcessingLoop() error {
 }
 
 func (m *Main) Destroy() {
-
-	if m.PrintStats != nil {
-		m.metricsTicker.Stop()
-	}
+	m.metricsTicker.Stop()
+	// if m.PrintStats != nil {
+	// 	m.metricsTicker.Stop()
+	// }
 	m.CancelFunc = nil
 	for _, v := range m.shardChannels {
 		close(v)
@@ -527,14 +553,14 @@ func (m *Main) PrintStats() *time.Ticker {
 func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) time.Time {
 
 	interval := time.Since(lastPublishedAt).Seconds()
-	_, err := m.metrics.PutMetricData(&cloudwatch.PutMetricDataInput{
+	_, err := m.metrics.PutMetricData(context.Background(), &cloudwatch.PutMetricDataInput{
 		Namespace: aws.String("Quanta-Consumer/Records"),
-		MetricData: []*cloudwatch.MetricDatum{
+		MetricData: []cloudwatchtypes.MetricDatum{
 			{
 				MetricName: aws.String("Arrived"),
-				Unit:       aws.String("Count"),
+				Unit:       cloudwatchtypes.StandardUnitCount,
 				Value:      aws.Float64(float64(m.TotalRecs.Get())),
-				Dimensions: []*cloudwatch.Dimension{
+				Dimensions: []cloudwatchtypes.Dimension{
 					{
 						Name:  aws.String("Stream"),
 						Value: aws.String(m.Stream),
@@ -543,9 +569,9 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("RecordsPerSec"),
-				Unit:       aws.String("Count/Second"),
+				Unit:       cloudwatchtypes.StandardUnitCountSecond,
 				Value:      aws.Float64(float64(m.TotalRecs.Get()-m.totalRecsL.Get()) / interval),
-				Dimensions: []*cloudwatch.Dimension{
+				Dimensions: []cloudwatchtypes.Dimension{
 					{
 						Name:  aws.String("Stream"),
 						Value: aws.String(m.Stream),
@@ -554,7 +580,7 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("Processed"),
-				Unit:       aws.String("Count"),
+				Unit:       cloudwatchtypes.StandardUnitCount,
 				Value:      aws.Float64(float64(m.processedRecs.Get())),
 				/*
 					Dimensions: []*cloudwatch.Dimension{
@@ -567,7 +593,7 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("ProcessedPerSecond"),
-				Unit:       aws.String("Count/Second"),
+				Unit:       cloudwatchtypes.StandardUnitCountSecond,
 				Value:      aws.Float64(float64(m.processedRecs.Get()-m.processedRecL.Get()) / interval),
 				/*
 					Dimensions: []*cloudwatch.Dimension{
@@ -580,7 +606,7 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("Errors"),
-				Unit:       aws.String("Count"),
+				Unit:       cloudwatchtypes.StandardUnitCount,
 				Value:      aws.Float64(float64(m.errorCount.Get())),
 				/*
 					Dimensions: []*cloudwatch.Dimension{
@@ -593,7 +619,7 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("ProcessedBytes"),
-				Unit:       aws.String("Bytes"),
+				Unit:       cloudwatchtypes.StandardUnitBytes,
 				Value:      aws.Float64(float64(m.TotalBytes.Get())),
 				/*
 					Dimensions: []*cloudwatch.Dimension{
@@ -606,7 +632,7 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("BytesPerSec"),
-				Unit:       aws.String("Bytes/Second"),
+				Unit:       cloudwatchtypes.StandardUnitBytesSecond,
 				Value:      aws.Float64(float64(m.TotalBytes.Get()-m.totalBytesL.Get()) / interval),
 				/*
 					Dimensions: []*cloudwatch.Dimension{
@@ -619,7 +645,7 @@ func (m *Main) publishMetrics(upTime time.Duration, lastPublishedAt time.Time) t
 			},
 			{
 				MetricName: aws.String("UpTimeHours"),
-				Unit:       aws.String("Count"),
+				Unit:       cloudwatchtypes.StandardUnitSeconds,
 				Value:      aws.Float64(float64(upTime) / float64(1000000000*3600)),
 				/*
 					Dimensions: []*cloudwatch.Dimension{

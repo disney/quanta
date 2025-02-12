@@ -1,4 +1,4 @@
-package q_kinesis_lib
+package q_efo_kinesis_lib
 
 import (
 	"context"
@@ -37,9 +37,12 @@ import (
 )
 
 const (
-	Success          = 0 // Exit code for success
-	AppName          = "Kinesis-Consumer"
-	ShardChannelSize = 100000
+	Success             = 0 // Exit code for success
+	AppName             = "Kinesis-EFO-Consumer"
+	ShardChannelSize    = 100000
+	DefaultScanInterval = 1000 // milliseconds
+	DefaultBatchSize    = 500
+	SubscriptionTimeout = 300 * time.Second // EFO subscriptions need renewal after 5 minutes
 )
 
 // Main struct defines command line arguments variables and various global meta-data associated with record loads.
@@ -56,8 +59,7 @@ type Main struct {
 	Port                int
 	ConsulAddr          string
 	ShardCount          int
-	Consumer            *consumer.Consumer
-	InitialPos          string
+	Consumer            *consumer.EFOConsumer
 	IsAvro              bool
 	CheckpointDB        bool
 	CheckpointTable     string
@@ -70,7 +72,7 @@ type Main struct {
 	HashTable           *rendezvous.Table
 	shardChannels       map[string]chan DataRecord
 	shardSessionCache   sync.Map
-	eg                  errgroup.Group
+	eg                  *errgroup.Group
 	CancelFunc          context.CancelFunc
 	processedRecs       *Counter
 	processedRecL       *Counter
@@ -91,6 +93,7 @@ func NewMain() *Main {
 		processedRecL: &Counter{},
 		errorCount:    &Counter{},
 		OpenSessions:  &Counter{},
+		eg:            &errgroup.Group{},
 	}
 	m.tableCache = core.NewTableCacheStruct()
 	return m
@@ -117,7 +120,7 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 		return 0, err
 	}
 
-	clientConn := shared.NewDefaultConnection("kinesis-consumer")
+	clientConn := shared.NewDefaultConnection("kinesis-efo-consumer")
 	clientConn.ServicePort = m.Port
 	clientConn.Quorum = 3
 	if err := clientConn.Connect(consulClient); err != nil {
@@ -154,36 +157,48 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 		os.Exit(1)
 	}
 
+	streamName := aws.String(m.Stream)
+
 	if m.CheckpointDB {
-		m.Consumer, err = consumer.New(
+		m.Consumer, err = consumer.NewEFO(
 			m.Stream,
-			consumer.WithClient(kinesisClient),
-			consumer.WithShardIteratorType(m.InitialPos),
-			consumer.WithStore(db),
-			consumer.WithAggregation(m.Deaggregate),
-			consumer.WithScanInterval(time.Duration(m.ScanInterval)*time.Millisecond),
+			fmt.Sprintf("%s-%s", AppName, m.Stream), // consumer name based on app and stream
+			consumer.WithEFOClient(kinesisClient),
+			consumer.WithEFOStore(db), // Use Store interface for checkpointing
+			consumer.WithEFOAggregation(m.Deaggregate),
+			consumer.WithEFOScanInterval(time.Duration(m.ScanInterval)*time.Millisecond),
+			consumer.WithEFOMaxRecords(10000), // Set max records for optimal throughput
+			consumer.WithEFOShardClosedHandler(func(streamName, shardID string) error {
+				u.Infof("Shard %s has been closed and fully processed", shardID)
+				return nil
+			}),
 			//consumer.WithCounter(counter),
 		)
 		if err != nil {
-			u.Errorf("consumer initialization with db error: %v", err)
-			os.Exit(1)
+			u.Errorf("efo consumer initialization with db error: %v", err)
+			return 0, fmt.Errorf("efo consumer initialization with db error: %v", err)
 		}
 	} else {
-		m.Consumer, err = consumer.New(
+		m.Consumer, err = consumer.NewEFO(
 			m.Stream,
-			consumer.WithClient(kinesisClient),
-			consumer.WithShardIteratorType(m.InitialPos),
-			consumer.WithAggregation(m.Deaggregate),
-			consumer.WithScanInterval(time.Duration(m.ScanInterval)*time.Millisecond),
+			fmt.Sprintf("%s-%s", AppName, m.Stream), // consumer name based on app and stream
+			consumer.WithEFOClient(kinesisClient),
+			consumer.WithEFOAggregation(m.Deaggregate),
+			consumer.WithEFOScanInterval(time.Duration(m.ScanInterval)*time.Millisecond),
+			consumer.WithEFOMaxRecords(10000), // Set max records for optimal throughput
+			consumer.WithEFOShardClosedHandler(func(streamName, shardID string) error {
+				u.Infof("Shard %s has been closed and fully processed", shardID)
+				return nil
+			}),
 			//consumer.WithCounter(counter),
 		)
 		if err != nil {
-			u.Errorf("consumer initialization error: %v", err)
-			os.Exit(1)
+			u.Errorf("efo consumer initialization error: %v", err)
+			return 0, fmt.Errorf("efo consumer initialization error: %v", err)
 		}
 	}
 
-	streamName := aws.String(m.Stream)
+	// streamName := aws.String(m.Stream)
 	var shards []types.Shard
 	input := &kinesis.ListShardsInput{
 		StreamName: streamName,
@@ -224,20 +239,6 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 		}
 	}
 	shardCount := len(shards)
-	foundCheckpointRecords := false
-	if db != nil && m.InitialPos != "TRIM_HORIZON" {
-		for _, v := range shards {
-			seq, _ := db.GetCheckpoint(*streamName, *v.ShardId)
-			if seq != "" && seq != "0" {
-				foundCheckpointRecords = true
-				continue
-			}
-		}
-	}
-	if m.InitialPos == "LATEST" && foundCheckpointRecords {
-		u.Errorf("Checkpoint enabled and records exist.  Shard iterator is 'LATEST' setting it to 'AFTER_SEQUENCE_NUMBER'.")
-		m.InitialPos = "AFTER_SEQUENCE_NUMBER"
-	}
 
 	m.metrics = cloudwatch.NewFromConfig(cfg)
 
@@ -359,7 +360,6 @@ func (m *Main) Init(customEndpoint string) (int, error) {
 			m.shardSessionCache.Range(func(k, v interface{}) bool {
 				v.(*core.Session).CloseSession()
 				m.shardSessionCache.Delete(k)
-				m.OpenSessions.Add(-1)
 				return true
 			})
 			return nil
@@ -390,10 +390,6 @@ func (m *Main) MainProcessingLoop() error {
 		} else {
 			u.Warnf("Received Cancellation.")
 		}
-		if m.InitialPos == "TRIM_HORIZON" {
-			u.Error("can't re-initialize 'in-place' if set to TRIM_HORIZON, exiting")
-			return fmt.Errorf("can't re-initialize 'in-place' if set to TRIM_HORIZON")
-		}
 		u.Warnf("Re-initializing.")
 		var err error
 		if m.ShardCount, err = m.Init(""); err != nil {
@@ -406,15 +402,18 @@ func (m *Main) MainProcessingLoop() error {
 }
 
 func (m *Main) Destroy() {
-	m.metricsTicker.Stop()
-	// if m.PrintStats != nil {
-	// 	m.metricsTicker.Stop()
-	// }
-	m.CancelFunc = nil
-	for _, v := range m.shardChannels {
-		close(v)
+	if m.metricsTicker != nil {
+		m.metricsTicker.Stop()
 	}
-	time.Sleep(time.Second * 5) // Allow time for completion
+	for k, ch := range m.shardChannels {
+		close(ch)
+		delete(m.shardChannels, k)
+	}
+	m.shardSessionCache.Range(func(k, v interface{}) bool {
+		v.(*core.Session).CloseSession()
+		m.shardSessionCache.Delete(k)
+		return true
+	})
 }
 
 func (m *Main) scanAndProcess(v *consumer.Record) error {

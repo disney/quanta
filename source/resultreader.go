@@ -145,12 +145,6 @@ func (m *ResultReader) Run() error {
 	} else if len(m.sql.p.Stmt.JoinNodes()) > 0 {
 		// This query must be part of a join.  Pass along the roaring bitmap results to the next
 		// tasks in the process flow.
-		/*
-			allTables := make([]string, len(orig.From))
-			for i, v := range orig.From {
-				allTables[i] = v.Name
-			}
-		*/
 		dataMap := make(map[string]interface{})
 		dataMap["results"] = m.response.Results
 		dataMap["fromTime"] = fromTime.UnixNano()

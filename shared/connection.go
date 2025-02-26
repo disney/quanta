@@ -32,6 +32,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/testdata"
+	"google.golang.org/grpc/keepalive"
 )
 
 // Conn - Client side cluster state and connection abstraction.
@@ -283,6 +284,14 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 // CreateNodeConnections - Open a set of GRPC connections to all data nodes
 // requires m.ids is be non empty
 func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.ClientConn, err error) {
+
+	var kacp = keepalive.ClientParameters {
+		Time:                10 * time.Second, // send pings every 10 seconds if there is no activity
+		Timeout:             time.Second,      // wait 1 second for ping ack before considering the conn dead
+		PermitWithoutStream: true,             // send pings even without active streams
+	}
+
+	m.grpcOpts = append(m.grpcOpts, grpc.WithKeepaliveParams(kacp))
 
 	nodeCount := len(m.nodeMap)
 	if m.ServicePort == 0 { // Test harness

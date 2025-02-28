@@ -268,9 +268,11 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 	// Create S3 service client
 	u.Infof("Parquet Sink: Opening Output S3 path s3://%s/%s", bucket, file)
 	s.outFile, err = pgs3.NewS3FileWriterWithClient(context.Background(), s.s3svc, bucket, file, nil, func(p *s3.PutObjectInput) {
-		p.SSEKMSKeyId = aws.String(s.sseKmsKeyID)
-		p.ServerSideEncryption = "aws:kms"
-		p.ACL = types.ObjectCannedACL(s.acl)
+		if s.sseKmsKeyID != "" {
+			p.SSEKMSKeyId = aws.String(s.sseKmsKeyID)
+			p.ServerSideEncryption = "aws:kms"
+			p.ACL = types.ObjectCannedACL(s.acl)
+		}
 	})
 
 	if err != nil {
@@ -281,16 +283,7 @@ func (s *S3ParquetSink) Open(ctx *plan.Context, bucketpath string, params map[st
 	// Construct parquet metadata
 	s.md = make([]string, len(ctx.Projection.Proj.Columns))
 	for i, v := range ctx.Projection.Proj.Columns {
-		switch v.Type {
-		case value.IntType:
-			s.md[i] = fmt.Sprintf("name=%s, type=INT64", v.As)
-		case value.NumberType:
-			s.md[i] = fmt.Sprintf("name=%s, type=FLOAT", v.As)
-		case value.BoolType:
-			s.md[i] = fmt.Sprintf("name=%s, type=BOOLEAN", v.As)
-		default:
-			s.md[i] = fmt.Sprintf("name=%s, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY", v.As)
-		}
+		s.md[i] = fmt.Sprintf("name=%s, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY", v.As)
 	}
 
 	s.csvWriter, err = writer.NewCSVWriter(s.md, s.outFile, 4)

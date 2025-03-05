@@ -537,7 +537,7 @@ func (m *Conn) updateHealth(initial bool) (err error) {
 		u.Debugf("Done Conn update  %v %v %v %v active %v %v ", m.owner, now, passed, m.clusterSizeTarget, m.activeCount, m.nodeMap)
 	}()
 
-	opts := &api.QueryOptions{WaitIndex: m.waitIndex}
+	opts := &api.QueryOptions{WaitIndex: m.waitIndex, WaitTime: time.Duration(time.Second * 5)}
 	serviceEntries, meta, err := m.Consul.Health().Service(m.ServiceName, "", false, opts)
 
 	if err != nil {
@@ -626,7 +626,7 @@ func (m *Conn) updateHealth(initial bool) (err error) {
 				if index >= len(m.clientConn) {
 					continue
 				}
-				u.Info("Conn member left", m.owner, id)
+				u.Warn("Conn member left", m.owner, id)
 
 				m.clientConn[index].Close()
 				if len(m.clientConn) > 1 {
@@ -640,7 +640,7 @@ func (m *Conn) updateHealth(initial bool) (err error) {
 					m.Admin = make([]pb.ClusterAdminClient, 0)
 				}
 				m.nodeStatusMap.Delete(id)
-				u.Infof("NODE %s left at index %d\n", id, index)
+				u.Warn("NODE %s left at index %d\n", id, index)
 				m.SendMemberLeft(id, index)
 			}
 		}

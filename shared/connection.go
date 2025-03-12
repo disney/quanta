@@ -863,16 +863,7 @@ func (m *Conn) GetAllPeerStatus() {
 
 	// Get the node status for all nodes in the cluster
 	for k, v := range m.nodeMap {
-		var status *pb.StatusMessage
-		err := Retry(5, 5 * time.Second, func() (err error) {
-			var errx error
-			status, err = m.getNodeStatusForIndex(v)
-			if errx != nil {
-				err = errx
-			}
-			return
-		})
-
+		status, err := m.getNodeStatusForIndex(v)
 		// u.Debug("GetAllPeerStatus getNodeStatusForIndex", m.owner, k, v, status.NodeState)
 		if err == nil {
 			nodeStatusMap[k] = status

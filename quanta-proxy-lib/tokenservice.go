@@ -17,7 +17,7 @@ import (
 
 	u "github.com/araddon/gou"
 	"github.com/lestrrat-go/jwx/jwt"
-	//"github.com/disney/quanta/shared"
+	"github.com/disney/quanta/shared"
 )
 
 var (
@@ -73,7 +73,6 @@ func (s *TokenExchangeService) HandleStatusRequest(w http.ResponseWriter, r *htt
 	u.Debugf("Incoming cluster status request: %v", r.Method)
 	switch r.Method {
 	case http.MethodPost, http.MethodGet:
-/*
 	conn := shared.GetClientConnection(ConsulAddr, QuantaPort, "admin-status")
 	defer conn.Disconnect()
 	status, active, size := conn.GetClusterState()
@@ -85,9 +84,6 @@ func (s *TokenExchangeService) HandleStatusRequest(w http.ResponseWriter, r *htt
 		SuccessResponse(&w, struct{}{})
 		defer r.Body.Close()
 	}
-*/
-	SuccessResponse(&w, struct{}{})
-	defer r.Body.Close()
 	default:
 		ErrorResponse(&w, 405, "Method not allowed", "Method not allowed", nil)
 	}

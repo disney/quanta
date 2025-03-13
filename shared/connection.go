@@ -799,16 +799,12 @@ func (m *Conn) getNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error)
 // GetNodeStatusForIndex - Returns the node status for a given client index.
 func (m *Conn) GetNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error) {
 
-	m.nodeMapLock.RLock()
-	defer m.nodeMapLock.RUnlock()
 	return m.getNodeStatusForIndex(clientIndex)
 }
 
 // GetCachedNodeStatusForIndex - Returns the node status for a given client index.
 func (m *Conn) GetCachedNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error) {
 
-	m.nodeMapLock.RLock()
-	defer m.nodeMapLock.RUnlock()
 	if m.ServicePort == 0 { // test harness
 		return &pb.StatusMessage{NodeState: "Active"}, nil
 	}
@@ -826,9 +822,6 @@ func (m *Conn) GetCachedNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, 
 
 // GetClusterState - Returns the overall cluster state health, active nodes, cluster size.
 func (m *Conn) GetClusterState() (status ClusterState, activeCount, clusterSizeTarget int) {
-
-	m.nodeMapLock.RLock()
-	defer m.nodeMapLock.RUnlock()
 
 	activeCount = m.activeCount
 	clusterSizeTarget = m.clusterSizeTarget
@@ -855,9 +848,6 @@ func (m *Conn) GetAllPeerStatus() {
 
 	// u.Debug("GetAllPeerStatus top", m.owner, m.nodeMap)
 
-	// m.nodeMapLock.Lock() // we can't lock here, it will deadlock? FIXME:
-	// defer m.nodeMapLock.Unlock()
-
 	activeCount := 0
 	nodeStatusMap := make(map[string]*pb.StatusMessage, 0)
 
@@ -879,10 +869,6 @@ func (m *Conn) GetAllPeerStatus() {
 	}
 
 	// u.Debug("GetAllPeerStatus done", m.owner, m.nodeMap, activeCount, nodeStatusMap)
-
-	// got a deadlock from this. FIXME: there's probably a race condition here.
-	// m.nodeMapLock.Lock()
-	// defer m.nodeMapLock.Unlock()
 
 	m.activeCount = activeCount
 	for k, v := range nodeStatusMap {

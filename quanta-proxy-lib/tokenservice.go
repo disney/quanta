@@ -73,9 +73,10 @@ func (s *TokenExchangeService) HandleStatusRequest(w http.ResponseWriter, r *htt
 	u.Debugf("Incoming cluster status request: %v", r.Method)
 	switch r.Method {
 	case http.MethodPost, http.MethodGet:
-	conn := shared.GetClientConnection(ConsulAddr, QuantaPort, "admin-status")
-	defer conn.Disconnect()
-	status, active, size := conn.GetClusterState()
+	if AdminConn == nil {
+		AdminConn = shared.GetClientConnection(ConsulAddr, QuantaPort, "admin-status")
+	}
+	status, active, size := AdminConn.GetClusterState()
 	if status != shared.Green {
 		u.Errorf("Cluster is not healthy,  Status = %s, Active Nodes = %d,  Target Cluster Size = %d\n", status.String(), active, size)
 		ErrorResponse(&w, 500, "Failure", "Cluster Failure", nil)

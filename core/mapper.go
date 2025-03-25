@@ -325,7 +325,9 @@ func (mt MapperType) MutateBitmap(c *Session, table, field string, mval interfac
 		case *big.Int:
 			val = mval.(*big.Int)
 			if val == nil {
-				err = c.BatchBuffer.ClearValue(table, field, tbuf.CurrentColumnID, tbuf.CurrentTimestamp)
+				if isUpdate {
+					err = c.BatchBuffer.ClearValue(table, field, tbuf.CurrentColumnID, tbuf.CurrentTimestamp)
+				}
 				return
 			}
 		case uint64:

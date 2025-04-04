@@ -672,7 +672,10 @@ func GetClientConnection(consulAddr string, port int, owner string) *Conn {
 	conn := NewDefaultConnection(owner)
 	conn.ServicePort = port
 	conn.Quorum = 0
-	if err := conn.Connect(consulClient); err != nil {
+    err = Retry(5, 2*time.Second, func() (err error) {
+		return conn.Connect(consulClient)
+   	})
+	if err != nil {
 		u.Log(u.FATAL, err)
 	}
 	return conn

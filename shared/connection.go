@@ -32,6 +32,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/testdata"
+	"google.golang.org/grpc/keepalive"
 )
 
 // Conn - Client side cluster state and connection abstraction.
@@ -284,6 +285,14 @@ func (m *Conn) Connect(consul *api.Client) (err error) {
 // requires m.ids is be non empty
 func (m *Conn) CreateNodeConnections(largeBuffer bool) (nodeConns []*grpc.ClientConn, err error) {
 
+	var kacp = keepalive.ClientParameters {
+		Time:                10 * time.Second, // send pings every 10 seconds if there is no activity
+		Timeout:             time.Second,      // wait 1 second for ping ack before considering the conn dead
+		PermitWithoutStream: true,             // send pings even without active streams
+	}
+
+	m.grpcOpts = append(m.grpcOpts, grpc.WithKeepaliveParams(kacp))
+
 	nodeCount := len(m.nodeMap)
 	if m.ServicePort == 0 { // Test harness
 		nodeConns = make([]*grpc.ClientConn, 1)
@@ -528,7 +537,7 @@ func (m *Conn) updateHealth(initial bool) (err error) {
 		u.Debugf("Done Conn update  %v %v %v %v active %v %v ", m.owner, now, passed, m.clusterSizeTarget, m.activeCount, m.nodeMap)
 	}()
 
-	opts := &api.QueryOptions{WaitIndex: m.waitIndex}
+	opts := &api.QueryOptions{WaitIndex: m.waitIndex, WaitTime: time.Duration(time.Second * 5)}
 	serviceEntries, meta, err := m.Consul.Health().Service(m.ServiceName, "", false, opts)
 
 	if err != nil {
@@ -617,7 +626,7 @@ func (m *Conn) updateHealth(initial bool) (err error) {
 				if index >= len(m.clientConn) {
 					continue
 				}
-				u.Info("Conn member left", m.owner, id)
+				u.Warn("Conn member left", m.owner, id)
 
 				m.clientConn[index].Close()
 				if len(m.clientConn) > 1 {
@@ -631,7 +640,7 @@ func (m *Conn) updateHealth(initial bool) (err error) {
 					m.Admin = make([]pb.ClusterAdminClient, 0)
 				}
 				m.nodeStatusMap.Delete(id)
-				u.Infof("NODE %s left at index %d\n", id, index)
+				u.Warnf("NODE %s left at index %d\n", id, index)
 				m.SendMemberLeft(id, index)
 			}
 		}
@@ -790,16 +799,12 @@ func (m *Conn) getNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error)
 // GetNodeStatusForIndex - Returns the node status for a given client index.
 func (m *Conn) GetNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error) {
 
-	m.nodeMapLock.RLock()
-	defer m.nodeMapLock.RUnlock()
 	return m.getNodeStatusForIndex(clientIndex)
 }
 
 // GetCachedNodeStatusForIndex - Returns the node status for a given client index.
 func (m *Conn) GetCachedNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, error) {
 
-	m.nodeMapLock.RLock()
-	defer m.nodeMapLock.RUnlock()
 	if m.ServicePort == 0 { // test harness
 		return &pb.StatusMessage{NodeState: "Active"}, nil
 	}
@@ -817,9 +822,6 @@ func (m *Conn) GetCachedNodeStatusForIndex(clientIndex int) (*pb.StatusMessage, 
 
 // GetClusterState - Returns the overall cluster state health, active nodes, cluster size.
 func (m *Conn) GetClusterState() (status ClusterState, activeCount, clusterSizeTarget int) {
-
-	m.nodeMapLock.RLock()
-	defer m.nodeMapLock.RUnlock()
 
 	activeCount = m.activeCount
 	clusterSizeTarget = m.clusterSizeTarget
@@ -846,16 +848,12 @@ func (m *Conn) GetAllPeerStatus() {
 
 	// u.Debug("GetAllPeerStatus top", m.owner, m.nodeMap)
 
-	// m.nodeMapLock.Lock() // we can't lock here, it will deadlock? FIXME:
-	// defer m.nodeMapLock.Unlock()
-
 	activeCount := 0
 	nodeStatusMap := make(map[string]*pb.StatusMessage, 0)
 
 	// Get the node status for all nodes in the cluster
 	for k, v := range m.nodeMap {
 		status, err := m.getNodeStatusForIndex(v)
-
 		// u.Debug("GetAllPeerStatus getNodeStatusForIndex", m.owner, k, v, status.NodeState)
 		if err == nil {
 			nodeStatusMap[k] = status
@@ -871,10 +869,6 @@ func (m *Conn) GetAllPeerStatus() {
 	}
 
 	// u.Debug("GetAllPeerStatus done", m.owner, m.nodeMap, activeCount, nodeStatusMap)
-
-	// got a deadlock from this. FIXME: there's probably a race condition here.
-	// m.nodeMapLock.Lock()
-	// defer m.nodeMapLock.Unlock()
 
 	m.activeCount = activeCount
 	for k, v := range nodeStatusMap {

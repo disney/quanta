@@ -640,7 +640,7 @@ func (m *Conn) updateHealth(initial bool) (err error) {
 					m.Admin = make([]pb.ClusterAdminClient, 0)
 				}
 				m.nodeStatusMap.Delete(id)
-				u.Warn("NODE %s left at index %d\n", id, index)
+				u.Warnf("NODE %s left at index %d\n", id, index)
 				m.SendMemberLeft(id, index)
 			}
 		}

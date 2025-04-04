@@ -5,6 +5,8 @@ package core
 import (
 	"database/sql/driver"
 	"fmt"
+	"math"
+	"math/big"
 	"sort"
 	"strings"
 	"sync"
@@ -50,6 +52,31 @@ type BitmapFieldResults struct {
 type BitmapFieldRow struct {
 	rowID uint64
 	bm    *roaring64.Bitmap
+}
+
+// AggregateOp identifier
+type AggregateOp int
+
+const (
+	// Count
+	COUNT AggregateOp = 1 + iota
+    // Sum
+	SUM
+    // Avg
+	AVG
+    // Min
+	MIN
+    // Max
+	MAX
+)
+
+// Aggregate
+type Aggregate struct {
+	Table      string
+	Field      string
+	Op		   AggregateOp
+	Scale      int
+	GroupIdx   int           // -1 = Not grouped
 }
 
 // NewProjection - Construct a Projection.
@@ -957,6 +984,127 @@ func (p *Projector) getAggregateResult(table, field string) (result *roaring64.B
 	}
 	return
 }
+
+// AggregateAndGroup - Return aggregated results with optional grouping
+func (p *Projector) AggregateAndGroup(aggregates []*Aggregate, groups []*Attribute) (rows [][]driver.Value, 
+		err error) {
+
+	p.bsiResults, p.bitmapResults, err = p.retrieveBitmapResults(p.foundSets, p.projAttributes, false)
+	if err != nil {
+		return
+	}
+
+	rows = make([][]driver.Value, 0)
+	row := make([]driver.Value, len(aggregates) + len(groups))
+	if len(groups) == 0 {
+		err = p.aggregateRow(aggregates, nil, row, 0)
+		rows = append(rows, row)
+		return 
+	}
+    err = p.nestedLoops(0, aggregates, groups, nil, &rows)
+	return
+}
+
+func (p *Projector) nestedLoops(cgrp int, aggs []*Aggregate, groups []*Attribute, 
+		foundSet *roaring64.Bitmap, rows *[][]driver.Value) (err error) {
+
+    if cgrp == len(groups) {
+		return p.aggregateRow(aggs, foundSet, (*rows)[len(*rows) - 1], len(groups))
+    }
+
+	grAttr := groups[cgrp]
+	r, ok := p.bitmapResults[grAttr.Parent.Name][grAttr.FieldName]
+	if !ok {
+		return fmt.Errorf("cant find group result for %s.%s", grAttr.Parent.Name, grAttr.FieldName)
+	}
+
+	for _, br := range r.fieldRows {
+
+		var rs *roaring64.Bitmap
+		if foundSet == nil {
+			r, ok := p.foundSets[grAttr.Parent.Name]
+			if !ok {
+				return fmt.Errorf("cant locate foundSet for %s", grAttr.Parent.Name)
+			}
+			foundSet = r
+		} 
+		rs = roaring64.And(foundSet, br.bm)
+		if rs.GetCardinality() == 0 {
+			continue
+		}
+
+		var row []driver.Value
+		if cgrp == 0 {
+			row = make([]driver.Value, len(aggs) + len(groups))
+			*rows = append(*rows, row)
+		} else {
+			row = (*rows)[len(*rows) - 1]
+			if row[cgrp] != nil {
+				newRow := make([]driver.Value, len(aggs) + len(groups))
+				copy(newRow, row)
+				*rows = append(*rows, newRow)
+				row = newRow
+			}
+		}
+		row[cgrp], err = grAttr.MapValueReverse(br.rowID, p.connection)
+		if err != nil {
+			return fmt.Errorf("nestedLoops.MapValueReverse error for field '%s' - %v", grAttr.FieldName, err)
+		}
+		err = p.nestedLoops(cgrp + 1, aggs, groups, rs, rows)
+	}
+	return
+}
+
+// generate an aggregate row.  Assumes that row was initialized.
+func (p *Projector) aggregateRow(aggs []*Aggregate, foundSet *roaring64.Bitmap, 
+		row []driver.Value, startPos int) error {
+
+	// Iterate aggregate operations and generate row(s)
+	i := startPos - 1
+	for _, v := range aggs {
+		i++
+		if foundSet == nil {
+			r, ok := p.foundSets[v.Table]
+			if !ok {
+				return fmt.Errorf("cant locate foundSet for '%s'", v.Table)
+			}
+			foundSet = r
+		}
+		if v.Op == COUNT {
+			row[i] = fmt.Sprintf("%10d", foundSet.GetCardinality())
+			continue
+		}
+		
+		r, errx := p.getAggregateResult(v.Table, v.Field)
+		if errx != nil {
+			return errx
+		}
+		val := new(big.Float).SetPrec(uint(v.Scale))
+		switch v.Op {
+		case SUM:
+			sum, _ := r.SumBigValues(foundSet)
+			val.SetInt(sum)
+		case AVG:
+			sum, count := r.SumBigValues(foundSet)
+			if count != 0 {
+				avg := sum.Div(sum, big.NewInt(int64(count)))
+				val.SetInt(avg)
+			}
+		case MIN:
+			minmax := r.MinMaxBig(0, roaring64.MIN, foundSet)
+			val.SetInt(minmax)
+		case MAX:
+			minmax := r.MinMaxBig(0, roaring64.MAX, foundSet)
+			val.SetInt(minmax)
+		}
+		if v.Scale > 0 {
+			val.Quo(val, new(big.Float).SetFloat64(math.Pow10(v.Scale)))
+		}
+		row[i] = val.Text('f', v.Scale)
+	}
+	return nil
+}
+
 
 // Handle boundary condition where a range of column IDs could span multiple partitions.
 func (p *Projector) getPartitionedStrings(attr *Attribute, colIDs []uint64) (map[interface{}]interface{}, error) {

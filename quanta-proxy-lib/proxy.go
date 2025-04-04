@@ -41,6 +41,7 @@ var (
 	Src             *source.QuantaSource
 	ConsulAddr      string
 	QuantaPort      int
+	AdminConn		*shared.Conn
 	SessionPoolSize int
 	Metrics         *cloudwatch.CloudWatch
 

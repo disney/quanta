@@ -3,7 +3,7 @@ package source
 import (
 	"database/sql/driver"
 	"fmt"
-	"math"
+	//"math"
 	"strings"
 	"time"
 
@@ -12,6 +12,7 @@ import (
 	"github.com/disney/quanta/core"
 	"github.com/disney/quanta/qlbridge/datasource"
 	"github.com/disney/quanta/qlbridge/exec"
+	"github.com/disney/quanta/qlbridge/expr"
 	"github.com/disney/quanta/qlbridge/rel"
 	"github.com/disney/quanta/shared"
 )
@@ -29,7 +30,6 @@ type ResultReader struct {
 	cursor    int
 	limit     int
 	offset    int
-	Vals      [][]driver.Value
 	Total     int
 	response  *shared.BitmapQueryResponse
 	sql       *SQLToQuanta
@@ -74,7 +74,6 @@ func (m *ResultReader) Run() error {
 	defer func() {
 		close(outCh) // closing output channels is the signal to stop
 		//m.TaskBase.Close()
-		//u.Debugf("nice, finalize ResultReader out: %p  row ct %v", outCh, len(m.Vals))
 	}()
 
 	m.finalized = true
@@ -137,7 +136,6 @@ func (m *ResultReader) Run() error {
 		vals := make([]driver.Value, 1)
 		ct := m.response.Count
 		vals[0] = fmt.Sprintf("%d", ct)
-		m.Vals = append(m.Vals, vals)
 		//u.Debugf("was a select count(*) query %d", ct)
 		msg := datasource.NewSqlDriverMessageMap(uint64(1), vals, colNames)
 		//u.Debugf("In source Scanner iter %#v", msg)
@@ -147,12 +145,6 @@ func (m *ResultReader) Run() error {
 	} else if len(m.sql.p.Stmt.JoinNodes()) > 0 {
 		// This query must be part of a join.  Pass along the roaring bitmap results to the next
 		// tasks in the process flow.
-		/*
-			allTables := make([]string, len(orig.From))
-			for i, v := range orig.From {
-				allTables[i] = v.Name
-			}
-		*/
 		dataMap := make(map[string]interface{})
 		dataMap["results"] = m.response.Results
 		dataMap["fromTime"] = fromTime.UnixNano()
@@ -171,6 +163,11 @@ func (m *ResultReader) Run() error {
 		return nil
 	}
 
+	if m.sql.isTopn {
+		return outputRank(m.sql.tbl.Name, m.sql.topnField, m.conn, outCh, sigChan, 
+			m.response.Results, fromTime, toTime, m.sql.topn )
+	}
+/*
 	if m.sql.isSum || m.sql.isAvg || m.sql.isMin || m.sql.isMax {
 		projFields := []string{fmt.Sprintf("%s.%s", m.sql.tbl.Name, m.sql.aggField)}
 		attr, isBSI, errx := m.sql.ResolveField(m.sql.tbl.Name, m.sql.aggField)
@@ -235,7 +232,6 @@ func (m *ResultReader) Run() error {
 				vals[0] = fmt.Sprintf(f, float64(minmax)/math.Pow10(field.Scale))
 			}
 		}
-		m.Vals = append(m.Vals, vals)
 		//u.Debugf("was a select sum(*) query %d", ct)
 		msg := datasource.NewSqlDriverMessageMap(uint64(1), vals, colNames)
 		outCh <- msg
@@ -279,6 +275,7 @@ func (m *ResultReader) Run() error {
 		}
 		return nil
 	}
+*/
 
 	if m.limit != 0 {
 		//m.query = m.query.Limit(m.limit)
@@ -314,16 +311,74 @@ func (m *ResultReader) Run() error {
 		return err3
 	}
 
-	isExport := false
+	if !orig.IsAggQuery() {
+		isExport := false
+	
+		// Parallelize projection for SELECT ... INTO
+		if orig.Into != nil {
+			isExport = true
+		}
+	
+		if err = outputProjection(outCh, sigChan, proj, colNames, rowCols, m.limit, m.offset, isExport,
+			orig.Distinct, m.sql.p.Proj, orig.With); err != nil {
+			return err
+		}
 
-	// Parallelize projection for SELECT ... INTO
-	if orig.Into != nil {
-		isExport = true
-	}
+	} else { // Aggregate/GroupBy projection
 
-	if err = outputProjection(outCh, sigChan, proj, colNames, rowCols, m.limit, m.offset, isExport,
-		orig.Distinct, m.sql.p.Proj, orig.With); err != nil {
-		return err
+		//groupByFields  map[string]expr.Node
+		aggregates := make([]*core.Aggregate, 0)
+		cols := orig.Columns
+		for _, v := range cols {
+			var op core.AggregateOp
+			switch node := v.Expr.(type) {
+			case *expr.FuncNode:
+				funcName := strings.ToLower(node.Name)
+				if funcName != "count" {
+					lookup := fmt.Sprintf("%s+%s", v.SourceField, funcName)
+					if _, ok := m.sql.aggFields[lookup]; !ok {
+						continue
+					}
+				}
+				switch funcName {
+					case "max":
+						op = core.MAX
+					case "min":
+						op = core.MIN
+					case "sum":
+						op = core.SUM
+					case "avg":
+						op = core.AVG
+					case "count":
+						if _, ok := m.sql.aggFields["count"]; !ok {
+							continue
+						}
+						op = core.COUNT
+				}
+				if op == core.COUNT {
+					agg := &core.Aggregate{Table: m.sql.tbl.Name, Field: "count", 
+						Op: op, Scale: 0, GroupIdx: -1}
+					aggregates = append(aggregates, agg)
+					continue
+				}
+				attr, _, errx := m.sql.ResolveField(m.sql.tbl.Name, v.SourceField)
+				if errx != nil {
+					return errx
+				}
+				scale := 0
+				if attr.Type == "Float" {
+					scale = attr.Scale
+				}
+				agg := &core.Aggregate{Table: m.sql.tbl.Name, Field: v.SourceField, 
+					Op: op, Scale: scale, GroupIdx: -1}
+				aggregates = append(aggregates, agg)
+			}
+		}
+		rows, _ := proj.AggregateAndGroup(aggregates, m.sql.groupByFields)
+		err := outputAggregateProjection(outCh, sigChan, rows, colNames, rowCols, m.sql.p.Proj)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil

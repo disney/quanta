@@ -354,7 +354,7 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 			if attr != nil {
 				tq = attr.TimeQuantumType
 			}
-			bf.IsBSI = m.isBSI(bf.IndexName, bf.FieldName)
+			bf.IsBSI = isBSIBitmapPath(s)
 
 			if bf.IsBSI {
 				if tq != "" {
@@ -399,14 +399,14 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 					}
 					// first bitslice start at bf.BitData[1].  bf.BitData[0] = EBM
 					bf.BitData = make([][]byte, 2)
-					for ; bitSliceIndex >= len(bf.BitData); {
+					for bitSliceIndex >= len(bf.BitData) {
 						bf.BitData = append(bf.BitData, make([]byte, 0))
 					}
 					bf.BitData[bitSliceIndex] = data
 					fragMap[bf.IndexName][bf.FieldName][int64(-1)][bf.Time.UnixNano()] = bf
 				} else {
 					// merge in new bits
-					for ; bitSliceIndex >= len(existFrag.BitData); {
+					for bitSliceIndex >= len(existFrag.BitData) {
 						existFrag.BitData = append(existFrag.BitData, make([]byte, 0))
 					}
 					existFrag.BitData[bitSliceIndex] = data
@@ -478,6 +478,10 @@ func (m *BitmapIndex) readBitmapFiles(fragQueue chan *BitmapFragment) error {
 	return nil
 }
 
+func isBSIBitmapPath(parts []string) bool {
+	return len(parts) > 2 && parts[2] == "bsi"
+}
+
 // Purge a partition from cache
 func (m *BitmapIndex) purgePartition(aop *Partition) {
 
@@ -489,7 +493,7 @@ func (m *BitmapIndex) purgePartition(aop *Partition) {
 		_, ok := m.bitmapCache[aop.Index][aop.Field][rowID][t]
 		if ok {
 			delete(m.bitmapCache[aop.Index][aop.Field][rowID], t)
-			u.Infof("Purged standard bitmap %s.%s, ts = %v, rowID = %d", aop.Index, aop.Field, 
+			u.Infof("Purged standard bitmap %s.%s, ts = %v, rowID = %d", aop.Index, aop.Field,
 				aop.Time.Format(timeFmt), rowID)
 		}
 	} else {

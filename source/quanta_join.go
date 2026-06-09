@@ -82,7 +82,30 @@ func NewQuantaJoinMerge(ctx *plan.Context, l, r exec.TaskRunner, p *plan.JoinMer
 		}
 		m.aliases[alias] = m.rightStmt
 	}
+	normalizeCountStarJoinProjection(ctx)
 	return m
+}
+
+func normalizeCountStarJoinProjection(ctx *plan.Context) {
+	if ctx == nil || ctx.Projection == nil || ctx.Projection.Proj == nil {
+		return
+	}
+	orig, ok := ctx.Stmt.(*rel.SqlSelect)
+	if !ok || len(orig.From) < 2 {
+		return
+	}
+	cols := ctx.Projection.Proj.Columns
+	if len(cols) == 0 || cols[0].As != "count(*)" {
+		return
+	}
+	ctx.Projection.Proj.Columns = cols[:1]
+}
+
+func newCountStarJoinMessage(count int64) *datasource.SqlDriverMessageMap {
+	vals := []driver.Value{fmt.Sprintf("%d", count)}
+	colNames := make(map[string]int, 1)
+	colNames["count(*)"] = 0
+	return datasource.NewSqlDriverMessageMap(uint64(1), vals, colNames)
 }
 
 // Run the task.
@@ -337,17 +360,18 @@ func (m *JoinMerge) Run() error {
 				ct += int64(bm.GetCardinality())
 			}
 			//u.Debugf("%p RESULT = %d", m, ct)
-			vals := make([]driver.Value, 2)
-			vals[0] = fmt.Sprintf("%d", ct)
+			//vals := make([]driver.Value, 2)
+			//vals[0] = fmt.Sprintf("%d", ct)
 			/* This is a sneaky way of passing the roaring results on to the next processing step
 			 * If this is a single table join then the sqldriver ResultWriter jut ignores the second
 			 * parameter (no colNames mapping).  For multi-table joins this value ends up as the
 			 * left value intersected with the previous results.
 			 */
-			vals[1] = ct
-			colNames := make(map[string]int, 1)
-			colNames[nm] = 0
-			outCh <- datasource.NewSqlDriverMessageMap(uint64(1), vals, colNames)
+			//vals[1] = ct
+			//colNames := make(map[string]int, 1)
+			//colNames[nm] = 0
+			//outCh <- datasource.NewSqlDriverMessageMap(uint64(1), vals, colNames)
+			outCh <- newCountStarJoinMessage(ct)
 		}
 		if nm == "@rownum" {
 			//rs := roaring64.FastAnd(lresult, rresult)
@@ -433,7 +457,10 @@ func (m *JoinMerge) callJoin(table string, foundSets map[string]*roaring64.Bitma
 			} else {
 				filterSetArray = append(filterSetArray, foundSets[v.Name])
 			}
-			isOuter = !isOuter && v.JoinType == lex.TokenOuter
+			//isOuter = !isOuter && v.JoinType == lex.TokenOuter
+			if v.JoinType == lex.TokenOuter && len(v.JoinNodes()) > 0 {
+				isOuter = true
+			}
 		}
 	}
 

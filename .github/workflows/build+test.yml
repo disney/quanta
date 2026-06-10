@@ -1,36 +1,27 @@
 name: build+test
-on: [push,pull_request]
+
+on: [push, pull_request]
+
 jobs:
   quanta-ci-job:
     runs-on: ubuntu-latest
     steps:
-      steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-  - name: Check out repository
-    uses: actions/checkout@v4
-
-  - name: Start consul
-    run: |
-      # existing Consul commands
-      - name: Start consul
+      - name: Start Consul
         run: |
-
           wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
-          sudo apt update && sudo apt install consul
-
+          sudo apt update
+          sudo apt install consul
           consul agent -dev &
-          
-          # docker pull consul 
-          # -d 
-          # docker run -p 8500:8500  -p 8600:8600/udp -p 4000:4000 -p 4001:4001 -p 4002:4002 --name=badger consul agent -dev -client="0.0.0.0" 
-
-          echo "consul Startup complete"
+          echo "Consul startup complete"
 
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: 1.21
+          go-version: "1.21"
 
       - name: Build
         run: |
@@ -38,12 +29,11 @@ jobs:
           go build -v ./...
 
       - name: Test
-        run: | 
+        run: |
           ls -lah
-          # go test -v ./...
-          ./test/run-go-tests.sh 
-      - name: Test-Integration
-        run: | 
+          ./test/run-go-tests.sh
+
+      - name: Test integration
+        run: |
           ls -lah
-          # go test -v ./...
-          ./test/run-go-integration-tests.sh 
+          ./test/run-go-integration-tests.sh

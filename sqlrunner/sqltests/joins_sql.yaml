@@ -1,0 +1,403 @@
+version: 1
+name: "joins_sql"
+
+tests:
+  - id: "joins_sql.001.quanta-admin"
+    status: supported
+    kind: admin
+    sql: |-
+      drop orders_qa
+
+  - id: "joins_sql.002.quanta-admin"
+    status: supported
+    kind: admin
+    sql: |-
+      drop customers_qa
+
+  - id: "joins_sql.003.quanta-admin"
+    status: supported
+    kind: admin
+    sql: |-
+      create customers_qa
+
+  - id: "joins_sql.004.quanta-admin"
+    status: supported
+    kind: admin
+    sql: |-
+      create orders_qa
+
+  - id: "joins_sql.005.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('1','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home')
+
+  - id: "joins_sql.006.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('2','Abby','234 Main','Tacoma','WA','98011','425-333-2222','cell;business')
+
+  - id: "joins_sql.007.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('3','Annie','345 Main','Seattle','WA','98072','425-333-2233','cell;home')
+
+  - id: "joins_sql.008.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('4','Axel','456 Main','Everett','WA','98021','425-333-2244','landline;home')
+
+  - id: "joins_sql.009.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('5','Bob','567 Main','Bellingham','WA','98033','425-333-2255','cell;home;business')
+
+  - id: "joins_sql.010.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('6','Bill','678 Main','Leavenworth','WA','98826','425-333-2666','landline;business')
+
+  - id: "joins_sql.011.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('7','Bailey','789 Main','Seattle','WA','98072','425-333-2277','cell;home')
+
+  - id: "joins_sql.012.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('8','Bill','777 Main','Wenatchee','WA','98800','425-333-2288','landline;home;business')
+
+  - id: "joins_sql.013.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('9','Bob','888 Main','Gig Harbor','WA','98444','425-333-2299','home')
+
+  - id: "joins_sql.014.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('10','Carl','999 Main','Spokane','WA','98231','425-333-2211','business')
+
+  - id: "joins_sql.015.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "joins_sql.016.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into orders_qa (cust_id, order_id, order_date, ship_via) values('1','1001','2023-06-01T01:00:00','UPS')
+
+  - id: "joins_sql.017.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into orders_qa (cust_id, order_id, order_date, ship_via) values('1','1002','2023-06-01T02:00:00','UPS')
+
+  - id: "joins_sql.018.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into orders_qa (cust_id, order_id, order_date, ship_via) values('10','1003','2023-06-01T03:00:00','FEDEX')
+
+  - id: "joins_sql.019.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "joins_sql.020.select"
+    status: supported
+    kind: query
+    order: rowsort
+    capabilities: [inner-join, projection]
+    sql: |-
+      select o.cust_id as cust_id,
+             o.order_id as order_id,
+             o.ship_via as ship_via,
+             c.first_name as first_name
+      from customers_qa as c
+      inner join orders_qa as o on c.cust_id = o.cust_id
+      where o.cust_id = '1'
+    expect:
+      columns: [cust_id, order_id, ship_via, first_name]
+      rows:
+        - ["1", "1001", "UPS", "Abe"]
+        - ["1", "1002", "UPS", "Abe"]
+
+  - id: "joins_sql.021.select"
+    status: supported
+    kind: query
+    sql: |-
+      select o.* from customers_qa as c inner join orders_qa as o on o.cust_id == c.cust_id
+    expect:
+      row_count: 3
+
+  - id: "joins_sql.022.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa as c inner join orders_qa as o on o.cust_id == c.cust_id
+    expect:
+      rows:
+        - [3]
+
+  - id: "joins_sql.023.select"
+    status: supported
+    kind: query
+    sql: |-
+      select customers_qa.* from customers_qa inner join orders_qa on customers_qa.cust_id = orders_qa.cust_id
+    expect:
+      row_count: 3
+
+  - id: "joins_sql.024.select"
+    status: supported
+    kind: query
+    sql: |-
+      select orders_qa.* from customers_qa inner join orders_qa on customers_qa.cust_id = orders_qa.cust_id
+    expect:
+      row_count: 3
+
+  - id: "joins_sql.025.select"
+    status: supported
+    kind: query
+    sql: |-
+      select orders_qa.* from orders_qa inner join customers_qa on customers_qa.cust_id = orders_qa.cust_id
+    expect:
+      row_count: 3
+
+  - id: "joins_sql.026.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa inner join orders_qa on customers_qa.cust_id = orders_qa.cust_id
+    expect:
+      row_count: 3
+
+  - id: "joins_sql.027.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa inner join orders_qa on customers_qa.cust_id = orders_qa.cust_id where customers_qa.cust_id = '12321'
+    expect:
+      row_count: 0
+
+  - id: "joins_sql.028.select"
+    status: supported
+    kind: query
+    sql: |-
+      select customers_qa.first_name, last_name from customers_qa inner join orders_qa on customers_qa.cust_id = orders_qa.cust_id where customers_qa.first_name != null
+    expect:
+      row_count: 3
+
+  - id: "joins_sql.029.select"
+    status: supported
+    kind: query
+    sql: |-
+      select customers_qa.first_name, customers_qa.last_name from customers_qa inner join orders_qa on customers_qa.cust_id = orders_qa.cust_id where customers_qa.first_name != 'Abe'
+    expect:
+      row_count: 1
+
+  - id: "joins_sql.030.select"
+    status: supported
+    kind: query
+    sql: |-
+      select customers_qa.first_name, orders_qa.order_date from customers_qa inner join orders_qa on customers_qa.cust_id = orders_qa.cust_id
+    expect:
+      row_count: 3
+
+  - id: "joins_sql.031.select"
+    status: supported
+    kind: query
+    sql: |-
+      select customers_qa.first_name, orders_qa.order_date from customers_qa inner join orders_qa on customers_qa.cust_id = orders_qa.cust_id where customers_qa.first_name != null
+    expect:
+      row_count: 3
+
+  - id: "joins_sql.032.select"
+    status: supported
+    kind: query
+    sql: |-
+      select customers_qa.first_name, orders_qa.order_date from customers_qa inner join orders_qa on customers_qa.cust_id = orders_qa.cust_id where customers_qa.first_name = null
+    expect:
+      row_count: 0
+
+  - id: "joins_sql.033.select"
+    status: supported
+    kind: query
+    sql: |-
+      select o.* from customers_qa as c outer join orders_qa as o on o.cust_id == c.cust_id
+    expect:
+      row_count: 11
+
+  - id: "joins_sql.034.select"
+    status: supported
+    kind: query
+    sql: |-
+      select c.first_name, c.cust_id, o.cust_id, o.order_id from customers_qa as c outer join orders_qa as o on o.cust_id == c.cust_id
+    expect:
+      row_count: 11
+
+  - id: "joins_sql.035.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa as c outer join orders_qa as o on o.cust_id == c.cust_id
+    expect:
+      rows:
+        - [11]
+
+  - id: "joins_sql.036.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa as c outer join orders_qa as o on o.cust_id == c.cust_id
+    expect:
+      row_count: 11
+
+  - id: "joins_sql.037.select"
+    status: supported
+    kind: query
+    sql: |-
+      select c.first_name, c.cust_id, o.cust_id, o.order_id, hash.sha256(c.cust_id) as myHash from customers_qa as c outer join orders_qa as o on o.cust_id == c.cust_id
+    expect:
+      row_count: 11
+
+  - id: "joins_sql.038.select"
+    status: supported
+    kind: query
+    sql: |-
+      select first_name, cust_id, hashedCustId, hash.sha256(cust_id) as myHash from customers_qa where cust_id not in (select cust_id from orders_qa)
+    expect:
+      row_count: 8
+
+  - id: "joins_sql.039.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa where cust_id not in (select cust_id from orders_qa where cust_id = '10')
+    expect:
+      row_count: 9
+
+  - id: "joins_sql.040.select"
+    status: supported
+    kind: query
+    sql: |-
+      select c.first_name, c.cust_id from customers_qa as c where c.cust_id not in (select cust_id from orders_qa)
+    expect:
+      row_count: 8
+
+  - id: "joins_sql.041.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa as c where c.cust_id not in (select cust_id from orders_qa)
+    expect:
+      rows:
+        - [8]
+
+  - id: "joins_sql.042.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa as c where c.cust_id in (select cust_id from orders_qa)
+    expect:
+      rows:
+        - [3]
+
+  - id: "joins_sql.043.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa as c where c.cust_id not in (select cust_id from orders_qa)
+    expect:
+      row_count: 8
+
+  - id: "joins_sql.044.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa as c where c.cust_id in (select cust_id from orders_qa)
+    expect:
+      row_count: 3
+
+  - id: "joins_sql.045.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('11','Carlo','888 Western','Boise','ID','87305','208-313-2211','business')
+
+  - id: "joins_sql.046.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "joins_sql.047.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into orders_qa (cust_id, order_id, order_date, ship_via) values('11','1004','2023-07-01T03:00:00','USPS')
+
+  - id: "joins_sql.048.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "joins_sql.049.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from orders_qa where cust_id != null
+    expect:
+      rows:
+        - [4]
+
+  - id: "joins_sql.050.select"
+    status: supported
+    kind: query
+    sql: |-
+      select o.* from customers_qa as c inner join orders_qa as o on o.cust_id == c.cust_id
+    expect:
+      row_count: 4
+
+  - id: "joins_sql.051.select"
+    status: supported
+    kind: query
+    sql: |-
+      select o.* from customers_qa as c outer join orders_qa as o on o.cust_id == c.cust_id
+    expect:
+      row_count: 12
+
+  - id: "joins_sql.053.select"
+    status: supported
+    kind: query
+    sql: |-
+      select o.* from customers_qa as c inner join orders_qa as o on o.cust_id == c.cust_id
+    expect:
+      row_count: 4
+
+  - id: "joins_sql.054.select"
+    status: supported
+    kind: query
+    sql: |-
+      select o.* from customers_qa as c outer join orders_qa as o on o.cust_id == c.cust_id
+    expect:
+      row_count: 12
+
+  - id: "joins_sql.052.insert"
+    status: xfail
+    kind: statement
+    sql: |-
+      insert into orders_qa (cust_id, order_id, order_date, ship_via) values('12','1005','2023-07-02T03:00:00','DHS')

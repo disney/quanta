@@ -186,20 +186,24 @@ func AnalyzeRow(proxyConfig ProxyConnectStrings, row []string, validate bool) Sq
 
 func (s *SqlInfo) ExecuteAdmin() {
 
-	var err error
-	// var cmd string
-
 	statement := strings.Split(strings.TrimRight(strings.TrimLeft(s.Statement, " "), " "), " ")
 	log.Printf("Admin Statement : %s", s.Statement)
 
-	command := statement[1:]
+	if err := ExecuteAdminCommand(strings.Join(statement[1:], " ")); err != nil {
+		fmt.Println("executeAdmin ctx.Run ", err)
+	}
+}
+
+func ExecuteAdminCommand(command string) error {
+	args := strings.Fields(command)
 	parser, err := kong.New(&admin.Cli)
 	if err != nil {
-		fmt.Println("executeAdmin kong new ", err)
-		return
+		return err
 	}
-	ctx, err := parser.Parse(command) // os.Args[1:])
-	parser.FatalIfErrorf(err)
+	ctx, err := parser.Parse(args)
+	if err != nil {
+		return err
+	}
 
 	adminCtx := &admin.Context{ConsulAddr: ConsulAddress,
 		Port:  admin.Cli.Port,
@@ -208,10 +212,18 @@ func (s *SqlInfo) ExecuteAdmin() {
 	fmt.Println("executeAdmin ctx.Run ", adminCtx)
 
 	err = ctx.Run(adminCtx)
-	if err != nil {
-		fmt.Println("executeAdmin ctx.Run ", err)
-		return
+	if err != nil && strings.HasPrefix(command, "drop ") && strings.Contains(err.Error(), "doesn't exist") {
+		return nil
 	}
+	return err
+}
+
+func ExecuteAdminCommandAndWait(command string) error {
+	if err := ExecuteAdminCommand(command); err != nil {
+		return err
+	}
+	time.Sleep(time.Second)
+	return nil
 }
 
 func (s *SqlInfo) ExecuteStatement(db *sql.DB) {

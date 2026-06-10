@@ -1,144 +1,79 @@
 package test_integration
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
 
 	"github.com/disney/quanta/shared"
+	"github.com/disney/quanta/sqlrunner/roadmap"
 	"github.com/disney/quanta/test"
-	"github.com/stretchr/testify/assert"
 )
 
-// requirements: Consul must be running on localhost:8500 (it can't be the one in the docker container)
-// optional: a local cluster running on localhost:4000
-// if there is no local cluster, one will be started. That is slower.
-
-// to run the whole thing see ./test/run-go-integration-tests.sh
-
 func TestBasic(t *testing.T) {
-	shared.SetUTCdefault()
-
-	isLocalRunning := test.IsLocalRunning()
-	// erase the storage
-	if !isLocalRunning { // if no cluster is up
-		err := os.RemoveAll("../test/localClusterData/") // start fresh
-		check(err)
-	}
-	// ensure we have a cluster on localhost, start one if necessary
-	state := test.Ensure_cluster(3)
-
-	fmt.Println("TestBasic")
-	currentDir, err := os.Getwd()
-	check(err)
-	err = os.Chdir("../sqlrunner") // these run from the sqlrunner/ directory
-	check(err)
-	defer os.Chdir(currentDir)
-
-	got := test.ExecuteSqlFile(state, "../sqlrunner/sqlscripts/basic_queries.sql")
-
-	for _, child := range got.FailedChildren {
-		fmt.Println("child failed", child.Statement)
-	}
-
-	assert.Equal(t, got.ExpectedRowcount, got.ActualRowCount)
-	assert.Equal(t, 0, len(got.FailedChildren))
-
-	state.Release()
-}
-
-func TestInsert(t *testing.T) {
-	shared.SetUTCdefault()
-	isLocalRunning := test.IsLocalRunning()
-	// erase the storage
-	if !isLocalRunning { // if no cluster is up
-		err := os.RemoveAll("../test/localClusterData/") // start fresh
-		check(err)
-	}
-	// ensure we have a cluster on localhost, start one if necessary
-	state := test.Ensure_cluster(3)
-
-	fmt.Println("Test insert_tests")
-	currentDir, err := os.Getwd()
-	check(err)
-	err = os.Chdir("../sqlrunner") // these run from the sqlrunner/ directory
-	check(err)
-	defer os.Chdir(currentDir)
-
-	got := test.ExecuteSqlFile(state, "../sqlrunner/sqlscripts/insert_tests.sql")
-
-	for _, child := range got.FailedChildren {
-		fmt.Println("child failed", child.Statement)
-	}
-
-	assert.Equal(t, got.ExpectedRowcount, got.ActualRowCount)
-	assert.Equal(t, 0, len(got.FailedChildren))
-	state.Release()
-}
-
-func TestMutate(t *testing.T) {
-	shared.SetUTCdefault()
-
-	isLocalRunning := test.IsLocalRunning()
-	// erase the storage
-	if !isLocalRunning { // if no cluster is up
-		err := os.RemoveAll("../test/localClusterData/") // start fresh
-		check(err)
-	}
-	// ensure we have a cluster on localhost, start one if necessary
-	state := test.Ensure_cluster(3)
-
-	fmt.Println("TestMutate")
-	currentDir, err := os.Getwd()
-	check(err)
-	err = os.Chdir("../sqlrunner") // these run from the sqlrunner/ directory
-	check(err)
-	defer os.Chdir(currentDir)
-
-	got := test.ExecuteSqlFile(state, "../sqlrunner/sqlscripts/mutate_tests_body.sql")
-
-	for _, child := range got.FailedChildren {
-		fmt.Println("child failed", child.Statement)
-	}
-
-	assert.Equal(t, got.ExpectedRowcount, got.ActualRowCount)
-	assert.Equal(t, 0, len(got.FailedChildren))
-
-	state.Release()
-}
-
-func TestJoins(t *testing.T) {
-	shared.SetUTCdefault()
-	isLocalRunning := test.IsLocalRunning()
-	// erase the storage
-	if !isLocalRunning { // if no cluster is up
-		err := os.RemoveAll("../test/localClusterData/") // start fresh
-		check(err)
-	}
-	// ensure we have a cluster on localhost, start one if necessary
-	state := test.Ensure_cluster(3)
-
-	fmt.Println("Test joins_sql")
-	currentDir, err := os.Getwd()
-	check(err)
-	err = os.Chdir("../sqlrunner") // these run from the sqlrunner/ directory
-	check(err)
-	defer os.Chdir(currentDir)
-
-	got := test.ExecuteSqlFile(state, "../sqlrunner/sqlscripts/joins_sql.sql")
-
-	for _, child := range got.FailedChildren {
-		fmt.Println("child failed", child.Statement)
-	}
-
-	assert.Equal(t, got.ExpectedRowcount, got.ActualRowCount)
-	assert.Equal(t, 0, len(got.FailedChildren))
-	state.Release()
+	runRoadmapSuite(t, "sqltests/basic_queries.yaml")
 }
 
 func check(err error) {
 	if err != nil {
 		fmt.Println("test-integration check err", err)
-		// no panic(err.Error())
+	}
+}
+
+func TestInsert(t *testing.T) {
+	runRoadmapSuite(t, "sqltests/insert_tests.yaml")
+}
+
+func TestMutate(t *testing.T) {
+	runRoadmapSuite(t, "sqltests/mutate_tests_body.yaml")
+}
+
+func TestJoins(t *testing.T) {
+	runRoadmapSuite(t, "sqltests/joins_sql.yaml")
+}
+
+func runRoadmapSuite(t *testing.T, suitePath string) {
+	t.Helper()
+	shared.SetUTCdefault()
+
+	state := test.Ensure_cluster(3)
+	defer state.Release()
+
+	currentDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir("../sqlrunner"); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(currentDir)
+
+	data, err := os.ReadFile(suitePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	suite, err := roadmap.Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := state.ProxyConnect.ProxyConnectConnect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	summary := (roadmap.Runner{
+		DB:    db,
+		Admin: func(_ context.Context, command string) error { return test.ExecuteAdminCommandAndWait(command) },
+	}).Run(context.Background(), suite)
+
+	for _, result := range summary.Results {
+		switch result.Status {
+		case roadmap.ResultFail, roadmap.ResultXPass:
+			t.Errorf("%s %s: %s", result.Status, result.ID, result.Details)
+		case roadmap.ResultXFail:
+			t.Logf("%s %s: %s", result.Status, result.ID, result.Details)
+		}
 	}
 }

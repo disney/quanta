@@ -1,0 +1,577 @@
+version: 1
+name: "mutate_body"
+
+tests:
+  - id: "mutate_body.001.quanta-admin"
+    status: supported
+    kind: admin
+    sql: |-
+      drop orders_qa
+
+  - id: "mutate_body.002.quanta-admin"
+    status: supported
+    kind: admin
+    sql: |-
+      drop customers_qa
+
+  - id: "mutate_body.003.quanta-admin"
+    status: supported
+    kind: admin
+    sql: |-
+      create customers_qa
+
+  - id: "mutate_body.004.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('200','Bob','Madden','313 First Dr','Santa Fe','NM','99887',,'2010-01-03 00:00:00.000Z','2010-01-01 12:23:34.000Z','2011-01-05 01:02:03.000Z','aaaaabbbbbcccccdddd','887-222-3333','unknown',true,'2000-01-01',true,42,71,4,1)
+
+  - id: "mutate_body.005.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('210','Iris','Henderson','999 Main Dr','Albequerque','NM','99887','2011-03-01 00:00:00.000Z','2011-01-05 01:02:03.000Z','2010-01-01 12:23:34.000Z','aaaaabbbbbcccccdddd','554-222-3333','',0,'2000-01-01',true,25,62,1,2)
+
+  - id: "mutate_body.006.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('220','Ted','Adams','977 Ute Ave','Denver','CO','92323','','2012-01-10 08:59:59.000Z','2014-03-03 23:59:59.000Z','aaaaabbbbbcccccdddd','907-222-3333',';',true,'2000-01-01',true,88,68,2,3)
+
+  - id: "mutate_body.007.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('230','Larry','Russell','6823 Egret Ave','Tacoma','WA','98826','','2013-02-28 23:00:00.000Z','1923-05-22 12:12:31.000Z','aaaaabbbbbcccccdddd','222-222-3333','business',false,'2000-01-01',true,44,75,8,4)
+
+  - id: "mutate_body.008.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('240','Forrest','Chambers','3232 Second St','Walla Walla','WA','98826','','2014-03-03 23:59:59.000Z','1969-07-16 20:17:11.000Z','aaaaabbbbbcccccdddd','242-222-3333','cell',true,'2000-01-01',true,16,59,3,5)
+
+  - id: "mutate_body.009.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('250','Mike','Emerson','9293 Sans St','Boise','ID','91321','','2015-04-23 11:00:23.000Z','2014-03-03 23:59:59.000Z','aaaaabbbbbcccccdddd','144-222-3333',false,'2000-01-01',true,48,48,7,6)
+
+  - id: "mutate_body.010.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('260','Henry','Talley','2422 Arco Rd','Billings','MT','98232','2015-05-04 00:00:00.000Z','2016-05-29 09:09:09.000Z','2016-05-29 09:09:09.000Z','aaaaabbbbbcccccdddd','555-222-3333','N/A',true,'2000-01-01',true,59,59,5,7)
+
+  - id: "mutate_body.011.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('270','Aaron','Levy','1st Street','Colorado Springs','CO','92323','','2017-07-31 05:00:00.000Z','1842-07-04 01:31:23.000Z','aaaaabbbbbcccccdddd','907-222-3333','UNKNOWN',false,'2000-01-01',true,75,55,3,8)
+
+  - id: "mutate_body.012.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('280','Keefer','Cash','9323 Semper Ave','Bellingham','WA','98282','','2018-12-25 11:11:11.000Z','2017-07-31 05:00:00.000Z','aaaaabbbbbcccccdddd','833-222-3333','cell;home;business',true,'2000-01-01',true,55,76,4,9)
+
+  - id: "mutate_body.013.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('290','Bill','Gregory','224 Null Street','Wenatchee','WA','98826','2018-10-01 00:00:00.000Z','2019-07-04 01:31:23.000Z','2012-01-10 08:59:59.000Z','aaaaabbbbbcccccdddd','443-222-3333','home;business',true,'2000-01-01',true,5,72,1,10)
+
+  - id: "mutate_body.014.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "mutate_body.015.update"
+    status: supported
+    kind: statement
+    sql: |-
+      update customers_qa set cust_id = null where state = 'ID'
+    expect:
+      error_contains: "cannot update PK column customers_qa.cust_id"
+
+  - id: "mutate_body.017.update"
+    status: supported
+    kind: statement
+    sql: |-
+      update puke set yakk = 'yakk' where state = 'ID'
+    expect:
+      error_contains: "Could not find a DataSource for that table \"puke\""
+
+  - id: "mutate_body.019.update"
+    status: supported
+    kind: statement
+    sql: |-
+      update customers_qa set yakk = 'yakk'  where state = 'ID'
+    expect:
+      error_contains: "attribute 'yakk' not found"
+
+  - id: "mutate_body.020.update"
+    status: supported
+    kind: statement
+    sql: |-
+      update customers_qa set phoneType = null
+    expect:
+      error_contains: "must provide a predicate"
+
+  - id: "mutate_body.021.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa
+    expect:
+      rows:
+        - [10]
+
+  - id: "mutate_body.022.update"
+    status: supported
+    kind: statement
+    sql: |-
+      update customers_qa set age = 99 where state = 'ID'
+    expect:
+      affected_rows: 1
+
+  - id: "mutate_body.023.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "mutate_body.024.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where age = 99
+    expect:
+      rows:
+        - [1]
+
+  - id: "mutate_body.025.update"
+    status: supported
+    kind: statement
+    sql: |-
+      update customers_qa set age = null where state = 'ID'
+    expect:
+      affected_rows: 1
+
+  - id: "mutate_body.026.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "mutate_body.027.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where age is null
+    expect:
+      rows:
+        - [1]
+
+  - id: "mutate_body.028.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where hashedCustId != null and state = 'CO'
+    expect:
+      rows:
+        - [2]
+
+  - id: "mutate_body.029.update"
+    status: supported
+    kind: statement
+    sql: |-
+      update customers_qa set hashedCustId = 'XXX' where state = 'CO'
+    expect:
+      affected_rows: 2
+
+  - id: "mutate_body.030.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "mutate_body.031.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where hashedCustId = 'XXX' and state = 'CO'
+    expect:
+      rows:
+        - [2]
+
+  - id: "mutate_body.032.update"
+    status: supported
+    kind: statement
+    sql: |-
+      update customers_qa set hashedCustId = null where state = 'CO'
+    expect:
+      affected_rows: 2
+
+  - id: "mutate_body.033.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "mutate_body.034.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where hashedCustId is null and state = 'CO'
+    expect:
+      rows:
+        - [2]
+
+  - id: "mutate_body.035.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where phoneType = 'cell' and phoneType = 'business'
+    expect:
+      rows:
+        - [1]
+
+  - id: "mutate_body.036.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where phoneType is null and state = 'ID'
+    expect:
+      rows:
+        - [1]
+
+  - id: "mutate_body.037.update"
+    status: supported
+    kind: statement
+    sql: |-
+      update customers_qa set phoneType = 'cell' where state = 'ID'
+    expect:
+      affected_rows: 1
+
+  - id: "mutate_body.038.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "mutate_body.039.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where phoneType = 'cell' and state = 'ID'
+    expect:
+      rows:
+        - [1]
+
+  - id: "mutate_body.040.update"
+    status: supported
+    kind: statement
+    sql: |-
+      update customers_qa set phoneType = 'business' where state = 'ID'
+    expect:
+      affected_rows: 1
+
+  - id: "mutate_body.041.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "mutate_body.042.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where phoneType = 'cell' and phoneType = 'business'
+    expect:
+      rows:
+        - [2]
+
+  - id: "mutate_body.043.update"
+    status: supported
+    kind: statement
+    sql: |-
+      update customers_qa set phoneType = null where state = 'ID'
+    expect:
+      affected_rows: 1
+
+  - id: "mutate_body.044.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "mutate_body.045.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where phoneType = 'cell' and phoneType = 'business'
+    expect:
+      rows:
+        - [1]
+
+  - id: "mutate_body.046.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where phoneType = 'cell'
+    expect:
+      rows:
+        - [2]
+
+  - id: "mutate_body.047.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where phoneType = 'business'
+    expect:
+      rows:
+        - [3]
+
+  - id: "mutate_body.048.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where isLegalAge = true
+    expect:
+      rows:
+        - [10]
+
+  - id: "mutate_body.049.update"
+    status: supported
+    kind: statement
+    sql: |-
+      update customers_qa set isLegalAge = false where state = 'ID'
+    expect:
+      affected_rows: 1
+
+  - id: "mutate_body.050.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "mutate_body.051.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where isLegalAge = true
+    expect:
+      rows:
+        - [9]
+
+  - id: "mutate_body.052.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where isLegalAge is not null
+    expect:
+      rows:
+        - [10]
+
+  - id: "mutate_body.053.update"
+    status: supported
+    kind: statement
+    sql: |-
+      update customers_qa set isLegalAge = null where state = 'ID'
+    expect:
+      affected_rows: 1
+
+  - id: "mutate_body.054.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "mutate_body.055.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where isLegalAge is not null
+    expect:
+      rows:
+        - [9]
+
+  - id: "mutate_body.056.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where height = 0
+    expect:
+      rows:
+        - [0]
+
+  - id: "mutate_body.057.update"
+    status: supported
+    kind: statement
+    sql: |-
+      update customers_qa set height = 0 where state = 'ID'
+    expect:
+      affected_rows: 1
+
+  - id: "mutate_body.058.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "mutate_body.059.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where height != 0
+    expect:
+      rows:
+        - [9]
+
+  - id: "mutate_body.060.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where height is null
+    expect:
+      rows:
+        - [0]
+
+  - id: "mutate_body.061.update"
+    status: supported
+    kind: statement
+    sql: |-
+      update customers_qa set height = null where state = 'ID'
+    expect:
+      affected_rows: 1
+
+  - id: "mutate_body.062.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "mutate_body.063.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where height is not null
+    expect:
+      rows:
+        - [9]
+
+  - id: "mutate_body.066.delete"
+    status: supported
+    kind: statement
+    sql: |-
+      delete from puke where state = 'ID'
+    expect:
+      error_contains: "Could not find a DataSource for that table \"puke\""
+
+  - id: "mutate_body.067.delete"
+    status: supported
+    kind: statement
+    sql: |-
+      delete from customers_qa
+    expect:
+      error_contains: "must provide a predicate"
+
+  - id: "mutate_body.068.delete"
+    status: supported
+    kind: statement
+    sql: |-
+      delete from customers_qa where cust_id is null
+    expect:
+      affected_rows: 0
+
+  - id: "mutate_body.069.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "mutate_body.070.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa
+    expect:
+      rows:
+        - [10]
+
+  - id: "mutate_body.071.delete"
+    status: supported
+    kind: statement
+    sql: |-
+      delete from customers_qa where state = 'ID'
+    expect:
+      affected_rows: 1
+
+  - id: "mutate_body.072.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "mutate_body.073.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa
+    expect:
+      rows:
+        - [9]
+
+  - id: "mutate_body.075.delete"
+    status: supported
+    kind: statement
+    sql: |-
+      delete from customers_qa where cust_id is not null
+    expect:
+      affected_rows: 9
+
+  - id: "mutate_body.076.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "mutate_body.077.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa
+    expect:
+      rows:
+        - [0]
+
+  - id: "mutate_body.016.update"
+    status: xfail
+    kind: statement
+    sql: |-
+      Update non-existant table
+
+  - id: "mutate_body.018.update"
+    status: xfail
+    kind: statement
+    sql: |-
+      Update non-existant column
+
+  - id: "mutate_body.064.delete"
+    status: xfail
+    kind: statement
+    sql: |-
+      DELETE tests
+
+  - id: "mutate_body.065.delete"
+    status: xfail
+    kind: statement
+    sql: |-
+      Delete non-existant table
+
+  - id: "mutate_body.074.delete"
+    status: xfail
+    kind: statement
+    sql: |-
+      delete batch

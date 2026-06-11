@@ -87,6 +87,10 @@ func TestOpenwStrings(t *testing.T) {
 // time, total 9.647931ms 0 (250k records) with intact index
 
 func TestReadPogreb(t *testing.T) {
+	if test.IsLocalRunning() {
+		t.Skip()
+	}
+
 	// TestBasicLoadBig (below) will leave pogreb files in the localClusterData directory.
 	// open some of them and read them. Time it.
 
@@ -107,7 +111,9 @@ func TestReadPogreb(t *testing.T) {
 			// os.Remove(lockfile)
 
 			po, err := pogreb.Open(path1, nil)
-			check(err)
+			if err != nil {
+				t.Fatal(err)
+			}
 			// count := po.Count()
 			// fmt.Println("count", count, "for", path1)
 			// total += int(count)
@@ -128,7 +134,9 @@ func TestReadPogreb(t *testing.T) {
 					}
 				}
 			}
-			po.Close()
+			if err := po.Close(); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	end := time.Since(start)

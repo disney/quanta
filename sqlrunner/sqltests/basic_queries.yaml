@@ -1,0 +1,941 @@
+version: 1
+name: "basic"
+
+tests:
+  - id: "basic.001.quanta-admin"
+    status: supported
+    kind: admin
+    sql: |-
+      drop orders_qa
+
+  - id: "basic.002.quanta-admin"
+    status: supported
+    kind: admin
+    sql: |-
+      drop customers_qa
+
+  - id: "basic.003.quanta-admin"
+    status: supported
+    kind: admin
+    sql: |-
+      create customers_qa
+
+  - id: "basic.004.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('101','Abe','123 Main','Seattle','WA','98072','425-232-4323','cell;home')
+
+  - id: "basic.005.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('102','Abby','234 Main','Tacoma','WA','98011','425-333-2222','cell;business')
+
+  - id: "basic.006.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('103','Annie','345 Main','Seattle','WA','98072','425-333-2233','cell;home')
+
+  - id: "basic.007.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('104','Axel','456 Main','Everett','WA','98021','425-333-2244','landline;home')
+
+  - id: "basic.008.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('105','Bob','567 Main','Bellingham','WA','98033','425-333-2255','cell;home;business')
+
+  - id: "basic.009.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('106','Bill','678 Main','Leavenworth','WA','98826','425-333-2666','landline;business')
+
+  - id: "basic.010.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('107','Bailey','789 Main','Seattle','WA','98072','425-333-2277','cell;home')
+
+  - id: "basic.011.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('108','Bill','777 Main','Wenatchee','WA','98800','425-333-2288','landline;home;business')
+
+  - id: "basic.012.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('109','Bob','888 Main','Gig Harbor','WA','98444','425-333-2299','home')
+
+  - id: "basic.013.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, address, city, state, zip, phone, phoneType) values('110','Carl','999 Main','Spokane','WA','98231','425-333-2211','business')
+
+  - id: "basic.014.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('200','Bob','Madden','313 First Dr','Santa Fe','NM','99887',,'2010-01-03 00:00:00.000Z','2010-01-01 12:23:34.000Z','2011-01-05 01:02:03.000Z','aaaaabbbbbcccccdddd','887-222-3333','unknown',true,'2000-01-01',true,42,71,4,1)
+
+  - id: "basic.015.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('210','Iris','Henderson','999 Main Dr','Albequerque','NM','99887','2011-03-01 00:00:00.000Z','2011-01-05 01:02:03.000Z','2010-01-01 12:23:34.000Z','aaaaabbbbbcccccdddd','554-222-3333','',0,'2000-01-01',true,25,62,1,2)
+
+  - id: "basic.016.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('220','Ted','Adams','977 Ute Ave','Denver','CO','92323','','2012-01-10 08:59:59.000Z','2014-03-03 23:59:59.000Z','aaaaabbbbbcccccdddd','907-222-3333',';',true,'2000-01-01',true,88,68,2,3)
+
+  - id: "basic.017.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('230','Larry','Russell','6823 Egret Ave','Tacoma','WA','98826','','2013-02-28 23:00:00.000Z','1923-05-22 12:12:31.000Z','aaaaabbbbbcccccdddd','222-222-3333','business',false,'2000-01-01',true,44,75,8,4)
+
+  - id: "basic.018.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('240','Forrest','Chambers','3232 Second St','Walla Walla','WA','98826','','2014-03-03 23:59:59.000Z','1969-07-16 20:17:11.000Z','aaaaabbbbbcccccdddd','242-222-3333','cell',true,'2000-01-01',true,16,59,3,5)
+
+  - id: "basic.019.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('250','Mike','Emerson','9293 Sans St','Boise','ID','91321','','2015-04-23 11:00:23.000Z','2014-03-03 23:59:59.000Z','aaaaabbbbbcccccdddd','144-222-3333','cell;',false,'2000-01-01',true,48,48,7,6)
+
+  - id: "basic.020.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('260','Henry','Talley','2422 Arco Rd','Billings','MT','98232','2015-05-04 00:00:00.000Z','2016-05-29 09:09:09.000Z','2016-05-29 09:09:09.000Z','aaaaabbbbbcccccdddd','555-222-3333','N/A',true,'2000-01-01',true,59,59,5,7)
+
+  - id: "basic.021.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('270','Aaron','Levy','1st Street','Colorado Springs','CO','92323','','2017-07-31 05:00:00.000Z','1842-07-04 01:31:23.000Z','aaaaabbbbbcccccdddd','907-222-3333','UNKNOWN',false,'2000-01-01',true,75,55,3,8)
+
+  - id: "basic.022.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('280','Keefer','Cash','9323 Semper Ave','Bellingham','WA','98282','','2018-12-25 11:11:11.000Z','2017-07-31 05:00:00.000Z','aaaaabbbbbcccccdddd','833-222-3333','cell;home;business',true,'2000-01-01',true,55,76,4,9)
+
+  - id: "basic.023.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id,first_name,last_name, address, city, state, zip, createdAtTimestamp, timestamp_micro, timestamp_millis, hashedCustId, phone, phoneType, isActive, birthdate, isLegalAge, age, height, numFamilyMembers, rownum) values('290','Bill','Gregory','224 Null Street','Wenatchee','WA','98826','2018-10-01 00:00:00.000Z','2019-07-04 01:31:23.000Z','2012-01-10 08:59:59.000Z','aaaaabbbbbcccccdddd','443-222-3333','home;business',true,'2000-01-01',true,5,72,1,10)
+
+  - id: "basic.024.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id) values('300')
+
+  - id: "basic.025.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, age, height, isActive) values('310',59,72.55, false)
+
+  - id: "basic.026.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, birthdate) values('320','1962-06-29T00:00:00')
+
+  - id: "basic.027.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, last_name, isLegalAge, isActive, height, zip) values('330', 'Theresa','Araki',1,0,68.25,'99821')
+
+  - id: "basic.028.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, first_name, birthdate, isLegalAge, state, last_name) values('340', 'Carry','1964-06-11T00:00:00', true, 'AK','Smith')
+
+  - id: "basic.029.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, last_name, timestamp_micro) values('350', 'Akins','1962-06-01T00:00:00')
+
+  - id: "basic.030.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, phone, phoneType) values('360', '432-234-9292','cell')
+
+  - id: "basic.031.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, phoneType) values('370', 'cell;home')
+
+  - id: "basic.032.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, city, birthdate, age) values('380', 'Juneau', '1982-05-12', 41)
+
+  - id: "basic.033.insert"
+    status: supported
+    kind: statement
+    sql: |-
+      insert into customers_qa (cust_id, last_name, first_name, zip, state, city, address) values('390', 'Morris','Kale','99801','AK','Juneau','2424 Glacier Hwy')
+
+  - id: "basic.034.commit"
+    status: supported
+    kind: statement
+    sql: |-
+      commit
+
+  - id: "basic.035.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa
+    expect:
+      row_count: 30
+
+  - id: "basic.036.select"
+    status: supported
+    kind: query
+    sql: |-
+      select first_name from customers_qa
+    expect:
+      row_count: 30
+
+  - id: "basic.037.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa where first_name = 'Abe'
+    expect:
+      row_count: 1
+
+  - id: "basic.038.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa where city = 'Seattle'
+    expect:
+      row_count: 3
+
+  - id: "basic.039.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa where zip = '98072'
+    expect:
+      row_count: 3
+
+  - id: "basic.040.select"
+    status: supported
+    kind: query
+    sql: |-
+      select distinct first_name from customers_qa
+    expect:
+      row_count: 20
+
+  - id: "basic.041.select"
+    status: supported
+    kind: query
+    sql: |-
+      select cust_id from customers_qa where cust_id = '101'
+    expect:
+      row_count: 1
+
+  - id: "basic.042.select"
+    status: supported
+    kind: query
+    sql: |-
+      select cust_id from customers_qa where cust_id != '101'
+    expect:
+      row_count: 29
+
+  - id: "basic.043.select"
+    status: supported
+    kind: query
+    sql: |-
+      select city from customers_qa where first_name = 'Bob'
+    expect:
+      row_count: 3
+
+  - id: "basic.044.select"
+    status: supported
+    kind: query
+    sql: |-
+      select city from customers_qa where first_name != 'Bob'
+    expect:
+      row_count: 27
+
+  - id: "basic.045.select"
+    status: supported
+    kind: query
+    sql: |-
+      select city from customers_qa where city = 'Sitka'
+    expect:
+      row_count: 0
+
+  - id: "basic.046.select"
+    status: supported
+    kind: query
+    sql: |-
+      select city from customers_qa where city != 'Sitka'
+    expect:
+      row_count: 30
+
+  - id: "basic.047.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa where city = 'Seattle' and first_name = 'Annie' and zip = '99999'
+    expect:
+      row_count: 0
+
+  - id: "basic.048.select"
+    status: supported
+    kind: query
+    sql: |-
+      select first_name from customers_qa where first_name = 'Bailey' and cust_id = '107' and city = 'Seattle' and state = 'WA'
+    expect:
+      row_count: 1
+
+  - id: "basic.049.select"
+    status: supported
+    kind: query
+    sql: |-
+      select first_name from customers_qa where first_name = 'Carl' or city = 'Seattle'
+    expect:
+      row_count: 4
+
+  - id: "basic.050.select"
+    status: supported
+    kind: query
+    sql: |-
+      select first_name from customers_qa where first_name = 'None' or city = 'Seattle'
+    expect:
+      row_count: 3
+
+  - id: "basic.051.select"
+    status: supported
+    kind: query
+    sql: |-
+      select createdAtTimestamp from customers_qa where createdAtTimestamp != NULL
+    expect:
+      row_count: 30
+
+  - id: "basic.052.select"
+    status: supported
+    kind: query
+    sql: |-
+      select createdAtTimestamp from customers_qa where createdAtTimestamp = NULL
+    expect:
+      row_count: 0
+
+  - id: "basic.053.select"
+    status: supported
+    kind: query
+    sql: |-
+      select createdAtTimestamp from customers_qa where createdAtTimestamp is NULL
+    expect:
+      row_count: 0
+
+  - id: "basic.054.select"
+    status: supported
+    kind: query
+    sql: |-
+      select hashedCustId from customers_qa where hashedCustId != NULL
+    expect:
+      row_count: 30
+
+  - id: "basic.055.select"
+    status: supported
+    kind: query
+    sql: |-
+      select hashedCustId from customers_qa where hashedCustId = NULL
+    expect:
+      row_count: 0
+
+  - id: "basic.056.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa where createdAtTimestamp > todate('now-1m')
+    expect:
+      row_count: 26
+
+  - id: "basic.057.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa where createdAtTimestamp > todate('now-1d')
+    expect:
+      row_count: 26
+
+  - id: "basic.058.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa where createdAtTimestamp < todate('now+1m')
+    expect:
+      row_count: 30
+
+  - id: "basic.059.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa where createdAtTimestamp < todate('now-1m')
+    expect:
+      row_count: 4
+
+  - id: "basic.060.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa where phoneType = 'cell'
+    expect:
+      row_count: 10
+
+  - id: "basic.061.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa where phoneType = 'home' or phoneType = 'landline'
+    expect:
+      row_count: 11
+
+  - id: "basic.062.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa where phoneType = 'none'
+    expect:
+      row_count: 0
+
+  - id: "basic.063.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa where city in ('Seattle','Tacoma','Everett')
+    expect:
+      row_count: 6
+
+  - id: "basic.064.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa where city not in ('Seattle','Tacoma','Everett')
+    expect:
+      row_count: 24
+
+  - id: "basic.065.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa where city not in ('Seattle','Tacoma','Everett') and city != null
+    expect:
+      row_count: 16
+
+  - id: "basic.066.select"
+    status: supported
+    kind: query
+    sql: |-
+      select * from customers_qa where city not in ('Seattle','Tacoma','Everett') and city is not null
+    expect:
+      row_count: 16
+
+  - id: "basic.067.select"
+    status: supported
+    kind: query
+    sql: |-
+      select timestamp_micro from customers_qa where timestamp_micro between '2010-01-01 00:00:00' and '2015-01-01 00:00:00'
+    expect:
+      row_count: 5
+
+  - id: "basic.068.select"
+    status: supported
+    kind: query
+    sql: |-
+      select timestamp_micro from customers_qa where timestamp_micro not between '2010-01-01 00:00:00' and '2015-01-01 00:00:00'
+    expect:
+      row_count: 25
+
+  - id: "basic.069.select"
+    status: supported
+    kind: query
+    sql: |-
+      select timestamp_micro from customers_qa where timestamp_micro not between '2010-01-01 00:00:00' and '2015-01-01 00:00:00' and timestamp_micro != null
+    expect:
+      row_count: 6
+
+  - id: "basic.070.select"
+    status: supported
+    kind: query
+    sql: |-
+      select timestamp_millis from customers_qa where timestamp_millis between '2010-01-01 00:00:00' and '2015-01-01 00:00:00'
+    expect:
+      row_count: 5
+
+  - id: "basic.071.select"
+    status: supported
+    kind: query
+    sql: |-
+      select timestamp_millis from customers_qa where timestamp_millis not between '2010-01-01 00:00:00' and '2015-01-01 00:00:00'
+    expect:
+      row_count: 25
+
+  - id: "basic.072.select"
+    status: supported
+    kind: query
+    sql: |-
+      select timestamp_millis from customers_qa where timestamp_millis not between '2010-01-01 00:00:00' and '2015-01-01 00:00:00' and timestamp_millis != null
+    expect:
+      row_count: 5
+
+  - id: "basic.076.select"
+    status: supported
+    kind: query
+    sql: |-
+      select age from customers_qa where age between 42 and 43
+    expect:
+      row_count: 1
+
+  - id: "basic.077.select"
+    status: supported
+    kind: query
+    sql: |-
+      select age from customers_qa where age not between 42 and 43
+    expect:
+      row_count: 29
+
+  - id: "basic.078.select"
+    status: supported
+    kind: query
+    sql: |-
+      select age from customers_qa where age not between 42 and 43 and age != 0
+    expect:
+      row_count: 11
+
+  - id: "basic.079.select"
+    status: supported
+    kind: query
+    sql: |-
+      select height from customers_qa where height = 72.55000
+    expect:
+      row_count: 1
+
+  - id: "basic.080.select"
+    status: supported
+    kind: query
+    sql: |-
+      select height from customers_qa where height = 72.55001
+    expect:
+      error_contains: "this would result in rounding error for field 'height', value should have 2 decimal places"
+
+  - id: "basic.081.select"
+    status: supported
+    kind: query
+    sql: |-
+      select height from customers_qa where height between 74.9 and 75.1
+    expect:
+      row_count: 1
+
+  - id: "basic.082.select"
+    status: supported
+    kind: query
+    sql: |-
+      select height from customers_qa where height not between 75.0 and 75.1
+    expect:
+      row_count: 29
+
+  - id: "basic.083.select"
+    status: supported
+    kind: query
+    sql: |-
+      select height from customers_qa where height not between 75.0 and 75.1 and height != null
+    expect:
+      row_count: 11
+
+  - id: "basic.084.select"
+    status: supported
+    kind: query
+    sql: |-
+      select numFamilyMembers from customers_qa where numFamilyMembers between 4 and 5
+    expect:
+      row_count: 23
+
+  - id: "basic.085.select"
+    status: supported
+    kind: query
+    sql: |-
+      select numFamilyMembers from customers_qa where numFamilyMembers between 4 and 5 and numFamilyMembers != null
+    expect:
+      row_count: 23
+
+  - id: "basic.086.select"
+    status: supported
+    kind: query
+    sql: |-
+      select numFamilyMembers from customers_qa where numFamilyMembers not between 4 and 5
+    expect:
+      row_count: 7
+
+  - id: "basic.087.select"
+    status: supported
+    kind: query
+    sql: |-
+      select numFamilyMembers from customers_qa where numFamilyMembers not between 4 and 5 and numFamilyMembers != null
+    expect:
+      row_count: 7
+
+  - id: "basic.088.select"
+    status: supported
+    kind: query
+    sql: |-
+      select city from customers_qa limit 1
+    expect:
+      row_count: 1
+
+  - id: "basic.089.select"
+    status: supported
+    kind: query
+    sql: |-
+      select city from customers_qa limit 1000
+    expect:
+      row_count: 30
+
+  - id: "basic.090.select"
+    status: supported
+    kind: query
+    sql: |-
+      select first_name as fn, last_name as ln, city as c, createdAtTimestamp as cat, phoneType as pt from customers_qa
+    expect:
+      row_count: 30
+
+  - id: "basic.091.select"
+    status: supported
+    kind: query
+    sql: |-
+      select first_name as fn, last_name as ln, city as c, createdAtTimestamp as cat, phoneType as pt from customers_qa where fn = 'Bob' and ln = 'Burgers'
+    expect:
+      row_count: 0
+
+  - id: "basic.092.select"
+    status: supported
+    kind: query
+    sql: |-
+      select first_name as fn, last_name as ln, city as c, createdAtTimestamp as cat, phoneType as pt from customers_qa where pt = 'cell'
+    expect:
+      row_count: 10
+
+  - id: "basic.093.select"
+    status: supported
+    kind: query
+    sql: |-
+      select first_name as fn, last_name as ln, city as c, createdAtTimestamp as cat, phoneType as pt, age as Age from customers_qa where pt = 'cell' and Age = 55
+    expect:
+      row_count: 1
+
+  - id: "basic.094.select"
+    status: supported
+    kind: query
+    sql: |-
+      select first_name as fn, last_name as ln, city as c, createdAtTimestamp as cat, phoneType as pt, age as Age from customers_qa where pt = 'cell' or age = 55
+    expect:
+      row_count: 10
+
+  - id: "basic.095.select"
+    status: supported
+    kind: query
+    sql: |-
+      select first_name as fn, last_name as ln, city as c, createdAtTimestamp as cat, phoneType as pt, age as Age from customers_qa where pt = 'cell' and city = 'Walla Walla'
+    expect:
+      row_count: 1
+
+  - id: "basic.096.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where isActive = true
+    expect:
+      rows:
+        - [24]
+
+  - id: "basic.097.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where isActive = false
+    expect:
+      rows:
+        - [6]
+
+  - id: "basic.098.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where isActive = 1
+    expect:
+      rows:
+        - [24]
+
+  - id: "basic.099.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where isActive = 0
+    expect:
+      rows:
+        - [6]
+
+  - id: "basic.100.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where isActive != true
+    expect:
+      rows:
+        - [6]
+
+  - id: "basic.101.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where isActive != false
+    expect:
+      rows:
+        - [24]
+
+  - id: "basic.102.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where isActive != 1
+    expect:
+      rows:
+        - [6]
+
+  - id: "basic.103.select"
+    status: supported
+    kind: query
+    sql: |-
+      select count(*) from customers_qa where isActive != 0
+    expect:
+      rows:
+        - [24]
+
+  - id: "basic.073.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select cust_id from customers_qa where cust_id between '105' and '108'
+    expect:
+      row_count: 4
+
+  - id: "basic.074.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select rownum from customers_qa where cust_id between '104' and '105'
+    expect:
+      row_count: 2
+
+  - id: "basic.075.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select rownum from customers_qa where cust_id not between '104' and '105'
+    expect:
+      row_count: 28
+
+  - id: "basic.104.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select max(age) as max_age from customers_qa where max_age = 88 limit 1
+    expect:
+      columns: [max_age]
+      rows:
+        - [88]
+
+  - id: "basic.105.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select min(age) as min_age from customers_qa where min_age = 5 limit 1
+    expect:
+      columns: [min_age]
+      rows:
+        - [5]
+
+  - id: "basic.106.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select avg(age) as avg_age from customers_qa where avg_age = 46 limit 1
+    expect:
+      columns: [avg_age]
+      rows:
+        - [46]
+
+  - id: "basic.107.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select sum(age) as sum_age from customers_qa where sum_age = 557 limit 1
+    expect:
+      columns: [sum_age]
+      rows:
+        - [557]
+
+  - id: "basic.108.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select avg(age) as avg_age from customers_qa where age between 43 and 54 and avg_age = 46 limit 1
+    expect:
+      columns: [avg_age]
+      rows:
+        - [46]
+
+  - id: "basic.109.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select avg(age) as avg_age from customers_qa where age > 55 and avg_age = 70 limit 1
+    expect:
+      columns: [avg_age]
+      rows:
+        - [70]
+
+  - id: "basic.110.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select sum(age) as sum_age from customers_qa where age between 43 and 54 and sum_age = 92 limit 1
+    expect:
+      columns: [sum_age]
+      rows:
+        - [92]
+
+  - id: "basic.111.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select min(age) as min_age from customers_qa where age > 55 and min_age = 59
+    expect:
+      row_count: 1
+
+  - id: "basic.112.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select max(age) as max_age from customers_qa where age > 55 and max_age = 59
+    expect:
+      row_count: 1
+
+  - id: "basic.113.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select min(age) as min_age from customers_qa where age < 55 and min_age = 59
+    expect:
+      row_count: 1
+
+  - id: "basic.114.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select max(age) as max_age from customers_qa where age < 55 and max_age = 59
+    expect:
+      row_count: 1
+
+  - id: "basic.115.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select min(age) as min_age from customers_qa where age >= 55 and min_age = 59
+    expect:
+      row_count: 1
+
+  - id: "basic.116.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select max(age) as max_age from customers_qa where age >= 55 and max_age = 59
+    expect:
+      row_count: 1
+
+  - id: "basic.117.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select min(age) as min_age from customers_qa where age <= 55 and min_age = 59
+    expect:
+      row_count: 1
+
+  - id: "basic.118.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select max(age) as max_age from customers_qa where age <= 55 and max_age = 59
+    expect:
+      row_count: 1
+
+  - id: "basic.119.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select min(height) as min_height from customers_qa where min_height = 48 limit 1
+    expect:
+      columns: [min_height]
+      rows:
+        - [48]
+
+  - id: "basic.120.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select max(height) as max_height from customers_qa where max_height = 76 limit 1
+    expect:
+      columns: [max_height]
+      rows:
+        - [76]
+
+  - id: "basic.121.select"
+    status: supported
+    kind: query
+    sql: |-
+      select avg(height) as avg_height from customers_qa where avg_height = 0 limit 1
+    expect:
+      columns: [avg_height]
+      rows:
+        - [0]
+
+  - id: "basic.122.select"
+    status: xfail
+    kind: query
+    sql: |-
+      select sum(height) as sum_height from customers_qa where sum_height = 0 limit 1
+    expect:
+      columns: [sum_height]
+      rows:
+        - [0]

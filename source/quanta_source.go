@@ -87,14 +87,14 @@ func NewQuantaSource(tableCache *core.TableCacheStruct, baseDir, consulAddr stri
 func (m *QuantaSource) MemberLeft(nodeID string, index int) {
 
 	u.Warnf("node %v left the cluster, purging sessions", nodeID)
-	m.sessionPool.Recover(nil) // TODO: Need to re-evalute this when inserts are fully implemented.
+	m.sessionPool.Recover(nil) // TODO: Need to re-evaluate this when inserts are fully implemented.
 }
 
 // MemberJoined - A new node joined the cluster.
 func (m *QuantaSource) MemberJoined(nodeID, ipAddress string, index int) {
 
 	u.Warnf("node %v joined the cluster, purging sessions", nodeID)
-	m.sessionPool.Recover(nil) // TODO: Need to re-evalute this when inserts are fully implemented.
+	m.sessionPool.Recover(nil) // TODO: Need to re-evaluate this when inserts are fully implemented.
 }
 
 // GetSessionPool - Return the underlying session pool instance.
@@ -107,7 +107,7 @@ func (m *QuantaSource) GetConnection() *shared.Conn {
 	return m.clientConn
 }
 
-// Init initilize this db
+// Init initialize this db
 func (m *QuantaSource) Init() {
 }
 

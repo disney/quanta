@@ -69,7 +69,7 @@ func BindParams(s interface{}) []interface{} {
 // Alternatively for a custom mapping, any func(string) string can be used instead.
 var NameMapper func(string) string = strings.ToLower
 
-// A cache of fieldInfos to save reflecting every time. Inspried by encoding/xml
+// A cache of fieldInfos to save reflecting every time. Inspired by encoding/xml
 var finfos map[reflect.Type]fieldInfo
 var finfoLock sync.RWMutex
 
@@ -252,7 +252,7 @@ func ToSnakeCase(src string) string {
 	return strings.ToLower(buf.String())
 }
 
-// GetAllRows - Handles database/sql *Rows and returns and array of row maps
+// GetAllRows - Handles database/sql *Rows and returns an array of row maps
 func GetAllRows(rows *sql.Rows) ([]map[string]interface{}, error) {
 
 	ret := make([]map[string]interface{}, 0)

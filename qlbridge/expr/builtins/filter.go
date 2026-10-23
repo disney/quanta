@@ -32,7 +32,7 @@ func oneOfEval(ctx expr.EvalContext, args []value.Value) (value.Value, bool) {
 	return value.NilValueVal, false
 }
 
-// FilterFromArgs given set of values
+// FiltersFromArgs given set of values
 func FiltersFromArgs(filterVals []value.Value) []string {
 	filters := make([]string, 0, len(filterVals))
 	for _, fv := range filterVals {

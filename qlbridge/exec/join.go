@@ -35,7 +35,7 @@ type JoinKey struct {
 
 // A JoinKey task that evaluates the compound JoinKey to allow
 //
-//	for parallelized join's
+//	for parallelized joins
 //
 //	 source1   ->  JoinKey  ->  hash-route
 //	                                       \

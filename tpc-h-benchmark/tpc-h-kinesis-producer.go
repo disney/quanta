@@ -35,7 +35,7 @@ const (
 	Success = 0
 )
 
-// Main strct defines command line arguments variables and various global meta-data associated with record loads.
+// Main struct defines command line arguments variables and various global meta-data associated with record loads.
 type Main struct {
 	Index        string
 	BatchSize    int
